@@ -212,11 +212,12 @@ def test_a_test_burn_records_nothing_and_asks_for_confirmation_again(
     assert all(t.cd_sectors is not None for t in lib.tracks())  # lengths still learned
 
 
-def test_a_failed_burn_says_so_and_records_nothing(lib, make_dialog, wait_for):
+def test_a_failed_burn_says_so_and_records_nothing(lib, make_dialog, wait_for, caplog):
     dialog, burner = make_dialog(FakeBurner(fail="drive on fire"))
     burn(dialog, wait_for)
     assert burner.burned == [] and lib.burns() == []
     assert "Failed: drive on fire" in dialog.log.toPlainText()
+    assert [r for r in caplog.records if r.levelname == "ERROR"] == []
     assert "failed" in dialog.status_label.text()
     assert not dialog.confirm_check.isChecked() and dialog.close_button.isEnabled()
     dialog.confirm_check.setChecked(True)
@@ -267,7 +268,7 @@ def test_a_drive_that_cannot_say_how_much_it_holds_does_not_block_a_burn(
 
 
 def test_a_drive_that_cannot_be_reached_blocks_the_burn_and_can_be_rechecked(
-    qapp, lib, disc_id, wait_for
+    qapp, lib, disc_id, wait_for, caplog
 ):
     class Unreachable(FakeBurner):
         def media_info(self, device):
@@ -282,6 +283,8 @@ def test_a_drive_that_cannot_be_reached_blocks_the_burn_and_can_be_rechecked(
     dialog.confirm_check.setChecked(True)
     assert not dialog.burn_button.isEnabled()
     assert "no optical drives" in dialog.problems_label.text()
+    # a missing drive is expected: it is shown in the window, not logged as a crash
+    assert [r for r in caplog.records if r.levelname == "ERROR"] == []
     dialog.check_button.click()  # plug it in, check again
     assert wait_for(lambda: not dialog._busy)
     assert dialog.burn_button.isEnabled()
@@ -384,3 +387,17 @@ def test_burning_with_no_disc_just_says_to_make_one(qapp, monkeypatch):
         assert not win.disc_panel.burn_button.isEnabled()
         win.close()
         win.deleteLater()
+
+
+def test_a_genuine_bug_is_still_logged_as_an_error(
+    qapp, lib, disc_id, wait_for, caplog
+):
+    class Broken(FakeBurner):
+        def media_info(self, device):
+            raise ValueError("a real bug, not a drive problem")
+
+    dialog = BurnDialog(lib, disc_id, burner_factory=lambda: Broken())
+    assert wait_for(lambda: not dialog._busy)
+    assert "a real bug" in dialog.problems_label.text()  # still shown to the user
+    assert any(r.levelname == "ERROR" for r in caplog.records)
+    dialog.close()

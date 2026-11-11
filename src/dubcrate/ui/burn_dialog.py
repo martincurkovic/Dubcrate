@@ -10,6 +10,7 @@ lengths and the burn record.
 """
 
 from collections.abc import Callable
+from functools import wraps
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -29,19 +30,36 @@ from PySide6.QtWidgets import (
 
 from dubcrate import settings
 from dubcrate.build import (
+    BuildError,
     BurnPlan,
     disc_problems,
     media_problems,
     plan_burn,
     render_plan,
 )
-from dubcrate.burn import Burner, BurnOptions, MediaInfo, get_burner
+from dubcrate.burn import Burner, BurnError, BurnOptions, MediaInfo, get_burner
 from dubcrate.cd import SECTORS_PER_SECOND, disc_used_sectors, format_clock, format_msf
 from dubcrate.library import Library
+from dubcrate.render import RenderError
 
 from .tasks import TaskError, run_async
 
 BurnerFactory = Callable[[], Burner]
+
+
+def _expected_failures(fn: Callable) -> Callable:
+    """Run `fn` on a worker so that the failures a user can cause (no drive, a bad
+    file, a disc that won't take it) are reported as plain messages. Anything
+    else is a bug, and still gets logged with its traceback."""
+
+    @wraps(fn)
+    def run(*args, **kwargs):
+        try:
+            return fn(*args, **kwargs)
+        except (BurnError, BuildError, RenderError) as exc:
+            raise TaskError(str(exc)) from exc
+
+    return run
 
 
 def _backend() -> Burner:
@@ -276,7 +294,7 @@ class BurnDialog(QDialog):
             self._media_error = text
             self._update()
 
-        run_async(lambda: burner.media_info(None), done, failed)
+        run_async(_expected_failures(lambda: burner.media_info(None)), done, failed)
 
     # -- burning ----------------------------------------------------------
 
@@ -302,6 +320,7 @@ class BurnDialog(QDialog):
         self._update()
         say = self._log.emit  # thread-safe: queued to this thread
 
+        @_expected_failures
         def work():
             with TemporaryDirectory(prefix="dubcrate-burn-") as tmp:
                 rendered = render_plan(plan, Path(tmp), say)
