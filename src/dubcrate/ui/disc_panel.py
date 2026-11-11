@@ -1,4 +1,7 @@
-"""The disc being planned: pick or create a disc, see its tracks and how full it is."""
+"""The disc being planned (pick or create one, see its tracks and how full it is),
+and the discs already burned, shown read-only beside it."""
+
+from datetime import datetime
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
@@ -12,6 +15,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QPushButton,
     QStackedWidget,
+    QTabBar,
     QTableView,
     QToolButton,
     QVBoxLayout,
@@ -19,13 +23,19 @@ from PySide6.QtWidgets import (
 )
 
 from dubcrate import settings
-from dubcrate.cd import DISC_74_SECTORS, DISC_80_SECTORS, SECTORS_PER_SECOND
+from dubcrate.cd import (
+    DISC_74_SECTORS,
+    DISC_80_SECTORS,
+    SECTORS_PER_SECOND,
+    format_clock,
+)
 from dubcrate.library import Library
 from dubcrate.library.lengths import needs_measuring, probe_lengths
+from dubcrate.library.models import BurnRecord
 from dubcrate.library.store import LibraryError
 
 from .capacity_bar import CapacitySummary
-from .models import DiscModel
+from .models import BurnModel, DiscModel
 from .overlaps import overlap_message
 from .tasks import run_async
 
@@ -63,6 +73,22 @@ class DiscTable(QTableView):
             self.remove_requested.emit()
             return
         super().keyPressEvent(event)
+
+
+def burn_summary(record: BurnRecord) -> str:
+    """Two lines for under the burned-disc picker: when and how, then how full."""
+    when = datetime.fromisoformat(record.burned_at).astimezone()
+    how = [when.strftime("%Y-%m-%d %H:%M")]
+    if record.drive:
+        how.append(record.drive)
+    if record.speed:
+        how.append(f"{record.speed}x")
+    n = record.track_count
+    return (
+        " · ".join(how)
+        + f"\n{format_clock(record.used_sectors)} of {format_clock(record.capacity_sectors)}"
+        + f" · {n} track{'s' if n != 1 else ''}"
+    )
 
 
 class DiscPanel(QWidget):
@@ -162,14 +188,95 @@ class DiscPanel(QWidget):
         self.stack.addWidget(empty)
         self.stack.addWidget(full)
 
+        planned = QWidget()
+        planned_layout = QVBoxLayout(planned)
+        planned_layout.setContentsMargins(0, 0, 0, 0)
+        planned_layout.setSpacing(8)
+        planned_layout.addLayout(picker)
+        planned_layout.addWidget(self.stack, 1)
+
+        self.views = QStackedWidget()
+        self.views.addWidget(planned)
+        self.views.addWidget(self._build_burned_page())
+
+        self.tabs = QTabBar()
+        self.tabs.addTab("Planned")
+        self.tabs.addTab("Burned")
+        self.tabs.setExpanding(True)
+        self.tabs.setDrawBase(False)
+        self.tabs.currentChanged.connect(self.views.setCurrentIndex)
+
         layout = QVBoxLayout(self)
         layout.setContentsMargins(12, 12, 12, 12)
         layout.setSpacing(8)
         layout.addWidget(title)
-        layout.addLayout(picker)
-        layout.addWidget(self.stack, 1)
+        layout.addWidget(self.tabs)
+        layout.addWidget(self.views, 1)
 
         self.reload()
+
+    def _build_burned_page(self) -> QWidget:
+        self.burn_combo = QComboBox()
+        self.burn_combo.activated.connect(lambda _i: self._show_burn())
+        self.duplicate_button = QPushButton("Duplicate")
+        self.duplicate_button.setToolTip("Make an editable copy to tweak or burn again")
+        self.duplicate_button.clicked.connect(self.duplicate_burn)
+        self.delete_burn_button = QPushButton("Delete")
+        self.delete_burn_button.setToolTip(
+            "Forget this record (the CD itself is unaffected)"
+        )
+        self.delete_burn_button.clicked.connect(self.delete_burn)
+        picker = QHBoxLayout()
+        picker.addWidget(self.burn_combo, 1)
+        picker.addWidget(self.duplicate_button)
+        picker.addWidget(self.delete_burn_button)
+
+        self.burn_info = QLabel()
+        self.burn_model = BurnModel(self)
+        self.burn_table = QTableView()
+        self.burn_table.setModel(self.burn_model)
+        self.burn_table.setSelectionBehavior(
+            QAbstractItemView.SelectionBehavior.SelectRows
+        )
+        self.burn_table.setShowGrid(False)
+        self.burn_table.setAlternatingRowColors(True)
+        self.burn_table.verticalHeader().hide()
+        self.burn_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        header = self.burn_table.horizontalHeader()
+        header.setStretchLastSection(False)
+        for column, width in ((0, 36), (1, 50), (2, 140)):
+            self.burn_table.setColumnWidth(column, width)
+        header.setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
+
+        full = QWidget()
+        full_layout = QVBoxLayout(full)
+        full_layout.setContentsMargins(0, 0, 0, 0)
+        full_layout.setSpacing(8)
+        full_layout.addWidget(self.burn_info)
+        full_layout.addWidget(self.burn_table, 1)
+
+        empty = QWidget()
+        empty_layout = QVBoxLayout(empty)
+        empty_label = QLabel(
+            "Nothing burned yet.\nA disc you burn is kept here,\nso you can see what went on it."
+        )
+        empty_label.setObjectName("emptyState")
+        empty_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        empty_layout.addStretch(1)
+        empty_layout.addWidget(empty_label)
+        empty_layout.addStretch(2)
+
+        self.burn_stack = QStackedWidget()
+        self.burn_stack.addWidget(empty)
+        self.burn_stack.addWidget(full)
+
+        page = QWidget()
+        page_layout = QVBoxLayout(page)
+        page_layout.setContentsMargins(0, 0, 0, 0)
+        page_layout.setSpacing(8)
+        page_layout.addLayout(picker)
+        page_layout.addWidget(self.burn_stack, 1)
+        return page
 
     # -- state ------------------------------------------------------------
 
@@ -199,6 +306,7 @@ class DiscPanel(QWidget):
         self.combo.setCurrentIndex(max(index, 0))
         self.combo.blockSignals(False)
         self._show_disc()
+        self.reload_burns()
 
     @staticmethod
     def _label(name: str, count: int) -> str:
@@ -235,6 +343,75 @@ class DiscPanel(QWidget):
 
     def _update_buttons(self) -> None:
         self.remove_button.setEnabled(bool(self.table.selectionModel().selectedRows()))
+
+    # -- burned discs -----------------------------------------------------
+
+    def current_burn_id(self) -> int | None:
+        return self.burn_combo.currentData() if self.burn_combo.count() else None
+
+    def reload_burns(self, select_id: int | None = None) -> None:
+        """Re-read the burn records and show `select_id` (else the one already shown, else the newest)."""
+        wanted = select_id if select_id is not None else self.current_burn_id()
+        self.burn_combo.blockSignals(True)
+        self.burn_combo.clear()
+        for record in self._lib.burns():
+            when = record.burned_at[:10]
+            self.burn_combo.addItem(
+                f"{record.name}  ·  {when}  ({record.track_count})", record.id
+            )
+        index = self.burn_combo.findData(wanted) if wanted is not None else -1
+        self.burn_combo.setCurrentIndex(max(index, 0))
+        self.burn_combo.blockSignals(False)
+        self._show_burn()
+
+    def _show_burn(self) -> None:
+        burn_id = self.current_burn_id()
+        has_burn = burn_id is not None
+        self.burn_stack.setCurrentIndex(1 if has_burn else 0)
+        self.duplicate_button.setEnabled(has_burn)
+        self.delete_burn_button.setEnabled(has_burn)
+        if has_burn:
+            record = self._lib.burn(burn_id)
+            self.burn_model.set_tracks(list(record.tracks))
+            self.burn_info.setText(burn_summary(record))
+        else:
+            self.burn_model.set_tracks([])
+            self.burn_info.clear()
+
+    def show_burned(self, burn_id: int | None = None) -> None:
+        """Switch to the Burned view, on `burn_id` if given."""
+        self.reload_burns(select_id=burn_id)
+        self.tabs.setCurrentIndex(1)
+
+    def duplicate_burn(self) -> None:
+        burn_id = self.current_burn_id()
+        if burn_id is None:
+            return
+        result = self._lib.duplicate_burn(burn_id)
+        self.tabs.setCurrentIndex(0)
+        self.reload(select_id=result.disc_id)
+        text = f"Made “{self._lib.disc(result.disc_id).name}” from the burn record"
+        if result.skipped:
+            n = len(result.skipped)
+            text += (
+                f"; left out {n} track{'s' if n != 1 else ''} no longer in your library"
+            )
+        self.message.emit(text)
+
+    def delete_burn(self) -> None:
+        burn_id = self.current_burn_id()
+        if burn_id is None:
+            return
+        record = self._lib.burn(burn_id)
+        answer = QMessageBox.question(
+            self,
+            "Delete Burn Record",
+            f'Delete the record of "{record.name}"?\n'
+            "The CD itself is unaffected, but Dubcrate will stop warning about its tracks.",
+        )
+        if answer == QMessageBox.StandardButton.Yes:
+            self._lib.delete_burn(burn_id)
+            self.reload_burns()
 
     # -- the disc itself --------------------------------------------------
 
@@ -403,6 +580,7 @@ class DiscPanel(QWidget):
             except LibraryError as exc:
                 self._warn("Can't add those tracks", str(exc))
                 return
+            self.tabs.setCurrentIndex(0)
             self.reload(select_id=disc_id)
             text = f"Added {len(result.added)} track{'s' if len(result.added) != 1 else ''}"
             if result.rejected:
@@ -423,6 +601,7 @@ class DiscPanel(QWidget):
                 capacity_sectors=self.size_combo.currentData(),
                 pregap_sectors=self.gap_combo.currentData(),
             )
+            self.tabs.setCurrentIndex(0)
             self.reload(select_id=result.disc_ids[0] if result.disc_ids else None)
             text = f"Created {len(result.disc_ids)} disc{'s' if len(result.disc_ids) != 1 else ''}"
             if result.too_long:

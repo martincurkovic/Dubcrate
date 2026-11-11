@@ -7,13 +7,19 @@
    This needs a hardware check (see [burning.md](burning.md)). The burn path
    in `build.py` and the backends already exist; only the dialog is missing.
 2. **A record of what was burned.** *Store side done* (`record_burn`, `burns`,
-   `duplicate_burn`, schema v3). Still to do: call `record_burn` from the burn path
-   once a burn succeeds, and show the records in the window (with *Duplicate*).
+   `duplicate_burn`, schema v3), the CLI saves a record after a real burn, and the
+   disc panel has a *Planned | Burned* switch with *Duplicate* and *Delete*. Still to
+   do: save a record from the burn dialog once it exists, then `show_burned()`.
 3. **The source rail** from the rbxport-style layout: Library, Explorer (a live
    folder browser, no import needed) and Discs (the list of planned and burned
    discs, with the disc currently in the burner so a finished burn can be read back
    and checked).
 4. **Printable track list** for the disc sleeve, since old CDJs have no screen for it.
+
+5. **Help menu.** `src/dubcrate/ui/help/manual.md` is written; it needs a viewer dialog
+   (port akaiutil-GUI's `manual_dialog.py`) and a *Help > User Guide* item. Screenshots
+   still to take (`![...](screenshots/x.png)`; `tests/test_help.py` checks images exist).
+   Update the guide when the burn dialog lands: its "Burning a disc" section is CLI-only.
 
 ## Later
 

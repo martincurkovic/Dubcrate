@@ -617,3 +617,121 @@ def test_fresh_tracks_are_added_without_asking(window, monkeypatch):
     win.disc_panel.add_tracks(ids[:2])
     assert asked == []
     assert disc_titles(win) == ["Song 0", "Song 1"]
+
+
+# -- the Burned view ----------------------------------------------------------
+
+
+def burned_disc(lib, count=3, name="Friday"):
+    ids = [t.id for t in lib.tracks(sort="title")][:count]
+    disc_id = lib.create_disc(name)
+    lib.add_to_disc(disc_id, ids)
+    return disc_id, lib.record_burn(disc_id, drive="LiteOn", speed=10)
+
+
+def burn_titles(win):
+    panel = win.disc_panel
+    return [
+        panel.burn_model.track_at(r).title for r in range(panel.burn_model.rowCount())
+    ]
+
+
+def test_with_nothing_burned_the_view_says_so(window):
+    win, _lib = window
+    panel = win.disc_panel
+    assert panel.burn_stack.currentIndex() == 0
+    assert not panel.duplicate_button.isEnabled()
+    assert not panel.delete_burn_button.isEnabled()
+
+
+def test_a_burn_record_is_listed_read_only_with_its_details(window):
+    win, lib = window
+    _disc, burn_id = burned_disc(lib)
+    panel = win.disc_panel
+    panel.show_burned(burn_id)
+    assert panel.tabs.currentIndex() == 1 and panel.views.currentIndex() == 1
+    assert burn_titles(win) == ["Song 0", "Song 1", "Song 2"]
+    assert "LiteOn" in panel.burn_info.text() and "10x" in panel.burn_info.text()
+    assert "3 tracks" in panel.burn_info.text()
+    index = panel.burn_model.index(0, 0)
+    assert not panel.burn_model.flags(index) & Qt.ItemFlag.ItemIsDragEnabled
+    assert not panel.burn_model.flags(index) & Qt.ItemFlag.ItemIsEditable
+
+
+def test_burn_records_list_newest_first(window):
+    win, lib = window
+    burned_disc(lib, name="First")
+    _d, newest = burned_disc(lib, name="Second")
+    win.disc_panel.reload_burns()
+    assert win.disc_panel.current_burn_id() == newest
+    assert win.disc_panel.burn_combo.count() == 2
+
+
+def test_a_burned_track_that_left_the_library_is_dimmed(window):
+    win, lib = window
+    disc_id, burn_id = burned_disc(lib, count=1)
+    lib.delete_disc(disc_id)
+    (source,) = lib.sources()
+    lib.remove_source(source.id)
+    win.disc_panel.show_burned(burn_id)
+    assert burn_titles(win) == ["Song 0"]
+    model = win.disc_panel.burn_model
+    assert model.track_at(0).track_id is None
+    foreground = model.data(model.index(0, 3), Qt.ItemDataRole.ForegroundRole)
+    assert foreground is not None
+
+
+def test_duplicate_makes_an_editable_disc_and_switches_to_planned(window):
+    win, lib = window
+    _disc, burn_id = burned_disc(lib)
+    panel = win.disc_panel
+    panel.show_burned(burn_id)
+    panel.duplicate_burn()
+    assert panel.tabs.currentIndex() == 0
+    assert lib.disc(panel.current_disc_id()).name == "Friday (copy)"
+    assert disc_titles(win) == ["Song 0", "Song 1", "Song 2"]
+    assert lib.burn(burn_id).track_count == 3  # the record is untouched
+
+
+def test_duplicate_reports_tracks_that_have_gone(window):
+    win, lib = window
+    disc_id, burn_id = burned_disc(lib, count=2)
+    lib.delete_disc(disc_id)
+    keep = [t for t in lib.tracks() if t.title == "Song 0"]
+    records = [
+        TrackRecord(ext_id=t.ext_id, path=t.path, title=t.title, duration=t.duration)
+        for t in keep
+    ]
+    lib.replace_source("folder", lib.sources()[0].path, "Crate", records)
+    seen = []
+    win.disc_panel.message.connect(seen.append)
+    win.disc_panel.show_burned(burn_id)
+    win.disc_panel.duplicate_burn()
+    assert disc_titles(win) == ["Song 0"]
+    assert any("left out 1 track" in text for text in seen)
+
+
+def test_deleting_a_record_asks_first_and_keeps_the_planned_disc(window, monkeypatch):
+    win, lib = window
+    disc_id, burn_id = burned_disc(lib)
+    panel = win.disc_panel
+    panel.show_burned(burn_id)
+    monkeypatch.setattr(QMessageBox, "question", staticmethod(lambda *a, **k: NO))
+    panel.delete_burn()
+    assert lib.burns() != []
+    monkeypatch.setattr(QMessageBox, "question", staticmethod(lambda *a, **k: YES))
+    panel.delete_burn()
+    assert lib.burns() == [] and panel.burn_stack.currentIndex() == 0
+    assert lib.disc(disc_id).track_count == 3
+
+
+def test_adding_tracks_while_looking_at_burned_discs_returns_to_planned(
+    window, monkeypatch
+):
+    win, lib = window
+    _disc, burn_id = burned_disc(lib, count=1)
+    ids = [t.id for t in lib.tracks(sort="title")]
+    win.disc_panel.show_burned(burn_id)
+    monkeypatch.setattr(QMessageBox, "question", staticmethod(lambda *a, **k: YES))
+    win.disc_panel.add_tracks(ids[3:4])
+    assert win.disc_panel.tabs.currentIndex() == 0

@@ -23,7 +23,7 @@ from PySide6.QtWidgets import QApplication, QStyle
 
 from dubcrate.cd import format_clock
 from dubcrate.library import Library
-from dubcrate.library.models import DiscEntry, Track
+from dubcrate.library.models import BurnTrack, DiscEntry, Track
 from dubcrate.waveform import Waveform
 
 from . import mono_icons, theme
@@ -337,6 +337,70 @@ class DiscModel(QAbstractTableModel):
         # A Move drag asks the source model to delete the dragged rows afterwards.
         # Rows only ever change through the library, so refuse.
         return False
+
+
+BURN_COLUMNS = ("#", "Time", "Artist", "Title")
+
+
+class BurnModel(QAbstractTableModel):
+    """The tracks of one burn record, read-only.
+
+    A track whose library entry has since gone is shown dimmed: it was burned,
+    but it can't be put on another disc.
+    """
+
+    def __init__(self, parent: QObject | None = None):
+        super().__init__(parent)
+        self._tracks: list[BurnTrack] = []
+
+    def set_tracks(self, tracks: list[BurnTrack]) -> None:
+        self.beginResetModel()
+        self._tracks = tracks
+        self.endResetModel()
+
+    def track_at(self, row: int) -> BurnTrack:
+        return self._tracks[row]
+
+    def rowCount(self, parent: QModelIndex = QModelIndex()) -> int:  # noqa: B008
+        return 0 if parent.isValid() else len(self._tracks)
+
+    def columnCount(self, parent: QModelIndex = QModelIndex()) -> int:  # noqa: B008
+        return 0 if parent.isValid() else len(BURN_COLUMNS)
+
+    def headerData(self, section, orientation, role=Qt.ItemDataRole.DisplayRole):
+        if orientation == Qt.Orientation.Horizontal:
+            if role == Qt.ItemDataRole.DisplayRole:
+                return BURN_COLUMNS[section]
+            if role == Qt.ItemDataRole.TextAlignmentRole:
+                return _RIGHT if section == 1 else _LEFT
+        return None
+
+    def data(self, index: QModelIndex, role: int = Qt.ItemDataRole.DisplayRole):
+        if not index.isValid():
+            return None
+        track = self._tracks[index.row()]
+        column = index.column()
+        if role == Qt.ItemDataRole.DisplayRole:
+            match column:
+                case 0:
+                    return str(track.position + 1)
+                case 1:
+                    return format_clock(track.sectors)
+                case 2:
+                    return track.artist
+                case 3:
+                    return track.title
+        elif role == Qt.ItemDataRole.TextAlignmentRole:
+            return _RIGHT if column == 1 else _LEFT
+        elif role == Qt.ItemDataRole.ForegroundRole and track.track_id is None:
+            return QColor(theme.current_palette()["text_disabled"])
+        elif role == Qt.ItemDataRole.ToolTipRole:
+            gone = "" if track.track_id else "\nNo longer in your library"
+            return track.path + gone
+        return None
+
+    def flags(self, index: QModelIndex) -> Qt.ItemFlag:
+        return Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable
 
 
 # -- the source tree ----------------------------------------------------------
