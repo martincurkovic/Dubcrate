@@ -110,6 +110,25 @@ class SettingsDialog(QDialog):
         hint.setObjectName("mutedLabel")
         form.addRow(hint)
 
+        self.beat_jump_combo = QComboBox()
+        for beats in settings.BEAT_JUMP_SIZES:
+            self.beat_jump_combo.addItem(
+                f"{beats} beat{'s' if beats != 1 else ''}", beats
+            )
+        self.beat_jump_combo.setCurrentIndex(
+            max(0, self.beat_jump_combo.findData(settings.get_beat_jump()))
+        )
+        self.beat_jump_combo.activated.connect(
+            lambda _i: settings.set_beat_jump(self.beat_jump_combo.currentData())
+        )
+        form.addRow("Beat jump:", self.beat_jump_combo)
+        jump_hint = QLabel(
+            "How far the left and right arrow keys jump when a track is selected in the list."
+        )
+        jump_hint.setWordWrap(True)
+        jump_hint.setObjectName("mutedLabel")
+        form.addRow(jump_hint)
+
         self.test_button = QPushButton("Play Test Tone")
         self.test_button.clicked.connect(self.play_test_tone)
         row = QHBoxLayout()

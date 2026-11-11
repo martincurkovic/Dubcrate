@@ -32,6 +32,9 @@ class PlayerStrip(QWidget):
     previous_requested = Signal()
     next_requested = Signal()
     seek_requested = Signal(float)
+    scratch_started = Signal()
+    scratch_moved = Signal(float)  # seconds
+    scratch_ended = Signal()
     volume_changed = Signal(float)
 
     def __init__(self, parent=None):
@@ -109,7 +112,9 @@ class PlayerStrip(QWidget):
         self.overview = OverviewView()
         self.overview.seek_requested.connect(self.seek_requested)
         self.detail = DetailView()
-        self.detail.seek_requested.connect(self.seek_requested)
+        self.detail.scratch_started.connect(self.scratch_started)
+        self.detail.scratch_moved.connect(self._on_scratch_moved)
+        self.detail.scratch_ended.connect(self.scratch_ended)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(12, 10, 12, 8)
@@ -132,9 +137,9 @@ class PlayerStrip(QWidget):
         self.artist.setText("")
         self.key.setText("")
         self.bpm.setText("")
-        self.set_position(0.0)
         self.overview.clear()
         self.detail.clear()
+        self.set_position(0.0)
         self.set_playing(False)
         self._enable(False)
 
@@ -171,10 +176,19 @@ class PlayerStrip(QWidget):
         self.play_button.setEnabled(loaded)
 
     def set_position(self, seconds: float) -> None:
+        if self.detail.dragging:  # a hand is on the waveform: it decides the position
+            return
+        self._show_position(seconds)
+        self.detail.set_position(seconds)
+
+    def _show_position(self, seconds: float) -> None:
         self.elapsed.setText(clock(seconds))
         self.remaining.setText(f"-{clock(max(0.0, self._duration - seconds))}")
         self.overview.set_position(seconds)
-        self.detail.set_position(seconds)
+
+    def _on_scratch_moved(self, seconds: float) -> None:
+        self._show_position(seconds)  # the detail view has moved itself
+        self.scratch_moved.emit(seconds)
 
     def set_playing(self, playing: bool) -> None:
         self.play_button.setIcon(self._pause_icon if playing else self._play_icon)

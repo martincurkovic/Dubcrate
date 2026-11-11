@@ -27,6 +27,7 @@ class TrackTable(QTableView):
 
     add_requested = Signal()
     play_pause_requested = Signal()
+    beat_jump_requested = Signal(int)  # -1 back, 1 forward
 
     def keyPressEvent(self, event) -> None:
         if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
@@ -34,6 +35,10 @@ class TrackTable(QTableView):
             return
         if event.key() == Qt.Key.Key_Space and not event.modifiers():
             self.play_pause_requested.emit()
+            return
+        if event.key() in (Qt.Key.Key_Left, Qt.Key.Key_Right) and not event.modifiers():
+            # Beat jump, as in rekordbox. (The table has no use for sideways cell moves.)
+            self.beat_jump_requested.emit(-1 if event.key() == Qt.Key.Key_Left else 1)
             return
         super().keyPressEvent(event)
 

@@ -9,6 +9,7 @@ from dubcrate import settings
 from dubcrate.analysis import Analysis, read_analysis, share_root
 from dubcrate.audio.decode import DecodedAudio, decode_file
 from dubcrate.audio.player import AudioPlayer
+from dubcrate.beatjump import jump_time
 from dubcrate.library import Library
 from dubcrate.library.models import Track
 from dubcrate.waveform import PREVIEW_COLUMNS, Waveform, compute_waveform
@@ -64,6 +65,7 @@ class PreviewController(QObject):
         self.player = player or AudioPlayer(parent=self)
         self._serial = 0  # a newer request makes an older one's result stale
         self._track: Track | None = None  # loaded and playable
+        self._analysis: Analysis | None = None  # of the loaded track, for its beat grid
         self._requested: Track | None = (
             None  # the latest one asked for, which may still be loading
         )
@@ -73,6 +75,9 @@ class PreviewController(QObject):
         self.player.failed.connect(self.message)
         strip.play_toggled.connect(self.toggle)
         strip.seek_requested.connect(self.player.seek)
+        strip.scratch_started.connect(self.player.begin_scratch)
+        strip.scratch_moved.connect(self.player.scratch_to)
+        strip.scratch_ended.connect(self.player.end_scratch)
         strip.volume_changed.connect(self._on_volume)
         self.apply_settings()
 
@@ -101,6 +106,28 @@ class PreviewController(QObject):
         if self.player.loaded:
             self.player.toggle()
 
+    def beat_jump(self, direction: int) -> None:
+        """Jump the set number of beats forward (`direction` 1) or back (-1), in phase.
+
+        Uses the track's beat grid; without one, its tempo (rekordbox's, else the tag's).
+        """
+        if not self.player.loaded or self._track is None or self.player.scratching:
+            return
+        beats = settings.get_beat_jump() * direction
+        position = self.player.position
+        target = None
+        if self._analysis is not None:
+            target = jump_time(self._analysis.beat_times, position, beats)
+        if target is None:
+            bpm = (self._analysis.bpm if self._analysis else None) or self._track.bpm
+            if not bpm:
+                self.message.emit(
+                    "No beat grid or tempo for this track, so it can't beat jump"
+                )
+                return
+            target = position + beats * 60.0 / bpm
+        self.player.seek(max(0.0, min(target, self.player.duration)))
+
     def shutdown(self) -> None:
         self._serial += 1
         self.player.shutdown()
@@ -128,6 +155,7 @@ class PreviewController(QObject):
         self._serial += 1
         serial = self._serial
         self._requested = track
+        self._analysis = None
         self.player.pause()
         self._strip.show_track(track)
         if track.missing:
@@ -140,6 +168,7 @@ class PreviewController(QObject):
             if serial != self._serial:
                 return  # the user has since chosen something else
             self._track = track
+            self._analysis = media.analysis
             self._strip.show_media(media.audio.duration, media.waveform, media.analysis)
             self.player.load(media.audio, autoplay=play)
             self.preview_ready.emit(

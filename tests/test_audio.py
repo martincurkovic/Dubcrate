@@ -371,3 +371,157 @@ def test_missing_ffmpeg_is_a_clear_error(tmp_path, monkeypatch):
     monkeypatch.setattr(decode.shutil, "which", lambda _name: None)
     with pytest.raises(DecodeError, match="ffmpeg not found"):
         decode_file(str(tmp_path / "bad.m4a"))
+
+
+# -- scratching: the head follows a target the GUI moves ------------------------------
+
+
+def ramp(frames=44_100):
+    """Sample n is n (clipped to int16), so what was read is readable from the output."""
+    values = np.arange(frames, dtype=np.int64).clip(0, 32_000).astype(np.int16)
+    return np.stack([values, values], axis=1)
+
+
+def scratching_state(frame=1000, volume=1.0, gain=1.0) -> PlaybackState:
+    state = PlaybackState(samples=ramp(), frame=frame, volume=volume, gain=gain)
+    state.scratching = True
+    state.scratch_pos = float(frame)
+    state.scratch_target = float(frame)
+    state.scratch_gain = gain
+    return state
+
+
+def test_scratching_plays_the_audio_forward_at_the_speed_of_the_drag():
+    state = scratching_state(frame=1000)
+    state.scratch_target = 1000 + 200  # 200 frames of track over a 100 frame block: 2x
+    out = blocks(render_block(state, 100))[:, 0].astype(int)
+    assert state.scratch_pos == pytest.approx(1200)
+    assert out[50] == pytest.approx(
+        1000 + 50 * 2, abs=1
+    )  # reads two source frames per output
+    assert (np.diff(out[10:]) > 0).all()
+
+
+def test_scratching_backwards_plays_the_audio_in_reverse():
+    state = scratching_state(frame=5000)
+    state.scratch_target = 5000 - 100
+    out = blocks(render_block(state, 100))[:, 0].astype(int)
+    assert state.scratch_pos == pytest.approx(4900)
+    assert (np.diff(out[10:]) < 0).all()  # descending: the record is going backwards
+    assert out[50] == pytest.approx(5000 - 50, abs=1)
+
+
+def test_a_stationary_target_is_silence_not_a_held_note():
+    state = scratching_state(frame=3000)
+    render_block(state, 256)  # the fade-out block
+    assert not blocks(render_block(state, 256)).any()
+    assert state.scratch_pos == 3000
+
+
+def test_the_head_never_moves_faster_than_the_speed_limit():
+    from dubcrate.audio.player import MAX_SCRATCH_RATE
+
+    state = scratching_state(frame=1000)
+    state.scratch_target = 40_000  # a huge flick
+    render_block(state, 100)
+    assert state.scratch_pos == pytest.approx(1000 + MAX_SCRATCH_RATE * 100)
+    assert state.scratch_pos < state.scratch_target  # still catching up
+
+
+def test_starting_a_scratch_does_not_click_and_the_volume_applies():
+    state = scratching_state(frame=1000, volume=0.5, gain=0.0)  # coming from silence
+    state.scratch_target = 1000 + 400
+    out = blocks(render_block(state, 200))[:, 0].astype(int)
+    assert out[0] == pytest.approx(1000 * 0.0, abs=2)  # begins silent...
+    assert out[-1] > out[10]  # ...and is faded in across the block
+    full = scratching_state(frame=1000, volume=0.5, gain=0.5)
+    full.scratch_target = 1000 + 400
+    assert blocks(render_block(full, 200))[100, 0] == pytest.approx(
+        (1000 + 100 * 2) * 0.5, abs=2
+    )
+
+
+def test_scratching_past_either_end_stays_in_the_track_and_never_crashes():
+    state = scratching_state(frame=10)
+    state.scratch_target = -5000
+    out = render_block(state, 128)
+    assert len(out) == 128 * 4 and state.scratch_pos == 0.0
+    end = scratching_state(frame=44_000)
+    end.scratch_target = 90_000
+    render_block(end, 128)
+    render_block(end, 128)
+    assert end.scratch_pos <= len(end.samples)
+
+
+def test_scratching_without_a_track_is_silence():
+    state = PlaybackState()
+    state.scratching = True
+    assert not blocks(render_block(state, 64)).any()
+
+
+def test_a_scratch_leaves_a_playing_track_playing(player):
+    player.load(DecodedAudio(ramp()))
+    player.play()
+    device = player.opened[0]
+    device.pull(1000)
+    player.begin_scratch()
+    assert player.scratching and player.playing  # held, not stopped
+    before = player.position
+    device.pull(1000)
+    assert player.position == pytest.approx(before)  # a held track doesn't advance
+    player.scratch_to(before + 0.5)
+    for _ in range(40):
+        device.pull(1024)
+    assert player.position == pytest.approx(before + 0.5, abs=0.001)
+    player.end_scratch()
+    assert not player.scratching and player.playing
+    at = player.position
+    for _ in range(3):
+        device.pull(1024)
+    assert player.position > at  # carries on playing from where the drag left it
+
+
+def test_a_scratch_on_a_paused_track_stays_paused_and_is_heard(player):
+    player.load(DecodedAudio(ramp()))
+    assert player.opened == []
+    player.begin_scratch()
+    assert len(player.opened) == 1 and not player.playing  # opened the device itself
+    device = player.opened[0]
+    player.scratch_to(0.25)
+    heard = [blocks(device.pull(1024)).any() for _ in range(15)]
+    assert any(heard)
+    player.end_scratch()
+    assert not player.playing and player.position == pytest.approx(0.25, abs=0.002)
+    device.pull(1024)  # the short fade-out
+    at = player.position
+    assert not blocks(device.pull(1024)).any() and player.position == at
+
+
+def test_scratch_to_is_clamped_to_the_track(player):
+    player.load(DecodedAudio(ramp(SAMPLE_RATE)))  # one second
+    player.begin_scratch()
+    player.scratch_to(99.0)
+    for _ in range(80):
+        player.opened[0].pull(1024)
+    assert player.position <= 1.0
+    player.scratch_to(-9.0)
+    for _ in range(80):
+        player.opened[0].pull(1024)
+    assert player.position == 0.0
+
+
+def test_scratch_calls_without_a_scratch_or_a_track_do_nothing(player):
+    player.scratch_to(1.0)
+    player.end_scratch()
+    player.begin_scratch()
+    assert not player.scratching and player.opened == []
+    player.load(DecodedAudio(ramp()))
+    player.scratch_to(1.0)  # no scratch in progress
+    assert player.position == 0.0
+
+
+def test_loading_a_new_track_ends_any_scratch(player):
+    player.load(DecodedAudio(ramp()))
+    player.begin_scratch()
+    player.load(DecodedAudio(ramp()))
+    assert not player.scratching and player.position == 0.0

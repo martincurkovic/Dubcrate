@@ -197,6 +197,7 @@ class MainWindow(QMainWindow):
         self.track_table.verticalHeader().setDefaultSectionSize(ROW_HEIGHT + 4)
         self.track_table.add_requested.connect(self.add_selected_to_disc)
         self.track_table.play_pause_requested.connect(self.preview.toggle)
+        self.track_table.beat_jump_requested.connect(self.preview.beat_jump)
         self.track_table.verticalScrollBar().valueChanged.connect(
             lambda _v: self._preview_timer.start()
         )

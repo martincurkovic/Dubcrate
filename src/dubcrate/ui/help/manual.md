@@ -88,9 +88,13 @@ Tracks whose file can't be found are greyed out in the list, and shown in red on
 The two waveforms in the player:
 
 - The **overview** shows the whole track. For rekordbox tracks it also shows the phrases (such as INTRO, CHORUS, DOWN, UP and OUTRO) and any cue points. Click anywhere in it to jump there.
-- The **detail view** is zoomed in and scrolls past a fixed playhead, with the beat grid drawn on it. Click to jump, and use the mouse wheel to zoom.
+- The **detail view** is zoomed in and scrolls past a fixed playhead, with the beat grid drawn on it. Use the mouse wheel to zoom, and drag it to scratch (below).
 
 For rekordbox tracks the waveforms, beat grid, phrases and cues come from rekordbox's own analysis. For other music Dubcrate draws the waveform itself. Beat grids and cues are only shown for your planning: **they do not go on the CD.**
+
+**Scratching.** Grab the zoomed waveform and drag it, as you would a CDJ's jog wheel. The waveform sticks to your pointer, and you hear the track move with it: drag right to take it back, left to move it forward, faster for a higher pitch, and hold still for silence. While your hand is on it, a playing track is held, and it carries on from wherever you let go. A paused track stays paused after you let go, so you can use this to find a spot. Clicking without dragging doesn't jump anywhere: to jump, click the overview.
+
+**Beat jump.** With a track selected in the list, **←** and **→** jump back or forward by a set number of beats (4 unless you change it in **Settings > Audio**). The jump keeps its place within the beat, so the track stays in time, and it follows the beat grid, including any change of tempo. Tracks without rekordbox's beat grid use their tempo instead. A track with neither says so in the status bar. A playing track keeps playing.
 
 **Waveform looks.** Choose how waveforms are drawn under **View > Waveform**, or in **Settings > Appearance**:
 
@@ -212,7 +216,7 @@ The full list of command-line options is in the project's developer notes.
 
 - **Discs:** how **new** discs are planned: **Plan new discs for** 80 or 74 minutes, and **Between tracks**, which is **Gapless** unless you choose 1, 2 or 3 seconds of silence.
 - **Burning:** the **Burn speed** a burn starts with (10x unless you change it). Old players read discs burned slowly more reliably, and 10x to 16x is a good range. Your drive may not offer every speed. You can still pick another speed for a single burn in the burn window.
-- **Audio:** the **Output device** for previews and the **Buffer size**, with a button that plays a short test tone.
+- **Audio:** the **Output device** for previews and the **Buffer size**, with a button that plays a short test tone, and the **Beat jump** distance for the arrow keys.
 - **Appearance:** the **Theme** (the same choice as **View > Theme**), the **Waveform style** (the same as **View > Waveform**), and the **Waveform background**.
 
 ---
@@ -224,6 +228,8 @@ The full list of command-line options is in the project's developer notes.
 | Double-click a track | Preview it |
 | Space | Play or pause |
 | Return, or ⌘D | Add the selected tracks to the disc |
+| ← / → | Beat jump back / forward (in the track list) |
+| Drag the zoomed waveform | Scratch |
 | Delete | Take the selected tracks off the disc |
 | ⌘O | Import a folder |
 | ⇧⌘O | Import a rekordbox library |

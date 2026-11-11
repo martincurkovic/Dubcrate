@@ -139,3 +139,18 @@ def test_the_column_menu_item_the_guide_names_exists():
     assert "Reset Columns" in MANUAL
     source = (MANUAL_PATH.parent.parent / "main_window.py").read_text()
     assert '"Reset Columns"' in source
+
+
+def test_the_scratch_and_beat_jump_the_guide_describes_exist():
+    from dubcrate import settings
+    from dubcrate.ui.track_table import TrackTable
+    from dubcrate.ui.waveform_view import DetailView
+
+    for phrase in ("Scratching", "Beat jump", "Settings > Audio", "← / →"):
+        assert phrase in MANUAL, phrase
+    assert hasattr(DetailView, "scratch_moved") and hasattr(
+        TrackTable, "beat_jump_requested"
+    )
+    assert (
+        settings.DEFAULT_BEAT_JUMP == 4 and "4 unless" in MANUAL
+    )  # "4 unless you change it"

@@ -275,7 +275,7 @@ def test_zooming_steps_through_the_levels_and_stops_at_the_ends(qapp):
     assert view.window_seconds == ZOOMS[-1]
 
 
-def test_the_wheel_zooms_and_clicking_seeks_relative_to_the_playhead(qapp):
+def test_the_wheel_zooms_the_detail_view(qapp):
     view = detail(800)
     view.set_position(10.0)
 
@@ -289,15 +289,6 @@ def test_the_wheel_zooms_and_clicking_seeks_relative_to_the_playhead(qapp):
     assert view.window_seconds == 4.0
     view.wheelEvent(wheel(-120))
     assert view.window_seconds == 8.0
-    got = []
-    view.seek_requested.connect(got.append)
-    QTest.mouseClick(
-        view, Qt.MouseButton.LeftButton, pos=QPoint(600, 20)
-    )  # 200 px right of the middle
-    assert got == [pytest.approx(10.0 + 200 * 8.0 / 800)]
-    view.set_position(0.5)
-    QTest.mouseClick(view, Qt.MouseButton.LeftButton, pos=QPoint(0, 20))
-    assert got[-1] == 0.0  # never before the start
 
 
 @pytest.mark.parametrize("preference", ["dark", "light", "system6"])

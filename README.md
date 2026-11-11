@@ -72,6 +72,7 @@ whose track titles show on the player's display.
 | Preview a track | Double-click |
 | Play / pause | Space |
 | Add the selected tracks to the disc | Return, or ⌘D |
+| Beat jump back / forward (track list) | ← / → |
 | Take the selected tracks off the disc | Delete |
 | Import a folder / a rekordbox library | ⌘O / ⇧⌘O |
 | Re-import the selected source | ⌘R |
@@ -80,8 +81,9 @@ whose track titles show on the player's display.
 | Split the shown tracks across discs | ⇧⌘D |
 | Settings | ⌘, |
 
-In the waveforms, click to jump to a place in the track. The mouse wheel over the
-zoomed waveform zooms in and out.
+In the overview, click to jump to a place in the track. In the zoomed waveform, the
+mouse wheel zooms in and out, and dragging it scratches the track as on a CDJ's jog
+wheel.
 
 ### Settings
 

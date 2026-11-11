@@ -214,9 +214,16 @@ class OverviewView(QWidget):
 
 
 class DetailView(QWidget):
-    """A zoomed waveform scrolling past a fixed playhead, with the beat grid."""
+    """A zoomed waveform scrolling past a fixed playhead, with the beat grid.
 
-    seek_requested = Signal(float)
+    Drag it to scratch, as on a CDJ's jog wheel: the waveform sticks to the pointer
+    (drag right and the track goes back), and `scratch_moved` says where the playhead
+    now is. While a hand is on it the player's own position is ignored.
+    """
+
+    scratch_started = Signal()
+    scratch_moved = Signal(float)  # seconds into the track
+    scratch_ended = Signal()
 
     HEIGHT = 112
 
@@ -228,9 +235,12 @@ class DetailView(QWidget):
         self._position = 0.0
         self._window = DEFAULT_ZOOM
         self._message = ""
+        self._dragging = False
+        self._drag_x = 0.0
+        self._drag_from = 0.0
         self.setFixedHeight(self.HEIGHT)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setCursor(Qt.CursorShape.OpenHandCursor)
         theme.notifier.changed.connect(self.update)
         wave_notifier.changed.connect(self.update)
 
@@ -252,12 +262,20 @@ class DetailView(QWidget):
         )
         self._message = message
         self._position = 0.0
+        self._dragging = False  # a new track: whatever was being dragged is gone
+        self.setCursor(Qt.CursorShape.OpenHandCursor)
         self.update()
 
     def clear(self, message: str = "") -> None:
         self.set_track(None, message=message)
 
+    @property
+    def dragging(self) -> bool:
+        return self._dragging
+
     def set_position(self, seconds: float) -> None:
+        if self._dragging:  # the hand decides where the waveform is
+            return
         if seconds != self._position:
             self._position = seconds
             self.update()
@@ -393,8 +411,37 @@ class DetailView(QWidget):
     # -- interaction ------------------------------------------------------
 
     def mousePressEvent(self, event) -> None:
-        if event.button() == Qt.MouseButton.LeftButton and self._waveform is not None:
-            self.seek_requested.emit(max(0.0, self.time_at(event.position().x())))
+        wave = self._waveform
+        if (
+            event.button() != Qt.MouseButton.LeftButton
+            or wave is None
+            or not wave.columns
+        ):
+            return
+        self._dragging = True
+        self._drag_x = event.position().x()
+        self._drag_from = self._position
+        self.setCursor(Qt.CursorShape.ClosedHandCursor)
+        self.scratch_started.emit()
+
+    def mouseMoveEvent(self, event) -> None:
+        wave = self._waveform
+        if not self._dragging or wave is None:
+            return
+        per_second = max(1, self.width()) / self._window
+        seconds = self._drag_from - (event.position().x() - self._drag_x) / per_second
+        seconds = max(0.0, min(seconds, wave.duration))
+        if seconds != self._position:
+            self._position = seconds
+            self.update()
+            self.scratch_moved.emit(seconds)
+
+    def mouseReleaseEvent(self, event) -> None:
+        if event.button() != Qt.MouseButton.LeftButton or not self._dragging:
+            return
+        self._dragging = False
+        self.setCursor(Qt.CursorShape.OpenHandCursor)
+        self.scratch_ended.emit()
 
     def wheelEvent(self, event) -> None:
         delta = event.angleDelta().y()

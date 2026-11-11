@@ -119,6 +119,23 @@ def set_wave_background(mode: str) -> None:
     _qs().setValue("waveform/background", mode)
 
 
+BEAT_JUMP_SIZES = (1, 2, 4, 8, 16, 32)  # beats
+DEFAULT_BEAT_JUMP = 4  # one bar
+
+
+def get_beat_jump() -> int:
+    """How many beats the left and right arrow keys jump."""
+    try:
+        value = int(_qs().value("playback/beat_jump", DEFAULT_BEAT_JUMP))
+    except (TypeError, ValueError):
+        return DEFAULT_BEAT_JUMP
+    return value if value in BEAT_JUMP_SIZES else DEFAULT_BEAT_JUMP
+
+
+def set_beat_jump(beats: int) -> None:
+    _qs().setValue("playback/beat_jump", int(beats))
+
+
 def get_audio_device() -> str | None:
     """The saved output device id (hex), or None for the system default."""
     return _qs().value("audio/device", None) or None

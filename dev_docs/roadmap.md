@@ -56,6 +56,10 @@
   rekordbox's own, see `rekordbox-analysis.md`). The waveform background follows the theme
   (light in the light theme); *Always dark* keeps rekordbox's dark one. System 6 always draws
   the 3-band look.
+- Dragging the zoomed waveform scratches (hold the track, play it at the drag's speed, backwards
+  too, silence when still; release resumes a playing track and leaves a paused one paused).
+  Clicking it no longer seeks: the overview does that. Left and right arrows beat jump from the
+  track list, by a Settings > Audio size (default 4 beats), along the beat grid, in phase.
 - The README is for end users only; developer notes live here and in `CONTRIBUTING.md`.
 
 ## Known rough edges
@@ -74,6 +78,15 @@
   [burning.md](burning.md)).
 
 ## Unverified
+
+- How the scratch *feels* on a real output device: the audio buffer (23 ms at the default)
+  is its latency, and the speed cap (16x) and the fade to silence when the drag stops were
+  chosen by reasoning, not by ear. Tested only with the fake device. Try it with a small
+  buffer in Settings > Audio.
+- Rekordbox's own default beat jump size and which keys it uses: 4 beats on the arrow keys is
+  the assumption, and the size is a setting because of it.
+- Beat jump only works from the track list; with focus elsewhere (the source tree, the search
+  box) the arrow keys keep their usual meaning there.
 
 - The RGB and blue looks and the light waveform on a real display (checked offscreen, and
   against rekordbox's data only statistically). Reading rekordbox's `PWV3` / `PWV5` directly

@@ -7,6 +7,11 @@ one block, and the GUI thread only for a few assignments.
 
 Starting, pausing and seeking are ramped across one block, so they don't click.
 
+Scratching (dragging the zoomed waveform, as on a CDJ's jog wheel): while it lasts the
+normal playback is held, and the audio thread instead moves a read head towards a target
+position the GUI keeps updating. Whatever speed that implies is the speed it plays at,
+backwards included; a target that stands still is silence.
+
 Lifecycle note (from AKAISDS): a miniaudio device's CoreAudio thread calls back INTO
 Python. If the process starts to exit while one is still running, macOS kills the whole
 process, so every player's device is stopped at interpreter exit.
@@ -30,6 +35,12 @@ log = logging.getLogger(__name__)
 
 _LIVE_PLAYERS: "weakref.WeakSet[AudioPlayer]" = weakref.WeakSet()
 _TICK_MS = 30  # how often the playhead is re-emitted: smooth enough, and costs nothing
+MAX_SCRATCH_RATE = (
+    16.0  # the fastest the head may move, in source frames per output frame
+)
+_FULL_GAIN_RATE = (
+    0.02  # at this speed or above a scratch is at full volume; slower fades out
+)
 
 
 def _stop_all_players() -> None:
@@ -51,13 +62,39 @@ class PlaybackState:
     gain: float = 0.0  # where the fade is now
     volume: float = 1.0
     finished: bool = False
+    scratching: bool = False
+    scratch_pos: float = 0.0  # where the head is, in (fractional) frames
+    scratch_target: float = 0.0  # where the GUI wants it
+    scratch_gain: float = 0.0
     lock: threading.Lock = field(default_factory=threading.Lock)
+
+
+def _render_scratch(state: PlaybackState, frames: int, out: np.ndarray) -> None:
+    """One block of a scratch: read from the head towards the target, at that speed."""
+    assert state.samples is not None
+    total = len(state.samples)
+    displacement = state.scratch_target - state.scratch_pos
+    rate = float(np.clip(displacement / frames, -MAX_SCRATCH_RATE, MAX_SCRATCH_RATE))
+    positions = state.scratch_pos + rate * np.arange(frames, dtype=np.float64)
+    base = np.floor(positions).astype(np.int64)
+    fraction = (positions - base).astype(np.float32)[:, None]
+    first = state.samples[np.clip(base, 0, total - 1)].astype(np.float32)
+    second = state.samples[np.clip(base + 1, 0, total - 1)].astype(np.float32)
+    chunk = first + (second - first) * fraction  # linear interpolation between frames
+    target = state.volume * min(1.0, abs(rate) / _FULL_GAIN_RATE)
+    chunk *= np.linspace(state.scratch_gain, target, frames, dtype=np.float32)[:, None]
+    out[:] = np.clip(chunk, -32768, 32767).astype(np.int16)
+    state.scratch_gain = target
+    state.scratch_pos = float(np.clip(state.scratch_pos + rate * frames, 0, total))
 
 
 def render_block(state: PlaybackState, frames: int) -> bytes:
     """The next `frames` frames of 16-bit stereo audio, advancing `state`. Silence when paused."""
     out = np.zeros((frames, CHANNELS), dtype=np.int16)
     with state.lock:
+        if state.samples is not None and state.scratching:
+            _render_scratch(state, frames, out)
+            return out.tobytes()
         if state.samples is None or (not state.playing and state.gain <= 0.0):
             return out.tobytes()
         total = len(state.samples)
@@ -147,7 +184,12 @@ class AudioPlayer(QObject):
 
     @property
     def position(self) -> float:
-        return self._state.frame / SAMPLE_RATE
+        state = self._state
+        return (state.scratch_pos if state.scratching else state.frame) / SAMPLE_RATE
+
+    @property
+    def scratching(self) -> bool:
+        return self._state.scratching
 
     @property
     def volume(self) -> float:
@@ -161,6 +203,7 @@ class AudioPlayer(QObject):
             self._state.frame = 0
             self._state.gain = 0.0
             self._state.finished = False
+            self._state.scratching = False
         self.position_changed.emit(0.0)
         if autoplay:
             self.play()
@@ -171,6 +214,7 @@ class AudioPlayer(QObject):
             self._state.samples = None
             self._state.frame = 0
             self._state.gain = 0.0
+            self._state.scratching = False
         self._close_device()
         self.position_changed.emit(0.0)
 
@@ -203,6 +247,45 @@ class AudioPlayer(QObject):
             self._state.frame = max(0, min(frame, len(self._state.samples)))
             self._state.gain = 0.0  # fade in from silence: no click at the jump
             self._state.finished = False
+        self.position_changed.emit(self.position)
+
+    def begin_scratch(self) -> None:
+        """Hold the track under the user's hand. A playing track stays "playing" and
+        carries on from wherever the scratch ends; a paused one stays paused."""
+        state = self._state
+        if state.samples is None:
+            return
+        if self._device is None and not self._open_device():
+            return
+        with state.lock:
+            state.scratching = True
+            state.scratch_pos = float(state.frame)
+            state.scratch_target = state.scratch_pos
+            state.scratch_gain = (
+                state.gain
+            )  # continue from the level it was at: no click
+        self._timer.start()
+
+    def scratch_to(self, seconds: float) -> None:
+        """Move the target the head chases (the audio catches up within a block or so)."""
+        state = self._state
+        if state.samples is None or not state.scratching:
+            return
+        with state.lock:
+            state.scratch_target = max(
+                0.0, min(seconds * SAMPLE_RATE, float(len(state.samples)))
+            )
+
+    def end_scratch(self) -> None:
+        state = self._state
+        if not state.scratching:
+            return
+        with state.lock:
+            assert state.samples is not None
+            state.frame = max(0, min(round(state.scratch_pos), len(state.samples)))
+            state.gain = state.scratch_gain  # the normal path ramps on from here
+            state.scratching = False
+            state.finished = False
         self.position_changed.emit(self.position)
 
     def set_volume(self, volume: float) -> None:
