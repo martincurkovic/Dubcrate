@@ -98,3 +98,9 @@ def disc_used_sectors(lengths: Iterable[int], pregap_sectors: int = 0) -> int:
     """
     lengths = list(lengths)
     return sum(lengths) + max(len(lengths) - 1, 0) * pregap_sectors
+
+
+def format_clock(sectors: int) -> str:
+    """Format a sector count as M:SS (whole seconds, rounded down)."""
+    seconds = sectors // SECTORS_PER_SECOND
+    return f"{seconds // 60}:{seconds % 60:02d}"

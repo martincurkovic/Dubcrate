@@ -32,6 +32,10 @@ the repo; follow whatever it reports.
 - `src/dubcrate/planning.py`: pure packing algorithms (`fit_tracks`, `split_sequential`) on lists of sector lengths.
 - `src/dubcrate/build.py`: `build_burn_disc` turns a planned disc into rendered WAVs plus a `burn.Disc`, re-checking capacity against the rendered lengths. `disc_problems` lists what blocks a burn.
 - `src/dubcrate/cli.py`, `cli_discs.py`: the `dubcrate` command (import, sources, nodes, tracks, disc ..., burn) until there is a GUI.
+- `src/dubcrate/ui/`: the PySide6 window (`dubcrate-gui`, or `python -m dubcrate.ui`).
+  - `theme.py`, `style.qss.template`, `style_system6.qss.template`, `mono_icons.py`, `icons/`, `fonts/`, `splitter.py`, `track_colors.py` come from the sibling apps (akaiutil-GUI, JV Studio, AKAISDS) so all of them look alike: System / Light / Dark / Macintosh System 6. Dubcrate's own QSS goes under the "Dubcrate additions" marker at the bottom of `style.qss.template`; every colour is a `${key}` from the palettes in `theme.py` (add a key to ALL palettes, or startup raises a KeyError). Custom-painted widgets read `theme.current_palette()`.
+  - `main_window.py` (sources tree, track table, disc panel), `disc_panel.py`, `capacity_bar.py` (adapted from akaiutil-GUI's usage bar), `models.py` (track/disc/source-tree models), `tasks.py` (`run_async`).
+  - `src/dubcrate/settings.py`: QSettings (theme, window layout, last disc).
 - `spikes/`: throwaway hardware drivers. Reusable logic belongs in the package.
 - `tests/`: pytest. Tests must not need a drive or a disc.
 - `assets/icon/`: `AppIcon.png` is the 1024x1024 master; `AppIcon.txt` holds the
@@ -71,6 +75,9 @@ the repo; follow whatever it reports.
 
 - Python 3.13+, type hints, `pathlib.Path` for paths, stdlib where it will do.
 - Run external tools with `subprocess` and an explicit `check=` argument.
+- **GUI threading:** the SQLite `Library` belongs to the GUI thread. A `run_async` task may scan, probe or read a rekordbox snapshot, but never touches the library: it returns a result and the GUI-thread callback stores it (`probe_lengths` / `scan_folder` / `read_master_db` are the task-safe pieces).
+- **GUI tests** run offscreen (`tests/conftest.py` forces `QT_QPA_PLATFORM=offscreen`, and sends QSettings and the theme's generated icons to a temp dir via `DUBCRATE_DATA_DIR`). Patch `QMessageBox` / `QInputDialog` / `QFileDialog` rather than letting a test open a modal dialog. `wait_for(predicate)` spins the event loop for worker results. To eyeball a change, render the window with `window.grab().save("x.png")` and look at the PNG, in all three looks (dark, light, system6).
+- The ChiKareGo2 font (System 6 theme) is CC BY: keep `ui/fonts/README.txt` and the credit in the About dialog.
 - Store ids (`Track.id`) are what discs will reference, so re-imports must keep them
   stable: match on `ext_id`, never delete-and-reinsert tracks.
 - Keep dependencies light and watch licenses: `mutagen` and anything from rbxport

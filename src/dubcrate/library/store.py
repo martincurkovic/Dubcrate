@@ -656,6 +656,28 @@ class Library:
         with self._conn:
             self._write_disc_tracks(disc_id, ids)
 
+    def reorder_disc(
+        self, disc_id: int, positions: Iterable[int], to_position: int
+    ) -> None:
+        """Move the tracks at `positions` so they start at `to_position`.
+
+        `to_position` is an insertion point in the list as it is before the
+        move, which is what a drag-and-drop gives you. The moved tracks keep
+        their relative order.
+        """
+        self._disc_row(disc_id)
+        ids = [e.track.id for e in self.disc_entries(disc_id)]
+        moving = sorted(set(positions))
+        if not moving or moving[0] < 0 or moving[-1] >= len(ids):
+            raise DiscError(f"positions must be between 0 and {len(ids) - 1}")
+        at = max(0, min(to_position, len(ids)))
+        before = sum(1 for p in moving if p < at)
+        moved = [ids[p] for p in moving]
+        rest = [t for i, t in enumerate(ids) if i not in set(moving)]
+        rest[at - before : at - before] = moved
+        with self._conn:
+            self._write_disc_tracks(disc_id, rest)
+
     def split_into_discs(
         self,
         track_ids: Iterable[int],

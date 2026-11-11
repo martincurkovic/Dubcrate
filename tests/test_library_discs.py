@@ -317,3 +317,33 @@ def test_a_v1_database_upgrades_in_place_and_keeps_its_data(tmp_path):
         disc_id = lib.create_disc("D")
         lib.add_to_disc(disc_id, [42])
         assert lib.disc(disc_id).track_count == 1
+
+
+def test_reorder_moves_a_block_to_an_insertion_point(lib):
+    ids = seed(lib, count=6)
+    disc_id = lib.create_disc("D")
+    lib.add_to_disc(disc_id, ids)
+    lib.reorder_disc(disc_id, [3, 4], 1)  # drop between t0 and t1
+    assert titles(lib, disc_id) == ["t0", "t3", "t4", "t1", "t2", "t5"]
+    lib.reorder_disc(disc_id, [1], 6)  # drop after the last row
+    assert titles(lib, disc_id) == ["t0", "t4", "t1", "t2", "t5", "t3"]
+
+
+def test_reorder_to_just_after_a_blocks_own_position_keeps_order(lib):
+    ids = seed(lib, count=4)
+    disc_id = lib.create_disc("D")
+    lib.add_to_disc(disc_id, ids)
+    lib.reorder_disc(disc_id, [1, 2], 2)  # inside the block being moved
+    assert titles(lib, disc_id) == ["t0", "t1", "t2", "t3"]
+    lib.reorder_disc(disc_id, [2, 0], 4)  # positions are taken in disc order
+    assert titles(lib, disc_id) == ["t1", "t3", "t0", "t2"]
+
+
+def test_reorder_rejects_bad_positions(lib):
+    ids = seed(lib, count=2)
+    disc_id = lib.create_disc("D")
+    lib.add_to_disc(disc_id, ids)
+    with pytest.raises(DiscError):
+        lib.reorder_disc(disc_id, [5], 0)
+    with pytest.raises(DiscError):
+        lib.reorder_disc(disc_id, [], 0)

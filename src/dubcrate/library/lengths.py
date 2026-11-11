@@ -12,6 +12,40 @@ from dubcrate.render import RenderError, probe
 Progress = Callable[[int, int], None]  # (done, total)
 
 
+def needs_measuring(track: Track) -> bool:
+    """Whether `track` has no measured CD length yet and its file can be probed."""
+    return track.cd_sectors is None and not track.missing
+
+
+def probe_lengths(
+    tracks: Iterable[Track], progress: Progress | None = None, workers: int = 8
+) -> tuple[dict[int, int], list[str]]:
+    """Probe tracks in parallel; returns ({track id: sectors}, problem messages).
+
+    Touches no database, so it is safe to run on a worker thread. Store the
+    result with `Library.set_cd_sectors` on the thread that owns the library.
+    """
+    todo = [t for t in tracks if needs_measuring(t)]
+
+    def run(track: Track) -> tuple[Track, int | str]:
+        try:
+            return track, measured_sectors(probe(Path(track.path)).duration)
+        except (RenderError, OSError, ValueError) as exc:
+            return track, str(exc)
+
+    lengths: dict[int, int] = {}
+    problems: list[str] = []
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        for done, (track, result) in enumerate(pool.map(run, todo), start=1):
+            if isinstance(result, str):
+                problems.append(f"{track.path}: {result}")
+            else:
+                lengths[track.id] = result
+            if progress:
+                progress(done, len(todo))
+    return lengths, problems
+
+
 def measure_tracks(
     lib: Library,
     track_ids: Iterable[int],
@@ -23,25 +57,9 @@ def measure_tracks(
     Tracks whose file is missing are left on their conservative estimate.
     Returns messages for files that couldn't be read.
     """
-    todo = [
-        t
-        for t in lib.tracks_by_ids(dict.fromkeys(track_ids))
-        if t.cd_sectors is None and not t.missing
-    ]
-
-    def run(track: Track) -> tuple[Track, int | str]:
-        try:
-            return track, measured_sectors(probe(Path(track.path)).duration)
-        except (RenderError, OSError, ValueError) as exc:
-            return track, str(exc)
-
-    problems: list[str] = []
-    with ThreadPoolExecutor(max_workers=workers) as pool:
-        for done, (track, result) in enumerate(pool.map(run, todo), start=1):
-            if isinstance(result, str):
-                problems.append(f"{track.path}: {result}")
-            else:
-                lib.set_cd_sectors(track.id, result)
-            if progress:
-                progress(done, len(todo))
+    lengths, problems = probe_lengths(
+        lib.tracks_by_ids(dict.fromkeys(track_ids)), progress, workers
+    )
+    for track_id, sectors in lengths.items():
+        lib.set_cd_sectors(track_id, sectors)
     return problems

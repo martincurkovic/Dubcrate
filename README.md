@@ -29,7 +29,7 @@ audio CD with CD-TEXT through an attached USB burner.
 
 ## Stack
 
-Python 3.13, [uv](https://docs.astral.sh/uv/), PySide6 (planned), ffmpeg for
+Python 3.13, [uv](https://docs.astral.sh/uv/), PySide6, ffmpeg for
 decoding and resampling, Nuitka for packaging. macOS first.
 
 | Concern | Choice |
@@ -49,6 +49,24 @@ uv run ruff check . && uv run ruff format .
 
 Requires `ffmpeg` and `ffprobe` on `PATH` (`brew install ffmpeg`). The `cdrdao`
 backend also needs `brew install cdrdao`.
+
+### Running the app
+
+```sh
+uv run dubcrate-gui                        # the app
+uv run dubcrate-gui --library ~/try.db     # a separate library, handy for trying things out
+uv run python -m dubcrate.ui               # the same, without the installed script
+```
+
+Three panes: your sources (imported folders and rekordbox libraries, with their
+playlists) on the left, the tracks in the middle, and the disc you are planning on
+the right. Drag tracks onto the disc (or double-click, or **Add to Disc**), drag rows
+on the disc to reorder, and watch the bar: it shows each track and goes red past the
+end of the disc. **Fit All to Disc** fills a disc in order; **Disc ▸ Split Shown
+Tracks Across Discs** cuts a playlist into as many discs as it takes. **File ▸ Import**
+reads a folder or your rekordbox library (read-only). The look follows your system
+(View ▸ Theme also has Light, Dark and Macintosh System 6, shared with the author's
+other apps). Burning is not in the window yet: use `dubcrate burn` below.
 
 ### Library
 
