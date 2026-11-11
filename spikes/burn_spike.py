@@ -19,7 +19,12 @@ from pathlib import Path
 
 from dubcrate.burn import BurnError, BurnOptions, Disc, DiscTrack
 from dubcrate.burn import cdrdao as cdrdao_backend
-from dubcrate.cd import DISC_74_SECTORS, DISC_80_SECTORS, format_msf
+from dubcrate.cd import (
+    DISC_74_SECTORS,
+    DISC_80_SECTORS,
+    SECTORS_PER_SECOND,
+    format_msf,
+)
 from dubcrate.render import RenderError, probe, render_track
 
 TONES = [
@@ -91,9 +96,15 @@ def prepare(files: list[str], work: Path, title: str, performer: str) -> Disc:
     return disc
 
 
-def print_plan(disc: Disc) -> None:
-    total = disc.total_sectors
-    print(f"total {format_msf(total)}  ({total} sectors)")
+def pregap_sectors(args: argparse.Namespace) -> int:
+    return round(args.pregap * SECTORS_PER_SECOND)
+
+
+def print_plan(disc: Disc, pregap: int = 0) -> None:
+    total = disc.used_sectors(pregap)
+    print(
+        f"total {format_msf(total)}  ({total} sectors, pregap {pregap} between tracks)"
+    )
     for label, cap in (("74 min", DISC_74_SECTORS), ("80 min", DISC_80_SECTORS)):
         verdict = "fits" if total <= cap else "TOO LONG"
         print(f"  {label}: {verdict} ({format_msf(max(cap - total, 0))} free)")
@@ -101,20 +112,21 @@ def print_plan(disc: Disc) -> None:
 
 def cmd_plan(args: argparse.Namespace) -> int:
     disc = prepare(args.files, Path(args.work), args.title, args.performer)
-    print_plan(disc)
+    print_plan(disc, pregap_sectors(args))
     return 0
 
 
 def cmd_toc(args: argparse.Namespace) -> int:
     disc = prepare(args.files, Path(args.work), args.title, args.performer)
-    print(cdrdao_backend.build_toc(disc))
+    print(cdrdao_backend.build_toc(disc, pregap_sectors(args)))
     return 0
 
 
 def cmd_burn(args: argparse.Namespace) -> int:
     disc = prepare(args.files, Path(args.work), args.title, args.performer)
-    print_plan(disc)
-    if not disc.fits(DISC_80_SECTORS):
+    pregap = pregap_sectors(args)
+    print_plan(disc, pregap)
+    if not disc.fits(DISC_80_SECTORS, pregap):
         print("refusing: disc does not fit on an 80 min CD-R", file=sys.stderr)
         return 2
     if args.backend == "discrecording":
@@ -123,7 +135,12 @@ def cmd_burn(args: argparse.Namespace) -> int:
         burner = DiscRecordingBurner()
     else:
         burner = cdrdao_backend.CdrdaoBurner()
-    options = BurnOptions(speed=args.speed, simulate=args.simulate, device=args.device)
+    options = BurnOptions(
+        speed=args.speed,
+        simulate=args.simulate,
+        pregap_sectors=pregap,
+        device=args.device,
+    )
     mode = "SIMULATED " if args.simulate else ""
     if not args.yes:
         print(
@@ -163,6 +180,12 @@ def main() -> int:
         p.add_argument("--work", required=True, help="directory for rendered WAVs")
         p.add_argument("--title", default="Dubcrate Test")
         p.add_argument("--performer", default="Dubcrate")
+        p.add_argument(
+            "--pregap",
+            type=float,
+            default=0.0,
+            help="seconds of silence before tracks 2+ (default 0 = gapless)",
+        )
         p.set_defaults(fn=fn)
         if name == "burn":
             p.add_argument(

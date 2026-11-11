@@ -65,7 +65,11 @@ uv run spikes/burn_spike.py burn work/tones/* --work work/render \
 uv run spikes/burn_spike.py burn ... --backend discrecording --yes
 ```
 
-Use a blank CD-R (not a CD-RW) and a low speed. A failed burn wastes the disc.
+Use a blank CD-R (not a CD-RW) and a low speed (10x is this drive's slowest). A
+failed burn wastes the disc.
+
+Discs are gapless by default. `--pregap SECONDS` adds silence before tracks 2 and
+up; without our override DiscRecording would insert 2 s between every track.
 
 ## License
 

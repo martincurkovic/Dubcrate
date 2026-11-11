@@ -24,6 +24,9 @@ the repo; follow whatever it reports.
 - `src/dubcrate/burn/cdrdao.py`: cdrdao backend, TOC generation.
 - `spikes/`: throwaway hardware drivers. Reusable logic belongs in the package.
 - `tests/`: pytest. Tests must not need a drive or a disc.
+- `assets/icon/`: `AppIcon.png` is the 1024x1024 master; `AppIcon.txt` holds the
+  icon.kitchen link it came from. Platform icons (.icns, .ico) get derived from
+  the master at build time.
 
 ## Hard rules
 
@@ -39,6 +42,9 @@ the repo; follow whatever it reports.
   through a read-only interface. Dubcrate stores its own data in its own SQLite DB.
 - Burners are backends behind the `Burner` protocol. Don't leak backend details
   (DiscRecording types, cdrdao flags) into callers.
+- Tracks are gapless by default (`BurnOptions.pregap_sectors = 0`). DiscRecording
+  would otherwise insert 2 s of silence before every track. Capacity checks must
+  count any pregap via `Disc.used_sectors`.
 - Every track must be a whole number of sectors (588 samples) before it reaches a
   burner. `render_track` guarantees this; keep it that way.
 - CD-TEXT is required, not optional. Text goes through `cdtext_clean` first.

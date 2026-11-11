@@ -32,8 +32,16 @@ class Disc:
     def total_sectors(self) -> int:
         return sum(t.sectors for t in self.tracks)
 
-    def fits(self, capacity: int = DISC_80_SECTORS) -> bool:
-        return self.total_sectors <= capacity
+    def used_sectors(self, pregap_sectors: int = 0) -> int:
+        """Sectors the disc consumes, counting silence before tracks 2 and up.
+
+        Track 1's pregap is the mandatory lead-in, which isn't part of capacity.
+        """
+        gaps = max(len(self.tracks) - 1, 0) * pregap_sectors
+        return self.total_sectors + gaps
+
+    def fits(self, capacity: int = DISC_80_SECTORS, pregap_sectors: int = 0) -> bool:
+        return self.used_sectors(pregap_sectors) <= capacity
 
 
 @dataclass(frozen=True)
@@ -42,6 +50,9 @@ class BurnOptions:
     simulate: bool = False  # laser-off test write, if the drive supports it
     eject: bool = True
     verify: bool = False
+    # Silence inserted before tracks 2 and up, in sectors (75 = 1 s). 0 is
+    # gapless; the Red Book default of 150 is the 2 s gap you'd get otherwise.
+    pregap_sectors: int = 0
     device: str | None = None  # backend-specific device name; None = first drive
 
 

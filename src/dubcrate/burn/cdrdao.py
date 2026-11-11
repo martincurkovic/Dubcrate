@@ -11,15 +11,19 @@ import tempfile
 from pathlib import Path
 
 from dubcrate.burn.base import BurnError, BurnOptions, Disc, Progress
-from dubcrate.cd import cdtext_clean, cdtext_toc_escape
+from dubcrate.cd import cdtext_clean, cdtext_toc_escape, format_msf
 
 
 def find_cdrdao() -> str | None:
     return shutil.which("cdrdao")
 
 
-def build_toc(disc: Disc) -> str:
-    """Render `disc` as a cdrdao TOC with CD-TEXT for the disc and each track."""
+def build_toc(disc: Disc, pregap_sectors: int = 0) -> str:
+    """Render `disc` as a cdrdao TOC with CD-TEXT for the disc and each track.
+
+    cdrdao is gapless unless told otherwise, so a PREGAP is only emitted for
+    tracks 2 and up when `pregap_sectors` is non-zero.
+    """
 
     def text_block(title: str, performer: str) -> list[str]:
         return [
@@ -32,10 +36,12 @@ def build_toc(disc: Disc) -> str:
     lines = ["CD_DA", "CD_TEXT {", "  LANGUAGE_MAP { 0 : EN }"]
     lines += text_block(disc.title, disc.performer)
     lines.append("}")
-    for track in disc.tracks:
+    for index, track in enumerate(disc.tracks):
         lines += ["", "TRACK AUDIO", "NO COPY", "NO PRE_EMPHASIS", "CD_TEXT {"]
         lines += text_block(track.title, track.performer)
         lines.append("}")
+        if index > 0 and pregap_sectors:
+            lines.append(f"PREGAP {format_msf(pregap_sectors)}")
         lines.append(f'FILE "{cdtext_toc_escape(str(track.wav.resolve()))}" 0')
     return "\n".join(lines) + "\n"
 
@@ -71,7 +77,7 @@ class CdrdaoBurner:
             device = found[0][0]
         with tempfile.TemporaryDirectory(prefix="dubcrate-") as tmp:
             toc = Path(tmp) / "disc.toc"
-            toc.write_text(build_toc(disc), encoding="ascii")
+            toc.write_text(build_toc(disc, options.pregap_sectors), encoding="ascii")
             cmd = [exe, "write", "--device", device, "-n"]
             if options.speed:
                 cmd += ["--speed", str(options.speed)]

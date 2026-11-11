@@ -72,12 +72,24 @@ def build_cdtext(disc: Disc):
     return block
 
 
-def build_tracks(disc: Disc) -> list:
+def build_tracks(disc: Disc, pregap_sectors: int = 0) -> list:
+    """Create a DRTrack per disc track, with `pregap_sectors` before tracks 2+.
+
+    DiscRecording defaults to 2 s of silence before every track. Track 1 keeps
+    its mandatory lead-in, so we only override the rest. The pregap is marked
+    required so the burn fails, rather than silently falling back to 2 s, if
+    the drive can't honour it.
+    """
     tracks = []
-    for t in disc.tracks:
+    for index, t in enumerate(disc.tracks):
         track = DR.DRTrack.trackForAudioFile_(str(t.wav.resolve()))
         if track is None:
             raise BurnError(f"DiscRecording could not open {t.wav}")
+        if index > 0:
+            props = dict(track.properties())
+            props[DR.DRPreGapLengthKey] = pregap_sectors
+            props[DR.DRPreGapIsRequiredKey] = True
+            track.setProperties_(props)
         tracks.append(track)
     return tracks
 
@@ -122,7 +134,7 @@ class DiscRecordingBurner:
         if options.eject:
             props[DR.DRBurnCompletionActionKey] = DR.DRBurnCompletionActionEject
         burn.setProperties_(props)
-        burn.writeLayout_(build_tracks(disc))
+        burn.writeLayout_(build_tracks(disc, options.pregap_sectors))
 
         last = None
         while True:
