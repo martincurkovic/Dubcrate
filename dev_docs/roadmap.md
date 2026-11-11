@@ -4,6 +4,8 @@
 
 1. **Burn from the window.** A confirmation step ("is a blank CD-R loaded?"), a
    progress log, drive and speed choice, and running DiscRecording off the GUI thread.
+   Show what the inserted disc holds (`Burner.media_info`, `build.media_problems`) and
+   check against it, as the CLI already does.
    This needs a hardware check (see [burning.md](burning.md)). The burn path
    in `build.py` and the backends already exist; only the dialog is missing.
 2. **A record of what was burned.** *Store side done* (`record_burn`, `burns`,
@@ -37,6 +39,9 @@
 - Double-click previews a track; Return (or the button, or dragging) adds it to a disc.
 - Music/iTunes is skipped for now. The theme is shared with the owner's other apps.
 - Licensed GPL-3.0-or-later. No tag library: `ffprobe` reads tags.
+- Disc size and the gap between tracks are *Settings > Discs* defaults for **new**
+  discs (80 min, gapless), not controls on the panel. What counts at burn time is the
+  disc in the drive (`Burner.media_info`); the planned size is only a guide.
 - A planned disc stays editable after a burn. Each burn saves its own frozen snapshot
   (`burn` / `burn_track`, copies of title, artist, length and path), so editing or
   deleting the disc, or removing its source, never changes the record. *Duplicate*

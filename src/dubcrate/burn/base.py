@@ -52,6 +52,15 @@ class BurnOptions:
     device: str | None = None  # backend-specific device name; None = first drive
 
 
+@dataclass(frozen=True)
+class MediaInfo:
+    """What a burner can tell about the disc in the drive. None means unknown."""
+
+    present: bool | None = None
+    blank: bool | None = None
+    free_sectors: int | None = None  # room for audio on a blank disc
+
+
 Progress = Callable[[str], None]
 
 
@@ -59,3 +68,5 @@ class Burner(Protocol):
     name: str
 
     def burn(self, disc: Disc, options: BurnOptions, progress: Progress) -> None: ...
+
+    def media_info(self, device: str | None) -> MediaInfo: ...

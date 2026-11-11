@@ -53,6 +53,7 @@ class SettingsDialog(QDialog):
 
         tabs = QTabWidget()
         tabs.addTab(self._audio_tab(), "Audio")
+        tabs.addTab(self._discs_tab(), "Discs")
         tabs.addTab(self._appearance_tab(), "Appearance")
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
         buttons.rejected.connect(self.reject)
@@ -142,6 +143,50 @@ class SettingsDialog(QDialog):
     def done(self, result: int) -> None:
         self._stop_tone()
         super().done(result)
+
+    # -- discs ------------------------------------------------------------
+
+    def _discs_tab(self) -> QWidget:
+        page = QWidget()
+        form = QFormLayout(page)
+        note = QLabel(
+            "How new discs are planned. Existing discs keep the size and gaps they were"
+            " made with. When you burn, the disc in the drive is what counts."
+        )
+        note.setWordWrap(True)
+        form.addRow(note)
+
+        self.minutes_combo = QComboBox()
+        for minutes in settings.DISC_MINUTES:
+            self.minutes_combo.addItem(f"{minutes} minutes", minutes)
+        self.minutes_combo.setCurrentIndex(
+            max(0, self.minutes_combo.findData(settings.get_disc_minutes()))
+        )
+        self.minutes_combo.activated.connect(
+            lambda _i: settings.set_disc_minutes(self.minutes_combo.currentData())
+        )
+        form.addRow("Plan new discs for:", self.minutes_combo)
+
+        self.gap_combo = QComboBox()
+        for seconds in settings.PREGAP_SECONDS:
+            self.gap_combo.addItem(
+                "Gapless" if seconds == 0 else f"{seconds} s", seconds
+            )
+        self.gap_combo.setCurrentIndex(
+            max(0, self.gap_combo.findData(settings.get_pregap_seconds()))
+        )
+        self.gap_combo.activated.connect(
+            lambda _i: settings.set_pregap_seconds(self.gap_combo.currentData())
+        )
+        form.addRow("Between tracks:", self.gap_combo)
+
+        hint = QLabel(
+            "Gapless puts no silence between tracks, so the most music fits on a disc."
+        )
+        hint.setWordWrap(True)
+        hint.setObjectName("mutedLabel")
+        form.addRow(hint)
+        return page
 
     # -- appearance -------------------------------------------------------
 

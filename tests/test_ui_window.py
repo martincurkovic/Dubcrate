@@ -11,7 +11,7 @@ from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QFileDialog, QInputDialog, QMessageBox
 
 from dubcrate import settings
-from dubcrate.cd import DISC_74_SECTORS
+from dubcrate.cd import DISC_74_SECTORS, DISC_80_SECTORS
 from dubcrate.library import Library, NodeRecord, TrackRecord
 from dubcrate.library.rekordbox import RekordboxError, RekordboxLibrary
 from dubcrate.ui import main_window, theme
@@ -236,19 +236,41 @@ def test_remove_button_and_delete_key_take_tracks_off_the_disc(window):
     )  # still marked: it's still on the disc
 
 
-def test_size_and_gap_change_the_discs_capacity(window):
+def test_new_discs_are_80_minutes_and_gapless_by_default(window):
     win, lib = window
-    panel = win.disc_panel
-    panel.add_tracks([t.id for t in lib.tracks()][:2])
-    disc_id = panel.current_disc_id()
-    panel.size_combo.setCurrentIndex(1)
-    panel._on_size_chosen(1)
-    assert lib.disc(disc_id).capacity_sectors == DISC_74_SECTORS
-    assert "of 74:00" in panel.summary.label.text()
-    panel.gap_combo.setCurrentIndex(2)
-    panel._on_gap_chosen(2)
-    assert lib.disc(disc_id).pregap_sectors == 150
-    assert lib.disc(disc_id).used_sectors == 2 * 5000 + 150
+    win.disc_panel.add_tracks([t.id for t in lib.tracks()][:2])
+    disc = lib.disc(win.disc_panel.current_disc_id())
+    assert (disc.capacity_sectors, disc.pregap_sectors) == (DISC_80_SECTORS, 0)
+    assert "of 80:00" in win.disc_panel.summary.label.text()
+
+
+def test_new_discs_follow_the_size_and_gap_chosen_in_settings(window):
+    win, lib = window
+    settings.set_disc_minutes(74)
+    settings.set_pregap_seconds(2)
+    ids = [t.id for t in lib.tracks()]
+    win.disc_panel.add_tracks(ids[:2])
+    disc = lib.disc(win.disc_panel.current_disc_id())
+    assert (disc.capacity_sectors, disc.pregap_sectors) == (DISC_74_SECTORS, 150)
+    assert disc.used_sectors == 2 * 5000 + 150
+    assert "of 74:00" in win.disc_panel.summary.label.text()
+
+
+def test_existing_discs_keep_their_own_size_when_settings_change(window):
+    win, lib = window
+    win.disc_panel.add_tracks([t.id for t in lib.tracks()][:1])
+    disc_id = win.disc_panel.current_disc_id()
+    settings.set_disc_minutes(74)
+    settings.set_pregap_seconds(3)
+    win.disc_panel.reload()
+    assert lib.disc(disc_id).capacity_sectors == DISC_80_SECTORS
+    assert lib.disc(disc_id).pregap_sectors == 0
+
+
+def test_the_disc_panel_no_longer_has_size_or_gap_controls(window):
+    win, _lib = window
+    assert not hasattr(win.disc_panel, "size_combo")
+    assert not hasattr(win.disc_panel, "gap_combo")
 
 
 def test_new_rename_and_delete_a_disc(window, monkeypatch):
@@ -735,3 +757,30 @@ def test_adding_tracks_while_looking_at_burned_discs_returns_to_planned(
     monkeypatch.setattr(QMessageBox, "question", staticmethod(lambda *a, **k: YES))
     win.disc_panel.add_tracks(ids[3:4])
     assert win.disc_panel.tabs.currentIndex() == 0
+
+
+# -- the capacity bar ---------------------------------------------------------
+
+
+def test_the_capacity_bar_has_no_seam_between_neighbouring_tracks(qapp):
+    from PySide6.QtGui import QColor
+
+    from dubcrate.ui.capacity_bar import CapacityBar, Span
+
+    bar = CapacityBar()
+    bar.resize(401, bar.HEIGHT)
+    bar.set_spans(
+        [Span(1000, "track", 0), Span(1000, "track", 1), Span(1000, "track", 2)],
+        capacity=9000,
+    )
+    bar.show()
+    image = bar.grab().toImage()
+    y = image.height() // 2
+    track_colours = {
+        theme.current_palette()["bg_disabled"],  # the empty part of the bar
+    }
+    row = [QColor(image.pixelColor(x, y)).name() for x in range(image.width())]
+    inside = row[2 : round(image.width() * 3 / 9) - 2]  # between the bar's own ends
+    # Each pixel is a track colour, never a divider: at most 3 distinct colours.
+    assert len(set(inside) - track_colours) == 3, set(inside)
+    bar.close()

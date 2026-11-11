@@ -5,7 +5,13 @@ import sys
 import tempfile
 from pathlib import Path
 
-from dubcrate.build import BuildError, build_burn_disc, disc_problems
+from dubcrate.build import (
+    BuildError,
+    build_burn_disc,
+    disc_problems,
+    media_notes,
+    media_problems,
+)
 from dubcrate.burn import BurnError, BurnOptions, get_burner
 from dubcrate.cd import (
     DISC_74_SECTORS,
@@ -191,9 +197,18 @@ def cmd_burn(lib: Library, args: argparse.Namespace) -> int:
     burner = get_burner(args.backend)
     options = BurnOptions(speed=args.speed, simulate=args.simulate, device=args.device)
     try:
+        media = burner.media_info(args.device)
+        for note in media_notes(media):
+            print(note)
+        problems = media_problems(lib.disc(args.disc).used_sectors, media)
+        if problems:
+            raise BurnError("; ".join(problems))
         with tempfile.TemporaryDirectory(prefix="dubcrate-burn-") as tmp:
             work = Path(args.work).expanduser() if args.work else Path(tmp)
             burn_disc, pregap = build_burn_disc(lib, args.disc, work, progress=print)
+            problems = media_problems(burn_disc.used_sectors(pregap), media)
+            if problems:  # the rendered lengths are the exact ones
+                raise BurnError("; ".join(problems))
             options = BurnOptions(
                 speed=options.speed,
                 simulate=options.simulate,

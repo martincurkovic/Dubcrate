@@ -109,6 +109,20 @@ class CapacityBar(QWidget):
             x += w
         return rects
 
+    def _snapped(self, rects: list[QRectF]) -> list[QRectF]:
+        """The rects with their edges on whole device pixels, so neighbours meet
+        exactly and no anti-aliased seam shows between them."""
+        dpr = self.devicePixelRatioF()
+
+        def snap(x: float) -> float:
+            return round(x * dpr) / dpr
+
+        out = []
+        for r in rects:
+            left, right = snap(r.left()), snap(r.right())
+            out.append(QRectF(left, r.top(), max(0.0, right - left), r.height()))
+        return out
+
     def over_x(self) -> float | None:
         """The x where the disc would have ended, if what's on it is too long."""
         total = sum(s.weight for s in self._spans)
@@ -133,7 +147,7 @@ class CapacityBar(QWidget):
 
         painter.save()
         painter.setClipPath(path)  # only the bar's true ends are rounded
-        rects = self.span_rects()
+        rects = self._snapped(self.span_rects())
         for span, rect in zip(self._spans, rects, strict=True):
             if span.kind == "track":
                 fill_track(painter, rect, span.position)
@@ -142,15 +156,15 @@ class CapacityBar(QWidget):
                     rect,
                     QBrush(QColor(palette["border_hover"]), Qt.BrushStyle.BDiagPattern),
                 )
-        painter.setPen(
-            QPen(QColor(palette["bg_panel"]), 1)
-        )  # a hairline between neighbours
-        for span, rect in zip(self._spans, rects, strict=True):
-            if span.kind == "track" and rect.right() < track.right() - 0.5:
-                painter.drawLine(
-                    QPointF(rect.right(), track.top()),
-                    QPointF(rect.right(), track.bottom()),
-                )
+        if palette.get("hard_edges"):
+            # Neighbouring greys need a line between them; colours don't.
+            painter.setPen(QPen(QColor(palette["bg_panel"]), 1))
+            for span, rect in zip(self._spans, rects, strict=True):
+                if span.kind == "track" and rect.right() < track.right() - 0.5:
+                    painter.drawLine(
+                        QPointF(rect.right(), track.top()),
+                        QPointF(rect.right(), track.bottom()),
+                    )
         edge = self.over_x()
         if edge is not None:  # what lies past the end of the disc
             critical = QColor(palette["critical"])

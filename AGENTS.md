@@ -41,7 +41,7 @@ the repo; follow whatever it reports.
   - `player_strip.py` (transport, title/time/key/BPM, volume), `waveform_view.py` (`OverviewView` with phrase bar and cues, `DetailView` scrolling past a fixed playhead with the beat grid), `preview.py` (`PreviewController`: loads a track on a worker, ignores stale loads, owns the player), `settings_dialog.py` (audio device, buffer size, test tone, theme), `track_table.py` (Return adds, Space plays; the Preview column delegate), `wave_style.py`.
   - `overlaps.py` (the "already used" notice), `help/manual.md` (the user guide, checked by `tests/test_help.py`; keep it true when the UI changes).
   - `main_window.py` (sources tree, track table, disc panel), `disc_panel.py`, `capacity_bar.py` (adapted from akaiutil-GUI's usage bar), `models.py` (track/disc/source-tree models), `tasks.py` (`run_async`).
-  - `src/dubcrate/settings.py`: QSettings (theme, window layout, last disc).
+  - `src/dubcrate/settings.py`: QSettings (theme, window layout, last disc, default disc size and gap).
 - `spikes/`: throwaway hardware drivers. Reusable logic belongs in the package.
 - `tests/`: pytest. Tests must not need a drive or a disc.
 - `assets/icon/`: `AppIcon.png` is the 1024x1024 master; `AppIcon.txt` holds the

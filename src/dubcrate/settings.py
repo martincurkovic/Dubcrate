@@ -48,6 +48,36 @@ def set_last_disc(disc_id: int | None) -> None:
         _qs().setValue("last_disc", int(disc_id))
 
 
+DISC_MINUTES = (80, 74)
+PREGAP_SECONDS = (0, 1, 2, 3)  # 0 is gapless
+
+
+def get_disc_minutes() -> int:
+    """The length new discs are planned for (80 unless changed)."""
+    try:
+        value = int(_qs().value("discs/minutes", DISC_MINUTES[0]))
+    except (TypeError, ValueError):
+        return DISC_MINUTES[0]
+    return value if value in DISC_MINUTES else DISC_MINUTES[0]
+
+
+def set_disc_minutes(minutes: int) -> None:
+    _qs().setValue("discs/minutes", int(minutes))
+
+
+def get_pregap_seconds() -> int:
+    """Silence between tracks on new discs; gapless (0) unless changed."""
+    try:
+        value = int(_qs().value("discs/pregap_seconds", 0))
+    except (TypeError, ValueError):
+        return 0
+    return value if value in PREGAP_SECONDS else 0
+
+
+def set_pregap_seconds(seconds: int) -> None:
+    _qs().setValue("discs/pregap_seconds", int(seconds))
+
+
 def get_audio_device() -> str | None:
     """The saved output device id (hex), or None for the system default."""
     return _qs().value("audio/device", None) or None

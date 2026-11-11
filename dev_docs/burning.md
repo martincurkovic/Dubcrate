@@ -72,6 +72,15 @@ Use a blank CD-R (not a CD-RW) and a low speed.
 - **[not tried]** A non-zero gap. The unit of `DRPreGapLengthKey` isn't documented;
   we treat it as sectors (its 2-second default is 150). Only 0 has been used, and
   the window offers 1, 2 and 3 s, so check the unit before relying on those.
+- **[not tried]** Reading the inserted disc's capacity. `DiscRecordingBurner.media_info`
+  takes `DRDeviceMediaBlocksFreeKey` (already printed by `doctor` as
+  `media_free_blocks`) as the room for audio, and `burn` refuses a disc that needs
+  more. Unknown whether that figure is in the same sectors as our track lengths, or
+  includes the 150-sector lead-in gap, on a blank CD-R. Next time the drive is
+  attached, run `doctor` with an 80 and a 74 minute disc and compare (expect about
+  359,850 and 333,000). The checks are deliberately cautious: unknown or 0 free blocks
+  is never a reason to refuse, a disc that "isn't blank" only prints a note, and the
+  `cdrdao` backend reports everything unknown.
 - **[tests]** CD-TEXT cleaning (Latin-1 kept, others folded or `?`), TOC escaping,
   sector maths, and the packing algorithms.
 

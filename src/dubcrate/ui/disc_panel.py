@@ -24,8 +24,6 @@ from PySide6.QtWidgets import (
 
 from dubcrate import settings
 from dubcrate.cd import (
-    DISC_74_SECTORS,
-    DISC_80_SECTORS,
     SECTORS_PER_SECOND,
     format_clock,
 )
@@ -38,9 +36,6 @@ from .capacity_bar import CapacitySummary
 from .models import BurnModel, DiscModel
 from .overlaps import overlap_message
 from .tasks import run_async
-
-SIZES = ((80, DISC_80_SECTORS), (74, DISC_74_SECTORS))
-GAPS = ((0, "Gapless"), (1, "1 s"), (2, "2 s"), (3, "3 s"))
 
 
 class DiscTable(QTableView):
@@ -122,24 +117,6 @@ class DiscPanel(QWidget):
         picker.addWidget(self.new_button)
         picker.addWidget(self.menu_button)
 
-        self.size_combo = QComboBox()
-        for minutes, sectors in SIZES:
-            self.size_combo.addItem(f"{minutes} min", sectors)
-        self.size_combo.activated.connect(self._on_size_chosen)
-        self.gap_combo = QComboBox()
-        for seconds, label in GAPS:
-            self.gap_combo.addItem(label, seconds * SECTORS_PER_SECOND)
-        self.gap_combo.activated.connect(self._on_gap_chosen)
-        self.settings_row = QWidget()
-        row = QHBoxLayout(self.settings_row)
-        row.setContentsMargins(0, 0, 0, 0)
-        row.addWidget(QLabel("Size"))
-        row.addWidget(self.size_combo)
-        row.addSpacing(10)
-        row.addWidget(QLabel("Between tracks"))
-        row.addWidget(self.gap_combo)
-        row.addStretch(1)
-
         self.model = DiscModel(self)
         self.model.tracks_dropped.connect(
             lambda ids, row: self.add_tracks(ids, position=row)
@@ -170,7 +147,6 @@ class DiscPanel(QWidget):
         full_layout = QVBoxLayout(full)
         full_layout.setContentsMargins(0, 0, 0, 0)
         full_layout.setSpacing(8)
-        full_layout.addWidget(self.settings_row)
         full_layout.addWidget(self.table, 1)
         full_layout.addLayout(buttons)
         full_layout.addWidget(self.summary)
@@ -327,13 +303,6 @@ class DiscPanel(QWidget):
                 self.combo.currentIndex(),
                 self._label(summary.name, summary.track_count),
             )
-            for combo, value in (
-                (self.size_combo, summary.capacity_sectors),
-                (self.gap_combo, summary.pregap_sectors),
-            ):
-                combo.blockSignals(True)
-                combo.setCurrentIndex(max(0, combo.findData(value)))
-                combo.blockSignals(False)
             settings.set_last_disc(disc_id)
         else:
             self.model.set_entries([])
@@ -432,11 +401,11 @@ class DiscPanel(QWidget):
         return disc_id
 
     def _create(self, name: str) -> int:
-        """A new disc with the size and gap currently chosen in the panel."""
+        """A new disc with the size and gap chosen in Settings."""
         return self._lib.create_disc(
             name,
-            capacity_sectors=self.size_combo.currentData(),
-            pregap_sectors=self.gap_combo.currentData(),
+            capacity_sectors=settings.get_disc_minutes() * 60 * SECTORS_PER_SECOND,
+            pregap_sectors=settings.get_pregap_seconds() * SECTORS_PER_SECOND,
         )
 
     def rename_disc(self) -> None:
@@ -464,20 +433,6 @@ class DiscPanel(QWidget):
 
     def _on_disc_chosen(self, _index: int) -> None:
         self._show_disc()
-
-    def _on_size_chosen(self, _index: int) -> None:
-        disc_id = self.current_disc_id()
-        if disc_id is not None:
-            self._lib.update_disc(
-                disc_id, capacity_sectors=self.size_combo.currentData()
-            )
-            self._show_disc()
-
-    def _on_gap_chosen(self, _index: int) -> None:
-        disc_id = self.current_disc_id()
-        if disc_id is not None:
-            self._lib.update_disc(disc_id, pregap_sectors=self.gap_combo.currentData())
-            self._show_disc()
 
     # -- tracks on the disc -----------------------------------------------
 
@@ -598,8 +553,8 @@ class DiscPanel(QWidget):
             result = self._lib.split_into_discs(
                 track_ids,
                 name,
-                capacity_sectors=self.size_combo.currentData(),
-                pregap_sectors=self.gap_combo.currentData(),
+                capacity_sectors=settings.get_disc_minutes() * 60 * SECTORS_PER_SECOND,
+                pregap_sectors=settings.get_pregap_seconds() * SECTORS_PER_SECOND,
             )
             self.tabs.setCurrentIndex(0)
             self.reload(select_id=result.disc_ids[0] if result.disc_ids else None)

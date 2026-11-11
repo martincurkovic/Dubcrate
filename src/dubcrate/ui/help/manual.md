@@ -110,8 +110,9 @@ The **Planned** view on the right shows the disc you are working on. Use the lis
 
 **Size and gaps**
 
-- **Size** is 80 or 74 minutes. Use 74 if your blank discs are 74-minute ones.
-- **Between tracks** is **Gapless** by default: there is no silence between songs. You can choose a pause instead.
+New discs are planned for **80 minutes** and are **gapless**: no silence between songs, so the most music fits. Change either under **File > Settings… > Discs** (see [Settings](#settings)). The new choice applies to discs you create from then on; a disc keeps the size and gaps it was made with.
+
+The disc size you plan for is only a guide. When you burn, **the disc in the drive is what counts**: see [Burning a disc](#burning-a-disc).
 
 **The capacity bar**
 
@@ -165,6 +166,7 @@ dubcrate burn 1 --yes                # really burns
 ```
 
 - The dry run lists anything that stops the disc being burned.
+- Before burning for real, Dubcrate asks the drive about the disc inside. It says how much the disc holds, and **refuses to start if the music won't fit** (for example, a 74-minute disc with 78 minutes planned). It also stops if the drive says there is no disc. If the drive can't tell, Dubcrate goes by the size the disc was planned for.
 - **`--speed`** sets the burn speed. The default is 10x. **Burn slowly:** old players read discs burned at a low speed more reliably.
 - Every track is converted to CD quality (16-bit, 44.1 kHz stereo) and the disc gets **CD-TEXT** titles, so the artist and title show on the player.
 - After a successful real burn, Dubcrate saves the record shown under **Burned**.
@@ -175,8 +177,9 @@ The full list of command-line options is in the project's developer notes.
 
 ## Settings
 
-**File > Settings…** (⌘,) has two tabs:
+**File > Settings…** (⌘,) has three tabs:
 
+- **Discs:** how **new** discs are planned: **Plan new discs for** 80 or 74 minutes, and **Between tracks**, which is **Gapless** unless you choose 1, 2 or 3 seconds of silence.
 - **Audio:** the **Output device** for previews and the **Buffer size**, with a button that plays a short test tone.
 - **Appearance:** the **Theme**, the same choice as **View > Theme**.
 

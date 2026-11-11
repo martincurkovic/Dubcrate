@@ -10,7 +10,7 @@ import subprocess
 import tempfile
 from pathlib import Path
 
-from dubcrate.burn.base import BurnError, BurnOptions, Disc, Progress
+from dubcrate.burn.base import BurnError, BurnOptions, Disc, MediaInfo, Progress
 from dubcrate.cd import cdtext_clean, cdtext_toc_escape, format_msf
 
 
@@ -62,6 +62,9 @@ def scan_devices() -> list[tuple[str, str]]:
 
 class CdrdaoBurner:
     name = "cdrdao"
+
+    def media_info(self, device: str | None) -> MediaInfo:
+        return MediaInfo()  # not read from cdrdao yet: everything unknown
 
     def burn(self, disc: Disc, options: BurnOptions, progress: Progress) -> None:
         exe = find_cdrdao()

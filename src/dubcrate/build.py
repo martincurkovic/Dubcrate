@@ -4,7 +4,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 from dubcrate.burn.base import Disc as BurnDisc
-from dubcrate.burn.base import DiscTrack
+from dubcrate.burn.base import DiscTrack, MediaInfo
 from dubcrate.cd import MAX_TRACKS, disc_used_sectors, format_msf
 from dubcrate.library.lengths import measure_tracks
 from dubcrate.library.store import Library
@@ -38,6 +38,32 @@ def disc_problems(lib: Library, disc_id: int) -> list[str]:
             f" ({format_msf(summary.used_sectors)} of {format_msf(summary.capacity_sectors)})"
         )
     return problems
+
+
+def media_problems(used_sectors: int, media: MediaInfo) -> list[str]:
+    """Reasons the disc in the drive can't take `used_sectors` of audio.
+
+    Only what the drive is sure about counts: an unknown (None) or a free
+    space of zero is not a reason to refuse, because a drive that can't say
+    isn't the same as a disc that can't hold it.
+    """
+    if media.present is False:
+        return ["no disc in the drive"]
+    free = media.free_sectors
+    if free and used_sectors > free:
+        holds, needs = format_msf(free), format_msf(used_sectors)
+        return [f"the disc in the drive holds {holds} but this disc needs {needs}"]
+    return []
+
+
+def media_notes(media: MediaInfo) -> list[str]:
+    """What to tell the user about the disc in the drive, before burning."""
+    notes = []
+    if media.blank is False:
+        notes.append("the disc in the drive doesn't look blank")
+    if media.free_sectors:
+        notes.append(f"the disc in the drive holds {format_msf(media.free_sectors)}")
+    return notes
 
 
 def _performer(artists: list[str]) -> str:

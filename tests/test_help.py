@@ -106,3 +106,18 @@ def test_the_buttons_the_guide_names_exist(window):
     assert panel.remove_button.text() == "Remove"
     for name in ("Add to Disc", "Fit All to Disc", "Duplicate", "Planned", "Burned"):
         assert name in MANUAL, name
+
+
+def test_the_settings_tabs_the_guide_names_exist(qapp):
+    from PySide6.QtWidgets import QTabWidget
+
+    from dubcrate.ui.settings_dialog import SettingsDialog
+
+    dialog = SettingsDialog()
+    tabs = dialog.findChild(QTabWidget)
+    names = [tabs.tabText(i) for i in range(tabs.count())]
+    assert names == ["Audio", "Discs", "Appearance"]
+    for name in names:
+        assert f"**{name}:**" in MANUAL, name
+    assert "Plan new discs for" in MANUAL and "Between tracks" in MANUAL
+    assert dialog.minutes_combo.currentData() == 80  # "80 minutes ... gapless"

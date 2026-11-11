@@ -67,5 +67,8 @@ Options: `--backend discrecording|cdrdao` (default `discrecording`), `--speed N`
 `--work DIR` to keep the rendered WAVs instead of using a temp folder.
 
 **A real burn uses up a disc.** Use a blank CD-R, not a CD-RW. `burn` refuses a disc
-that is over its size, empty, or has a missing or stale track. See
+that is over its size, empty, or has a missing or stale track. With `--yes` it also asks
+the drive what the inserted disc holds, prints it, and refuses if the audio won't fit
+(or there is no disc). A drive that can't say is not a reason to refuse.
+A real burn saves a burn record; `--simulate` doesn't. See
 [burning.md](burning.md) for what has and hasn't been tried on hardware.

@@ -13,7 +13,7 @@ if sys.platform != "darwin":  # pragma: no cover
 import DiscRecording as DR
 from Foundation import NSDate, NSRunLoop
 
-from dubcrate.burn.base import BurnError, BurnOptions, Disc, Progress
+from dubcrate.burn.base import BurnError, BurnOptions, Disc, MediaInfo, Progress
 from dubcrate.cd import cdtext_clean
 
 _POLL_SECONDS = 0.5
@@ -107,6 +107,17 @@ class DiscRecordingBurner:
             if wanted in (dev.bsdName(), dev.displayName()):
                 return dev
         raise BurnError(f"no drive matching {wanted!r}")
+
+    def media_info(self, device: str | None) -> MediaInfo:
+        """The disc in the drive, as DiscRecording reports it."""
+        summary = describe_device(self._pick_device(device))
+        free = summary["media_free_blocks"]
+        blank = summary["media_blank"]
+        return MediaInfo(
+            present=summary["media_present"],
+            blank=None if blank is None else bool(blank),
+            free_sectors=int(free) if free else None,
+        )
 
     def burn(self, disc: Disc, options: BurnOptions, progress: Progress) -> None:
         device = self._pick_device(options.device)

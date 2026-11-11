@@ -888,3 +888,31 @@ def test_settings_open_from_the_menu_and_wire_up_to_the_player_and_theme(
         )
     finally:
         win.set_theme("dark")
+
+
+# -- the Discs tab ------------------------------------------------------------
+
+
+def test_the_discs_tab_defaults_to_80_minutes_and_gapless(qapp, two_devices):
+    dialog = SettingsDialog()
+    assert dialog.minutes_combo.currentData() == 80
+    assert dialog.gap_combo.currentData() == 0
+    assert dialog.gap_combo.currentText() == "Gapless"
+    assert (settings.get_disc_minutes(), settings.get_pregap_seconds()) == (80, 0)
+
+
+def test_choosing_a_disc_size_and_gap_saves_them(qapp, two_devices):
+    dialog = SettingsDialog()
+    dialog.minutes_combo.setCurrentIndex(dialog.minutes_combo.findData(74))
+    dialog.minutes_combo.activated.emit(dialog.minutes_combo.currentIndex())
+    dialog.gap_combo.setCurrentIndex(dialog.gap_combo.findData(2))
+    dialog.gap_combo.activated.emit(dialog.gap_combo.currentIndex())
+    assert (settings.get_disc_minutes(), settings.get_pregap_seconds()) == (74, 2)
+    again = SettingsDialog()
+    assert (again.minutes_combo.currentData(), again.gap_combo.currentData()) == (74, 2)
+
+
+def test_nonsense_saved_disc_settings_fall_back_to_the_defaults(qapp):
+    settings._qs().setValue("discs/minutes", 63)
+    settings._qs().setValue("discs/pregap_seconds", "lots")
+    assert (settings.get_disc_minutes(), settings.get_pregap_seconds()) == (80, 0)

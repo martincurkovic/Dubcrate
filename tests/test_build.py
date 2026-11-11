@@ -5,8 +5,14 @@ import wave
 import pytest
 
 from dubcrate import cli
-from dubcrate.build import BuildError, build_burn_disc, disc_problems
-from dubcrate.burn import BurnError
+from dubcrate.build import (
+    BuildError,
+    build_burn_disc,
+    disc_problems,
+    media_notes,
+    media_problems,
+)
+from dubcrate.burn import BurnError, MediaInfo
 from dubcrate.cd import SAMPLES_PER_SECTOR
 from dubcrate.library import Library
 from dubcrate.library.folder import scan_folder
@@ -177,9 +183,13 @@ def test_cli_burn_refuses_an_overfull_disc(tmp_path, capsys):
 
 
 class FakeBurner:
-    def __init__(self, fail: bool = False):
+    def __init__(self, fail: bool = False, media: MediaInfo | None = None):
         self.fail = fail
+        self.media = media or MediaInfo()
         self.burned = []
+
+    def media_info(self, device):
+        return self.media
 
     def burn(self, disc, options, progress=None):
         if self.fail:
@@ -219,3 +229,65 @@ def test_cli_simulated_or_failed_burns_leave_no_record(tmp_path, monkeypatch):
     assert run_cli(tmp_path, "burn", "1", "--yes") == 1
     with Library.open(tmp_path / "lib.db") as lib:
         assert lib.burns() == []
+
+
+# -- the disc in the drive ----------------------------------------------------
+
+
+def test_a_disc_that_holds_enough_or_that_the_drive_cant_describe_is_fine():
+    assert media_problems(300_000, MediaInfo(present=True, free_sectors=359_849)) == []
+    assert media_problems(300_000, MediaInfo()) == []
+    # a free space of 0 means "didn't say", not "full"
+    assert media_problems(300_000, MediaInfo(present=True, free_sectors=0)) == []
+
+
+def test_a_disc_too_small_for_the_audio_is_refused_with_both_lengths():
+    [problem] = media_problems(
+        350_000, MediaInfo(present=True, blank=True, free_sectors=333_000)
+    )
+    assert "holds 74:00:00" in problem and "needs 77:46:50" in problem
+
+
+def test_no_disc_in_the_drive_is_a_problem_but_unknown_is_not():
+    assert media_problems(1, MediaInfo(present=False)) == ["no disc in the drive"]
+    assert media_problems(1, MediaInfo(present=None)) == []
+
+
+def test_notes_mention_a_disc_that_isnt_blank_and_how_much_it_holds():
+    assert media_notes(MediaInfo()) == []
+    notes = media_notes(MediaInfo(present=True, blank=False, free_sectors=333_000))
+    assert "doesn't look blank" in notes[0] and "74:00:00" in notes[1]
+
+
+def test_cli_refuses_to_burn_onto_a_disc_that_is_too_small(
+    tmp_path, monkeypatch, capsys
+):
+    _planned_cli_disc(tmp_path)
+    burner = FakeBurner(media=MediaInfo(present=True, blank=True, free_sectors=100))
+    monkeypatch.setattr("dubcrate.cli_discs.get_burner", lambda _name: burner)
+    assert run_cli(tmp_path, "burn", "1", "--yes") == 1
+    err = capsys.readouterr().err
+    assert "burn failed" in err and "the disc in the drive holds" in err
+    assert burner.burned == []
+    with Library.open(tmp_path / "lib.db") as lib:
+        assert lib.burns() == []
+
+
+def test_cli_burns_when_the_disc_is_big_enough_and_says_what_it_holds(
+    tmp_path, monkeypatch, capsys
+):
+    _planned_cli_disc(tmp_path)
+    burner = FakeBurner(media=MediaInfo(present=True, blank=True, free_sectors=359_849))
+    monkeypatch.setattr("dubcrate.cli_discs.get_burner", lambda _name: burner)
+    assert run_cli(tmp_path, "burn", "1", "--yes") == 0
+    assert "the disc in the drive holds 79:57:74" in capsys.readouterr().out
+    assert len(burner.burned) == 1
+
+
+def test_cli_stops_when_the_drive_says_there_is_no_disc(tmp_path, monkeypatch, capsys):
+    _planned_cli_disc(tmp_path)
+    burner = FakeBurner(media=MediaInfo(present=False))
+    monkeypatch.setattr("dubcrate.cli_discs.get_burner", lambda _name: burner)
+    assert run_cli(tmp_path, "burn", "1", "--yes") == 1
+    assert "no disc in the drive" in capsys.readouterr().err
+    assert burner.burned == []

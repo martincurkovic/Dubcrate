@@ -1,6 +1,21 @@
-from dubcrate.burn.base import Burner, BurnError, BurnOptions, Disc, DiscTrack
+from dubcrate.burn.base import (
+    Burner,
+    BurnError,
+    BurnOptions,
+    Disc,
+    DiscTrack,
+    MediaInfo,
+)
 
-__all__ = ["BurnError", "BurnOptions", "Burner", "Disc", "DiscTrack", "get_burner"]
+__all__ = [
+    "BurnError",
+    "BurnOptions",
+    "Burner",
+    "Disc",
+    "DiscTrack",
+    "MediaInfo",
+    "get_burner",
+]
 
 
 def get_burner(name: str) -> Burner:
