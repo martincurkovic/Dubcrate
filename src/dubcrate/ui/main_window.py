@@ -40,7 +40,7 @@ from dubcrate.library.store import LibraryError
 
 from . import theme, wave_style
 from .burn_dialog import BurnDialog, BurnerFactory
-from .disc_tree import DiscTree
+from .disc_tree import SLOT_WIDTH, DiscTree
 from .disc_view import DiscView
 from .help_dialog import show_help_dialog
 from .models import (
@@ -286,7 +286,6 @@ class MainWindow(QMainWindow):
         self.disc_tree = DiscTree()
         self.disc_tree.new_disc_requested.connect(self._on_plus_clicked)
         self.disc_tree.setHeaderHidden(True)
-        self.disc_tree.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.disc_tree.setUniformRowHeights(True)
         self.disc_tree.setSelectionMode(
             QAbstractItemView.SelectionMode.ExtendedSelection
@@ -296,6 +295,8 @@ class MainWindow(QMainWindow):
         self.disc_tree.setDropIndicatorShown(True)
         self.disc_tree.setDragDropMode(QAbstractItemView.DragDropMode.DragDrop)
         self.disc_tree.setDefaultDropAction(Qt.DropAction.MoveAction)
+        # a name is edited in place: double-click it (a new disc or folder opens like this)
+        self.disc_tree.setEditTriggers(QAbstractItemView.EditTrigger.DoubleClicked)
         self.disc_tree.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.disc_tree.customContextMenuRequested.connect(self._show_disc_tree_menu)
         self.new_disc_button = QPushButton("New Disc")
@@ -378,10 +379,10 @@ class MainWindow(QMainWindow):
 
         disc_menu = menus.addMenu("&Disc")
         disc_menu.addAction(
-            "&New Disc…", lambda: self.new_disc(), QKeySequence("Ctrl+N")
+            "&New Disc", lambda: self.new_disc(), QKeySequence("Ctrl+N")
         )
-        disc_menu.addAction("New &Folder…", lambda: self.new_disc_folder())
-        disc_menu.addAction("&Rename Disc…", lambda: self.disc_view.rename_disc())
+        disc_menu.addAction("New &Folder", lambda: self.new_disc_folder())
+        disc_menu.addAction("&Rename Disc", self._rename_open_disc)
         disc_menu.addAction("D&uplicate Disc", lambda: self.disc_view.duplicate_disc())
         disc_menu.addAction("&Delete Disc…", lambda: self.disc_view.delete_disc())
         disc_menu.addSeparator()
@@ -605,14 +606,15 @@ class MainWindow(QMainWindow):
         model = build_disc_model(self._lib, open_id)
         model.tracks_dropped.connect(self._on_tracks_dropped)
         model.items_moved.connect(self.disc_view.move_items)
+        model.renamed.connect(self._on_tree_renamed)
         self.disc_tree.setModel(model)
         header = self.disc_tree.header()
         header.setStretchLastSection(False)
         header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
         header.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
-        header.setMinimumSectionSize(
-            36
-        )  # room for a folder's + when no disc has a count
+        header.setSectionResizeMode(2, QHeaderView.ResizeMode.Fixed)  # the + button
+        header.setMinimumSectionSize(SLOT_WIDTH)
+        header.resizeSection(2, SLOT_WIDTH)
         self._restore_expanded(self.disc_tree, expanded)
         index = (
             find_selection(model, self._disc_pick) if self._disc_pick else QModelIndex()
@@ -673,12 +675,44 @@ class MainWindow(QMainWindow):
         self.new_disc(self._folder_of(pick))
 
     def new_disc(self, folder_id: int | None | object = ...) -> None:
+        """Make a disc and put its name in the tree up for editing."""
         folder = self._folder_here() if folder_id is ... else folder_id
-        self.disc_view.new_disc(folder)
+        self.edit_in_tree(("disc", self.disc_view.new_disc(folder)))
 
     def new_disc_folder(self, parent_id: int | None | object = ...) -> None:
+        """Make a folder and put its name in the tree up for editing."""
         parent = self._folder_here() if parent_id is ... else parent_id
-        self.disc_view.new_folder(parent)
+        self.edit_in_tree(("disc_folder", self.disc_view.new_folder(parent)))
+
+    def edit_in_tree(self, selection: tuple) -> None:
+        """Pick a disc or folder in the disc tree and start editing its name there."""
+        index = find_selection(self.disc_tree.model(), selection)
+        if not index.isValid():
+            return
+        parent = index.parent()
+        while parent.isValid():  # (it may be inside a folder that is closed)
+            self.disc_tree.setExpanded(parent, True)
+            parent = parent.parent()
+        self.disc_tree.setFocus()
+        self.disc_tree.setCurrentIndex(index)
+        self.disc_tree.scrollTo(index)
+        self.disc_tree.edit(index)
+
+    def _rename_open_disc(self) -> None:
+        disc_id = self.disc_view.current_disc_id()
+        if disc_id is not None:
+            self.edit_in_tree(("disc", disc_id))
+
+    def _on_tree_renamed(self, selection: tuple, name: str) -> None:
+        # Apply it once the editor has finished: rebuilding the tree inside its own
+        # setData would pull the editor out from under Qt.
+        QTimer.singleShot(0, lambda: self._rename(selection, name))
+
+    def _rename(self, selection: tuple, name: str) -> None:
+        if selection[0] == "disc":
+            self.disc_view.rename_disc(selection[1], name)
+        else:
+            self.disc_view.rename_folder(selection[1], name)
 
     def disc_tree_menu(self, index: QModelIndex) -> QMenu:
         """What a right-click offers: on a disc, on a folder, or on empty space."""
@@ -690,7 +724,7 @@ class MainWindow(QMainWindow):
         if kind == "disc":
             disc_id = selection[1]
             menu.addAction("Open", lambda: self.open_disc(disc_id))
-            menu.addAction("Rename…", lambda: self.disc_view.rename_disc(disc_id))
+            menu.addAction("Rename", lambda: self.edit_in_tree(("disc", disc_id)))
             menu.addAction("Duplicate", lambda: self.disc_view.duplicate_disc(disc_id))
             menu.addSeparator()
             menu.addAction("Burn…", lambda: self._open_and_burn(disc_id))
@@ -698,16 +732,18 @@ class MainWindow(QMainWindow):
             menu.addAction("Delete…", lambda: self.disc_view.delete_disc(disc_id))
         elif kind == "disc_folder":
             folder_id = selection[1]
-            menu.addAction("New Disc Here…", lambda: self.new_disc(folder_id))
-            menu.addAction("New Folder Here…", lambda: self.new_disc_folder(folder_id))
+            menu.addAction("New Disc Here", lambda: self.new_disc(folder_id))
+            menu.addAction("New Folder Here", lambda: self.new_disc_folder(folder_id))
             menu.addSeparator()
-            menu.addAction("Rename…", lambda: self.disc_view.rename_folder(folder_id))
+            menu.addAction(
+                "Rename", lambda: self.edit_in_tree(("disc_folder", folder_id))
+            )
             menu.addAction(
                 "Delete Folder…", lambda: self.disc_view.delete_folder(folder_id)
             )
         else:  # empty space: the top level
-            menu.addAction("New Disc…", lambda: self.new_disc(None))
-            menu.addAction("New Folder…", lambda: self.new_disc_folder(None))
+            menu.addAction("New Disc", lambda: self.new_disc(None))
+            menu.addAction("New Folder", lambda: self.new_disc_folder(None))
         return menu
 
     def _show_disc_tree_menu(self, position) -> None:

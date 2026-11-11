@@ -85,7 +85,7 @@ def test_the_shortcuts_the_guide_lists_are_the_real_ones(window):
     assert shortcuts["Import Folder…"] == "Ctrl+O"
     assert shortcuts["Import rekordbox Library…"] == "Ctrl+Shift+O"
     assert shortcuts["Re-import Selected Source"] == "Ctrl+R"
-    assert shortcuts["New Disc…"] == "Ctrl+N"
+    assert shortcuts["New Disc"] == "Ctrl+N"
     assert shortcuts["Add Selected Tracks"] == "Ctrl+D"
     assert shortcuts["Split Shown Tracks Across Discs…"] == "Ctrl+Shift+D"
     assert shortcuts["Settings…"] == "Ctrl+,"
@@ -114,6 +114,9 @@ def test_the_right_hand_pane_the_guide_describes_is_the_real_one(window):
         "**Discs** (right)",
         "Adding to",
         "no disc is ever deleted with a folder",
+        "**double-clicking** its name",
+        "The + button",
+        "ready to type over",
         "A burned disc is just a disc",
         "Duplicate",
     ):
@@ -124,7 +127,7 @@ def test_the_right_hand_pane_the_guide_describes_is_the_real_one(window):
     menu = window.disc_tree_menu(
         __import__("PySide6.QtCore", fromlist=["QModelIndex"]).QModelIndex()
     )
-    assert [a.text() for a in menu.actions()] == ["New Disc…", "New Folder…"]
+    assert [a.text() for a in menu.actions()] == ["New Disc", "New Folder"]
 
 
 def test_the_settings_tabs_the_guide_names_exist(qapp):

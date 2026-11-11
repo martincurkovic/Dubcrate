@@ -28,7 +28,7 @@ Dubcrate helps you put music from your rekordbox library (or any folder) onto au
 
 1. **Import your music.** Choose **File > Import Folder…** for a folder of music, or **File > Import rekordbox Library…** for your rekordbox library.
 2. **Find some tracks.** Pick a playlist or folder on the left, or search.
-3. **Build a disc.** Press **New Disc** on the right, then drag tracks onto it, or select them and press **Return**.
+3. **Build a disc.** Press **New Disc** on the right and type a name over the one it suggests, then drag tracks onto it, or select them and press **Return**.
 4. **Watch the bar.** It shows how full the disc is and turns red if the disc is too long.
 5. **Burn it.** Open the disc by clicking it, press **Burn…**, check the drive, tick that a blank CD-R is inside, and burn.
 
@@ -141,8 +141,9 @@ A disc is a playlist that goes on a CD. They live in the **Discs** list on the r
 
 - **Open a disc** by clicking it. Its tracks appear in the middle, ready to arrange and edit. Opening a disc also makes it the one that tracks are **added to**: its name is in bold, and under the track list it says **Adding to “…”**.
 - **Add tracks** by selecting them and pressing **Return**, **⌘D** or **Add to Disc** (they go to the open disc), or by **dragging** them from the track list onto any disc in the Discs list. Dragging onto a disc that isn't open adds to that one and leaves the open disc as it is.
-- **New Disc** and **New Folder** (under the list) make them. A new disc goes in the folder you have picked, or beside the disc you have picked.
-- **The + button** does the same in one click, as in rekordbox. Click a row and a **+** appears at its right-hand end: on a folder it makes a disc inside the folder, and on a disc it makes another disc beside it, in the same folder.
+- **New Disc** and **New Folder** (under the list) make them. The new disc or folder appears in the list at once with its name ready to type over: type a name and press **Return**, or press **Esc** to keep the suggested one. A new disc goes in the folder you have picked, or beside the disc you have picked.
+- **Rename** a disc or folder by **double-clicking** its name (or right-click > **Rename**), then type and press **Return**. An empty name is ignored.
+- **The + button** does the same in one click, as in rekordbox. Click a row and a **+** appears at its right-hand end: on a folder it makes a disc inside the folder, and on a disc it makes another disc beside it, in the same folder. The new disc's name is ready to type over.
 - **A disc that is too long** is marked with an orange **\*** before its track count. Hover over it to see how far over it is. It can still be saved, but it can't be burned until it fits.
 - **Drag a disc or folder** into a folder to file it, or onto empty space to move it to the top level. Folders can hold folders.
 - **Right-click** a disc to open, rename, duplicate, burn or delete it, or a folder to make something inside it, rename it or delete it. Deleting a folder moves what is in it up a level: **no disc is ever deleted with a folder**.
@@ -165,7 +166,7 @@ The disc you open is shown in the middle: its tracks as they will be written on 
 
 **What goes on the CD**
 
-The disc list shows only what a CD can hold: the track **#**, its **Time**, and the **Artist** and **Title** that are written to the disc as CD-TEXT and shown on a player's display. The CD's own title (the "album") is the **disc's name**: rename it from its right-click menu.
+The disc list shows only what a CD can hold: the track **#**, its **Time**, and the **Artist** and **Title** that are written to the disc as CD-TEXT and shown on a player's display. The CD's own title (the "album") is the **disc's name**: double-click it in the Discs list to rename it.
 
 You can change the artist and track name for the CD without touching anything else. **Double-click** an artist or title and type:
 

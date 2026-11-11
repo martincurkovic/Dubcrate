@@ -11,7 +11,6 @@ from PySide6.QtWidgets import (
     QAbstractItemView,
     QHBoxLayout,
     QHeaderView,
-    QInputDialog,
     QLabel,
     QMessageBox,
     QPushButton,
@@ -233,11 +232,6 @@ class DiscView(QWidget):
     def _warn(self, title: str, text: str) -> None:
         QMessageBox.warning(self, title, text)
 
-    def _ask_name(self, title: str, label: str, default: str) -> str | None:
-        name, ok = QInputDialog.getText(self, title, label, text=default)
-        name = name.strip()
-        return name if ok and name else None
-
     def _create(self, name: str, folder_id: int | None = None) -> int:
         """A new disc with the size and gap chosen in Settings."""
         return self._lib.create_disc(
@@ -247,26 +241,27 @@ class DiscView(QWidget):
             folder_id=folder_id,
         )
 
-    def new_disc(self, folder_id: int | None = None) -> int | None:
-        """Ask for a name and make a disc (in `folder_id`), and open it."""
-        name = self._ask_name("New Disc", "Name:", f"Disc {len(self._lib.discs()) + 1}")
-        if name is None:
-            return None
-        disc_id = self._create(name, folder_id)
+    def new_disc(self, folder_id: int | None = None) -> int:
+        """Make a disc (in `folder_id`) with a name that is free, and open it. The window
+        then puts its name in the tree up for editing."""
+        taken = {d.name for d in self._lib.discs()}
+        n = len(taken) + 1
+        while f"Disc {n}" in taken:
+            n += 1
+        disc_id = self._create(f"Disc {n}", folder_id)
         self.set_disc(disc_id)
         self.discs_changed.emit()
         self.opened.emit(disc_id)
         return disc_id
 
-    def rename_disc(self, disc_id: int | None = None) -> None:
-        disc_id = self._disc_id if disc_id is None else disc_id
-        if disc_id is None:
+    def rename_disc(self, disc_id: int, name: str) -> None:
+        name = name.strip()
+        if not name or name == self._lib.disc(disc_id).name:
             return
-        name = self._ask_name("Rename Disc", "Name:", self._lib.disc(disc_id).name)
-        if name:
-            self._lib.update_disc(disc_id, name=name)
-            self._show_disc() if disc_id == self._disc_id else None
-            self.discs_changed.emit()
+        self._lib.update_disc(disc_id, name=name)
+        if disc_id == self._disc_id:
+            self._show_disc()
+        self.discs_changed.emit()
 
     def delete_disc(self, disc_id: int | None = None) -> None:
         disc_id = self._disc_id if disc_id is None else disc_id
@@ -295,18 +290,20 @@ class DiscView(QWidget):
         self.message.emit(f"Made “{self._lib.disc(copy).name}”")
         return copy
 
-    def new_folder(self, parent_id: int | None = None) -> int | None:
-        name = self._ask_name("New Folder", "Name:", "New Folder")
-        if name is None:
-            return None
+    def new_folder(self, parent_id: int | None = None) -> int:
+        """Make a folder with a name that is free; the window then puts it up for editing."""
+        taken = {f.name for f in self._lib.disc_folders()}
+        name, n = "New Folder", 2
+        while name in taken:
+            name, n = f"New Folder {n}", n + 1
         folder_id = self._lib.create_disc_folder(name, parent_id)
         self.discs_changed.emit()
         return folder_id
 
-    def rename_folder(self, folder_id: int) -> None:
+    def rename_folder(self, folder_id: int, name: str) -> None:
+        name = name.strip()
         current = next(f for f in self._lib.disc_folders() if f.id == folder_id).name
-        name = self._ask_name("Rename Folder", "Name:", current)
-        if name:
+        if name and name != current:
             self._lib.rename_disc_folder(folder_id, name)
             self.discs_changed.emit()
 

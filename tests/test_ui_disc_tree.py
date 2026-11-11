@@ -297,50 +297,223 @@ def test_double_clicking_a_disc_rows_number_listens_and_the_title_edits(window):
 # -- making discs and folders -----------------------------------------------------
 
 
-def named(monkeypatch, text):
-    monkeypatch.setattr(
-        QInputDialog, "getText", staticmethod(lambda *a, **k: (text, True))
-    )
+def no_dialog(monkeypatch):
+    """Making or renaming a disc or folder must not ask in a dialog: fail if one opens."""
+
+    def fail(*_a, **_k):
+        raise AssertionError("a name dialog opened")
+
+    monkeypatch.setattr(QInputDialog, "getText", staticmethod(fail))
 
 
-def test_new_disc_makes_one_opens_it_and_selects_it_in_the_tree(window, monkeypatch):
+def editor_of(win, selection):
+    """The text editor open on a tree row, or None."""
+    index = find_selection(win.disc_tree.model(), selection)
+    return win.disc_tree.indexWidget(index)
+
+
+def type_name(win, selection, text, key=Qt.Key.Key_Return):
+    """Replace the text in the row's open editor and finish with `key`."""
+    from PySide6.QtTest import QTest
+
+    editor = editor_of(win, selection)
+    assert editor is not None, "the row is not being edited"
+    editor.selectAll()
+    QTest.keyClicks(editor, text)
+    QTest.keyClick(editor, key)
+    for _ in range(
+        100
+    ):  # Qt commits an edit on a queued call, and the rename follows it
+        if editor_of(win, selection) is None:
+            break
+        QTest.qWait(10)
+    QTest.qWait(30)
+
+
+def test_new_disc_appears_at_once_named_and_ready_to_type_over(window, monkeypatch):
     win, lib = window
-    named(monkeypatch, "Friday")
+    no_dialog(monkeypatch)
+    win.show()
     win.new_disc_button.click()
     [disc] = lib.discs()
-    assert disc.name == "Friday"
+    assert disc.name == "Disc 1"
     assert win.center.currentIndex() == 1 and win.disc_view.current_disc_id() == disc.id
     assert win._disc_pick == ("disc", disc.id)
+    editor = editor_of(win, ("disc", disc.id))
+    assert editor is not None and editor.text() == "Disc 1"
+    assert editor.selectedText() == "Disc 1"  # typing replaces the name
+    type_name(win, ("disc", disc.id), "Friday")
+    assert lib.disc(disc.id).name == "Friday"
+    assert win.disc_view.title.text() == "Friday"  # the open disc shows its new name
+    assert find_selection(win.disc_tree.model(), ("disc", disc.id)).data() == "Friday"
 
 
-def test_new_folder_makes_a_folder_in_the_tree(window, monkeypatch):
+def test_new_folder_appears_at_once_ready_to_type_over(window, monkeypatch):
     win, lib = window
-    named(monkeypatch, "Gigs")
+    no_dialog(monkeypatch)
+    win.show()
     win.new_folder_button.click()
     [folder] = lib.disc_folders()
-    assert folder.name == "Gigs" and folder.parent_id is None
+    assert folder.name == "New Folder" and folder.parent_id is None
+    editor = editor_of(win, ("disc_folder", folder.id))
+    assert editor is not None and editor.selectedText() == "New Folder"
+    type_name(win, ("disc_folder", folder.id), "Gigs")
+    assert lib.disc_folders()[0].name == "Gigs"
     assert [n for n, _k in rows(win)] == ["Gigs"]
+
+
+def test_new_things_get_names_that_are_not_taken(window, monkeypatch):
+    win, lib = window
+    no_dialog(monkeypatch)
+    win.show()
+    lib.create_disc("Disc 2")  # a disc was deleted or renamed along the way
+    lib.create_disc_folder("New Folder")
+    win.refresh_discs()
+    win.new_disc()
+    win.new_disc_folder()
+    assert sorted(d.name for d in lib.discs()) == ["Disc 2", "Disc 3"]
+    assert sorted(f.name for f in lib.disc_folders()) == ["New Folder", "New Folder 2"]
+
+
+def test_escape_keeps_the_default_name_and_the_disc(window, monkeypatch):
+    win, lib = window
+    no_dialog(monkeypatch)
+    win.show()
+    win.new_disc()
+    [disc] = lib.discs()
+    type_name(win, ("disc", disc.id), "Dropped", key=Qt.Key.Key_Escape)
+    assert lib.disc(disc.id).name == "Disc 1"
+
+
+def test_an_empty_name_is_ignored(window, monkeypatch):
+    win, lib = window
+    no_dialog(monkeypatch)
+    win.show()
+    win.new_disc()
+    [disc] = lib.discs()
+    type_name(win, ("disc", disc.id), "   ")
+    assert lib.disc(disc.id).name == "Disc 1"
+
+
+def test_the_plus_creates_in_place_too(window, monkeypatch):
+    win, lib = window
+    no_dialog(monkeypatch)
+    win.show()
+    folder = lib.create_disc_folder("Gigs")
+    win.refresh_discs()
+    point, index = plus_point(win, ("disc_folder", folder))
+    win.disc_tree.setCurrentIndex(index)
+    click_at(win, point)
+    [disc] = lib.discs()
+    assert disc.folder_id == folder
+    assert editor_of(win, ("disc", disc.id)) is not None  # inside the (opened) folder
+
+
+def test_a_new_folder_inside_a_collapsed_folder_is_shown_for_editing(
+    window, monkeypatch
+):
+    win, lib = window
+    no_dialog(monkeypatch)
+    win.show()
+    outer = lib.create_disc_folder("Outer")
+    lib.create_disc("Keeps it non-empty", folder_id=outer)
+    win.refresh_discs()
+    win.disc_tree.collapseAll()
+    win.new_disc_folder(outer)
+    inner = next(f for f in lib.disc_folders() if f.parent_id == outer)
+    assert win.disc_tree.isExpanded(
+        find_selection(win.disc_tree.model(), ("disc_folder", outer))
+    )
+    assert editor_of(win, ("disc_folder", inner.id)) is not None
+
+
+def double_click(win, point):
+    """What a real double-click delivers: press, release, then the double-click and its
+    release (QTest.mouseDClick does not produce the double-click event offscreen)."""
+    from PySide6.QtCore import QPointF
+    from PySide6.QtGui import QMouseEvent
+    from PySide6.QtWidgets import QApplication
+
+    viewport = win.disc_tree.viewport()
+    click_at(win, point)
+    for kind in (QEvent.Type.MouseButtonDblClick, QEvent.Type.MouseButtonRelease):
+        QApplication.sendEvent(
+            viewport,
+            QMouseEvent(
+                kind,
+                QPointF(point),
+                QPointF(viewport.mapToGlobal(point)),
+                Qt.MouseButton.LeftButton,
+                Qt.MouseButton.LeftButton
+                if kind == QEvent.Type.MouseButtonDblClick
+                else Qt.MouseButton.NoButton,
+                Qt.KeyboardModifier.NoModifier,
+            ),
+        )
+
+
+def test_double_clicking_a_disc_or_folder_edits_its_name(window, monkeypatch):
+    win, lib = window
+    no_dialog(monkeypatch)
+    win.show()
+    folder = lib.create_disc_folder("Gigs")
+    disc = lib.create_disc("Night")
+    win.refresh_discs()
+    for selection, new in ((("disc", disc), "Late"), (("disc_folder", folder), "Sets")):
+        index = find_selection(win.disc_tree.model(), selection)
+        double_click(win, win.disc_tree.visualRect(index).center())
+        editor = editor_of(win, selection)
+        assert editor is not None, selection
+        assert editor.selectedText() == editor.text()  # typing replaces it
+        type_name(win, selection, new)
+    assert lib.disc(disc).name == "Late" and lib.disc_folders()[0].name == "Sets"
+
+
+def test_a_single_click_still_only_opens_the_disc(window, monkeypatch):
+    from PySide6.QtTest import QTest
+
+    win, lib = window
+    no_dialog(monkeypatch)
+    win.show()
+    disc = lib.create_disc("Night")
+    win.refresh_discs()
+    index = find_selection(win.disc_tree.model(), ("disc", disc))
+    click_at(win, win.disc_tree.visualRect(index).center())
+    QTest.qWait(50)
+    assert editor_of(win, ("disc", disc)) is None
+    assert win.center.currentIndex() == 1
+
+
+def test_the_counts_and_plus_are_not_editable(window):
+    win, lib = window
+    disc = lib.create_disc("Night")
+    win.refresh_discs()
+    index = find_selection(win.disc_tree.model(), ("disc", disc))
+    flags = win.disc_tree.model().flags
+    assert flags(index) & Qt.ItemFlag.ItemIsEditable
+    assert not flags(index.siblingAtColumn(1)) & Qt.ItemFlag.ItemIsEditable
+    assert not flags(index.siblingAtColumn(2)) & Qt.ItemFlag.ItemIsEditable
 
 
 def test_a_new_disc_goes_in_the_folder_that_is_picked(window, monkeypatch):
     win, lib = window
+    no_dialog(monkeypatch)
     folder = lib.create_disc_folder("Gigs")
     win.refresh_discs()
     pick(win, ("disc_folder", folder))
-    named(monkeypatch, "In Gigs")
     win.new_disc_button.click()
     assert lib.discs()[0].folder_id == folder
 
 
 def test_a_new_disc_goes_beside_the_picked_disc_in_its_folder(window, monkeypatch):
     win, lib = window
+    no_dialog(monkeypatch)
     folder = lib.create_disc_folder("Gigs")
     first = lib.create_disc("First", folder_id=folder)
     win.refresh_discs()
     pick(win, ("disc", first))
-    named(monkeypatch, "Second")
     win.new_disc_button.click()
-    second = next(d for d in lib.discs() if d.name == "Second")
+    second = next(d for d in lib.discs() if d.name != "First")
     assert second.folder_id == folder
 
 
@@ -379,7 +552,7 @@ def test_a_discs_menu_opens_renames_duplicates_burns_and_deletes(window):
     disc = lib.create_disc("Night")
     win.refresh_discs()
     menu = win.disc_tree_menu(find_selection(win.disc_tree.model(), ("disc", disc)))
-    assert menu_texts(menu) == ["Open", "Rename…", "Duplicate", "Burn…", "Delete…"]
+    assert menu_texts(menu) == ["Open", "Rename", "Duplicate", "Burn…", "Delete…"]
 
 
 def test_a_folders_menu_makes_things_inside_it_renames_and_deletes(window):
@@ -390,9 +563,9 @@ def test_a_folders_menu_makes_things_inside_it_renames_and_deletes(window):
         find_selection(win.disc_tree.model(), ("disc_folder", folder))
     )
     assert menu_texts(menu) == [
-        "New Disc Here…",
-        "New Folder Here…",
-        "Rename…",
+        "New Disc Here",
+        "New Folder Here",
+        "Rename",
         "Delete Folder…",
     ]
 
@@ -405,8 +578,8 @@ def test_empty_space_offers_a_new_disc_or_folder_at_the_top_level(window, monkey
         win, ("disc_folder", folder)
     )  # something is picked, but the menu is for empty space
     menu = win.disc_tree_menu(QModelIndex())
-    assert menu_texts(menu) == ["New Disc…", "New Folder…"]
-    named(monkeypatch, "Top Level")
+    assert menu_texts(menu) == ["New Disc", "New Folder"]
+    no_dialog(monkeypatch)
     menu.actions()[0].trigger()
     assert lib.discs()[0].folder_id is None  # the top level, not the picked folder
 
@@ -420,8 +593,10 @@ def test_the_menu_actions_do_what_they_say(window, monkeypatch):
     actions = {
         a.text(): a for a in win.disc_tree_menu(index).actions() if not a.isSeparator()
     }
-    named(monkeypatch, "Renamed")
-    actions["Rename…"].trigger()
+    no_dialog(monkeypatch)
+    win.show()
+    actions["Rename"].trigger()
+    type_name(win, ("disc", disc), "Renamed")
     assert lib.disc(disc).name == "Renamed"
     actions["Duplicate"].trigger()
     assert {d.name for d in lib.discs()} == {"Renamed", "Renamed (copy)"}
@@ -440,8 +615,10 @@ def test_folder_menu_rename_and_delete_keep_the_discs(window, monkeypatch):
         find_selection(win.disc_tree.model(), ("disc_folder", folder))
     )
     actions = {a.text(): a for a in menu.actions() if not a.isSeparator()}
-    named(monkeypatch, "New Name")
-    actions["Rename…"].trigger()
+    no_dialog(monkeypatch)
+    win.show()
+    actions["Rename"].trigger()
+    type_name(win, ("disc_folder", folder), "New Name")
     assert lib.disc_folders()[0].name == "New Name"
     monkeypatch.setattr(QMessageBox, "question", staticmethod(lambda *a, **k: YES))
     actions["Delete Folder…"].trigger()
@@ -626,26 +803,16 @@ def click_at(win, point):
     QTest.mouseClick(win.disc_tree.viewport(), Qt.MouseButton.LeftButton, pos=point)
 
 
-def ask(monkeypatch, name="Friday", ok=True):
-    asked = []
-    monkeypatch.setattr(
-        QInputDialog,
-        "getText",
-        staticmethod(lambda *a, **k: asked.append(1) or (name, ok)),
-    )
-    return asked
-
-
 def test_a_folders_plus_makes_a_disc_inside_it(window, monkeypatch):
     win, lib = window
     folder = lib.create_disc_folder("Gigs")
     win.refresh_discs()
     win.show()
-    ask(monkeypatch)
+    no_dialog(monkeypatch)
     point, index = plus_point(win, ("disc_folder", folder))
     win.disc_tree.setCurrentIndex(index)
     click_at(win, point)
-    disc = next(d for d in lib.discs() if d.name == "Friday")
+    [disc] = lib.discs()
     assert disc.folder_id == folder
     assert win.disc_view.current_disc_id() == disc.id  # and it is open, ready to fill
     assert win.center.currentIndex() == 1
@@ -659,16 +826,15 @@ def test_a_discs_plus_makes_another_disc_beside_it(window, monkeypatch):
     win.refresh_discs()
     win.show()
     win.disc_tree.expandAll()
-    ask(monkeypatch, "Second")
-    point, index = plus_point(win, ("disc", inside))
-    win.disc_tree.setCurrentIndex(index)
-    click_at(win, point)
-    assert next(d for d in lib.discs() if d.name == "Second").folder_id == folder
-    ask(monkeypatch, "Third")
-    point, index = plus_point(win, ("disc", top))
-    win.disc_tree.setCurrentIndex(index)
-    click_at(win, point)
-    assert next(d for d in lib.discs() if d.name == "Third").folder_id is None
+    no_dialog(monkeypatch)
+    known = {inside, top}
+    for beside, where in ((inside, folder), (top, None)):
+        point, index = plus_point(win, ("disc", beside))
+        win.disc_tree.setCurrentIndex(index)
+        click_at(win, point)
+        [new] = [d for d in lib.discs() if d.id not in known]
+        assert new.folder_id == where
+        known.add(new.id)
 
 
 def test_every_row_has_a_plus_but_only_the_picked_one_shows_it(window):
@@ -724,24 +890,12 @@ def test_clicking_the_plus_of_an_unpicked_row_just_picks_the_row(window, monkeyp
     one, two = lib.create_disc_folder("One"), lib.create_disc_folder("Two")
     win.refresh_discs()
     win.show()
-    asked = ask(monkeypatch)
+    no_dialog(monkeypatch)
     pick(win, ("disc_folder", one))
     point, index = plus_point(win, ("disc_folder", two))  # where it would be
     click_at(win, point)
-    assert not asked and lib.discs() == []
+    assert lib.discs() == []
     assert win.disc_tree.currentIndex().siblingAtColumn(0) == index
-
-
-def test_cancelling_the_name_makes_nothing(window, monkeypatch):
-    win, lib = window
-    folder = lib.create_disc_folder("Gigs")
-    win.refresh_discs()
-    win.show()
-    ask(monkeypatch, "", ok=False)
-    point, index = plus_point(win, ("disc_folder", folder))
-    win.disc_tree.setCurrentIndex(index)
-    click_at(win, point)
-    assert lib.discs() == [] and win.center.currentIndex() == 0
 
 
 def test_clicking_elsewhere_on_a_picked_row_does_not_make_a_disc(window, monkeypatch):
@@ -749,11 +903,11 @@ def test_clicking_elsewhere_on_a_picked_row_does_not_make_a_disc(window, monkeyp
     folder = lib.create_disc_folder("Gigs")
     win.refresh_discs()
     win.show()
-    asked = ask(monkeypatch)
+    no_dialog(monkeypatch)
     _point, index = plus_point(win, ("disc_folder", folder))
     win.disc_tree.setCurrentIndex(index)
     click_at(win, win.disc_tree.visualRect(index).center())
-    assert not asked and lib.discs() == []
+    assert lib.discs() == []
 
 
 def test_a_disc_over_its_length_is_starred_and_explained(window):
@@ -780,4 +934,24 @@ def test_a_disc_over_its_length_is_starred_and_explained(window):
         assert "Too long" in tip and "over" in tip.lower() and "0:" in tip
     assert long_count.data(Qt.ItemDataRole.ForegroundRole) != fits_count.data(
         Qt.ItemDataRole.ForegroundRole
+    )
+
+
+def test_the_plus_has_its_own_column_so_it_never_covers_the_count(window):
+    win, lib = window
+    over = lib.create_disc("Too long")
+    lib.update_disc(over, capacity_sectors=8000)
+    lib.add_to_disc(over, ids(lib)[:3])
+    win.refresh_discs()
+    win.show()
+    tree = win.disc_tree
+    index = pick(win, ("disc", over))
+    assert tree.model().columnCount() == 3
+    count = tree.visualRect(index.siblingAtColumn(1))
+    plus = tree.plus_rect(index)
+    assert plus.left() > count.right()  # beside the "* 3", not over it
+    assert tree.plus_visible(index)
+    assert tree.columnWidth(2) == tree.plus_rect(index).width() + 12  # (a fixed slot)
+    assert tree.visualRect(index.siblingAtColumn(2)).contains(plus), (
+        "the + sits inside its own column"
     )

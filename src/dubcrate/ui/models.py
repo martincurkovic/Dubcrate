@@ -482,6 +482,13 @@ def _count_item(count: int | None) -> QStandardItem:
     return item
 
 
+def _spare_item() -> QStandardItem:
+    """An empty cell: the disc tree's last column, where the + button sits."""
+    item = QStandardItem("")
+    item.setEditable(False)
+    return item
+
+
 class DiscTreeModel(QStandardItemModel):
     """The tree of discs and the folders they are filed in (the right-hand pane).
 
@@ -495,6 +502,9 @@ class DiscTreeModel(QStandardItemModel):
     items_moved = Signal(
         list, object
     )  # ([("disc", id) | ("disc_folder", id)], folder id or None)
+    renamed = Signal(
+        tuple, str
+    )  # (("disc" | "disc_folder", id), the new name as typed)
 
     @staticmethod
     def _kind(index: QModelIndex) -> str | None:
@@ -507,7 +517,21 @@ class DiscTreeModel(QStandardItemModel):
         base = super().flags(index) & ~Qt.ItemFlag.ItemIsEditable
         if self._kind(index) in ("disc", "disc_folder"):
             base |= Qt.ItemFlag.ItemIsDragEnabled | Qt.ItemFlag.ItemIsDropEnabled
+            if index.column() == 0:
+                base |= Qt.ItemFlag.ItemIsEditable  # the name, edited in place
         return base
+
+    def setData(self, index, value, role=Qt.ItemDataRole.EditRole) -> bool:
+        """A name edited in the tree is not applied here: the window renames the disc or
+        folder in the library and rebuilds the tree, as for every other change."""
+        if (
+            role == Qt.ItemDataRole.EditRole
+            and index.column() == 0
+            and self._kind(index) in ("disc", "disc_folder")
+        ):
+            self.renamed.emit(tuple(index.data(SELECTION_ROLE)), str(value))
+            return False
+        return super().setData(index, value, role)
 
     def supportedDropActions(self) -> Qt.DropAction:
         return Qt.DropAction.MoveAction | Qt.DropAction.CopyAction
@@ -617,8 +641,8 @@ def build_source_model(lib: Library) -> QStandardItemModel:
 def build_disc_model(lib: Library, target_disc_id: int | None = None) -> DiscTreeModel:
     """The tree of discs: folders (first) and discs, each A to Z, nested as filed.
 
-    Discs are playlists that go on a CD. Two columns, like the library tree: the name,
-    and the number of tracks. The disc that tracks are being added to (`target_disc_id`)
+    Discs are playlists that go on a CD. Three columns: the name, the number of tracks,
+    and an empty one for the + button. The disc that tracks are being added to (`target_disc_id`)
     is shown in bold.
     """
     model = DiscTreeModel()
@@ -640,7 +664,7 @@ def build_disc_model(lib: Library, target_disc_id: int | None = None) -> DiscTre
 
     for folder in sorted(folders, key=lambda f: key(f.name)):
         parent = folder_items.get(folder.parent_id, root)
-        parent.appendRow([folder_items[folder.id], _count_item(None)])
+        parent.appendRow([folder_items[folder.id], _count_item(None), _spare_item()])
     for disc in sorted(lib.discs(), key=lambda d: key(d.name)):
         item = QStandardItem(disc.name)
         item.setData(("disc", disc.id), SELECTION_ROLE)
@@ -659,7 +683,7 @@ def build_disc_model(lib: Library, target_disc_id: int | None = None) -> DiscTre
             count.setForeground(QColor(theme.current_palette()["warning"]))
             count.setToolTip(item.toolTip())
         parent = folder_items.get(disc.folder_id, root)
-        parent.appendRow([item, count])
+        parent.appendRow([item, count, _spare_item()])
     return model
 
 

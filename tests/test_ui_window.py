@@ -284,28 +284,16 @@ def test_new_rename_and_delete_a_disc(window, monkeypatch):
     win, lib = window
     panel = win.disc_view
     assert panel.stack.currentIndex() == 0  # nothing yet: the empty state
-    monkeypatch.setattr(
-        QInputDialog, "getText", staticmethod(lambda *a, **k: ("Night", True))
-    )
     disc_id = panel.new_disc()
-    assert lib.disc(disc_id).name == "Night" and panel.stack.currentIndex() == 1
+    assert lib.disc(disc_id).name == "Disc 1" and panel.stack.currentIndex() == 1
     assert win.center.currentIndex() == 1  # a new disc opens in the middle
-    monkeypatch.setattr(
-        QInputDialog, "getText", staticmethod(lambda *a, **k: ("Renamed", True))
-    )
-    panel.rename_disc()
+    panel.rename_disc(disc_id, "Renamed")
     assert lib.disc(disc_id).name == "Renamed" and panel.title.text() == "Renamed"
+    panel.rename_disc(disc_id, "  ")  # nothing to rename it to
+    assert lib.disc(disc_id).name == "Renamed"
     monkeypatch.setattr(QMessageBox, "question", staticmethod(lambda *a, **k: YES))
     panel.delete_disc()
     assert lib.discs() == [] and panel.stack.currentIndex() == 0
-
-
-def test_cancelling_the_name_dialog_creates_nothing(window, monkeypatch):
-    win, lib = window
-    monkeypatch.setattr(
-        QInputDialog, "getText", staticmethod(lambda *a, **k: ("", False))
-    )
-    assert win.disc_view.new_disc() is None and lib.discs() == []
 
 
 def test_split_cuts_the_shown_tracks_across_discs(window, monkeypatch):

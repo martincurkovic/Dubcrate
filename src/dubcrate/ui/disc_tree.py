@@ -13,6 +13,9 @@ from .models import SELECTION_ROLE
 
 PLUS_SIZE = 14
 PLUS_MARGIN = 6
+SLOT_WIDTH = (
+    PLUS_SIZE + 2 * PLUS_MARGIN
+)  # the + has a column of its own, past the count
 
 
 class DiscTree(QTreeView):
@@ -32,7 +35,7 @@ class DiscTree(QTreeView):
         return self.selectionModel().isSelected(index.siblingAtColumn(0))
 
     def plus_rect(self, index: QModelIndex) -> QRect:
-        """The + button's place on a row: the right-hand end of its last column."""
+        """The + button's place on a row: in the last column, which is only for it."""
         last = index.siblingAtColumn(self.model().columnCount() - 1)
         cell = self.visualRect(last)
         return QRect(
