@@ -21,7 +21,7 @@ from dubcrate.audio.decode import DecodedAudio
 from dubcrate.audio.devices import BUFFER_SIZES, SAMPLE_RATE, buffer_msec
 from dubcrate.audio.player import AudioPlayer
 
-from . import theme
+from . import theme, wave_style
 
 TONE_SECONDS = 0.8
 TONE_LEVEL = 0.25  # a test tone should never startle anyone
@@ -235,4 +235,37 @@ class SettingsDialog(QDialog):
             lambda _i: self.theme_chosen.emit(self.theme_combo.currentData())
         )
         form.addRow("Theme:", self.theme_combo)
+
+        self.wave_style_combo = QComboBox()
+        for label, value in wave_style.WAVE_STYLE_LABELS:
+            self.wave_style_combo.addItem(label, value)
+        self.wave_style_combo.setCurrentIndex(
+            max(0, self.wave_style_combo.findData(settings.get_wave_style()))
+        )
+        self.wave_style_combo.activated.connect(
+            lambda _i: wave_style.set_style(self.wave_style_combo.currentData())
+        )
+        form.addRow("Waveform style:", self.wave_style_combo)
+
+        self.wave_background_combo = QComboBox()
+        for label, value in wave_style.WAVE_BACKGROUND_LABELS:
+            self.wave_background_combo.addItem(label, value)
+        self.wave_background_combo.setCurrentIndex(
+            max(0, self.wave_background_combo.findData(settings.get_wave_background()))
+        )
+        self.wave_background_combo.activated.connect(
+            lambda _i: wave_style.set_background(
+                self.wave_background_combo.currentData()
+            )
+        )
+        form.addRow("Waveform background:", self.wave_background_combo)
+
+        hint = QLabel(
+            "3-Band is rekordbox's default look (lows blue, mids amber, highs white). RGB colours"
+            " each moment by what is in it, and Blue is rekordbox's classic blue waveform."
+            " The Macintosh System 6 theme always draws the 3-band look in black and white."
+        )
+        hint.setWordWrap(True)
+        hint.setObjectName("mutedLabel")
+        form.addRow(hint)
         return page

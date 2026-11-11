@@ -8,13 +8,14 @@ from . import theme
 SIZE = 16
 
 
-def _icon(draw, dpr: float) -> QIcon:
+def _icon(draw, dpr: float, ink_alpha: int = 255) -> QIcon:
     palette = theme.current_palette()
     pm = QPixmap(round(SIZE * dpr), round(SIZE * dpr))
     pm.setDevicePixelRatio(dpr)
     pm.fill(Qt.GlobalColor.transparent)
     painter = QPainter(pm)
     ink, paper = QColor(palette["text"]), QColor(palette["bg_panel"])
+    ink.setAlpha(ink_alpha)
     painter.setPen(ink)
     painter.setBrush(paper)
     draw(painter, ink)
@@ -49,6 +50,14 @@ def _drive(p: QPainter, ink) -> None:
     p.fillRect(QRectF(10, 10, 3, 1), ink)
 
 
+def _playlist(p: QPainter, ink) -> None:
+    """A list: a bullet and a line, three times."""
+    p.setBrush(ink)
+    for y in (4, 8, 12):
+        p.drawRect(QRectF(1.5, y - 0.5, 1, 1))
+        p.drawLine(QPointF(5, y), QPointF(14, y))
+
+
 def folder(dpr: float = 1.0) -> QIcon:
     return _icon(_folder, dpr)
 
@@ -59,6 +68,12 @@ def floppy(dpr: float = 1.0) -> QIcon:
 
 def drive(dpr: float = 1.0) -> QIcon:
     return _icon(_drive, dpr)
+
+
+def playlist(dpr: float = 1.0, muted: bool = False) -> QIcon:
+    """`muted` softens it, for the colour themes, where the folders beside it are
+    coloured and a full-strength glyph would shout over them."""
+    return _icon(_playlist, dpr, ink_alpha=170 if muted else 255)
 
 
 def warning_pixmap(size: int = 48, dpr: float = 1.0) -> QPixmap:

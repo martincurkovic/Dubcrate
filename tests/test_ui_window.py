@@ -784,3 +784,70 @@ def test_the_capacity_bar_has_no_seam_between_neighbouring_tracks(qapp):
     # Each pixel is a track colour, never a divider: at most 3 distinct colours.
     assert len(set(inside) - track_colours) == 3, set(inside)
     bar.close()
+
+
+# -- reordering columns -------------------------------------------------------
+
+
+def column_titles(win):
+    header = win.track_table.horizontalHeader()
+    return [
+        main_window.TRACK_COLUMNS[header.logicalIndex(v)].title
+        for v in range(header.count())
+        if not header.isSectionHidden(header.logicalIndex(v))
+    ]
+
+
+def test_the_columns_can_be_dragged_but_the_marker_stays_first(window):
+    win, _lib = window
+    header = win.track_table.horizontalHeader()
+    assert header.sectionsMovable() and not header.isFirstSectionMovable()
+
+
+def test_moving_a_column_is_remembered_and_restored(window):
+    win, lib = window
+    header = win.track_table.horizontalHeader()
+    assert column_titles(win)[:3] == ["", "Title", "Artist"]
+    header.moveSection(header.visualIndex(7), 1)  # Genre to the front
+    assert column_titles(win)[:3] == ["", "Genre", "Title"]
+    assert settings.get_column_order()[:2] == ["Genre", "Title"]
+    again = MainWindow(lib)
+    try:
+        assert column_titles(again)[:3] == ["", "Genre", "Title"]
+    finally:
+        again.close()
+        again.deleteLater()
+
+
+def test_a_saved_order_with_unknown_or_missing_columns_still_works(window):
+    _win, lib = window
+    settings.set_column_order(["Genre", "Nope", "Title", "Genre"])
+    again = MainWindow(lib)
+    try:
+        assert column_titles(again) == [
+            "", "Genre", "Title", "Artist", "BPM", "Key", "Time", "Preview",
+        ]  # fmt: skip
+    finally:
+        again.close()
+        again.deleteLater()
+
+
+def test_sorting_still_follows_the_column_after_it_moved(window):
+    win, _lib = window
+    header = win.track_table.horizontalHeader()
+    header.moveSection(header.visualIndex(2), 1)  # Artist before Title
+    header.sectionClicked.emit(1)  # Title is still logical column 1
+    header.setSortIndicator(1, Qt.SortOrder.AscendingOrder)
+    assert titles(win) == sorted(titles(win))
+
+
+def test_reset_columns_restores_the_default_order_and_shows_everything(window):
+    win, _lib = window
+    header = win.track_table.horizontalHeader()
+    header.moveSection(header.visualIndex(7), 1)
+    win.set_column_visible(4, False)
+    win.reset_columns()
+    assert column_titles(win) == [
+        "", "Title", "Artist", "BPM", "Key", "Time", "Preview", "Genre",
+    ]  # fmt: skip
+    assert settings.get_column_order() == [] and settings.get_hidden_columns() == []

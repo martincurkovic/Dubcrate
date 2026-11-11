@@ -1,15 +1,21 @@
 """The track table: keyboard shortcuts and the whole-track waveform column."""
 
-import numpy as np
-from PySide6.QtCore import QModelIndex, QRect, QSize, Qt, Signal
+from PySide6.QtCore import QModelIndex, QPointF, QRect, QSize, Qt, Signal
 from PySide6.QtGui import QColor, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import QStyledItemDelegate, QStyleOptionViewItem, QTableView
 
-from dubcrate.waveform import BAND_HIGH, BAND_LOW, BAND_MID, Waveform
+from dubcrate.waveform import BAND_HIGH, BAND_LOW, BAND_MID, STYLE_BANDS, Waveform
 
 from . import theme
 from .models import PREVIEW_ROLE
-from .wave_style import color
+from .wave_style import (
+    cache_token,
+    color,
+    current_style,
+    normalized,
+    render_columns,
+)
+from .wave_style import notifier as wave_notifier
 
 _BANDS = ((BAND_LOW, "wave_low"), (BAND_MID, "wave_mid"), (BAND_HIGH, "wave_high"))
 PREVIEW_WIDTH = 150
@@ -41,10 +47,20 @@ def render_preview(
     pixmap.fill(color("wave_bg"))
     if waveform.columns == 0 or width <= 0:
         return pixmap
-    bands = waveform.resampled(width, how="mean").bands
-    loudest = float(np.percentile(bands.max(axis=1), 98))
-    if loudest > 0.05:
-        bands = np.clip(bands / loudest, 0.0, 1.0)
+    style = current_style()
+    if style != STYLE_BANDS:
+        pixels = round(width * dpr)  # one column per device pixel
+        bands = normalized(waveform.resampled(pixels, how="mean").bands, style)
+        rows = round(height * dpr)
+        image = render_columns(
+            bands, style, rows=rows, extent=rows - dpr, mirrored=False
+        )
+        image.setDevicePixelRatio(dpr)
+        p = QPainter(pixmap)
+        p.drawImage(QPointF(0, 0), image)
+        p.end()
+        return pixmap
+    bands = normalized(waveform.resampled(width, how="mean").bands, style)
     p = QPainter(pixmap)
     p.setRenderHint(QPainter.RenderHint.Antialiasing, False)
     for band, key in _BANDS:
@@ -63,6 +79,7 @@ class PreviewDelegate(QStyledItemDelegate):
         super().__init__(parent)
         self._cache: dict[tuple, QPixmap] = {}
         theme.notifier.changed.connect(self._cache.clear)
+        wave_notifier.changed.connect(self._cache.clear)
 
     def sizeHint(self, option: QStyleOptionViewItem, index: QModelIndex) -> QSize:
         return QSize(PREVIEW_WIDTH, ROW_HEIGHT)
@@ -83,7 +100,7 @@ class PreviewDelegate(QStyledItemDelegate):
             rect.width(),
             rect.height(),
             dpr,
-            id(theme.current_palette()),
+            cache_token(),
         )
         pixmap = self._cache.get(key)
         if pixmap is None:

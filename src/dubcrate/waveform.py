@@ -4,6 +4,11 @@ Rekordbox draws a track as three overlaid shapes: the lows in blue, the mids in
 amber, the highs in white. Its analysis files store exactly that, three bytes per
 column; tracks without analysis get the same structure computed from their audio,
 so a single renderer serves both.
+
+Rekordbox's other two looks, the colour (RGB) and the blue waveform, are derived
+from the same three bands, so they work for every track. How each is derived was
+fitted to rekordbox's own colour and blue waveforms on 60 real tracks (see
+dev_docs/rekordbox-analysis.md): they come out similar, not identical.
 """
 
 from dataclasses import dataclass
@@ -25,6 +30,16 @@ _SCALE_PERCENTILE = (
     99.5  # louder than this clips; one stray peak shouldn't flatten the rest
 )
 _RAW_MAX = 127.0  # rekordbox stores each band as 0..127
+
+STYLE_BANDS, STYLE_RGB, STYLE_BLUE = "bands", "rgb", "blue"
+STYLES = (STYLE_BANDS, STYLE_RGB, STYLE_BLUE)
+# Red is the lows, green the mids, blue the highs. Raw shares over-weight green and
+# under-weight blue next to rekordbox's own colours; these gains were fitted to them.
+_RGB_GAINS = np.array([1.0, 0.5, 1.4], dtype=np.float32)
+# The blue waveform's whiteness is the share of a column that is not bass, stretched
+# so that its spread matches rekordbox's (which reaches both ends of 0..1).
+_WHITE_FLOOR, _WHITE_SPAN = 0.25, 0.53
+_SILENT = 1e-3  # a column with less energy than this has no colour
 
 
 @dataclass(frozen=True)
@@ -107,3 +122,70 @@ def compute_waveform(
     if peak <= 0:
         return Waveform(np.zeros_like(out), columns_per_second)
     return Waveform(np.clip(out / peak, 0.0, 1.0) ** _GAMMA, columns_per_second)
+
+
+def overall_height(bands: np.ndarray) -> np.ndarray:
+    """How tall the single-shape styles draw each column: the RMS of the three bands
+    (rekordbox's own height follows it, r = 0.86), at most 1."""
+    return np.minimum(1.0, np.sqrt((bands.astype(np.float32) ** 2).sum(axis=1)))
+
+
+def _shares(bands: np.ndarray) -> np.ndarray:
+    total = bands.sum(axis=1, keepdims=True)
+    return np.where(total > _SILENT, bands / np.maximum(total, _SILENT), 0.0)
+
+
+def rgb_colors(bands: np.ndarray) -> np.ndarray:
+    """Each column's colour in the RGB style, shape (columns, 3), each 0..1.
+
+    Which bands are in the column picks the hue (lows red, mids green, highs blue);
+    how loud it is shows in the height, not the colour. The strongest channel is full.
+    """
+    weighted = _shares(bands.astype(np.float32)) * _RGB_GAINS
+    top = weighted.max(axis=1, keepdims=True)
+    return np.where(top > 0, weighted / np.maximum(top, 1e-9), 0.0).astype(np.float32)
+
+
+def whiteness(bands: np.ndarray) -> np.ndarray:
+    """How white each column's core is in the blue style, 0..1: bassy columns stay
+    blue, brighter ones whiten."""
+    bands = bands.astype(np.float32)
+    bass_free = 1.0 - _shares(bands)[:, BAND_LOW]
+    white = np.clip((bass_free - _WHITE_FLOOR) / _WHITE_SPAN, 0.0, 1.0)
+    return np.where(bands.sum(axis=1) > _SILENT, white, 0.0).astype(np.float32)
+
+
+def _to_bytes(colors: np.ndarray) -> np.ndarray:
+    return np.round(np.clip(colors, 0.0, 1.0) * 255).astype(np.uint8)
+
+
+def raster_columns(
+    heights: np.ndarray,
+    body: np.ndarray,
+    core: np.ndarray | None,
+    *,
+    rows: int,
+    extent: float,
+    mirrored: bool,
+    core_fraction: float = 0.55,
+) -> np.ndarray:
+    """Draw one coloured bar per column as RGBA pixels, shape (rows, columns, 4).
+
+    `heights` (0..1) scale to `extent` rows from the baseline: the floor, or the
+    middle row when `mirrored` (bars grow both ways). `body` (columns, 3) is each
+    bar's colour; with `core` (columns, 3), the inner `core_fraction` of each bar is
+    drawn in that colour instead. Pixels outside every bar are transparent.
+    """
+    columns = len(heights)
+    y = np.arange(rows, dtype=np.float32)[:, None] + 0.5
+    distance = np.abs(y - rows / 2) if mirrored else rows - y
+    reach = (np.asarray(heights, np.float32) * extent)[None, :]
+    image = np.empty((rows, columns, 4), dtype=np.uint8)
+    image[..., :3] = _to_bytes(body)[None, :, :]
+    if (
+        core is not None
+    ):  # in uint8 throughout: this runs once per frame in the detail view
+        inner = (distance <= reach * core_fraction)[..., None]
+        np.copyto(image[..., :3], _to_bytes(core)[None, :, :], where=inner)
+    image[..., 3] = (distance <= reach).astype(np.uint8) * 255
+    return image

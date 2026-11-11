@@ -35,7 +35,7 @@ from dubcrate.library.rekordbox import (
 )
 from dubcrate.library.store import LibraryError
 
-from . import theme
+from . import theme, wave_style
 from .burn_dialog import BurnDialog, BurnerFactory
 from .disc_panel import DiscPanel
 from .help_dialog import show_help_dialog
@@ -88,6 +88,7 @@ class MainWindow(QMainWindow):
         self._sort: tuple[str | None, bool] = (None, False)
         self._busy = False
         self._theme_actions: dict[str, QAction] = {}
+        self._wave_actions: dict[str, QAction] = {}
         self.setWindowTitle("Dubcrate")
         self.setMinimumSize(
             980, 660
@@ -201,7 +202,13 @@ class MainWindow(QMainWindow):
         )
         header.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         header.customContextMenuRequested.connect(self._show_column_menu)
+        header.setSectionsMovable(True)  # drag a heading to reorder the columns
+        header.setFirstSectionMovable(
+            False
+        )  # the "already on the disc" marker stays first
         self._apply_hidden_columns()
+        self._apply_column_order()
+        header.sectionMoved.connect(lambda *_: self._save_column_order())
         header.sortIndicatorChanged.connect(self._on_sort_changed)
         self.track_table.doubleClicked.connect(self._on_track_double_clicked)
         self.track_table.selectionModel().selectionChanged.connect(
@@ -336,6 +343,20 @@ class MainWindow(QMainWindow):
             group.addAction(action)
             theme_menu.addAction(action)
 
+        wave_menu: QMenu = view_menu.addMenu("&Waveform")
+        wave_group = QActionGroup(self)
+        wave_group.setExclusive(True)
+        for label, value in wave_style.WAVE_STYLE_LABELS:
+            action = QAction(label, self, checkable=True)
+            action.triggered.connect(
+                lambda _checked=False, v=value: wave_style.set_style(v)
+            )
+            self._wave_actions[value] = action
+            wave_group.addAction(action)
+            wave_menu.addAction(action)
+        wave_style.notifier.changed.connect(self._sync_wave_actions)
+        self._sync_wave_actions()
+
         help_menu = menus.addMenu("&Help")
         self.act_help = help_menu.addAction(
             "&User Guide", self.show_help, QKeySequence.StandardKey.HelpContents
@@ -354,6 +375,11 @@ class MainWindow(QMainWindow):
 
     def _on_theme_changed(self) -> None:
         self.refresh_sources()  # the tree's icons are baked in when it is built
+
+    def _sync_wave_actions(self) -> None:
+        current = settings.get_wave_style()
+        for key, action in self._wave_actions.items():
+            action.setChecked(key == current)
 
     def show_help(self) -> None:
         show_help_dialog(self)
@@ -725,6 +751,36 @@ class MainWindow(QMainWindow):
             if column > 1:  # the marker and the title are always there
                 self.track_table.setColumnHidden(column, spec.title in hidden)
 
+    def _apply_column_order(self) -> None:
+        """Put the columns in their saved order. Names it doesn't know are ignored,
+        and columns it doesn't mention follow in their default order."""
+        header = self.track_table.horizontalHeader()
+        by_title = {spec.title: c for c, spec in enumerate(TRACK_COLUMNS) if c > 0}
+        wanted = [by_title[n] for n in settings.get_column_order() if n in by_title]
+        order = [0, *dict.fromkeys(wanted)]
+        order += [c for c in range(1, len(TRACK_COLUMNS)) if c not in order]
+        header.blockSignals(True)  # not a user's drag: nothing to save
+        for visual, logical in enumerate(order):
+            header.moveSection(header.visualIndex(logical), visual)
+        header.blockSignals(False)
+
+    def _save_column_order(self) -> None:
+        header = self.track_table.horizontalHeader()
+        settings.set_column_order(
+            [
+                TRACK_COLUMNS[header.logicalIndex(v)].title
+                for v in range(1, header.count())
+            ]
+        )
+
+    def reset_columns(self) -> None:
+        """Back to the default order, with every column shown."""
+        settings.set_column_order([])
+        settings.set_hidden_columns([])
+        self._apply_hidden_columns()
+        self._apply_column_order()
+        self._preview_timer.start()
+
     def _show_column_menu(self, position) -> None:
         menu = QMenu(self)
         for column, spec in enumerate(TRACK_COLUMNS):
@@ -735,6 +791,8 @@ class MainWindow(QMainWindow):
                 action.toggled.connect(
                     lambda shown, c=column: self.set_column_visible(c, shown)
                 )
+        menu.addSeparator()
+        menu.addAction("Reset Columns", self.reset_columns)
         menu.popup(self.track_table.horizontalHeader().mapToGlobal(position))
 
     def set_column_visible(self, column: int, visible: bool) -> None:

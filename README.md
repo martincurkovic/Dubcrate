@@ -21,7 +21,8 @@ whose track titles show on the player's display.
 - **Previews tracks** with a full-track waveform and a zoomed waveform that scrolls
   past the playhead. For rekordbox tracks it shows rekordbox's own waveform, beat
   grid, phrases (INTRO, CHORUS, DOWN, UP, OUTRO) and any cue points; for other music it
-  draws the waveform itself.
+  draws the waveform itself. Waveforms come in three looks, as in rekordbox: 3-band,
+  RGB and blue, on a background that follows the theme.
 - **Plans discs** of 74 or 80 minutes, with a capacity bar that shows every track
   and turns red when a disc is too long. It fills a disc in order, or splits a long
   playlist across as many discs as it takes. Drag tracks on, drag them around.

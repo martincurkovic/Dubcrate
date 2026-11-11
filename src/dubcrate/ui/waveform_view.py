@@ -1,7 +1,7 @@
 """The two waveform displays: the whole track at a glance, and a zoomed view that scrolls.
 
-Both draw the same 3-band waveform (lows blue, mids amber, highs white, as rekordbox
-does). The overview also shows phrases (INTRO, CHORUS, ...) and cues, and dims what has
+Both draw the same waveform in the look chosen in Settings: the 3-band one (lows blue,
+mids amber, highs white, as rekordbox does), RGB, or blue. The overview also shows phrases (INTRO, CHORUS, ...) and cues, and dims what has
 been played; the detail view keeps the playhead fixed in the middle and shows the beat grid.
 """
 
@@ -13,10 +13,20 @@ from PySide6.QtGui import QColor, QFont, QPainter, QPen, QPixmap, QPolygonF
 from PySide6.QtWidgets import QSizePolicy, QWidget
 
 from dubcrate.analysis import Cue, Phrase
-from dubcrate.waveform import BAND_HIGH, BAND_LOW, BAND_MID, Waveform
+from dubcrate.waveform import BAND_HIGH, BAND_LOW, BAND_MID, STYLE_BANDS, Waveform
 
 from . import theme
-from .wave_style import color, hot_cue_color, is_mono, phrase_color
+from .wave_style import (
+    cache_token,
+    color,
+    current_style,
+    hot_cue_color,
+    is_mono,
+    normalized,
+    phrase_color,
+    render_columns,
+)
+from .wave_style import notifier as wave_notifier
 
 _BANDS = ((BAND_LOW, "wave_low"), (BAND_MID, "wave_mid"), (BAND_HIGH, "wave_high"))
 CUE_STRIP = 12  # room above the overview's waveform for cue flags
@@ -50,6 +60,7 @@ class OverviewView(QWidget):
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         theme.notifier.changed.connect(self._invalidate)
+        wave_notifier.changed.connect(self._invalidate)
 
     # -- content ----------------------------------------------------------
 
@@ -99,19 +110,22 @@ class OverviewView(QWidget):
             CUE_STRIP + WAVE_HEIGHT
         )  # the waveform sits on this line, as in rekordbox's overview
         if self._waveform is not None and self._waveform.columns and width > 0:
-            columns = self._waveform.resampled(
-                width, how="mean"
-            )  # a whole track reads better averaged
-            bands = columns.bands
-            loudest = float(np.percentile(bands.max(axis=1), 98))
-            if (
-                loudest > 0.05
-            ):  # averaging is quiet: scale it up so the strip uses its height
-                bands = np.clip(bands / loudest, 0.0, 1.0)
-            columns = Waveform(bands, columns.columns_per_second)
+            self._paint_waveform(p, width, dpr, base)
+        if self._duration > 0:
+            self._paint_phrases(p, width, base)
+            self._paint_cues(p, width)
+        p.end()
+        return pixmap
+
+    def _paint_waveform(self, p: QPainter, width: int, dpr: float, base: int) -> None:
+        wf = self._waveform
+        assert wf is not None
+        style = current_style()
+        if style == STYLE_BANDS:
+            bands = normalized(wf.resampled(width, how="mean").bands, style)
             for band, key in _BANDS:
                 p.setPen(QPen(color(key), 1))
-                heights = columns.bands[:, band] * WAVE_HEIGHT
+                heights = bands[:, band] * WAVE_HEIGHT
                 p.drawLines(
                     [
                         QLineF(x + 0.5, base, x + 0.5, base - h)
@@ -119,11 +133,13 @@ class OverviewView(QWidget):
                         if h > 0.3
                     ]
                 )
-        if self._duration > 0:
-            self._paint_phrases(p, width, base)
-            self._paint_cues(p, width)
-        p.end()
-        return pixmap
+            return
+        pixels = round(width * dpr)  # one column per device pixel
+        bands = normalized(wf.resampled(pixels, how="mean").bands, style)
+        rows = round(WAVE_HEIGHT * dpr)
+        image = render_columns(bands, style, rows=rows, extent=rows, mirrored=False)
+        image.setDevicePixelRatio(dpr)
+        p.drawImage(QPointF(0, base - WAVE_HEIGHT), image)
 
     def _paint_phrases(self, p: QPainter, width: int, base: int) -> None:
         font = QFont(p.font())
@@ -168,7 +184,7 @@ class OverviewView(QWidget):
     def paintEvent(self, _event) -> None:
         width = self.width()
         dpr = self.devicePixelRatioF()
-        key = (width, dpr, id(theme.current_palette()))
+        key = (width, dpr, cache_token())
         if self._cache is None or self._cache_key != key:
             self._cache, self._cache_key = self._render(width, dpr), key
         p = QPainter(self)
@@ -216,6 +232,7 @@ class DetailView(QWidget):
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         theme.notifier.changed.connect(self.update)
+        wave_notifier.changed.connect(self.update)
 
     # -- content ----------------------------------------------------------
 
@@ -280,9 +297,35 @@ class DetailView(QWidget):
             return
         centre, middle = w / 2, h / 2
         per_second = w / self._window
-        self._paint_bands(p, w, centre, middle, per_second)
+        if current_style() == STYLE_BANDS:
+            self._paint_bands(p, w, centre, middle, per_second)
+        else:
+            self._paint_columns(p, w, h, centre, per_second)
         self._paint_beats(p, w, h, centre, per_second)
         p.fillRect(QRectF(centre - 1, 0, 2, h), color("wave_playhead"))
+
+    def _paint_columns(
+        self, p: QPainter, width: int, height: int, centre: float, per_second: float
+    ) -> None:
+        """The RGB and blue looks: one bar per device pixel, each in its own colour."""
+        wf = self._waveform
+        assert wf is not None
+        dpr = self.devicePixelRatioF()
+        pixels, rows = round(width * dpr), round(height * dpr)
+        seconds = self._position + (np.arange(pixels) / dpr - centre) / per_second
+        index = np.floor(seconds * wf.columns_per_second).astype(np.int64)
+        inside = (index >= 0) & (index < wf.columns)
+        bands = np.zeros((pixels, 3), dtype=np.float32)
+        bands[inside] = wf.bands[index[inside]]
+        image = render_columns(
+            bands,
+            current_style(),
+            rows=rows,
+            extent=rows / 2 - 6 * dpr,
+            mirrored=True,
+        )
+        image.setDevicePixelRatio(dpr)
+        p.drawImage(QPointF(0, 0), image)
 
     def _paint_bands(
         self, p: QPainter, width: int, centre: float, middle: float, per_second: float

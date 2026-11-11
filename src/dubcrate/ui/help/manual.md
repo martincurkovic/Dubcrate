@@ -73,7 +73,8 @@ Supported music: MP3, WAV, FLAC, AIFF, AAC/M4A, Ogg, Opus and WMA.
 - Click a source, playlist or folder on the left to list its tracks.
 - Type in the **search box** to filter by title, artist, album or genre.
 - Click a **column heading** to sort by it, and click again to reverse.
-- **Right-click a column heading** to show or hide columns.
+- **Drag a column heading** left or right to reorder the columns. The ● marker column stays first, and your layout is remembered.
+- **Right-click a column heading** to show or hide columns, or choose **Reset Columns** to go back to the default layout.
 - A **●** at the start of a row shows that the track is already on the disc you are planning.
 
 Tracks whose file can't be found are greyed out in the list, and shown in red on the disc. The file has moved, or the drive it lives on isn't connected. Reconnect it and re-import the source.
@@ -82,7 +83,7 @@ Tracks whose file can't be found are greyed out in the list, and shown in red on
 
 ## Listening to tracks
 
-**Double-click** a track to preview it, and press **Space** to play or pause. The **Preview** column shows the whole track as a waveform: low frequencies in blue, mids in amber and highs in white.
+**Double-click** a track to preview it, and press **Space** to play or pause. The **Preview** column shows the whole track as a waveform.
 
 The two waveforms in the player:
 
@@ -90,6 +91,16 @@ The two waveforms in the player:
 - The **detail view** is zoomed in and scrolls past a fixed playhead, with the beat grid drawn on it. Click to jump, and use the mouse wheel to zoom.
 
 For rekordbox tracks the waveforms, beat grid, phrases and cues come from rekordbox's own analysis. For other music Dubcrate draws the waveform itself. Beat grids and cues are only shown for your planning: **they do not go on the CD.**
+
+**Waveform looks.** Choose how waveforms are drawn under **View > Waveform**, or in **Settings > Appearance**:
+
+- **3-Band** is rekordbox's default: low frequencies in blue, mids in amber and highs in white.
+- **RGB** colours each moment by what is in it: lows red, mids green and highs blue, mixing where they overlap.
+- **Blue** is rekordbox's classic blue waveform: blue, with a whiter core where the sound is brighter.
+
+The look applies to the overview, the detail view and the Preview column, and works for every track, with or without rekordbox's analysis. For RGB and Blue, Dubcrate works the colours out from the same three bands rather than reading rekordbox's own colour waveform, so they resemble rekordbox's without being identical.
+
+**Waveform background.** The waveform follows your theme, so it is light in the light theme. If you prefer rekordbox's dark waveform whatever the theme, choose **Always dark** under **Settings > Appearance**. The Macintosh System 6 theme always draws the 3-band look in black and white.
 
 Choose where previews play, and test it, in [Settings](#settings).
 
@@ -202,7 +213,7 @@ The full list of command-line options is in the project's developer notes.
 - **Discs:** how **new** discs are planned: **Plan new discs for** 80 or 74 minutes, and **Between tracks**, which is **Gapless** unless you choose 1, 2 or 3 seconds of silence.
 - **Burning:** the **Burn speed** a burn starts with (10x unless you change it). Old players read discs burned slowly more reliably, and 10x to 16x is a good range. Your drive may not offer every speed. You can still pick another speed for a single burn in the burn window.
 - **Audio:** the **Output device** for previews and the **Buffer size**, with a button that plays a short test tone.
-- **Appearance:** the **Theme**, the same choice as **View > Theme**.
+- **Appearance:** the **Theme** (the same choice as **View > Theme**), the **Waveform style** (the same as **View > Waveform**), and the **Waveform background**.
 
 ---
 

@@ -95,6 +95,30 @@ def set_burn_speed(speed: int) -> None:
     _qs().setValue("burn/speed", int(speed))
 
 
+WAVE_STYLES = ("bands", "rgb", "blue")
+WAVE_BACKGROUNDS = ("theme", "dark")
+
+
+def get_wave_style() -> str:
+    """The waveform look: the 3-band one (rekordbox's default), RGB, or blue."""
+    value = str(_qs().value("waveform/style", WAVE_STYLES[0]))
+    return value if value in WAVE_STYLES else WAVE_STYLES[0]
+
+
+def set_wave_style(style: str) -> None:
+    _qs().setValue("waveform/style", style)
+
+
+def get_wave_background() -> str:
+    """ "theme": the waveform follows the theme (light in the light theme); "dark": always dark."""
+    value = str(_qs().value("waveform/background", WAVE_BACKGROUNDS[0]))
+    return value if value in WAVE_BACKGROUNDS else WAVE_BACKGROUNDS[0]
+
+
+def set_wave_background(mode: str) -> None:
+    _qs().setValue("waveform/background", mode)
+
+
 def get_audio_device() -> str | None:
     """The saved output device id (hex), or None for the system default."""
     return _qs().value("audio/device", None) or None
@@ -140,6 +164,23 @@ def get_hidden_columns() -> list[str]:
     except ValueError:
         return []
     return [n for n in names if isinstance(n, str)]
+
+
+def get_column_order() -> list[str]:
+    """The track table's columns, left to right, by title (empty: the default order)."""
+    import json
+
+    try:
+        names = json.loads(str(_qs().value("tracks/column_order", "[]") or "[]"))
+    except ValueError:
+        return []
+    return [n for n in names if isinstance(n, str)]
+
+
+def set_column_order(names: list[str]) -> None:
+    import json
+
+    _qs().setValue("tracks/column_order", json.dumps(names))
 
 
 def set_hidden_columns(names: list[str]) -> None:

@@ -44,6 +44,27 @@ read-only: Dubcrate never writes to rekordbox.
   and high: close enough to look alike, not identical. [tests] cover the decoding.
 - `PWV6` (the 1,200-column preview) looks high-dominated when drawn, so the overview
   and the track list's Preview column use `PWV7` averaged down instead.
+- **Blue and colour waveforms: what they hold and how our looks relate.**
+  **[measured 2026-11-11]** `.EXT` also has `PWV3` (the blue detail waveform: per column a
+  height 0-31 and a whiteness 0-7) and `PWV5` (the colour detail waveform: a height and
+  three colour channels), at the same 150 columns/s, column for column with `PWV7`
+  (checked on 60 tracks). Dubcrate does not read them: the RGB and blue looks are
+  derived from the 3-band bands (`waveform.py`), so they work for every track. Across 60
+  tracks, per-track Pearson r between the native data and the 3-band bands:
+  - blue **height** follows the RMS of the three bands best (0.86; mean 0.85, max 0.81);
+  - the colour waveform is **red = lows, green = mids, blue = highs** (R vs the low share
+    of the column 0.73, G vs mid share 0.69, B vs high share 0.60): hue is the column's
+    make-up, not its loudness;
+  - blue **whiteness** is the opposite of bass: r = -0.74 with the low share, +0.69 with
+    the mid+high share.
+
+  The derivation has two fitted constants: per-channel gains (1.0, 0.5, 1.4) for the colour
+  (raw shares over-weight green and under-weight blue; mean absolute error 0.247 down to
+  0.192), and a whiteness stretch so its spread matches rekordbox's. **Held-out check** on 59
+  other tracks, with the functions as shipped: height r = 0.87, whiteness r = 0.68, colour
+  r = 0.52 / 0.78 / 0.62 (R / G / B), mean absolute error 0.195. So: similar, not identical,
+  and red is the weakest channel. Reading `PWV3` / `PWV5` directly would match rekordbox
+  exactly for its own tracks; it would still need the derived look for folder tracks.
 - **Beat grid** (`PQTZ`): beat number in the bar (1-4), tempo, time in seconds; 640
   entries for a 295 s, 130 BPM track.
 - **Phrases** (`PSSI`): `mood`, `end_beat`, and entries of (`beat`, `kind`), with beats

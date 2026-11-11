@@ -23,6 +23,10 @@ from dubcrate.waveform import (
     Waveform,
     compute_waveform,
     from_bytes,
+    overall_height,
+    raster_columns,
+    rgb_colors,
+    whiteness,
 )
 
 
@@ -239,3 +243,83 @@ def test_against_a_real_local_rekordbox_analysis():
 
 def test_analysis_module_exposes_its_types():
     assert analysis.Analysis().cues == () and analysis.Analysis().waveform is None
+
+
+# -- the RGB and blue styles --------------------------------------------------
+
+
+def bands(*rows):
+    return np.array(rows, dtype=np.float32)
+
+
+def test_the_overall_height_is_the_rms_of_the_bands_and_never_above_one():
+    h = overall_height(bands([0, 0, 0], [1, 0, 0], [0.6, 0.8, 0], [1, 1, 1]))
+    assert h[0] == 0 and h[1] == pytest.approx(1.0)
+    assert h[2] == pytest.approx(1.0)  # 0.6 and 0.8 make 1.0
+    assert h[3] == 1.0  # clipped: sqrt(3) would be above one
+
+
+def test_the_rgb_colour_is_red_for_lows_green_for_mids_blue_for_highs():
+    red, green, blue = rgb_colors(bands([1, 0, 0], [0, 1, 0], [0, 0, 1]))
+    assert red.argmax() == 0 and green.argmax() == 1 and blue.argmax() == 2
+    assert red[1] == red[2] == 0  # a pure low is pure red
+
+
+def test_the_rgb_colour_is_about_what_is_in_the_column_not_how_loud_it_is():
+    quiet, loud = rgb_colors(bands([0.1, 0.05, 0.02], [1.0, 0.5, 0.2]))
+    assert np.allclose(quiet, loud, atol=1e-5)
+    assert loud.max() == pytest.approx(1.0)  # the dominant channel is always full
+
+
+def test_the_rgb_gains_tame_green_and_lift_blue_like_rekordboxs_own_colours():
+    even = rgb_colors(bands([1, 1, 1]))[0]
+    assert even[2] > even[0] > even[1]  # blue, then red, then green (gains 1.4, 1, 0.5)
+
+
+def test_a_silent_column_has_no_colour_and_no_whiteness():
+    assert rgb_colors(bands([0, 0, 0]))[0].tolist() == [0, 0, 0]
+    assert whiteness(bands([0, 0, 0]))[0] == 0
+
+
+def test_whiteness_rises_as_the_bass_share_falls():
+    bass, balanced, bright = whiteness(
+        bands([1, 0.05, 0.02], [0.4, 0.4, 0.3], [0.05, 0.4, 0.8])
+    )
+    assert bass < balanced < bright
+    assert bass == 0 and bright == 1  # the ends of the range are reached
+
+
+def test_raster_bottom_aligned_columns_grow_from_the_floor():
+    body = np.ones((3, 3), np.float32)
+    img = raster_columns(
+        np.array([0.0, 0.5, 1.0]), body, None, rows=10, extent=10, mirrored=False
+    )
+    assert img.shape == (10, 3, 4) and img.dtype == np.uint8
+    filled = (img[..., 3] > 0).sum(axis=0)
+    assert filled.tolist() == [0, 5, 10]
+    assert (
+        img[9, 1, 3] == 255 and img[0, 1, 3] == 0
+    )  # the floor is filled, the top isn't
+
+
+def test_raster_mirrored_columns_grow_both_ways_from_the_middle():
+    body = np.ones((2, 3), np.float32)
+    img = raster_columns(
+        np.array([0.0, 1.0]), body, None, rows=10, extent=5, mirrored=True
+    )
+    column = img[:, 1, 3] > 0
+    assert column.sum() == 10 and column[0] and column[-1]
+    assert not (img[:, 0, 3] > 0).any()
+
+
+def test_raster_gives_each_column_its_own_colour_and_a_lighter_core():
+    body = np.array([[1, 0, 0], [0, 0, 1]], np.float32)
+    core = np.array([[1, 1, 1], [0.5, 0.5, 1]], np.float32)
+    img = raster_columns(
+        np.array([1.0, 1.0]), body, core, rows=20, extent=20, mirrored=False,
+        core_fraction=0.5,
+    )  # fmt: skip
+    assert img[0, 0, :3].tolist() == [255, 0, 0]  # the top of column 0 is body (red)
+    assert img[19, 0, :3].tolist() == [255, 255, 255]  # near the floor, the core
+    assert img[0, 1, :3].tolist() == [0, 0, 255]
+    assert img[19, 1, :3].tolist() == [128, 128, 255]

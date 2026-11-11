@@ -306,3 +306,53 @@ def test_summary_warns_about_missing_tracks_and_flags_estimates(qapp):
 
 def test_disc_entry_type_is_what_the_model_expects():
     assert DiscEntry.__dataclass_fields__.keys() >= {"position", "track"}
+
+
+# -- icons in the source tree --------------------------------------------------
+
+
+def icon_image(item):
+    """The icon's pixels: Qt makes a new pixmap per call, so compare these, not cache keys."""
+    return item.icon().pixmap(16, 16).toImage()
+
+
+def test_playlists_get_their_own_icon_so_their_text_lines_up_with_folders(qapp):
+    lib = make_lib()
+    model = build_source_model(lib)  # keep it: the items belong to the model
+    source = model.invisibleRootItem().child(1)
+    folder, playlist = source.child(0), source.child(0).child(0)
+    assert not playlist.icon().isNull() and not folder.icon().isNull()
+    assert icon_image(playlist) != icon_image(folder)
+    assert icon_image(playlist) != icon_image(source)
+    lib.close()
+
+
+def test_every_row_of_a_folder_source_is_a_folder(qapp):
+    lib = Library.open(":memory:")
+    records = [
+        TrackRecord(ext_id="a", path="/m/x/a.mp3", title="A"),
+        TrackRecord(ext_id="b", path="/m/b.mp3", title="B"),
+    ]
+    nodes = [
+        NodeRecord("/m", None, "m", True, ("b",)),
+        NodeRecord("/m/x", "/m", "x", False, ("a",)),  # a leaf directory
+    ]
+    lib.replace_source("folder", "/m", "Music", records, nodes)
+    model = build_source_model(lib)
+    top = model.invisibleRootItem().child(1).child(0)
+    leaf = top.child(0)
+    assert not leaf.icon().isNull()
+    assert icon_image(leaf) == icon_image(top)  # a directory, not a playlist
+    lib.close()
+
+
+def test_the_playlist_icon_exists_in_every_theme(qapp):
+    from dubcrate.ui import theme
+
+    for preference in ("dark", "light", "system6"):
+        theme.set_theme_preference(preference)
+        lib = make_lib()
+        model = build_source_model(lib)
+        playlist = model.invisibleRootItem().child(1).child(0).child(0)
+        assert not playlist.icon().isNull(), preference
+        lib.close()

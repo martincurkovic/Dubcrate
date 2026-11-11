@@ -69,6 +69,8 @@ def test_menu_items_the_guide_names_exist(window):
     ):
         assert item in labels, item
         assert item in MANUAL, item
+    assert "Waveform" in labels  # View > Waveform
+    assert "View > Waveform" in MANUAL
 
 
 def test_the_shortcuts_the_guide_lists_are_the_real_ones(window):
@@ -129,3 +131,11 @@ def test_the_settings_tabs_the_guide_names_exist(qapp):
     assert "Plan new discs for" in MANUAL and "Between tracks" in MANUAL
     assert dialog.minutes_combo.currentData() == 80  # "80 minutes ... gapless"
     assert "Burn speed" in MANUAL and dialog.speed_combo.currentData() == 10  # "10x"
+    assert "Waveform style" in MANUAL and "Waveform background" in MANUAL
+    assert dialog.wave_style_combo.itemText(0) == "3-Band"
+
+
+def test_the_column_menu_item_the_guide_names_exists():
+    assert "Reset Columns" in MANUAL
+    source = (MANUAL_PATH.parent.parent / "main_window.py").read_text()
+    assert '"Reset Columns"' in source

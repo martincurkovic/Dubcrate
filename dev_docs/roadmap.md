@@ -51,6 +51,11 @@
 - Adding a track that is already on the disc, on another planned disc, or on a past
   burn asks "Add anyway?" first, listing where it is used (`Library.track_usage`,
   `ui/overlaps.py`). Simulated burns don't count. Splitting into discs doesn't check yet.
+- Waveform looks (3-band, RGB, blue) are chosen in Settings or under View > Waveform. RGB
+  and blue are derived from the 3-band data so every track has them (measured against
+  rekordbox's own, see `rekordbox-analysis.md`). The waveform background follows the theme
+  (light in the light theme); *Always dark* keeps rekordbox's dark one. System 6 always draws
+  the 3-band look.
 - The README is for end users only; developer notes live here and in `CONTRIBUTING.md`.
 
 ## Known rough edges
@@ -69,6 +74,10 @@
   [burning.md](burning.md)).
 
 ## Unverified
+
+- The RGB and blue looks and the light waveform on a real display (checked offscreen, and
+  against rekordbox's data only statistically). Reading rekordbox's `PWV3` / `PWV5` directly
+  is the way to exact matches for rekordbox tracks.
 
 - Cue points: parsed defensively but none of the sampled tracks had any, so the
   display is tested only with fake data.

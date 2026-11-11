@@ -424,6 +424,12 @@ def _source_icon() -> QIcon:
     return QApplication.style().standardIcon(QStyle.StandardPixmap.SP_DriveHDIcon)
 
 
+def _playlist_icon() -> QIcon:
+    return mono_icons.playlist(
+        _dpr(), muted=not theme.current_palette().get("mono_icons")
+    )
+
+
 def _count_item(count: int | None) -> QStandardItem:
     item = QStandardItem("" if not count else f"{count:,}")
     item.setEditable(False)
@@ -460,8 +466,12 @@ def build_source_model(lib: Library) -> QStandardItemModel:
             child.setData(("node", node.id, source.id), SELECTION_ROLE)
             child.setData(node.name, NAME_ROLE)
             child.setEditable(False)
-            if node.is_folder:
+            # A folder source's directories are always folders (even a leaf one, which
+            # has no sub-directories); only a rekordbox playlist is a playlist.
+            if node.is_folder or source.kind == "folder":
                 child.setIcon(_folder_icon())
+            else:
+                child.setIcon(_playlist_icon())
             parents.get(node.parent_id, item).appendRow(
                 [child, _count_item(node.track_count)]
             )

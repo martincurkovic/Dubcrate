@@ -72,7 +72,8 @@ DARK_PALETTE = {
     "volume_color_7": "#9085e9",
     "volume_color_8": "#e66767",
     # Dubcrate additions: the waveform display. Painted, not styled, so no template uses them.
-    # Like rekordbox, the waveform sits on black in every colour theme: lows blue, mids amber, highs white.
+    # Like rekordbox, the waveform sits on black and shows lows blue, mids amber, highs white. The light
+    # theme has its own (white, with the highs in slate), unless Settings asks for a dark waveform.
     "wave_bg": "#0b0b0f",
     "wave_low": "#2f62ff",
     "wave_mid": "#e8922b",
@@ -80,6 +81,8 @@ DARK_PALETTE = {
     "wave_playhead": "#ffffff",
     "wave_beat": "#3a3a48",
     "wave_text": "#ffffff",
+    "wave_blue": "#2f62ff",  # the blue waveform: its body, and what its core whitens towards
+    "wave_blue_core": "#ffffff",
 }
 
 LIGHT_PALETTE = {
@@ -126,13 +129,15 @@ LIGHT_PALETTE = {
     "volume_color_7": "#4a3aa7",
     "volume_color_8": "#e34948",
     # Dubcrate additions: the waveform display (see DARK_PALETTE). Black here too, as in rekordbox.
-    "wave_bg": "#0b0b0f",
+    "wave_bg": "#ffffff",
     "wave_low": "#2f62ff",
     "wave_mid": "#e8922b",
-    "wave_high": "#f4f4f4",
-    "wave_playhead": "#ffffff",
-    "wave_beat": "#3a3a48",
-    "wave_text": "#ffffff",
+    "wave_high": "#4b4b5e",
+    "wave_playhead": "#14141c",
+    "wave_beat": "#d6d6e0",
+    "wave_text": "#14141c",
+    "wave_blue": "#2a5bd7",
+    "wave_blue_core": "#a9c7ff",
 }
 
 
@@ -216,6 +221,8 @@ SYSTEM6_PALETTE = {
     "wave_playhead": "#dd0907",
     "wave_beat": "#a0a0a0",
     "wave_text": "#000000",
+    "wave_blue": "#000000",  # (System 6 draws every style as the 3-band one)
+    "wave_blue_core": "#c4c4c4",
 }
 
 
