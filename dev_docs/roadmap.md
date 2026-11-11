@@ -6,9 +6,9 @@
    progress log, drive and speed choice, and running DiscRecording off the GUI thread.
    This needs a hardware check (see [burning.md](burning.md)). The burn path
    in `build.py` and the backends already exist; only the dialog is missing.
-2. **A record of what was burned.** Each burn saves a snapshot (tracks, lengths,
-   titles, date, drive, speed). A *Duplicate* action makes an editable copy to
-   re-burn. Open question: should a disc lock once burned, or stay editable?
+2. **A record of what was burned.** *Store side done* (`record_burn`, `burns`,
+   `duplicate_burn`, schema v3). Still to do: call `record_burn` from the burn path
+   once a burn succeeds, and show the records in the window (with *Duplicate*).
 3. **The source rail** from the rbxport-style layout: Library, Explorer (a live
    folder browser, no import needed) and Discs (the list of planned and burned
    discs, with the disc currently in the burner so a finished burn can be read back
@@ -31,6 +31,10 @@
 - Double-click previews a track; Return (or the button, or dragging) adds it to a disc.
 - Music/iTunes is skipped for now. The theme is shared with the owner's other apps.
 - Licensed GPL-3.0-or-later. No tag library: `ffprobe` reads tags.
+- A planned disc stays editable after a burn. Each burn saves its own frozen snapshot
+  (`burn` / `burn_track`, copies of title, artist, length and path), so editing or
+  deleting the disc, or removing its source, never changes the record. *Duplicate*
+  makes a new editable disc from a snapshot and skips tracks no longer in the library.
 - The README is for end users only; developer notes live here and in `CONTRIBUTING.md`.
 
 ## Known rough edges

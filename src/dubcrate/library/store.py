@@ -17,8 +17,11 @@ from typing import Self
 from dubcrate.cd import DISC_80_SECTORS, MAX_TRACKS, disc_used_sectors
 from dubcrate.library.models import (
     AddResult,
+    BurnRecord,
+    BurnTrack,
     DiscEntry,
     DiscSummary,
+    DuplicateResult,
     ImportSummary,
     Node,
     NodeRecord,
@@ -112,7 +115,33 @@ CREATE TABLE disc_track (
 CREATE INDEX disc_track_track ON disc_track(track_id)
 """
 
-_MIGRATIONS = (_SCHEMA_V1, _SCHEMA_V2)
+_SCHEMA_V3 = """
+CREATE TABLE burn (
+    id INTEGER PRIMARY KEY,
+    disc_id INTEGER REFERENCES disc(id) ON DELETE SET NULL,
+    name TEXT NOT NULL,
+    capacity_sectors INTEGER NOT NULL,
+    pregap_sectors INTEGER NOT NULL,
+    used_sectors INTEGER NOT NULL,
+    drive TEXT NOT NULL DEFAULT '',
+    speed INTEGER,
+    simulated INTEGER NOT NULL DEFAULT 0,
+    burned_at TEXT NOT NULL
+);
+CREATE INDEX burn_disc ON burn(disc_id);
+CREATE TABLE burn_track (
+    burn_id INTEGER NOT NULL REFERENCES burn(id) ON DELETE CASCADE,
+    position INTEGER NOT NULL,
+    track_id INTEGER REFERENCES track(id) ON DELETE SET NULL,
+    title TEXT NOT NULL,
+    artist TEXT NOT NULL,
+    sectors INTEGER NOT NULL,
+    path TEXT NOT NULL,
+    PRIMARY KEY (burn_id, position)
+)
+"""
+
+_MIGRATIONS = (_SCHEMA_V1, _SCHEMA_V2, _SCHEMA_V3)
 SCHEMA_VERSION = len(_MIGRATIONS)
 
 _TRACK_FIELDS = (
@@ -708,3 +737,109 @@ class Library:
                 self._write_disc_tracks(disc_id, [tracks[i].id for i in group])
             disc_ids.append(disc_id)
         return SplitResult(tuple(disc_ids), tuple(tracks[i].id for i in too_long))
+
+    # -- burn records ----------------------------------------------------
+
+    def record_burn(
+        self,
+        disc_id: int,
+        *,
+        drive: str = "",
+        speed: int | None = None,
+        simulated: bool = False,
+    ) -> int:
+        """Save a snapshot of the disc as it is now; returns the burn id.
+
+        The planned disc stays editable: later changes to it don't touch the
+        snapshot.
+        """
+        row = self._disc_row(disc_id)
+        entries = self.disc_entries(disc_id)
+        used = disc_used_sectors((e.sectors for e in entries), row["pregap_sectors"])
+        now = datetime.now(UTC).isoformat(timespec="seconds")
+        with self._conn:
+            cursor = self._conn.execute(
+                "INSERT INTO burn (disc_id, name, capacity_sectors, pregap_sectors,"
+                " used_sectors, drive, speed, simulated, burned_at)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    disc_id, row["name"], row["capacity_sectors"],
+                    row["pregap_sectors"], used, drive, speed, int(simulated), now,
+                ),
+            )  # fmt: skip
+            burn_id = cursor.lastrowid
+            assert burn_id is not None
+            self._conn.executemany(
+                "INSERT INTO burn_track (burn_id, position, track_id, title, artist,"
+                " sectors, path) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                [
+                    (
+                        burn_id, e.position, e.track.id, e.track.title,
+                        e.track.artist, e.sectors, e.track.path,
+                    )
+                    for e in entries
+                ],
+            )  # fmt: skip
+        return burn_id
+
+    def _burn_tracks(self, burn_id: int) -> tuple[BurnTrack, ...]:
+        rows = self._conn.execute(
+            "SELECT * FROM burn_track WHERE burn_id = ? ORDER BY position", (burn_id,)
+        )
+        return tuple(
+            BurnTrack(
+                r["position"], r["track_id"], r["title"], r["artist"],
+                r["sectors"], r["path"],
+            )
+            for r in rows
+        )  # fmt: skip
+
+    def _to_burn(self, r: sqlite3.Row) -> BurnRecord:
+        return BurnRecord(
+            r["id"], r["disc_id"], r["name"], r["capacity_sectors"],
+            r["pregap_sectors"], r["used_sectors"], r["drive"], r["speed"],
+            bool(r["simulated"]), r["burned_at"], self._burn_tracks(r["id"]),
+        )  # fmt: skip
+
+    def burns(self, disc_id: int | None = None) -> list[BurnRecord]:
+        """Burn records, newest first; only one disc's if `disc_id` is given."""
+        if disc_id is None:
+            rows = self._conn.execute("SELECT * FROM burn ORDER BY id DESC")
+        else:
+            rows = self._conn.execute(
+                "SELECT * FROM burn WHERE disc_id = ? ORDER BY id DESC", (disc_id,)
+            )
+        return [self._to_burn(r) for r in rows.fetchall()]
+
+    def burn(self, burn_id: int) -> BurnRecord:
+        row = self._conn.execute(
+            "SELECT * FROM burn WHERE id = ?", (burn_id,)
+        ).fetchone()
+        if row is None:
+            raise DiscError(f"no burn with id {burn_id}")
+        return self._to_burn(row)
+
+    def delete_burn(self, burn_id: int) -> None:
+        self.burn(burn_id)
+        with self._conn:
+            self._conn.execute("DELETE FROM burn WHERE id = ?", (burn_id,))
+
+    def duplicate_burn(self, burn_id: int, name: str | None = None) -> DuplicateResult:
+        """Make a new editable disc from a burn record, to re-burn or tweak.
+
+        Tracks that have left the library since are skipped and reported.
+        """
+        record = self.burn(burn_id)
+        # track_id is NULLed when its track is deleted, so non-null means it's still here.
+        kept = [t for t in record.tracks if t.track_id is not None]
+        skipped = tuple(t for t in record.tracks if t.track_id is None)
+        disc_id = self.create_disc(
+            name or f"{record.name} (copy)",
+            capacity_sectors=record.capacity_sectors,
+            pregap_sectors=record.pregap_sectors,
+        )
+        with self._conn:
+            self._write_disc_tracks(
+                disc_id, [t.track_id for t in kept if t.track_id is not None]
+            )
+        return DuplicateResult(disc_id, skipped)

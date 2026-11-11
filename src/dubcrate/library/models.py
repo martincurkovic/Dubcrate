@@ -145,3 +145,42 @@ class AddResult:
 class SplitResult:
     disc_ids: tuple[int, ...]
     too_long: tuple[int, ...]  # track ids longer than an empty disc
+
+
+@dataclass(frozen=True)
+class BurnTrack:
+    """One track as it was burned. A copy, so it outlives the library track."""
+
+    position: int  # 0-based
+    track_id: int | None  # None once the library track is gone
+    title: str
+    artist: str
+    sectors: int
+    path: str
+
+
+@dataclass(frozen=True)
+class BurnRecord:
+    """A frozen snapshot of one burn: what went on the disc, when, and how."""
+
+    id: int
+    disc_id: int | None  # None once the planned disc is deleted
+    name: str
+    capacity_sectors: int
+    pregap_sectors: int
+    used_sectors: int
+    drive: str
+    speed: int | None  # x, None for the drive's default
+    simulated: bool
+    burned_at: str
+    tracks: tuple[BurnTrack, ...] = ()
+
+    @property
+    def track_count(self) -> int:
+        return len(self.tracks)
+
+
+@dataclass(frozen=True)
+class DuplicateResult:
+    disc_id: int
+    skipped: tuple[BurnTrack, ...]  # tracks no longer in the library
