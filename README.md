@@ -50,6 +50,24 @@ uv run ruff check . && uv run ruff format .
 Requires `ffmpeg` and `ffprobe` on `PATH` (`brew install ffmpeg`). The `cdrdao`
 backend also needs `brew install cdrdao`.
 
+### Library
+
+Import a folder of audio files, or a rekordbox library, into Dubcrate's own
+SQLite database. Both are read-only: rekordbox's `master.db` is copied to a
+temp directory and the copy is read, and audio files are only probed.
+
+```sh
+uv run dubcrate import-folder ~/Music/Crate          # directories become browsable nodes
+uv run dubcrate import-rekordbox                     # the installed library, or --db PATH
+uv run dubcrate sources
+uv run dubcrate nodes 1                              # a source's playlist/folder tree
+uv run dubcrate tracks --source 1 --search kettama --sort bpm --desc
+uv run dubcrate tracks --node 40                     # a playlist, in its running order
+```
+
+The library lives in the platform app-data directory; pass `--library PATH` to
+use another one. Re-importing a source syncs it in place and keeps track ids.
+
 ### Burn spike
 
 `spikes/burn_spike.py` renders tracks, builds the disc and burns it. It is a

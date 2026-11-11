@@ -22,6 +22,12 @@ the repo; follow whatever it reports.
 - `src/dubcrate/burn/base.py`: `Disc`, `DiscTrack`, `BurnOptions`, `Burner` protocol.
 - `src/dubcrate/burn/discrecording.py`: macOS backend (PyObjC). Import only on darwin.
 - `src/dubcrate/burn/cdrdao.py`: cdrdao backend, TOC generation.
+- `src/dubcrate/library/`: Dubcrate's own SQLite library.
+  - `models.py`: `TrackRecord`/`NodeRecord` (what a source produces) and `Track`/`Node`/`Source` (what the store returns).
+  - `store.py`: `Library`. `replace_source` syncs a source in one transaction and keeps track ids stable across re-imports.
+  - `folder.py`: scan a folder of audio files (ffprobe tags); directories become browse nodes.
+  - `rekordbox.py`: read a rekordbox 6/7 `master.db` via pyrekordbox. Mapping is in pure functions so it is testable with fake rows.
+- `src/dubcrate/cli.py`: `dubcrate` command (import, sources, nodes, tracks) until there is a GUI.
 - `spikes/`: throwaway hardware drivers. Reusable logic belongs in the package.
 - `tests/`: pytest. Tests must not need a drive or a disc.
 - `assets/icon/`: `AppIcon.png` is the 1024x1024 master; `AppIcon.txt` holds the
@@ -39,7 +45,11 @@ the repo; follow whatever it reports.
   commit message and stop there; don't run `git commit`, `git push`, `git reset`
   or anything else that changes history or the remote.
 - **Never write to a rekordbox database or library.** Reading is fine, and only
-  through a read-only interface. Dubcrate stores its own data in its own SQLite DB.
+  from a snapshot copy (`rekordbox._snapshot`), never the live `master.db`.
+  Dubcrate stores its own data in its own SQLite DB.
+- **Treat the user's music as read-only.** Scanning and probing only; never
+  modify, move or delete audio files. Use `--library <scratch path>` when trying
+  the CLI so the user's real app-data library isn't touched.
 - Burners are backends behind the `Burner` protocol. Don't leak backend details
   (DiscRecording types, cdrdao flags) into callers.
 - Tracks are gapless by default (`BurnOptions.pregap_sectors = 0`). DiscRecording
@@ -53,6 +63,8 @@ the repo; follow whatever it reports.
 
 - Python 3.13+, type hints, `pathlib.Path` for paths, stdlib where it will do.
 - Run external tools with `subprocess` and an explicit `check=` argument.
+- Store ids (`Track.id`) are what discs will reference, so re-imports must keep them
+  stable: match on `ext_id`, never delete-and-reinsert tracks.
 - Keep dependencies light and watch licenses: `mutagen` and anything from rbxport
   are GPL, so they constrain the project license (not yet chosen).
 - GUI will be PySide6 and packaged with Nuitka. Avoid dependencies that make

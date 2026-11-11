@@ -36,6 +36,33 @@ class SourceInfo:
     title: str
     artist: str
     album: str
+    genre: str = ""
+    year: int | None = None
+    comment: str = ""
+    bpm: float | None = None
+    key: str = ""
+    bitrate: int | None = None  # kbit/s
+    codec: str = ""
+
+
+def _first(tags: dict[str, str], *names: str) -> str:
+    for name in names:
+        if tags.get(name):
+            return tags[name].strip()
+    return ""
+
+
+def _parse_bpm(value: str) -> float | None:
+    try:
+        bpm = float(value)
+    except ValueError:
+        return None
+    return bpm if 20 <= bpm <= 400 else None
+
+
+def _parse_year(value: str) -> int | None:
+    head = value[:4]
+    return int(head) if head.isdigit() and 1000 <= int(head) <= 2999 else None
 
 
 def _require(tool: str) -> str:
@@ -50,8 +77,8 @@ def probe(path: Path) -> SourceInfo:
     cmd = [
         _require("ffprobe"), "-v", "error", "-select_streams", "a:0",
         "-show_entries",
-        ("stream=sample_rate,bits_per_raw_sample,bits_per_sample"
-         ":format=duration:format_tags=title,artist,album"),
+        ("stream=codec_name,sample_rate,bits_per_raw_sample,bits_per_sample"
+         ":format=duration,bit_rate:format_tags"),
         "-of", "json", str(path),
     ]  # fmt: skip
     proc = subprocess.run(cmd, check=False, capture_output=True, text=True)
@@ -77,6 +104,13 @@ def probe(path: Path) -> SourceInfo:
         title=tags.get("title", path.stem),
         artist=tags.get("artist", ""),
         album=tags.get("album", ""),
+        genre=_first(tags, "genre"),
+        year=_parse_year(_first(tags, "date", "year", "tdrc", "tyer")),
+        comment=_first(tags, "comment", "description"),
+        bpm=_parse_bpm(_first(tags, "bpm", "tbpm", "tmpo")),
+        key=_first(tags, "initialkey", "initial_key", "tkey", "key"),
+        bitrate=(_int(fmt.get("bit_rate")) or 0) // 1000 or None,
+        codec=stream.get("codec_name", ""),
     )
 
 
