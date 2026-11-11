@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.ruff_cache/
+dist/
+build/
+*.egg-info/
+
+# Nuitka
+*.build/
+*.dist/
+*.onefile-build/
+
+# macOS
+.DS_Store
+
+# Spike / scratch output (rendered WAVs are ~10 MB per minute)
+work/
+*.wav
+*.toc
