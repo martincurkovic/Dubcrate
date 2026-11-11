@@ -243,10 +243,8 @@ def cmd_burn(lib: Library, args: argparse.Namespace) -> int:
         print(f"burn failed: {exc}", file=sys.stderr)
         return 1
     if not options.simulate:  # a test write puts nothing on a disc
-        burn_id = lib.record_burn(
-            args.disc, drive=media.drive or options.device or "", speed=options.speed
-        )
-        print(f"saved burn record {burn_id}")
+        lib.mark_burned(args.disc)
+        print(f"marked disc {args.disc} as burned")
     print("done")
     return 0
 

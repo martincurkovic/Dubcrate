@@ -15,7 +15,7 @@ from dubcrate.cd import DISC_74_SECTORS, DISC_80_SECTORS
 from dubcrate.library import Library, NodeRecord, TrackRecord
 from dubcrate.library.rekordbox import RekordboxError, RekordboxLibrary
 from dubcrate.ui import main_window, theme
-from dubcrate.ui.disc_panel import DiscPanel
+from dubcrate.ui.disc_view import DiscView
 from dubcrate.ui.main_window import MainWindow
 from dubcrate.ui.models import DISC_ROWS_MIME, TRACK_COLUMNS, TRACK_MIME, find_selection
 
@@ -58,7 +58,7 @@ def titles(win):
 
 
 def disc_titles(win):
-    panel = win.disc_panel
+    panel = win.disc_view
     return [panel.model.entry_at(r).track.title for r in range(panel.model.rowCount())]
 
 
@@ -165,7 +165,14 @@ def test_adding_selected_tracks_creates_a_disc_and_marks_them(window):
     select_rows(win.track_table, [0, 2])
     assert win.add_button.isEnabled()
     win.add_selected_to_disc()
-    assert win.disc_panel.combo.count() == 1 and lib.discs()[0].name == "Disc 1"
+    assert len(lib.discs()) == 1 and lib.discs()[0].name == "Disc 1"
+    assert (
+        win.disc_view.current_disc_id() == lib.discs()[0].id
+    )  # and it is the open disc
+    assert "(a new disc)" in win.statusBar().currentMessage()
+    assert (
+        win.center.currentIndex() == 0
+    )  # adding from the library stays in the library
     assert disc_titles(win) == ["Song 0", "Song 2"]
     marks = [win.track_model.data(win.track_model.index(r, 0)) for r in range(6)]
     assert marks == ["●", "", "●", "", "", ""]
@@ -184,7 +191,7 @@ def test_fit_all_stops_when_the_disc_is_full(window):
     disc_id = lib.create_disc(
         "Tiny", capacity_sectors=12_000
     )  # room for two 5000-sector tracks
-    win.disc_panel.reload(select_id=disc_id)
+    win.disc_view.set_disc(disc_id)
     win.fit_all_to_disc()
     assert len(disc_titles(win)) == 2
     assert "4 didn't fit" in win.statusBar().currentMessage()
@@ -194,10 +201,10 @@ def test_fit_all_stops_when_the_disc_is_full(window):
 def test_dropping_tracks_inserts_them_at_the_drop_row(window):
     win, lib = window
     ids = {t.title: t.id for t in lib.tracks()}
-    win.disc_panel.add_tracks([ids["Song 0"], ids["Song 1"]])
+    win.disc_view.add_tracks([ids["Song 0"], ids["Song 1"]])
     mime = QMimeData()
     mime.setData(TRACK_MIME, json.dumps([ids["Song 5"]]).encode())
-    win.disc_panel.model.dropMimeData(
+    win.disc_view.model.dropMimeData(
         mime, Qt.DropAction.CopyAction, 1, 0, QModelIndex()
     )
     assert disc_titles(win) == ["Song 0", "Song 5", "Song 1"]
@@ -205,19 +212,19 @@ def test_dropping_tracks_inserts_them_at_the_drop_row(window):
 
 def test_dragging_rows_reorders_the_disc(window):
     win, lib = window
-    win.disc_panel.add_tracks([t.id for t in lib.tracks(sort="title")][:4])
+    win.disc_view.add_tracks([t.id for t in lib.tracks(sort="title")][:4])
     mime = QMimeData()
     mime.setData(DISC_ROWS_MIME, json.dumps([0]).encode())
-    win.disc_panel.model.dropMimeData(
+    win.disc_view.model.dropMimeData(
         mime, Qt.DropAction.MoveAction, 3, 0, QModelIndex()
     )
     assert disc_titles(win) == ["Song 1", "Song 2", "Song 0", "Song 3"]
-    assert [win.disc_panel.model.entry_at(r).position for r in range(4)] == [0, 1, 2, 3]
+    assert [win.disc_view.model.entry_at(r).position for r in range(4)] == [0, 1, 2, 3]
 
 
 def test_remove_button_and_delete_key_take_tracks_off_the_disc(window):
     win, lib = window
-    panel = win.disc_panel
+    panel = win.disc_view
     panel.add_tracks([t.id for t in lib.tracks(sort="title")][:4])
     assert not panel.remove_button.isEnabled()
     select_rows(panel.table, [1])
@@ -238,10 +245,10 @@ def test_remove_button_and_delete_key_take_tracks_off_the_disc(window):
 
 def test_new_discs_are_80_minutes_and_gapless_by_default(window):
     win, lib = window
-    win.disc_panel.add_tracks([t.id for t in lib.tracks()][:2])
-    disc = lib.disc(win.disc_panel.current_disc_id())
+    win.disc_view.add_tracks([t.id for t in lib.tracks()][:2])
+    disc = lib.disc(win.disc_view.current_disc_id())
     assert (disc.capacity_sectors, disc.pregap_sectors) == (DISC_80_SECTORS, 0)
-    assert "of 80:00" in win.disc_panel.summary.label.text()
+    assert "of 80:00" in win.disc_view.summary.label.text()
 
 
 def test_new_discs_follow_the_size_and_gap_chosen_in_settings(window):
@@ -249,46 +256,45 @@ def test_new_discs_follow_the_size_and_gap_chosen_in_settings(window):
     settings.set_disc_minutes(74)
     settings.set_pregap_seconds(2)
     ids = [t.id for t in lib.tracks()]
-    win.disc_panel.add_tracks(ids[:2])
-    disc = lib.disc(win.disc_panel.current_disc_id())
+    win.disc_view.add_tracks(ids[:2])
+    disc = lib.disc(win.disc_view.current_disc_id())
     assert (disc.capacity_sectors, disc.pregap_sectors) == (DISC_74_SECTORS, 150)
     assert disc.used_sectors == 2 * 5000 + 150
-    assert "of 74:00" in win.disc_panel.summary.label.text()
+    assert "of 74:00" in win.disc_view.summary.label.text()
 
 
 def test_existing_discs_keep_their_own_size_when_settings_change(window):
     win, lib = window
-    win.disc_panel.add_tracks([t.id for t in lib.tracks()][:1])
-    disc_id = win.disc_panel.current_disc_id()
+    win.disc_view.add_tracks([t.id for t in lib.tracks()][:1])
+    disc_id = win.disc_view.current_disc_id()
     settings.set_disc_minutes(74)
     settings.set_pregap_seconds(3)
-    win.disc_panel.reload()
+    win.disc_view.reload()
     assert lib.disc(disc_id).capacity_sectors == DISC_80_SECTORS
     assert lib.disc(disc_id).pregap_sectors == 0
 
 
-def test_the_disc_panel_no_longer_has_size_or_gap_controls(window):
+def test_the_disc_view_no_longer_has_size_or_gap_controls(window):
     win, _lib = window
-    assert not hasattr(win.disc_panel, "size_combo")
-    assert not hasattr(win.disc_panel, "gap_combo")
+    assert not hasattr(win.disc_view, "size_combo")
+    assert not hasattr(win.disc_view, "gap_combo")
 
 
 def test_new_rename_and_delete_a_disc(window, monkeypatch):
     win, lib = window
-    panel = win.disc_panel
+    panel = win.disc_view
     assert panel.stack.currentIndex() == 0  # nothing yet: the empty state
     monkeypatch.setattr(
         QInputDialog, "getText", staticmethod(lambda *a, **k: ("Night", True))
     )
     disc_id = panel.new_disc()
     assert lib.disc(disc_id).name == "Night" and panel.stack.currentIndex() == 1
+    assert win.center.currentIndex() == 1  # a new disc opens in the middle
     monkeypatch.setattr(
         QInputDialog, "getText", staticmethod(lambda *a, **k: ("Renamed", True))
     )
     panel.rename_disc()
-    assert (
-        lib.disc(disc_id).name == "Renamed" and "Renamed" in panel.combo.currentText()
-    )
+    assert lib.disc(disc_id).name == "Renamed" and panel.title.text() == "Renamed"
     monkeypatch.setattr(QMessageBox, "question", staticmethod(lambda *a, **k: YES))
     panel.delete_disc()
     assert lib.discs() == [] and panel.stack.currentIndex() == 0
@@ -299,7 +305,7 @@ def test_cancelling_the_name_dialog_creates_nothing(window, monkeypatch):
     monkeypatch.setattr(
         QInputDialog, "getText", staticmethod(lambda *a, **k: ("", False))
     )
-    assert win.disc_panel.new_disc() is None and lib.discs() == []
+    assert win.disc_view.new_disc() is None and lib.discs() == []
 
 
 def test_split_cuts_the_shown_tracks_across_discs(window, monkeypatch):
@@ -311,18 +317,19 @@ def test_split_cuts_the_shown_tracks_across_discs(window, monkeypatch):
     )
     win.split_shown()
     assert [d.name for d in lib.discs()] == ["Set 1", "Set 2", "Set 3"]
-    assert win.disc_panel.combo.currentText().startswith("Set 1")
+    assert win.disc_view.title.text() == "Set 1" and win.center.currentIndex() == 1
     assert "Created 3 discs" in win.statusBar().currentMessage()
 
 
 def test_the_last_disc_used_is_reselected_next_time(window):
     win, lib = window
     first, second = lib.create_disc("One"), lib.create_disc("Two")
-    win.disc_panel.reload(select_id=second)
+    win.disc_view.set_disc(second)
     assert settings.get_last_disc() == second
-    assert DiscPanel(lib).current_disc_id() == second
+    assert DiscView(lib).current_disc_id() == second
     lib.delete_disc(second)
-    assert DiscPanel(lib).current_disc_id() == first
+    assert DiscView(lib).current_disc_id() is None  # that one is gone: nothing is open
+    assert first in {d.id for d in lib.discs()}
 
 
 # -- importing ----------------------------------------------------------------
@@ -343,13 +350,13 @@ def test_adding_unmeasured_tracks_measures_them_on_a_worker_then_adds(
     lib.replace_source("folder", str(tmp_path), "Crate", records)
     win = MainWindow(lib)
     busy = []
-    win.disc_panel.busy.connect(lambda b, _m: busy.append(b))
-    win.disc_panel.add_tracks([t.id for t in lib.tracks()])
+    win.disc_view.busy.connect(lambda b, _m: busy.append(b))
+    win.disc_view.add_tracks([t.id for t in lib.tracks()])
     assert win._busy and busy[0] is True  # working in the background
     assert wait_for(lambda: disc_titles(win) == ["a", "b"] and not win._busy)
     assert busy == [True, False]
     assert [t.cd_sectors for t in lib.tracks(sort="title")] == [150, 225]
-    assert win.disc_panel.summary.label.text().startswith(
+    assert win.disc_view.summary.label.text().startswith(
         "0:05 of 80:00"
     )  # 2 s + 3 s, measured
     win.close()
@@ -500,7 +507,7 @@ def test_removing_a_source_that_discs_use_asks_before_taking_them_off(
     window, monkeypatch
 ):
     win, lib = window
-    win.disc_panel.add_tracks([t.id for t in lib.tracks()][:2])
+    win.disc_view.add_tracks([t.id for t in lib.tracks()][:2])
     select_node(win, lib, "Set")
     answers = iter([YES, YES])  # remove it? ... then: remove them from the discs too?
     monkeypatch.setattr(
@@ -508,12 +515,12 @@ def test_removing_a_source_that_discs_use_asks_before_taking_them_off(
     )
     win.remove_selected_source()
     assert lib.sources() == [] and win._selection == ("all",)
-    assert lib.discs()[0].track_count == 0 and win.disc_panel.model.rowCount() == 0
+    assert lib.discs()[0].track_count == 0 and win.disc_view.model.rowCount() == 0
 
 
 def test_declining_the_second_question_keeps_everything(window, monkeypatch):
     win, lib = window
-    win.disc_panel.add_tracks([t.id for t in lib.tracks()][:2])
+    win.disc_view.add_tracks([t.id for t in lib.tracks()][:2])
     select_node(win, lib, "Set")
     answers = iter([YES, QMessageBox.StandardButton.No])
     monkeypatch.setattr(
@@ -539,7 +546,7 @@ def test_the_theme_menu_applies_and_remembers_the_choice(window):
         assert theme.current_palette().get("mono_icons")
         assert (
             win.tree.model().rowCount() == 2
-        )  # the tree was rebuilt for the new icons
+        )  # the tree was rebuilt for the new icons (All Tracks, the source)
     finally:
         win.set_theme("dark")
 
@@ -547,10 +554,10 @@ def test_the_theme_menu_applies_and_remembers_the_choice(window):
 def test_window_and_splitter_layout_are_remembered(window):
     _win, lib = window
     first = MainWindow(lib, persist=True)
-    first.splitter.setSizes([300, 500, 400])
+    first.splitter.setSizes([250, 700, 350])
     first.close()
     assert settings.get_bytes("window/geometry") is not None
-    assert settings.get_bytes("window/splitter") is not None
+    assert settings.get_bytes("window/splitter3") is not None
     second = MainWindow(lib, persist=True)
     assert second.splitter.saveState() == first.splitter.saveState()
     second.deleteLater()
@@ -602,9 +609,9 @@ def ask_overlap(monkeypatch, answer):
 def test_adding_a_track_already_on_the_disc_asks_first(window, monkeypatch):
     win, lib = window
     ids = [t.id for t in lib.tracks(sort="title")]
-    win.disc_panel.add_tracks(ids[:2])
+    win.disc_view.add_tracks(ids[:2])
     asked = ask_overlap(monkeypatch, NO)
-    win.disc_panel.add_tracks(ids[1:3])
+    win.disc_view.add_tracks(ids[1:3])
     assert len(asked) == 1 and "already on this disc" in asked[0]
     assert disc_titles(win) == ["Song 0", "Song 1"]  # declined: nothing added
 
@@ -612,151 +619,35 @@ def test_adding_a_track_already_on_the_disc_asks_first(window, monkeypatch):
 def test_agreeing_adds_them_anyway(window, monkeypatch):
     win, lib = window
     ids = [t.id for t in lib.tracks(sort="title")]
-    win.disc_panel.add_tracks(ids[:1])
+    win.disc_view.add_tracks(ids[:1])
     ask_overlap(monkeypatch, YES)
-    win.disc_panel.add_tracks(ids[:1])
+    win.disc_view.add_tracks(ids[:1])
     assert disc_titles(win) == ["Song 0", "Song 0"]
 
 
-def test_a_track_from_a_previous_burn_is_flagged_on_a_new_disc(window, monkeypatch):
+def test_a_track_on_a_burned_disc_is_flagged_on_a_new_one_with_when_it_was_burned(
+    window, monkeypatch
+):
     win, lib = window
     ids = [t.id for t in lib.tracks(sort="title")]
     old = lib.create_disc("Friday")
     lib.add_to_disc(old, ids[:1])
-    lib.record_burn(old)
-    lib.delete_disc(old)
-    win.disc_panel.reload()
+    lib.mark_burned(old, when="2026-11-01T20:00:00+00:00")
+    new = lib.create_disc("Saturday")
+    win.disc_view.set_disc(new)
     asked = ask_overlap(monkeypatch, YES)
-    win.disc_panel.add_tracks(ids[:2])
+    win.disc_view.add_tracks(ids[:2])
     assert len(asked) == 1
-    assert "burned on “Friday”" in asked[0] and "Song 1" not in asked[0]
+    assert "on “Friday” (burned 2026-11-01)" in asked[0] and "Song 1" not in asked[0]
 
 
 def test_fresh_tracks_are_added_without_asking(window, monkeypatch):
     win, lib = window
     ids = [t.id for t in lib.tracks(sort="title")]
     asked = ask_overlap(monkeypatch, NO)
-    win.disc_panel.add_tracks(ids[:2])
+    win.disc_view.add_tracks(ids[:2])
     assert asked == []
     assert disc_titles(win) == ["Song 0", "Song 1"]
-
-
-# -- the Burned view ----------------------------------------------------------
-
-
-def burned_disc(lib, count=3, name="Friday"):
-    ids = [t.id for t in lib.tracks(sort="title")][:count]
-    disc_id = lib.create_disc(name)
-    lib.add_to_disc(disc_id, ids)
-    return disc_id, lib.record_burn(disc_id, drive="LiteOn", speed=10)
-
-
-def burn_titles(win):
-    panel = win.disc_panel
-    return [
-        panel.burn_model.track_at(r).title for r in range(panel.burn_model.rowCount())
-    ]
-
-
-def test_with_nothing_burned_the_view_says_so(window):
-    win, _lib = window
-    panel = win.disc_panel
-    assert panel.burn_stack.currentIndex() == 0
-    assert not panel.duplicate_button.isEnabled()
-    assert not panel.delete_burn_button.isEnabled()
-
-
-def test_a_burn_record_is_listed_read_only_with_its_details(window):
-    win, lib = window
-    _disc, burn_id = burned_disc(lib)
-    panel = win.disc_panel
-    panel.show_burned(burn_id)
-    assert panel.tabs.currentIndex() == 1 and panel.views.currentIndex() == 1
-    assert burn_titles(win) == ["Song 0", "Song 1", "Song 2"]
-    assert "LiteOn" in panel.burn_info.text() and "10x" in panel.burn_info.text()
-    assert "3 tracks" in panel.burn_info.text()
-    index = panel.burn_model.index(0, 0)
-    assert not panel.burn_model.flags(index) & Qt.ItemFlag.ItemIsDragEnabled
-    assert not panel.burn_model.flags(index) & Qt.ItemFlag.ItemIsEditable
-
-
-def test_burn_records_list_newest_first(window):
-    win, lib = window
-    burned_disc(lib, name="First")
-    _d, newest = burned_disc(lib, name="Second")
-    win.disc_panel.reload_burns()
-    assert win.disc_panel.current_burn_id() == newest
-    assert win.disc_panel.burn_combo.count() == 2
-
-
-def test_a_burned_track_that_left_the_library_is_dimmed(window):
-    win, lib = window
-    disc_id, burn_id = burned_disc(lib, count=1)
-    lib.delete_disc(disc_id)
-    (source,) = lib.sources()
-    lib.remove_source(source.id)
-    win.disc_panel.show_burned(burn_id)
-    assert burn_titles(win) == ["Song 0"]
-    model = win.disc_panel.burn_model
-    assert model.track_at(0).track_id is None
-    foreground = model.data(model.index(0, 3), Qt.ItemDataRole.ForegroundRole)
-    assert foreground is not None
-
-
-def test_duplicate_makes_an_editable_disc_and_switches_to_planned(window):
-    win, lib = window
-    _disc, burn_id = burned_disc(lib)
-    panel = win.disc_panel
-    panel.show_burned(burn_id)
-    panel.duplicate_burn()
-    assert panel.tabs.currentIndex() == 0
-    assert lib.disc(panel.current_disc_id()).name == "Friday (copy)"
-    assert disc_titles(win) == ["Song 0", "Song 1", "Song 2"]
-    assert lib.burn(burn_id).track_count == 3  # the record is untouched
-
-
-def test_duplicate_reports_tracks_that_have_gone(window):
-    win, lib = window
-    disc_id, burn_id = burned_disc(lib, count=2)
-    lib.delete_disc(disc_id)
-    keep = [t for t in lib.tracks() if t.title == "Song 0"]
-    records = [
-        TrackRecord(ext_id=t.ext_id, path=t.path, title=t.title, duration=t.duration)
-        for t in keep
-    ]
-    lib.replace_source("folder", lib.sources()[0].path, "Crate", records)
-    seen = []
-    win.disc_panel.message.connect(seen.append)
-    win.disc_panel.show_burned(burn_id)
-    win.disc_panel.duplicate_burn()
-    assert disc_titles(win) == ["Song 0"]
-    assert any("left out 1 track" in text for text in seen)
-
-
-def test_deleting_a_record_asks_first_and_keeps_the_planned_disc(window, monkeypatch):
-    win, lib = window
-    disc_id, burn_id = burned_disc(lib)
-    panel = win.disc_panel
-    panel.show_burned(burn_id)
-    monkeypatch.setattr(QMessageBox, "question", staticmethod(lambda *a, **k: NO))
-    panel.delete_burn()
-    assert lib.burns() != []
-    monkeypatch.setattr(QMessageBox, "question", staticmethod(lambda *a, **k: YES))
-    panel.delete_burn()
-    assert lib.burns() == [] and panel.burn_stack.currentIndex() == 0
-    assert lib.disc(disc_id).track_count == 3
-
-
-def test_adding_tracks_while_looking_at_burned_discs_returns_to_planned(
-    window, monkeypatch
-):
-    win, lib = window
-    _disc, burn_id = burned_disc(lib, count=1)
-    ids = [t.id for t in lib.tracks(sort="title")]
-    win.disc_panel.show_burned(burn_id)
-    monkeypatch.setattr(QMessageBox, "question", staticmethod(lambda *a, **k: YES))
-    win.disc_panel.add_tracks(ids[3:4])
-    assert win.disc_panel.tabs.currentIndex() == 0
 
 
 # -- the capacity bar ---------------------------------------------------------
@@ -1009,24 +900,24 @@ def test_every_sortable_column_sorts_the_list(window):
 
 
 def disc_cell(win, row, column):
-    return win.disc_panel.model.data(win.disc_panel.model.index(row, column))
+    return win.disc_view.model.data(win.disc_view.model.index(row, column))
 
 
 def edit_cell(win, qapp, row, column, text):
-    win.disc_panel.model.setData(win.disc_panel.model.index(row, column), text)
+    win.disc_view.model.setData(win.disc_view.model.index(row, column), text)
     qapp.processEvents()  # the panel applies it a moment later, not inside the editor's commit
 
 
 def test_editing_the_disc_list_changes_the_cd_text_and_not_the_library(window, qapp):
     win, lib = window
     ids = [t.id for t in lib.tracks(sort="title")]
-    win.disc_panel.add_tracks(ids[:3])
+    win.disc_view.add_tracks(ids[:3])
     edit_cell(win, qapp, 1, 3, "Clean Name")
     edit_cell(win, qapp, 1, 2, "Clean Artist")
     assert (
         disc_cell(win, 1, 3) == "Clean Name" and disc_cell(win, 1, 2) == "Clean Artist"
     )
-    entry = lib.disc_entries(win.disc_panel.current_disc_id())[1]
+    entry = lib.disc_entries(win.disc_view.current_disc_id())[1]
     assert (entry.title_override, entry.artist_override) == (
         "Clean Name",
         "Clean Artist",
@@ -1039,7 +930,7 @@ def test_editing_the_disc_list_changes_the_cd_text_and_not_the_library(window, q
 
 def test_clearing_an_edited_cell_in_the_list_restores_the_original(window, qapp):
     win, _lib = window
-    win.disc_panel.add_tracks([t.id for t in _lib.tracks(sort="title")][:2])
+    win.disc_view.add_tracks([t.id for t in _lib.tracks(sort="title")][:2])
     edit_cell(win, qapp, 0, 3, "Temporary")
     edit_cell(win, qapp, 0, 3, "")
     assert disc_cell(win, 0, 3) == "Song 0"
@@ -1048,11 +939,11 @@ def test_clearing_an_edited_cell_in_the_list_restores_the_original(window, qapp)
 def test_edits_stay_with_their_tracks_when_the_list_is_reordered(window, qapp):
     win, lib = window
     ids = [t.id for t in lib.tracks(sort="title")]
-    win.disc_panel.add_tracks(ids[:3])
+    win.disc_view.add_tracks(ids[:3])
     edit_cell(win, qapp, 0, 3, "First, Edited")
-    disc_id = win.disc_panel.current_disc_id()
+    disc_id = win.disc_view.current_disc_id()
     lib.move_in_disc(disc_id, 0, 2)
-    win.disc_panel.reload(select_id=disc_id)
+    win.disc_view.set_disc(disc_id)
     assert [disc_cell(win, r, 3) for r in range(3)] == [
         "Song 1",
         "Song 2",
@@ -1064,35 +955,56 @@ def test_the_disc_list_is_edited_by_double_clicking_or_the_edit_key(window):
     from PySide6.QtWidgets import QAbstractItemView
 
     win, _lib = window
-    triggers = win.disc_panel.table.editTriggers()
+    triggers = win.disc_view.table.editTriggers()
     assert triggers & QAbstractItemView.EditTrigger.DoubleClicked
     assert triggers & QAbstractItemView.EditTrigger.EditKeyPressed
 
 
-def test_a_burned_record_shows_the_text_that_went_on_the_cd(window, qapp):
-    win, lib = window
-    win.disc_panel.add_tracks([t.id for t in lib.tracks(sort="title")][:2])
-    edit_cell(win, qapp, 0, 3, "As Burned")
-    burn_id = lib.record_burn(win.disc_panel.current_disc_id())
-    edit_cell(win, qapp, 0, 3, "Changed Since")
-    win.disc_panel.show_burned(burn_id)
-    assert win.disc_panel.burn_model.track_at(0).title == "As Burned"
-
-
-def test_a_duplicate_of_a_burn_keeps_its_cd_text_edits(window, qapp):
-    win, lib = window
-    win.disc_panel.add_tracks([t.id for t in lib.tracks(sort="title")][:2])
-    edit_cell(win, qapp, 0, 3, "As Burned")
-    burn_id = lib.record_burn(win.disc_panel.current_disc_id())
-    win.disc_panel.show_burned(burn_id)
-    win.disc_panel.duplicate_burn()
-    assert disc_cell(win, 0, 3) == "As Burned"
-
-
-def test_the_disc_panel_no_longer_lists_bpm_or_key(window):
+def test_the_disc_view_no_longer_lists_bpm_or_key(window):
     win, _lib = window
     headers = [
-        win.disc_panel.model.headerData(c, Qt.Orientation.Horizontal)
-        for c in range(win.disc_panel.model.columnCount())
+        win.disc_view.model.headerData(c, Qt.Orientation.Horizontal)
+        for c in range(win.disc_view.model.columnCount())
     ]
     assert headers == ["#", "Time", "Artist", "Title"]
+
+
+# -- fixed-width columns -------------------------------------------------------
+
+
+def test_columns_whose_content_has_a_known_size_are_fixed_width(window):
+    from PySide6.QtWidgets import QHeaderView
+
+    win, _lib = window
+    header = win.track_table.horizontalHeader()
+    for index, spec in enumerate(main_window.TRACK_COLUMNS):
+        mode = header.sectionResizeMode(index)
+        if spec.fixed:
+            assert mode == QHeaderView.ResizeMode.Fixed, spec.title
+        else:
+            assert mode == QHeaderView.ResizeMode.Interactive, spec.title
+
+
+def test_the_marker_and_the_preview_waveform_cannot_be_resized(window):
+    _win, _lib = window
+    fixed = {c.title for c in main_window.TRACK_COLUMNS if c.fixed}
+    assert {"", "Preview"} <= fixed
+    # the text columns, which want room, stay resizable
+    assert not {"Title", "Artist", "Genre", "Album", "Comment", "Path"} & fixed
+
+
+def test_a_fixed_column_keeps_its_width_when_the_window_is_resized(window, qapp):
+    win, _lib = window
+    win.show()
+    preview = main_window.PREVIEW_COLUMN
+    before = win.track_table.columnWidth(preview)
+    win.resize(1700, 700)
+    qapp.processEvents()
+    win.resize(1100, 700)
+    qapp.processEvents()
+    assert (
+        win.track_table.columnWidth(preview)
+        == before
+        == main_window.TRACK_COLUMNS[preview].width
+    )
+    assert win.track_table.columnWidth(0) == main_window.TRACK_COLUMNS[0].width

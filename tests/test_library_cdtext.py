@@ -156,40 +156,33 @@ def test_splitting_into_discs_starts_with_the_librarys_text(lib):
         assert not any(e.edited for e in lib.disc_entries(disc_id))
 
 
-# -- burned records and duplicates ----------------------------------------------
+# -- copies, and burning ---------------------------------------------------------
 
 
-def test_a_burn_record_keeps_what_was_burned_not_the_librarys_text(lib, disc):
-    lib.set_entry_text(disc, 0, "title", "Burned Name")
-    lib.set_entry_text(disc, 0, "artist", "Burned Artist")
-    burn = lib.burn(lib.record_burn(disc))
-    assert (burn.tracks[0].title, burn.tracks[0].artist) == (
-        "Burned Name",
-        "Burned Artist",
-    )
-    assert burn.tracks[1].title == "Song b"
-    lib.set_entry_text(
-        disc, 0, "title", "Changed Again"
-    )  # later edits don't rewrite history
-    assert lib.burn(burn.id).tracks[0].title == "Burned Name"
-
-
-def test_duplicating_a_burn_carries_its_edits_into_the_new_disc(lib, disc):
-    lib.set_entry_text(disc, 0, "title", "Burned Name")
-    lib.set_entry_text(disc, 2, "artist", "Burned Artist")
-    burn_id = lib.record_burn(disc)
-    lib.set_entry_text(disc, 0, "title", "")  # the live disc moves on
-    copy = lib.duplicate_burn(burn_id).disc_id
-    assert texts(lib, copy)[0] == ("Burned Name", "Artist")
-    assert texts(lib, copy)[2] == ("Song c", "Burned Artist")
+def test_duplicating_a_disc_carries_its_edits_into_the_copy_independently(lib, disc):
+    lib.set_entry_text(disc, 0, "title", "Edited Name")
+    lib.set_entry_text(disc, 2, "artist", "Edited Artist")
+    copy = lib.duplicate_disc(disc)
+    assert texts(lib, copy)[0] == ("Edited Name", "Artist")
+    assert texts(lib, copy)[2] == ("Song c", "Edited Artist")
     assert not lib.disc_entries(copy)[1].edited  # unedited rows stay unedited
+    lib.set_entry_text(copy, 0, "title", "Only On The Copy")  # and they are separate
+    assert texts(lib, disc)[0][0] == "Edited Name"
+
+
+def test_burning_a_disc_does_not_freeze_its_text(lib, disc):
+    lib.set_entry_text(disc, 0, "title", "Burned Name")
+    lib.mark_burned(disc)
+    lib.set_entry_text(disc, 0, "title", "Changed After")  # still an ordinary playlist
+    assert texts(lib, disc)[0][0] == "Changed After"
 
 
 def test_the_library_tracks_are_never_changed_by_any_of_it(lib, disc):
     before = [(t.title, t.artist) for t in lib.tracks(sort="title")]
     lib.set_entry_text(disc, 0, "title", "X")
     lib.set_entry_text(disc, 1, "artist", "Y")
-    lib.duplicate_burn(lib.record_burn(disc))
+    lib.duplicate_disc(disc)
+    lib.mark_burned(disc)
     assert [(t.title, t.artist) for t in lib.tracks(sort="title")] == before
 
 

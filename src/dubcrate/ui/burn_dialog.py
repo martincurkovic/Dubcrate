@@ -90,7 +90,9 @@ def describe_media(media: MediaInfo | None, planned_sectors: int) -> tuple[str, 
 
 
 class BurnDialog(QDialog):
-    burned = Signal(int)  # the id of the burn record that was saved
+    burned = Signal(
+        int
+    )  # the id of the disc that was burned (it is only marked as such)
     _log = Signal(str)  # a line from the worker thread, delivered on this one
 
     def __init__(
@@ -336,7 +338,7 @@ class BurnDialog(QDialog):
 
         run_async(
             work,
-            lambda lengths: self._burn_done(lengths, simulate, speed),
+            lambda lengths: self._burn_done(lengths, simulate),
             self._burn_failed,
         )
 
@@ -345,28 +347,33 @@ class BurnDialog(QDialog):
         self.progress.setVisible(False)
         self.confirm_check.setChecked(False)  # ask again before the next one
 
-    def _burn_done(self, lengths: dict[int, int], simulate: bool, speed: int) -> None:
+    def _burn_done(self, lengths: dict[int, int], simulate: bool) -> None:
         for track_id, sectors in lengths.items():
             self._lib.set_cd_sectors(track_id, sectors)
         self._after_attempt()
         if simulate:
             self._append("Test burn finished. Nothing was written to the disc.")
-            self.status_label.setText("Test burn finished. Nothing was recorded.")
+            self.status_label.setText(
+                "Test burn finished. The disc is not marked as burned."
+            )
             self._update()
             return
-        drive = self._media.drive if self._media else ""
-        burn_id = self._lib.record_burn(self._disc_id, drive=drive, speed=speed)
+        self._lib.mark_burned(
+            self._disc_id
+        )  # a note on the disc: it stays fully editable
         self._finished = True
-        self._append("Done. The burn is saved under Burned.")
-        self.status_label.setText("Burn finished. The disc is saved under Burned.")
+        self._append("Done. The disc is marked as burned.")
+        self.status_label.setText("Burn finished. The disc is marked as burned.")
         self._update()
-        self.burned.emit(burn_id)
+        self.burned.emit(self._disc_id)
 
     def _burn_failed(self, text: str) -> None:
         self._after_attempt()
         self._append(f"Failed: {text}")
         self._set_level(
-            self.status_label, "The burn failed. Nothing was recorded.", "critical"
+            self.status_label,
+            "The burn failed. The disc is not marked as burned.",
+            "critical",
         )
         self._update()
 

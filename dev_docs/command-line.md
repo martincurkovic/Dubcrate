@@ -70,5 +70,5 @@ Options: `--backend discrecording|cdrdao` (default `discrecording`), `--speed N`
 that is over its size, empty, or has a missing or stale track. With `--yes` it also asks
 the drive what the inserted disc holds, prints it, and refuses if the audio won't fit
 (or there is no disc). A drive that can't say is not a reason to refuse.
-A real burn saves a burn record; `--simulate` doesn't. See
+A real burn marks the disc as burned (a note on the disc, which stays editable); `--simulate` doesn't. See
 [burning.md](burning.md) for what has and hasn't been tried on hardware.

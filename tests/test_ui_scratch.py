@@ -347,10 +347,16 @@ def test_with_no_grid_and_no_tempo_it_says_why_and_stays_put(chain):
     assert "can't beat jump" in messages[0]
 
 
-def test_beat_jump_does_nothing_with_no_track_or_during_a_scratch(qapp):
+def test_beat_jump_with_no_track_loaded_says_what_to_do_instead_of_doing_nothing(qapp):
     lib = Library.open(":memory:")
     controller = PreviewController(lib, PlayerStrip(), AudioPlayer())
-    controller.beat_jump(1)  # nothing loaded: nothing happens, no error
+    messages = []
+    controller.message.connect(messages.append)
+    controller.beat_jump(1)  # nothing loaded: say so, don't fail silently
+    assert len(messages) == 1
+    assert (
+        "Double-click a track to load it" in messages[0] and "beat jump" in messages[0]
+    )
     controller.shutdown()
     lib.close()
 
@@ -386,6 +392,38 @@ def test_left_and_right_on_the_track_list_ask_for_a_beat_jump(qapp):
     key(table, Qt.Key.Key_Right)
     key(table, Qt.Key.Key_Right)
     assert got == [-1, 1, 1]
+
+
+def test_the_arrow_keys_work_with_the_keypad_flag_macos_puts_on_them(qapp):
+    # On a real Mac, Qt reports Left and Right with KeypadModifier set. A check for "no
+    # modifiers" is then never true, so beat jump never fired on the real keyboard even
+    # though QTest (which doesn't set the flag) passed.
+    table = TrackTable()
+    got = []
+    table.beat_jump_requested.connect(got.append)
+    key(table, Qt.Key.Key_Left, Qt.KeyboardModifier.KeypadModifier)
+    key(table, Qt.Key.Key_Right, Qt.KeyboardModifier.KeypadModifier)
+    assert got == [-1, 1]
+
+
+def test_a_real_modifier_still_wins_over_the_keypad_flag(qapp):
+    table = TrackTable()
+    got = []
+    table.beat_jump_requested.connect(got.append)
+    both = Qt.KeyboardModifier.KeypadModifier | Qt.KeyboardModifier.ShiftModifier
+    key(table, Qt.Key.Key_Right, both)  # shift+arrow extends a selection: not a jump
+    assert got == []
+
+
+def test_space_still_plays_and_pauses_with_the_keypad_flag_present(qapp):
+    table = TrackTable()
+    toggles = []
+    table.play_pause_requested.connect(lambda: toggles.append(1))
+    key(table, Qt.Key.Key_Space, Qt.KeyboardModifier.KeypadModifier)
+    key(
+        table, Qt.Key.Key_Space, Qt.KeyboardModifier.ShiftModifier
+    )  # but not with shift
+    assert toggles == [1]
 
 
 def test_arrow_keys_with_a_modifier_keep_their_normal_meaning(qapp):

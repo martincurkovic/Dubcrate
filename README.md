@@ -54,19 +54,20 @@ whose track titles show on the player's display.
    and sort by clicking a column heading. Double-click a track to preview it.
    Right-click the column headings to show or hide columns: only the essentials show at
    first, and *More Columns* adds year, star rating, My Tags, label and more from rekordbox.
-3. **Build a disc.** Drag tracks onto the disc on the right, or select them and press
-   Return. *Disc ▸ New Disc…* starts another. Drag rows to reorder, and press Delete
-   to take a track off. **Fit All to Disc** adds tracks in order until the disc is
-   full, and *Disc ▸ Split Shown Tracks Across Discs…* turns a long list into several
-   discs.
+3. **Build a disc.** Your discs are playlists, listed on the right and filed in folders
+   like rekordbox playlists. *New Disc* makes one; click it to open its tracks in the
+   middle, then drag tracks onto it (or onto any disc in the list), or select them and
+   press Return. Drag rows to reorder, and press Delete to take a track off.
+   **Fit All to Disc** adds tracks in order until the disc is full, and
+   *Disc ▸ Split Shown Tracks Across Discs…* turns a long list into several discs.
 4. **Check the bar.** It shows each track as a coloured block. A disc can't be burned
    if it is over its size or contains a track whose file can't be found. (A CD holds
    at most 99 tracks, and Dubcrate stops adding at that point.)
 5. **Burn it.** *Burn…* under the disc (or *Disc ▸ Burn Disc…*) shows the drive and
    what the blank disc inside holds, and asks you to confirm that a blank CD-R is
    loaded. The burn speed starts at your default from *Settings* and can be changed
-   for one burn. Each burn is kept under *Burned*, from where *Duplicate* makes an
-   editable copy.
+   for one burn. A burned disc is just a disc: it stays editable, remembers when it was
+   burned, and *Duplicate* (right-click) keeps a copy of a mix before you change it.
 
 ### Keyboard shortcuts
 

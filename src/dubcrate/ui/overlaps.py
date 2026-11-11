@@ -9,14 +9,13 @@ def _where(usage: TrackUsage, disc_id: int | None) -> str:
     parts: list[str] = []
     if disc_id is not None and any(d.id == disc_id for d in usage.discs):
         parts.append("already on this disc")
-    others = [f"“{d.name}”" for d in usage.discs if d.id != disc_id]
+    others = [
+        f"“{d.name}”" + (f" (burned {d.burned_at[:10]})" if d.burned_at else "")
+        for d in usage.discs
+        if d.id != disc_id
+    ]
     if others:
-        parts.append("planned on " + ", ".join(others))
-    if usage.burns:
-        parts.append(
-            "burned on "
-            + ", ".join(f"“{b.name}” ({b.burned_at[:10]})" for b in usage.burns)
-        )
+        parts.append("on " + ", ".join(others))
     return "; ".join(parts)
 
 

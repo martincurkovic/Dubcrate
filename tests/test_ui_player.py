@@ -749,7 +749,7 @@ def test_double_clicking_a_track_previews_it(audible, wait_for):
         win.preview.track.title == "Song 2"
         and win.player_strip.title.text() == "Song 2"
     )
-    assert win.disc_panel.model.rowCount() == 0  # previewing is not adding
+    assert win.disc_view.model.rowCount() == 0  # previewing is not adding
     assert wait_for(
         lambda: win.track_model.has_preview(win.preview.track.id)
     )  # and it gains a preview strip

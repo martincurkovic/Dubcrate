@@ -148,7 +148,6 @@ def test_speed_starts_at_the_settings_default_and_can_be_changed_for_one_burn(
     burn(dialog, wait_for)
     assert burner.burned[0][1].speed == 8
     assert settings.get_burn_speed() == 16  # the default is untouched
-    assert lib.burns()[0].speed == 8
 
 
 def test_the_default_speed_is_10x(make_dialog):
@@ -159,12 +158,13 @@ def test_the_default_speed_is_10x(make_dialog):
 # -- burning ------------------------------------------------------------------
 
 
-def test_a_burn_renders_burns_stores_lengths_and_saves_a_record(
+def test_a_burn_renders_burns_stores_lengths_and_marks_the_disc_burned(
     lib, disc_id, make_dialog, wait_for
 ):
     dialog, burner = make_dialog()
     saved = []
     dialog.burned.connect(saved.append)
+    assert lib.disc(disc_id).last_burned_at is None
     burn(dialog, wait_for)
 
     [(disc, options)] = burner.burned
@@ -173,15 +173,28 @@ def test_a_burn_renders_burns_stores_lengths_and_saves_a_record(
     assert (options.speed, options.simulate, options.pregap_sectors) == (10, False, 0)
     assert disc.performer == "Same"
 
-    [record] = lib.burns()
-    assert (record.disc_id, record.drive, record.speed) == (disc_id, "Test Drive", 10)
-    assert [t.sectors for t in record.tracks] == [150, 225]  # 2 s and 3 s, exact
-    assert saved == [record.id]
+    assert lib.disc(disc_id).last_burned_at is not None  # a note, not a copy
+    assert saved == [disc_id]
+    assert [e.track.cd_sectors for e in lib.disc_entries(disc_id)] == [
+        150,
+        225,
+    ]  # exact
     assert all(t.cd_sectors is not None for t in lib.tracks())  # stored on this thread
 
     text = dialog.log.toPlainText()
     assert "rendering 1/2: Alpha" in text and "fake burner: done" in text
-    assert "saved under Burned" in text
+    assert "marked as burned" in text
+
+
+def test_a_burned_disc_is_still_an_ordinary_editable_playlist(
+    lib, disc_id, make_dialog, wait_for
+):
+    dialog, _burner = make_dialog()
+    burn(dialog, wait_for)
+    lib.remove_from_disc(disc_id, [0])
+    lib.set_entry_text(disc_id, 0, "title", "Edited After Burning")
+    assert lib.disc(disc_id).track_count == 1
+    assert lib.disc_entries(disc_id)[0].title == "Edited After Burning"
 
 
 def test_after_a_real_burn_the_dialog_cannot_burn_again_and_can_close(
@@ -204,8 +217,8 @@ def test_a_test_burn_records_nothing_and_asks_for_confirmation_again(
     assert dialog.burn_button.text() == "Test Burn"
     burn(dialog, wait_for)
     assert burner.burned[0][1].simulate is True
-    assert lib.burns() == []
-    assert "Nothing was recorded" in dialog.status_label.text()
+    assert all(d.last_burned_at is None for d in lib.discs())  # a test is not a burn
+    assert "not marked as burned" in dialog.status_label.text()
     assert not dialog.confirm_check.isChecked()
     dialog.confirm_check.setChecked(True)
     assert dialog.burn_button.isEnabled()  # a test can be repeated
@@ -215,7 +228,7 @@ def test_a_test_burn_records_nothing_and_asks_for_confirmation_again(
 def test_a_failed_burn_says_so_and_records_nothing(lib, make_dialog, wait_for, caplog):
     dialog, burner = make_dialog(FakeBurner(fail="drive on fire"))
     burn(dialog, wait_for)
-    assert burner.burned == [] and lib.burns() == []
+    assert burner.burned == [] and all(d.last_burned_at is None for d in lib.discs())
     assert "Failed: drive on fire" in dialog.log.toPlainText()
     assert [r for r in caplog.records if r.levelname == "ERROR"] == []
     assert "failed" in dialog.status_label.text()
@@ -250,8 +263,7 @@ def test_the_burn_writes_the_text_edited_for_the_disc(
         ("Beta", "CD Artist"),
     ]
     assert disc.title == "Friday"  # the CD's own title is the disc's name
-    [record] = lib.burns()
-    assert [(t.title, t.artist) for t in record.tracks] == [
+    assert [(e.title, e.artist) for e in lib.disc_entries(disc_id)] == [
         ("On The CD", "Same"),
         ("Beta", "CD Artist"),
     ]
@@ -361,6 +373,7 @@ def window(qapp, lib, disc_id, monkeypatch):
     )  # fmt: skip
     burner = FakeBurner()
     win = MainWindow(lib, burner_factory=lambda: burner)
+    win.open_disc(disc_id)  # a disc is burned from where it is open
     win.shown = shown
     win.burner = burner
     yield win
@@ -373,12 +386,12 @@ def window(qapp, lib, disc_id, monkeypatch):
 def test_burn_is_in_the_disc_menu_and_the_panel(window):
     assert window.act_burn.shortcut().toString() == "Ctrl+B"
     assert window.act_burn.text().replace("&", "") == "Burn Disc…"
-    assert window.disc_panel.burn_button.text() == "Burn…"
-    assert window.disc_panel.burn_button.isEnabled()
+    assert window.disc_view.burn_button.text() == "Burn…"
+    assert window.disc_view.burn_button.isEnabled()
 
 
-def test_the_panel_button_opens_the_burn_window_for_the_current_disc(window, wait_for):
-    window.disc_panel.burn_button.click()
+def test_the_burn_button_opens_the_burn_window_for_the_open_disc(window, wait_for):
+    window.disc_view.burn_button.click()
     dialog = window.burn_dialog
     assert dialog is not None and dialog.isVisible()
     assert dialog.windowTitle() == "Burn Disc"
@@ -386,15 +399,21 @@ def test_the_panel_button_opens_the_burn_window_for_the_current_disc(window, wai
     assert "Test Drive" in dialog.drive_label.text()
 
 
-def test_a_finished_burn_shows_up_under_burned_in_the_panel(window, lib, wait_for):
-    window.disc_panel.burn_button.click()
+def test_a_finished_burn_leaves_the_disc_open_and_the_tree_says_when_it_was_burned(
+    window, lib, disc_id, wait_for
+):
+    from dubcrate.ui.models import SELECTION_ROLE, find_selection
+
+    window.disc_view.burn_button.click()
     dialog = window.burn_dialog
     assert wait_for(lambda: not dialog._busy)
     burn(dialog, wait_for)
-    panel = window.disc_panel
-    assert panel.tabs.currentIndex() == 1  # switched to Burned
-    assert panel.current_burn_id() == lib.burns()[0].id
-    assert [panel.burn_model.track_at(r).title for r in range(2)] == ["Alpha", "Beta"]
+    assert window.disc_view.current_disc_id() == disc_id  # still open, still editable
+    assert window.center.currentIndex() == 1
+    index = find_selection(window.disc_tree.model(), ("disc", disc_id))
+    assert "Last burned" in index.data(Qt.ItemDataRole.ToolTipRole)
+    assert "marked as burned" in window.statusBar().currentMessage()
+    assert index.data(SELECTION_ROLE) == ("disc", disc_id)
 
 
 def test_burning_with_no_disc_just_says_to_make_one(qapp, monkeypatch):
@@ -407,8 +426,8 @@ def test_burning_with_no_disc_just_says_to_make_one(qapp, monkeypatch):
         win = MainWindow(empty, burner_factory=lambda: FakeBurner())
         win.burn_current_disc()
         assert win.burn_dialog is None
-        assert shown and "Make a disc" in shown[0][1]
-        assert not win.disc_panel.burn_button.isEnabled()
+        assert shown and "Open a disc" in shown[0][1]
+        assert not win.disc_view.burn_button.isEnabled()
         win.close()
         win.deleteLater()
 

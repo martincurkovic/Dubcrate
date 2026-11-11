@@ -113,7 +113,7 @@ class ImportSummary:
 
 @dataclass(frozen=True)
 class DiscSummary:
-    """A disc being planned: its settings and how full it is."""
+    """A disc: a playlist of tracks for a CD, its settings, and how full it is."""
 
     id: int
     name: str
@@ -122,6 +122,8 @@ class DiscSummary:
     track_count: int
     used_sectors: int
     created_at: str
+    folder_id: int | None = None  # None: at the top level
+    last_burned_at: str | None = None  # a note that it was burned, not a copy of it
 
     @property
     def free_sectors(self) -> int:
@@ -180,60 +182,23 @@ class SplitResult:
 
 
 @dataclass(frozen=True)
-class BurnTrack:
-    """One track as it was burned. A copy, so it outlives the library track."""
-
-    position: int  # 0-based
-    track_id: int | None  # None once the library track is gone
-    title: str
-    artist: str
-    sectors: int
-    path: str
-
-
-@dataclass(frozen=True)
-class BurnRecord:
-    """A frozen snapshot of one burn: what went on the disc, when, and how."""
+class DiscFolder:
+    """A folder for organising discs, as rekordbox has for playlists."""
 
     id: int
-    disc_id: int | None  # None once the planned disc is deleted
     name: str
-    capacity_sectors: int
-    pregap_sectors: int
-    used_sectors: int
-    drive: str
-    speed: int | None  # x, None for the drive's default
-    simulated: bool
-    burned_at: str
-    tracks: tuple[BurnTrack, ...] = ()
-
-    @property
-    def track_count(self) -> int:
-        return len(self.tracks)
-
-
-@dataclass(frozen=True)
-class DuplicateResult:
-    disc_id: int
-    skipped: tuple[BurnTrack, ...]  # tracks no longer in the library
+    parent_id: int | None  # None: at the top level
 
 
 @dataclass(frozen=True)
 class DiscRef:
     id: int
     name: str
-
-
-@dataclass(frozen=True)
-class BurnRef:
-    id: int
-    name: str
-    burned_at: str
+    burned_at: str | None = None
 
 
 @dataclass(frozen=True)
 class TrackUsage:
-    """Where a track is already used: planned discs and burned discs."""
+    """Where a track is already used: the discs it is on."""
 
     discs: tuple[DiscRef, ...] = ()
-    burns: tuple[BurnRef, ...] = ()

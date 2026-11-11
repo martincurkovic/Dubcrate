@@ -24,7 +24,7 @@ from PySide6.QtWidgets import QApplication, QStyle
 
 from dubcrate.cd import format_clock
 from dubcrate.library import Library
-from dubcrate.library.models import BurnTrack, DiscEntry, Track
+from dubcrate.library.models import DiscEntry, Track
 from dubcrate.waveform import Waveform
 
 from . import mono_icons, theme
@@ -58,6 +58,7 @@ class TrackColumn(NamedTuple):
     right: bool = False
     shown: bool = True  # on by default; the rest are there to switch on
     width: int = 90  # pixels, when first shown
+    fixed: bool = False  # content of a known size: the width can't be dragged
 
 
 # The marker, then what matters when picking tracks: these are the columns shown by default.
@@ -65,29 +66,31 @@ class TrackColumn(NamedTuple):
 # most people, so they are all off until switched on (right-click a column heading). They
 # come after the first ones, so a saved layout of the first ones stays valid.
 TRACK_COLUMNS = (
-    TrackColumn("", None, width=24),  # the "already on the disc" marker
+    # the "already on the disc" marker
+    TrackColumn("", None, width=24, fixed=True),
     TrackColumn("Title", "title", width=230),
     TrackColumn("Artist", "artist", width=130),
-    TrackColumn("BPM", "bpm", right=True, width=50),
-    TrackColumn("Key", "key", width=40),
-    TrackColumn("Time", "duration", right=True, width=46),
-    TrackColumn(
-        "Preview", None, width=120
-    ),  # the whole-track waveform (PreviewDelegate)
+    TrackColumn("BPM", "bpm", right=True, width=50, fixed=True),
+    TrackColumn("Key", "key", width=40, fixed=True),
+    TrackColumn("Time", "duration", right=True, width=46, fixed=True),
+    # the whole-track waveform, drawn by PreviewDelegate
+    TrackColumn("Preview", None, width=120, fixed=True),
     TrackColumn("Genre", "genre"),
     TrackColumn("Album", "album", shown=False, width=160),
-    TrackColumn("Year", "year", right=True, shown=False, width=50),
-    TrackColumn("Rating", "rating", shown=False, width=70),
+    TrackColumn("Year", "year", right=True, shown=False, width=50, fixed=True),
+    TrackColumn("Rating", "rating", shown=False, width=70, fixed=True),
     TrackColumn("My Tags", "my_tags", shown=False, width=140),
     TrackColumn("Label", "label", shown=False, width=120),
     TrackColumn("Remixer", "remixer", shown=False, width=120),
     TrackColumn("Composer", "composer", shown=False, width=120),
     TrackColumn("Comment", "comment", shown=False, width=160),
-    TrackColumn("Plays", "play_count", right=True, shown=False, width=46),
-    TrackColumn("Date Added", "date_added", shown=False, width=90),
-    TrackColumn("Bitrate", "bitrate", right=True, shown=False, width=56),
-    TrackColumn("Sample Rate", "sample_rate", right=True, shown=False, width=80),
-    TrackColumn("Format", None, shown=False, width=56),
+    TrackColumn("Plays", "play_count", right=True, shown=False, width=46, fixed=True),
+    TrackColumn("Date Added", "date_added", shown=False, width=90, fixed=True),
+    TrackColumn("Bitrate", "bitrate", right=True, shown=False, width=56, fixed=True),
+    TrackColumn(
+        "Sample Rate", "sample_rate", right=True, shown=False, width=80, fixed=True
+    ),
+    TrackColumn("Format", None, shown=False, width=56, fixed=True),
     TrackColumn("Path", "path", shown=False, width=260),
 )
 
@@ -434,77 +437,16 @@ class DiscModel(QAbstractTableModel):
         return False
 
 
-BURN_COLUMNS = ("#", "Time", "Artist", "Title")
-
-
-class BurnModel(QAbstractTableModel):
-    """The tracks of one burn record, read-only.
-
-    A track whose library entry has since gone is shown dimmed: it was burned,
-    but it can't be put on another disc.
-    """
-
-    def __init__(self, parent: QObject | None = None):
-        super().__init__(parent)
-        self._tracks: list[BurnTrack] = []
-
-    def set_tracks(self, tracks: list[BurnTrack]) -> None:
-        self.beginResetModel()
-        self._tracks = tracks
-        self.endResetModel()
-
-    def track_at(self, row: int) -> BurnTrack:
-        return self._tracks[row]
-
-    def rowCount(self, parent: QModelIndex = QModelIndex()) -> int:  # noqa: B008
-        return 0 if parent.isValid() else len(self._tracks)
-
-    def columnCount(self, parent: QModelIndex = QModelIndex()) -> int:  # noqa: B008
-        return 0 if parent.isValid() else len(BURN_COLUMNS)
-
-    def headerData(self, section, orientation, role=Qt.ItemDataRole.DisplayRole):
-        if orientation == Qt.Orientation.Horizontal:
-            if role == Qt.ItemDataRole.DisplayRole:
-                return BURN_COLUMNS[section]
-            if role == Qt.ItemDataRole.TextAlignmentRole:
-                return _RIGHT if section == 1 else _LEFT
-        return None
-
-    def data(self, index: QModelIndex, role: int = Qt.ItemDataRole.DisplayRole):
-        if not index.isValid():
-            return None
-        track = self._tracks[index.row()]
-        column = index.column()
-        if role == Qt.ItemDataRole.DisplayRole:
-            match column:
-                case 0:
-                    return str(track.position + 1)
-                case 1:
-                    return format_clock(track.sectors)
-                case 2:
-                    return track.artist
-                case 3:
-                    return track.title
-        elif role == Qt.ItemDataRole.TextAlignmentRole:
-            return _RIGHT if column == 1 else _LEFT
-        elif role == Qt.ItemDataRole.ForegroundRole and track.track_id is None:
-            return QColor(theme.current_palette()["text_disabled"])
-        elif role == Qt.ItemDataRole.ToolTipRole:
-            gone = "" if track.track_id else "\nNo longer in your library"
-            return track.path + gone
-        return None
-
-    def flags(self, index: QModelIndex) -> Qt.ItemFlag:
-        return Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable
-
-
 # -- the source tree ----------------------------------------------------------
 
-SELECTION_ROLE = (
-    Qt.ItemDataRole.UserRole + 1
-)  # ("all",) | ("source", id) | ("node", id, source_id)
+# The library tree: ("all",) | ("source", id) | ("node", id, source_id).
+# The disc tree (right pane): ("disc_folder", id) | ("disc", id).
+SELECTION_ROLE = Qt.ItemDataRole.UserRole + 1
 NAME_ROLE = Qt.ItemDataRole.UserRole + 2  # the name without the track count
 Selection = tuple
+DISC_ITEM_MIME = (
+    "application/x-dubcrate-disc-items"  # discs and folders dragged in the tree
+)
 
 
 def _folder_icon() -> QIcon:
@@ -525,12 +467,106 @@ def _playlist_icon() -> QIcon:
     )
 
 
+def _disc_icon() -> QIcon:
+    """A disc's own icon: a playlist that is going on a CD."""
+    return mono_icons.disc_list(
+        _dpr(), muted=not theme.current_palette().get("mono_icons")
+    )
+
+
 def _count_item(count: int | None) -> QStandardItem:
     item = QStandardItem("" if not count else f"{count:,}")
     item.setEditable(False)
     item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
     item.setForeground(QColor(theme.current_palette()["text_disabled"]))
     return item
+
+
+class DiscTreeModel(QStandardItemModel):
+    """The tree of discs and the folders they are filed in (the right-hand pane).
+
+    Tracks dragged from the track list onto a disc emit `tracks_dropped(disc_id, ids)`.
+    Discs and folders can be dragged into a folder, or onto empty space for the top level:
+    `items_moved(items, folder_id)`. Like the other models it never changes anything
+    itself: the window updates the library and rebuilds the tree.
+    """
+
+    tracks_dropped = Signal(int, list)
+    items_moved = Signal(
+        list, object
+    )  # ([("disc", id) | ("disc_folder", id)], folder id or None)
+
+    @staticmethod
+    def _kind(index: QModelIndex) -> str | None:
+        data = (
+            index.siblingAtColumn(0).data(SELECTION_ROLE) if index.isValid() else None
+        )
+        return data[0] if data else None
+
+    def flags(self, index: QModelIndex) -> Qt.ItemFlag:
+        base = super().flags(index) & ~Qt.ItemFlag.ItemIsEditable
+        if self._kind(index) in ("disc", "disc_folder"):
+            base |= Qt.ItemFlag.ItemIsDragEnabled | Qt.ItemFlag.ItemIsDropEnabled
+        return base
+
+    def supportedDropActions(self) -> Qt.DropAction:
+        return Qt.DropAction.MoveAction | Qt.DropAction.CopyAction
+
+    def mimeTypes(self) -> list[str]:
+        return [TRACK_MIME, DISC_ITEM_MIME]
+
+    def mimeData(self, indexes: Sequence[QModelIndex]) -> QMimeData:
+        items = [
+            list(i.data(SELECTION_ROLE))
+            for i in indexes
+            if i.column() == 0 and self._kind(i)
+        ]
+        mime = QMimeData()
+        mime.setData(DISC_ITEM_MIME, json.dumps(items).encode())
+        return mime
+
+    def canDropMimeData(self, data, action, row, column, parent) -> bool:
+        kind = self._kind(parent)
+        if data.hasFormat(TRACK_MIME):
+            return kind == "disc"  # tracks are added to a disc, nowhere else
+        if data.hasFormat(DISC_ITEM_MIME):
+            # into a folder, or (dropped on empty space) to the top level; never into a disc
+            return kind == "disc_folder" or not parent.isValid()
+        return False
+
+    def dropMimeData(self, data, action, row, column, parent) -> bool:
+        if action == Qt.DropAction.IgnoreAction:
+            return True
+        if not self.canDropMimeData(data, action, row, column, parent):
+            return False
+        if data.hasFormat(TRACK_MIME):
+            ids = json.loads(bytes(data.data(TRACK_MIME)).decode())
+            self.tracks_dropped.emit(
+                parent.siblingAtColumn(0).data(SELECTION_ROLE)[1], ids
+            )
+            return True
+        items = [
+            tuple(i) for i in json.loads(bytes(data.data(DISC_ITEM_MIME)).decode())
+        ]
+        folder = (
+            parent.siblingAtColumn(0).data(SELECTION_ROLE)[1]
+            if parent.isValid()
+            else None
+        )
+        self.items_moved.emit(items, folder)
+        return True
+
+    def removeRows(self, row, count, parent=QModelIndex()) -> bool:  # noqa: B008
+        return False  # a Move drag asks for this afterwards; rows only change via the library
+
+
+def _disc_tooltip(disc) -> str:
+    n = disc.track_count
+    fill = f"{format_clock(disc.used_sectors)} of {format_clock(disc.capacity_sectors)}"
+    lines = [disc.name, f"{n} track{'s' if n != 1 else ''} · {fill}"]
+    if disc.last_burned_at:
+        lines.append(f"Last burned {disc.last_burned_at[:10]}")
+    return "\n".join(lines)
 
 
 def build_source_model(lib: Library) -> QStandardItemModel:
@@ -571,6 +607,49 @@ def build_source_model(lib: Library) -> QStandardItemModel:
                 [child, _count_item(node.track_count)]
             )
             parents[node.id] = child
+    return model
+
+
+def build_disc_model(lib: Library, target_disc_id: int | None = None) -> DiscTreeModel:
+    """The tree of discs: folders (first) and discs, each A to Z, nested as filed.
+
+    Discs are playlists that go on a CD. Two columns, like the library tree: the name,
+    and the number of tracks. The disc that tracks are being added to (`target_disc_id`)
+    is shown in bold.
+    """
+    model = DiscTreeModel()
+    root = model.invisibleRootItem()
+    folders = lib.disc_folders()
+    folder_items: dict[int, QStandardItem] = {}
+    for (
+        folder
+    ) in folders:  # create every folder first, then hang them where they belong
+        item = QStandardItem(folder.name)
+        item.setData(("disc_folder", folder.id), SELECTION_ROLE)
+        item.setData(folder.name, NAME_ROLE)
+        item.setIcon(_folder_icon())
+        item.setEditable(False)
+        folder_items[folder.id] = item
+
+    def key(name: str) -> str:
+        return name.casefold()
+
+    for folder in sorted(folders, key=lambda f: key(f.name)):
+        parent = folder_items.get(folder.parent_id, root)
+        parent.appendRow([folder_items[folder.id], _count_item(None)])
+    for disc in sorted(lib.discs(), key=lambda d: key(d.name)):
+        item = QStandardItem(disc.name)
+        item.setData(("disc", disc.id), SELECTION_ROLE)
+        item.setData(disc.name, NAME_ROLE)
+        item.setIcon(_disc_icon())
+        item.setEditable(False)
+        item.setToolTip(_disc_tooltip(disc))
+        if disc.id == target_disc_id:
+            font = item.font()
+            font.setBold(True)  # tracks are being added to this one
+            item.setFont(font)
+        parent = folder_items.get(disc.folder_id, root)
+        parent.appendRow([item, _count_item(disc.track_count)])
     return model
 
 

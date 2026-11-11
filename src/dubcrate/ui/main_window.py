@@ -1,4 +1,5 @@
-"""The main window: sources on the left, tracks in the middle, the disc on the right."""
+"""The main window: the library's file tree on the left; in the middle the tracks of what
+you picked, or the disc you opened; your discs (burn playlists, in folders) on the right."""
 
 from importlib import metadata
 from pathlib import Path
@@ -18,6 +19,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QProgressBar,
     QPushButton,
+    QStackedWidget,
     QTreeView,
     QVBoxLayout,
     QWidget,
@@ -37,7 +39,7 @@ from dubcrate.library.store import LibraryError
 
 from . import theme, wave_style
 from .burn_dialog import BurnDialog, BurnerFactory
-from .disc_panel import DiscPanel
+from .disc_view import DiscView
 from .help_dialog import show_help_dialog
 from .models import (
     NAME_ROLE,
@@ -45,6 +47,7 @@ from .models import (
     SELECTION_ROLE,
     TRACK_COLUMNS,
     TrackTableModel,
+    build_disc_model,
     build_source_model,
     find_selection,
 )
@@ -84,7 +87,10 @@ class MainWindow(QMainWindow):
         self._help_dialog = None
         self._player = player
         self._persist = persist
+        # the library item the middle's track list shows (a disc has its own view)
         self._selection: tuple = ("all",)
+        # the folder or disc that is current in the disc tree
+        self._disc_pick: tuple | None = None
         self._sort: tuple[str | None, bool] = (None, False)
         self._busy = False
         self._theme_actions: dict[str, QAction] = {}
@@ -111,12 +117,13 @@ class MainWindow(QMainWindow):
         theme.notifier.changed.connect(self._on_theme_changed)
 
         self.refresh_sources()
+        self.refresh_discs()
         self._sync_disc_markers()
         if persist:
             geometry = settings.get_bytes("window/geometry")
             if geometry:
                 self.restoreGeometry(geometry)
-            state = settings.get_bytes("window/splitter")
+            state = settings.get_bytes("window/splitter3")
             if state:
                 self.splitter.restoreState(state)
 
@@ -139,7 +146,7 @@ class MainWindow(QMainWindow):
         left_layout = QVBoxLayout(left)
         left_layout.setContentsMargins(12, 12, 12, 12)
         left_layout.setSpacing(8)
-        left_layout.addWidget(self._title("Sources"))
+        left_layout.addWidget(self._title("Library"))
         left_layout.addWidget(self.tree, 1)
 
         # tracks
@@ -188,6 +195,8 @@ class MainWindow(QMainWindow):
         header.setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
         for column, spec in enumerate(TRACK_COLUMNS):
             self.track_table.setColumnWidth(column, spec.width)
+            if spec.fixed:  # a waveform, a marker, a number: content of one size
+                header.setSectionResizeMode(column, QHeaderView.ResizeMode.Fixed)
         header.setStretchLastSection(
             True
         )  # the last column takes the slack; the title keeps its width
@@ -218,7 +227,7 @@ class MainWindow(QMainWindow):
 
         self.add_button = QPushButton("Add to Disc")
         self.add_button.setToolTip(
-            "Add the selected tracks to the current disc (or drag them across)"
+            "Add the selected tracks to the open disc (or drag them onto a disc in the list on the left)"
         )
         self.add_button.clicked.connect(self.add_selected_to_disc)
         self.fit_button = QPushButton("Fit All to Disc")
@@ -226,10 +235,13 @@ class MainWindow(QMainWindow):
             "Add every track shown, in order, until the disc is full"
         )
         self.fit_button.clicked.connect(self.fit_all_to_disc)
+        self.target_label = QLabel()
+        self.target_label.setObjectName("mutedLabel")
         buttons = QHBoxLayout()
         buttons.addWidget(self.add_button)
         buttons.addWidget(self.fit_button)
         buttons.addStretch(1)
+        buttons.addWidget(self.target_label)
 
         middle = QWidget()
         middle_layout = QVBoxLayout(middle)
@@ -240,24 +252,67 @@ class MainWindow(QMainWindow):
         middle_layout.addWidget(self.track_table, 1)
         middle_layout.addLayout(buttons)
 
-        # the disc
-        self.disc_panel = DiscPanel(self._lib)
-        self.disc_panel.changed.connect(self._sync_disc_markers)
-        self.disc_panel.message.connect(
+        # the disc: opened from the tree, edited here
+        self.disc_view = DiscView(self._lib)
+        self.disc_view.changed.connect(self._sync_disc_markers)
+        self.disc_view.discs_changed.connect(self.refresh_discs)
+        self.disc_view.opened.connect(self.open_disc)
+        self.disc_view.message.connect(
             lambda text: self.statusBar().showMessage(text, 8000)
         )
-        self.disc_panel.busy.connect(self._set_busy)
-        self.disc_panel.burn_requested.connect(self.burn_current_disc)
-        self.disc_panel.progress.connect(self._on_progress)
+        self.disc_view.busy.connect(self._set_busy)
+        self.disc_view.burn_requested.connect(self.burn_current_disc)
+        self.disc_view.progress.connect(self._on_progress)
+        self.disc_view.preview_requested.connect(self.preview.load)
+        self.disc_view.table.play_pause_requested.connect(self.preview.toggle)
+        self.disc_view.table.beat_jump_requested.connect(self.preview.beat_jump)
+
+        self.center = QStackedWidget()  # the library's tracks, or the open disc
+        self.center.addWidget(middle)
+        self.center.addWidget(self.disc_view)
+
+        # your discs: burn playlists, filed in folders. Click one to open it in the middle;
+        # drag tracks onto one to add them; drag discs and folders about to file them.
+        self.disc_tree = QTreeView()
+        self.disc_tree.setHeaderHidden(True)
+        self.disc_tree.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.disc_tree.setUniformRowHeights(True)
+        self.disc_tree.setSelectionMode(
+            QAbstractItemView.SelectionMode.ExtendedSelection
+        )
+        self.disc_tree.setDragEnabled(True)
+        self.disc_tree.setAcceptDrops(True)
+        self.disc_tree.setDropIndicatorShown(True)
+        self.disc_tree.setDragDropMode(QAbstractItemView.DragDropMode.DragDrop)
+        self.disc_tree.setDefaultDropAction(Qt.DropAction.MoveAction)
+        self.disc_tree.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.disc_tree.customContextMenuRequested.connect(self._show_disc_tree_menu)
+        self.new_disc_button = QPushButton("New Disc")
+        self.new_disc_button.setToolTip("Make a disc (a playlist to burn to CD)")
+        self.new_disc_button.clicked.connect(lambda: self.new_disc())
+        self.new_folder_button = QPushButton("New Folder")
+        self.new_folder_button.setToolTip("Make a folder to organise your discs")
+        self.new_folder_button.clicked.connect(lambda: self.new_disc_folder())
+        disc_buttons = QHBoxLayout()
+        disc_buttons.addWidget(self.new_disc_button)
+        disc_buttons.addWidget(self.new_folder_button)
+        disc_buttons.addStretch(1)
+        right = QWidget()
+        right_layout = QVBoxLayout(right)
+        right_layout.setContentsMargins(12, 12, 12, 12)
+        right_layout.setSpacing(8)
+        right_layout.addWidget(self._title("Discs"))
+        right_layout.addWidget(self.disc_tree, 1)
+        right_layout.addLayout(disc_buttons)
 
         self.splitter = Splitter(Qt.Orientation.Horizontal)
         self.splitter.addWidget(left)
-        self.splitter.addWidget(middle)
-        self.splitter.addWidget(self.disc_panel)
+        self.splitter.addWidget(self.center)
+        self.splitter.addWidget(right)
         self.splitter.setStretchFactor(0, 0)
-        self.splitter.setStretchFactor(1, 3)
-        self.splitter.setStretchFactor(2, 2)
-        self.splitter.setSizes([210, 760, 470])
+        self.splitter.setStretchFactor(1, 1)
+        self.splitter.setStretchFactor(2, 0)
+        self.splitter.setSizes([230, 800, 330])
         body = QWidget()
         body_layout = QVBoxLayout(body)
         body_layout.setContentsMargins(0, 0, 0, 0)
@@ -312,10 +367,12 @@ class MainWindow(QMainWindow):
 
         disc_menu = menus.addMenu("&Disc")
         disc_menu.addAction(
-            "&New Disc…", self.disc_panel.new_disc, QKeySequence("Ctrl+N")
+            "&New Disc…", lambda: self.new_disc(), QKeySequence("Ctrl+N")
         )
-        disc_menu.addAction("&Rename Disc…", self.disc_panel.rename_disc)
-        disc_menu.addAction("&Delete Disc…", self.disc_panel.delete_disc)
+        disc_menu.addAction("New &Folder…", lambda: self.new_disc_folder())
+        disc_menu.addAction("&Rename Disc…", lambda: self.disc_view.rename_disc())
+        disc_menu.addAction("D&uplicate Disc", lambda: self.disc_view.duplicate_disc())
+        disc_menu.addAction("&Delete Disc…", lambda: self.disc_view.delete_disc())
         disc_menu.addSeparator()
         self.act_burn = disc_menu.addAction(
             "&Burn Disc…", self.burn_current_disc, QKeySequence("Ctrl+B")
@@ -379,7 +436,9 @@ class MainWindow(QMainWindow):
             action.setChecked(key == value)
 
     def _on_theme_changed(self) -> None:
-        self.refresh_sources()  # the tree's icons are baked in when it is built
+        # the trees' icons are baked in when they are built (and nothing else changes)
+        self.refresh_sources(reload=False)
+        self.refresh_discs()
 
     def _sync_wave_actions(self) -> None:
         current = settings.get_wave_style()
@@ -388,6 +447,11 @@ class MainWindow(QMainWindow):
 
     def focus_search(self) -> None:
         """Put the cursor in the search box, with what was typed selected to type over."""
+        if (
+            self.center.currentIndex() != 0
+        ):  # a disc is open: searching is for the library
+            self.tree.setCurrentIndex(find_selection(self.tree.model(), ("all",)))
+            self.center.setCurrentIndex(0)
         self.search.setFocus()
         self.search.selectAll()
 
@@ -428,21 +492,24 @@ class MainWindow(QMainWindow):
             self.busy_bar.setValue(done)
 
     def burn_current_disc(self) -> None:
-        """Open the burn window for the disc being planned."""
-        disc_id = self.disc_panel.current_disc_id()
+        """Open the burn window for the open disc."""
+        disc_id = self.disc_view.current_disc_id()
         if disc_id is None:
-            self._notify("Burn Disc", "Make a disc and add some tracks first.")
+            self._notify("Burn Disc", "Open a disc and add some tracks first.")
             return
         self.burn_dialog = BurnDialog(
             self._lib, disc_id, self, burner_factory=self._burner_factory
         )
         self.burn_dialog.burned.connect(self._on_burned)
-        self.burn_dialog.finished.connect(lambda _r: self.disc_panel.reload())
+        self.burn_dialog.finished.connect(lambda _r: self.disc_view.reload())
         self.burn_dialog.open()
 
-    def _on_burned(self, burn_id: int) -> None:
-        self.disc_panel.show_burned(burn_id)
-        self.statusBar().showMessage("Burn finished and saved", 10000)
+    def _on_burned(self, disc_id: int) -> None:
+        self.refresh_discs()  # the disc's tooltip now says when it was burned
+        name = self._lib.disc(disc_id).name
+        self.statusBar().showMessage(
+            f"Burn finished: “{name}” is marked as burned", 10000
+        )
 
     def _notify(self, title: str, text: str) -> None:
         QMessageBox.information(self, title, text)
@@ -452,24 +519,55 @@ class MainWindow(QMainWindow):
 
     # -- sources ----------------------------------------------------------
 
-    def refresh_sources(self, select: tuple | None = None) -> None:
-        """Rebuild the source tree and select `select` (default: what was selected)."""
+    def refresh_sources(
+        self, select: tuple | None = None, *, reload: bool = True
+    ) -> None:
+        """Rebuild the library tree and select `select` (default: what was selected).
+
+        With `reload` False (a theme change) nothing is reloaded unless what was selected is gone.
+        """
         target = select or self._selection
+        expanded = self._expanded_keys(self.tree)
         model = build_source_model(self._lib)
         self.tree.setModel(model)
-        self.tree.selectionModel().currentChanged.connect(self._on_tree_current_changed)
         tree_header = self.tree.header()
         tree_header.setStretchLastSection(False)
         tree_header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
         tree_header.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
         self.tree.expandToDepth(0)
+        self._restore_expanded(self.tree, expanded)
         index = find_selection(model, target)
-        if not index.isValid():
+        replaced = not index.isValid()  # what was selected is gone (a removed source)
+        if replaced:
             index = find_selection(model, ("all",))
-        self.tree.setCurrentIndex(index)
-        self._on_tree_current_changed(
-            index, QModelIndex()
-        )  # (the same index isn't a change for Qt)
+        self.tree.setCurrentIndex(index)  # (before connecting: this is not a change)
+        self.tree.selectionModel().currentChanged.connect(self._on_tree_current_changed)
+        if reload or replaced:
+            self._on_tree_current_changed(
+                index, QModelIndex()
+            )  # (the same index isn't a change for Qt)
+
+    def _expanded_keys(self, view: QTreeView) -> set[tuple]:
+        model = view.model()
+        keys: set[tuple] = set()
+        if model is None:
+            return keys
+        stack = [model.index(row, 0) for row in range(model.rowCount())]
+        while stack:
+            index = stack.pop()
+            if view.isExpanded(index):
+                keys.add(index.data(SELECTION_ROLE))
+            stack += [
+                model.index(row, 0, index) for row in range(model.rowCount(index))
+            ]
+        return keys
+
+    @staticmethod
+    def _restore_expanded(view: QTreeView, keys: set[tuple]) -> None:
+        for key in keys:  # folders that were open stay open
+            index = find_selection(view.model(), key)
+            if index.isValid():
+                view.setExpanded(index, True)
 
     def _on_tree_current_changed(
         self, current: QModelIndex, _previous: QModelIndex
@@ -479,9 +577,125 @@ class MainWindow(QMainWindow):
         if selection is None:
             return
         self._selection = selection
+        self.center.setCurrentIndex(0)  # a library item shows its tracks
         self.tracks_title.setText(current.data(NAME_ROLE))
         self.refresh_tracks()
         self._update_source_actions()
+
+    # -- the discs (right pane) -------------------------------------------
+
+    def refresh_discs(self) -> None:
+        """Rebuild the disc tree after a disc or folder changed (names, counts, filing).
+
+        It leaves the track list and what is shown in the middle alone.
+        """
+        expanded = self._expanded_keys(self.disc_tree)
+        open_id = self.disc_view.current_disc_id()
+        model = build_disc_model(self._lib, open_id)
+        model.tracks_dropped.connect(self._on_tracks_dropped)
+        model.items_moved.connect(self.disc_view.move_items)
+        self.disc_tree.setModel(model)
+        header = self.disc_tree.header()
+        header.setStretchLastSection(False)
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        header.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
+        self._restore_expanded(self.disc_tree, expanded)
+        index = (
+            find_selection(model, self._disc_pick) if self._disc_pick else QModelIndex()
+        )
+        if not index.isValid() and open_id is not None:
+            index = find_selection(model, ("disc", open_id))
+        self._disc_pick = index.data(SELECTION_ROLE) if index.isValid() else None
+        if index.isValid():
+            self.disc_tree.setCurrentIndex(index)  # (before connecting: not a change)
+        self.disc_tree.selectionModel().currentChanged.connect(
+            self._on_disc_current_changed
+        )
+        if open_id is None and self.center.currentIndex() == 1:
+            self.center.setCurrentIndex(
+                0
+            )  # the open disc was deleted: back to the library
+
+    def _on_disc_current_changed(
+        self, current: QModelIndex, _previous: QModelIndex
+    ) -> None:
+        selection = (
+            current.siblingAtColumn(0).data(SELECTION_ROLE)
+            if current.isValid()
+            else None
+        )
+        self._disc_pick = selection
+        if selection and selection[0] == "disc":
+            self.disc_view.set_disc(selection[1])  # opening a disc makes it the target
+            self.center.setCurrentIndex(1)
+
+    def open_disc(self, disc_id: int) -> None:
+        """Open a disc in the middle (and select it in the disc tree)."""
+        self.disc_view.set_disc(disc_id)
+        self.refresh_discs()
+        index = find_selection(self.disc_tree.model(), ("disc", disc_id))
+        if index.isValid():
+            self.disc_tree.setCurrentIndex(index)
+        self.center.setCurrentIndex(1)  # (even if it was already the selected one)
+
+    def _on_tracks_dropped(self, disc_id: int, track_ids: list) -> None:
+        self.disc_view.add_tracks(track_ids, disc_id=disc_id)
+
+    def _folder_here(self) -> int | None:
+        """The folder a new disc or folder goes in: the one picked in the disc tree, or the
+        one holding the picked disc, else the top level."""
+        pick = self._disc_pick
+        if pick is None:
+            return None
+        if pick[0] == "disc_folder":
+            return pick[1]
+        return self._lib.disc(pick[1]).folder_id
+
+    def new_disc(self, folder_id: int | None | object = ...) -> None:
+        folder = self._folder_here() if folder_id is ... else folder_id
+        self.disc_view.new_disc(folder)
+
+    def new_disc_folder(self, parent_id: int | None | object = ...) -> None:
+        parent = self._folder_here() if parent_id is ... else parent_id
+        self.disc_view.new_folder(parent)
+
+    def disc_tree_menu(self, index: QModelIndex) -> QMenu:
+        """What a right-click offers: on a disc, on a folder, or on empty space."""
+        selection = (
+            index.siblingAtColumn(0).data(SELECTION_ROLE) if index.isValid() else None
+        )
+        kind = selection[0] if selection else None
+        menu = QMenu(self)
+        if kind == "disc":
+            disc_id = selection[1]
+            menu.addAction("Open", lambda: self.open_disc(disc_id))
+            menu.addAction("Rename…", lambda: self.disc_view.rename_disc(disc_id))
+            menu.addAction("Duplicate", lambda: self.disc_view.duplicate_disc(disc_id))
+            menu.addSeparator()
+            menu.addAction("Burn…", lambda: self._open_and_burn(disc_id))
+            menu.addSeparator()
+            menu.addAction("Delete…", lambda: self.disc_view.delete_disc(disc_id))
+        elif kind == "disc_folder":
+            folder_id = selection[1]
+            menu.addAction("New Disc Here…", lambda: self.new_disc(folder_id))
+            menu.addAction("New Folder Here…", lambda: self.new_disc_folder(folder_id))
+            menu.addSeparator()
+            menu.addAction("Rename…", lambda: self.disc_view.rename_folder(folder_id))
+            menu.addAction(
+                "Delete Folder…", lambda: self.disc_view.delete_folder(folder_id)
+            )
+        else:  # empty space: the top level
+            menu.addAction("New Disc…", lambda: self.new_disc(None))
+            menu.addAction("New Folder…", lambda: self.new_disc_folder(None))
+        return menu
+
+    def _show_disc_tree_menu(self, position) -> None:
+        menu = self.disc_tree_menu(self.disc_tree.indexAt(position))
+        menu.popup(self.disc_tree.viewport().mapToGlobal(position))
+
+    def _open_and_burn(self, disc_id: int) -> None:
+        self.open_disc(disc_id)
+        self.burn_current_disc()
 
     def selected_source_id(self) -> int | None:
         kind = self._selection[0]
@@ -594,7 +808,8 @@ class MainWindow(QMainWindow):
             )
         self._set_busy(False)
         self.refresh_sources(select=("source", summary.source_id))
-        self.disc_panel.reload()  # a re-import can mark tracks on a disc as no longer in their source
+        self.disc_view.reload()  # a re-import can mark tracks on a disc as no longer in their source
+        self.refresh_discs()
         self.statusBar().showMessage(
             f"Imported {summary.added + summary.updated} tracks ({summary.added} new, {summary.removed} removed)",
             10000,
@@ -641,7 +856,8 @@ class MainWindow(QMainWindow):
             self._lib.remove_source(source.id, force=True)
         self._selection = ("all",)
         self.refresh_sources()
-        self.disc_panel.reload()
+        self.disc_view.reload()
+        self.refresh_discs()
 
     # -- tracks -----------------------------------------------------------
 
@@ -695,7 +911,14 @@ class MainWindow(QMainWindow):
 
     def _step_track(self, delta: int) -> None:
         """Load the track before or after the loaded one in the list (or the selected one)."""
-        tracks = self.track_model.tracks()
+        if (
+            self.center.currentIndex() == 1
+        ):  # a disc is open: step through it, in its order
+            model = self.disc_view.model
+            tracks = [model.entry_at(r).track for r in range(model.rowCount())]
+            table = self.disc_view.table
+        else:
+            tracks, table = self.track_model.tracks(), self.track_table
         if not tracks:
             return
         current = (
@@ -712,11 +935,11 @@ class MainWindow(QMainWindow):
         if (
             row is None
         ):  # nothing requested yet (or it isn't in this list): go on from the selection
-            chosen = self.track_table.selectionModel().selectedRows()
+            chosen = table.selectionModel().selectedRows()
             row = chosen[0].row() if chosen else (-1 if delta > 0 else len(tracks))
         target = row + delta
         if 0 <= target < len(tracks):
-            self.track_table.selectRow(target)
+            table.selectRow(target)
             self.preview.load(tracks[target])
 
     def _on_preview_ready(self, track_id: int, waveform) -> None:
@@ -843,10 +1066,10 @@ class MainWindow(QMainWindow):
         dialog.exec()
 
     def add_selected_to_disc(self) -> None:
-        self.disc_panel.add_tracks(self.selected_track_ids())
+        self.disc_view.add_tracks(self.selected_track_ids())
 
     def fit_all_to_disc(self) -> None:
-        self.disc_panel.add_tracks([t.id for t in self.track_model.tracks()], fit=True)
+        self.disc_view.add_tracks([t.id for t in self.track_model.tracks()], fit=True)
 
     def split_shown(self) -> None:
         tracks = self.track_model.tracks()
@@ -860,10 +1083,16 @@ class MainWindow(QMainWindow):
             text=self.tracks_title.text(),
         )
         if ok and name.strip():
-            self.disc_panel.split([t.id for t in tracks], name.strip())
+            self.disc_view.split([t.id for t in tracks], name.strip())
 
     def _sync_disc_markers(self) -> None:
-        self.track_model.set_on_disc(self.disc_panel.current_track_ids())
+        """Mark the tracks that are on the open disc, and say which disc adds go to."""
+        self.track_model.set_on_disc(self.disc_view.current_track_ids())
+        disc_id = self.disc_view.current_disc_id()
+        if disc_id is None:
+            self.target_label.setText("No disc open: adding starts a new one")
+        else:
+            self.target_label.setText(f"Adding to “{self._lib.disc(disc_id).name}”")
 
     # -- closing ----------------------------------------------------------
 
@@ -873,5 +1102,5 @@ class MainWindow(QMainWindow):
         self.preview.shutdown()
         if self._persist:
             settings.set_bytes("window/geometry", self.saveGeometry())
-            settings.set_bytes("window/splitter", self.splitter.saveState())
+            settings.set_bytes("window/splitter3", self.splitter.saveState())
         super().closeEvent(event)

@@ -98,24 +98,33 @@ def test_the_shortcuts_the_guide_lists_are_the_real_ones(window):
 def test_the_buttons_the_guide_names_exist(window):
     assert window.add_button.text() == "Add to Disc"
     assert window.fit_button.text() == "Fit All to Disc"
-    panel = window.disc_panel
-    assert [panel.tabs.tabText(i) for i in range(panel.tabs.count())] == [
-        "Planned",
-        "Burned",
-    ]
-    assert panel.duplicate_button.text() == "Duplicate"
-    assert panel.delete_burn_button.text() == "Delete"
-    assert panel.remove_button.text() == "Remove"
-    assert panel.burn_button.text() == "Burn…"
-    for name in (
-        "Add to Disc",
-        "Fit All to Disc",
-        "Duplicate",
-        "Planned",
-        "Burned",
-        "Burn…",
-    ):
+    assert window.new_disc_button.text() == "New Disc"
+    assert window.new_folder_button.text() == "New Folder"
+    assert window.disc_view.remove_button.text() == "Remove"
+    assert window.disc_view.burn_button.text() == "Burn…"
+    for name in ("Add to Disc", "Fit All to Disc", "New Disc", "New Folder", "Burn…"):
         assert name in MANUAL, name
+
+
+def test_the_right_hand_pane_the_guide_describes_is_the_real_one(window):
+    assert window.splitter.count() == 3  # library, the middle, the discs
+    assert window.splitter.widget(2).isAncestorOf(window.disc_tree)
+    for phrase in (
+        "## Your discs",
+        "**Discs** (right)",
+        "Adding to",
+        "no disc is ever deleted with a folder",
+        "A burned disc is just a disc",
+        "Duplicate",
+    ):
+        assert phrase in MANUAL, phrase
+    assert "Burned** view" not in MANUAL and "frozen" not in MANUAL.replace(
+        "nothing is frozen", ""
+    )
+    menu = window.disc_tree_menu(
+        __import__("PySide6.QtCore", fromlist=["QModelIndex"]).QModelIndex()
+    )
+    assert [a.text() for a in menu.actions()] == ["New Disc…", "New Folder…"]
 
 
 def test_the_settings_tabs_the_guide_names_exist(qapp):
@@ -185,3 +194,12 @@ def test_the_disc_list_the_guide_describes_is_the_real_one(qapp):
         "BPM"
         not in MANUAL.split("**What goes on the CD**")[1].split("**Arranging**")[0]
     )
+
+
+def test_the_fixed_width_columns_the_guide_mentions_are_fixed():
+    from dubcrate.ui.models import TRACK_COLUMNS
+
+    assert "fixed width" in MANUAL
+    fixed = {c.title for c in TRACK_COLUMNS if c.fixed}
+    assert {"", "Preview", "BPM", "Key", "Time"} <= fixed
+    assert not {"Title", "Artist"} & fixed

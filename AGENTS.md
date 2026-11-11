@@ -41,7 +41,7 @@ the repo; follow whatever it reports.
   - `theme.py`, `style.qss.template`, `style_system6.qss.template`, `mono_icons.py`, `icons/`, `fonts/`, `splitter.py`, `track_colors.py` come from the sibling apps (akaiutil-GUI, JV Studio, AKAISDS) so all of them look alike: System / Light / Dark / Macintosh System 6. Dubcrate's own QSS goes under the "Dubcrate additions" marker at the bottom of `style.qss.template`; every colour is a `${key}` from the palettes in `theme.py` (add a key to ALL palettes, or startup raises a KeyError). Custom-painted widgets read `theme.current_palette()`.
   - `player_strip.py` (transport, title/time/key/BPM, volume), `waveform_view.py` (`OverviewView` with phrase bar and cues, `DetailView` scrolling past a fixed playhead with the beat grid), `preview.py` (`PreviewController`: loads a track on a worker, ignores stale loads, owns the player), `settings_dialog.py` (audio device, buffer size, test tone, theme), `track_table.py` (Return adds, Space plays; the Preview column delegate), `wave_style.py` (the waveform's palette, which can differ from the theme's, the chosen look, and `render_columns`: waveform colours come from `wave_style.color`, never straight from the theme).
   - `burn_dialog.py` (the burn window: drive and disc check, confirmation, speed, worker-thread burn; tests inject a fake burner and `conftest.py` blocks the real one), `overlaps.py` (the "already used" notice), `help_dialog.py` (Help > User Guide: renders `help/manual.md`; ported from AKAISDS's quick start dialog) and `help/manual.md` (the user guide, checked by `tests/test_help.py`; keep it true when the UI changes).
-  - `main_window.py` (sources tree, track table, disc panel), `disc_panel.py`, `capacity_bar.py` (adapted from akaiutil-GUI's usage bar), `models.py` (track/disc/source-tree models), `tasks.py` (`run_async`).
+  - `main_window.py` (three panes: the library tree on the left; in the middle a `QStackedWidget` of the track list and the open disc; the disc tree, with folders, on the right), `disc_view.py` (the open disc, and all disc/folder management; the open disc is also the *target* that tracks are added to), `capacity_bar.py` (adapted from akaiutil-GUI's usage bar), `models.py` (track/disc/library-tree and disc-tree models; `DiscTreeModel` does the drag and drop), `tasks.py` (`run_async`).
   - `src/dubcrate/settings.py`: QSettings (theme, window layout, last disc, default disc size and gap).
 - `spikes/`: throwaway hardware drivers. Reusable logic belongs in the package.
 - `tests/`: pytest. Tests must not need a drive or a disc.
@@ -77,6 +77,7 @@ the repo; follow whatever it reports.
 - Every track must be a whole number of sectors (588 samples) before it reaches a
   burner. `render_track` guarantees this; keep it that way.
 - CD-TEXT is required, not optional. Text goes through `cdtext_clean` first.
+- A disc is a playlist, like any other: there are **no burn records or frozen snapshots**. A burn only sets `disc.last_burned_at`, a note; a burned disc is as editable as any. Discs live in `disc_folder`s (deleting one moves its contents up a level, never deletes a disc).
 - What is written on a CD for a track is `DiscEntry.title` / `.artist`: the disc's own edit if any, else the library track's. Edits are stored on the `disc_track` row (they travel with it through add, remove and reorder: the store moves `_Slot`s, never bare track ids) and must never be written to `track`, rekordbox or an audio file. Burning, burn records and problem messages use the entry's text, not `entry.track.title`.
 
 ## Conventions
@@ -113,8 +114,8 @@ Built: library import (folders and rekordbox), disc planning (fit, split, reorde
 exact capacity), the `dubcrate` command-line tool, the burn path (CLI only), and the
 PySide6 window with the preview player and waveforms. Burning through DiscRecording
 is proven on the owner's hardware (a disc burned and played on a CDJ-1000MK3, CD-TEXT
-shown); the gapless fix, the `cdrdao` backend and non-zero gaps are not. **Next:** the
-burn dialog, a record of burned discs, and the source rail: `dev_docs/roadmap.md`
+shown); the gapless fix, the `cdrdao` backend and non-zero gaps are not. **Next:** a
+hardware check of the burn window, and the Explorer: `dev_docs/roadmap.md`
 has the list, the decisions already made, the known rough edges and what is
 unverified. `dev_docs/rekordbox-analysis.md`, `audio.md` and `burning.md` hold what
 was measured, and how.

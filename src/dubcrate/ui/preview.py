@@ -111,7 +111,13 @@ class PreviewController(QObject):
 
         Uses the track's beat grid; without one, its tempo (rekordbox's, else the tag's).
         """
-        if not self.player.loaded or self._track is None or self.player.scratching:
+        if self.player.scratching:
+            return
+        if not self.player.loaded or self._track is None:
+            # Beat jump acts on the track that is loaded, not the one that is selected.
+            self.message.emit(
+                "Double-click a track to load it, then use ← and → to beat jump"
+            )
             return
         beats = settings.get_beat_jump() * direction
         position = self.player.position

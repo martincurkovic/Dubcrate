@@ -18,13 +18,10 @@ from typing import Self
 from dubcrate.cd import DISC_80_SECTORS, MAX_TRACKS, disc_used_sectors
 from dubcrate.library.models import (
     AddResult,
-    BurnRecord,
-    BurnRef,
-    BurnTrack,
     DiscEntry,
+    DiscFolder,
     DiscRef,
     DiscSummary,
-    DuplicateResult,
     ImportSummary,
     Node,
     NodeRecord,
@@ -169,7 +166,66 @@ ALTER TABLE disc_track ADD COLUMN title TEXT;
 ALTER TABLE disc_track ADD COLUMN artist TEXT
 """
 
-_MIGRATIONS = (_SCHEMA_V1, _SCHEMA_V2, _SCHEMA_V3, _SCHEMA_V4, _SCHEMA_V5)
+_SCHEMA_V6 = """
+CREATE TABLE disc_folder (
+    id INTEGER PRIMARY KEY,
+    name TEXT NOT NULL,
+    parent_id INTEGER REFERENCES disc_folder(id) ON DELETE CASCADE
+);
+ALTER TABLE disc ADD COLUMN folder_id INTEGER REFERENCES disc_folder(id) ON DELETE SET NULL;
+ALTER TABLE disc ADD COLUMN last_burned_at TEXT
+"""
+
+
+def _migrate_to_v6(conn: sqlite3.Connection) -> None:
+    """Discs get folders and a "last burned" note; burn records stop being a thing.
+
+    A burn record was a frozen copy of a disc. Now a disc is just a playlist, so: a disc
+    that was burned remembers when, and a burn whose disc had been deleted becomes a disc
+    of its own (what it had burned, edits included), so that no history is thrown away.
+    """
+    for statement in _SCHEMA_V6.split(";"):
+        if statement.strip():
+            conn.execute(statement)
+    conn.execute(
+        "UPDATE disc SET last_burned_at = (SELECT MAX(burned_at) FROM burn"
+        " WHERE burn.disc_id = disc.id AND burn.simulated = 0)"
+    )
+    orphans = conn.execute(
+        "SELECT * FROM burn WHERE disc_id IS NULL AND simulated = 0 ORDER BY id"
+    ).fetchall()
+    for burn in orphans:
+        disc_id = conn.execute(
+            "INSERT INTO disc (name, capacity_sectors, pregap_sectors, created_at,"
+            " updated_at, last_burned_at) VALUES (?, ?, ?, ?, ?, ?)",
+            (
+                burn["name"], burn["capacity_sectors"], burn["pregap_sectors"],
+                burn["burned_at"], burn["burned_at"], burn["burned_at"],
+            ),
+        ).lastrowid  # fmt: skip
+        rows = conn.execute(
+            "SELECT bt.track_id, bt.title, bt.artist, t.title AS own_title,"
+            " t.artist AS own_artist FROM burn_track bt JOIN track t ON t.id = bt.track_id"
+            " WHERE bt.burn_id = ? ORDER BY bt.position",
+            (burn["id"],),
+        ).fetchall()  # (tracks that have since left the library can't be put back)
+        for position, row in enumerate(rows):
+            conn.execute(
+                "INSERT INTO disc_track (disc_id, track_id, position, title, artist)"
+                " VALUES (?, ?, ?, ?, ?)",
+                (
+                    disc_id, row["track_id"], position,
+                    row["title"] if row["title"] != row["own_title"] else None,
+                    row["artist"] if row["artist"] != row["own_artist"] else None,
+                ),
+            )  # fmt: skip
+    conn.execute("DROP TABLE burn_track")
+    conn.execute("DROP TABLE burn")
+
+
+_MIGRATIONS = (
+    _SCHEMA_V1, _SCHEMA_V2, _SCHEMA_V3, _SCHEMA_V4, _SCHEMA_V5, _migrate_to_v6,
+)  # fmt: skip
 SCHEMA_VERSION = len(_MIGRATIONS)
 
 _TRACK_FIELDS = (
@@ -252,9 +308,12 @@ class Library:
         for target, script in enumerate(_MIGRATIONS, start=1):
             if version < target:
                 with self._conn:
-                    for statement in script.split(";"):
-                        if statement.strip():
-                            self._conn.execute(statement)
+                    if callable(script):
+                        script(self._conn)
+                    else:
+                        for statement in script.split(";"):
+                            if statement.strip():
+                                self._conn.execute(statement)
                     self._conn.execute(f"PRAGMA user_version = {target}")
 
     # -- sources ---------------------------------------------------------
@@ -574,13 +633,16 @@ class Library:
         *,
         capacity_sectors: int = DISC_80_SECTORS,
         pregap_sectors: int = 0,
+        folder_id: int | None = None,
     ) -> int:
+        if folder_id is not None:
+            self._folder_row(folder_id)
         now = datetime.now(UTC).isoformat(timespec="seconds")
         with self._conn:
             cursor = self._conn.execute(
-                "INSERT INTO disc (name, capacity_sectors, pregap_sectors, created_at, updated_at)"
-                " VALUES (?, ?, ?, ?, ?)",
-                (name, capacity_sectors, pregap_sectors, now, now),
+                "INSERT INTO disc (name, capacity_sectors, pregap_sectors, folder_id,"
+                " created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
+                (name, capacity_sectors, pregap_sectors, folder_id, now, now),
             )
         assert cursor.lastrowid is not None
         return cursor.lastrowid
@@ -598,7 +660,7 @@ class Library:
         used = disc_used_sectors((e.sectors for e in entries), row["pregap_sectors"])
         return DiscSummary(
             row["id"], row["name"], row["capacity_sectors"], row["pregap_sectors"],
-            len(entries), used, row["created_at"],
+            len(entries), used, row["created_at"], row["folder_id"], row["last_burned_at"],
         )  # fmt: skip
 
     def discs(self) -> list[DiscSummary]:
@@ -826,163 +888,130 @@ class Library:
             disc_ids.append(disc_id)
         return SplitResult(tuple(disc_ids), tuple(tracks[i].id for i in too_long))
 
-    # -- burn records ----------------------------------------------------
+    # -- disc folders -----------------------------------------------------
 
-    def record_burn(
-        self,
-        disc_id: int,
-        *,
-        drive: str = "",
-        speed: int | None = None,
-        simulated: bool = False,
-    ) -> int:
-        """Save a snapshot of the disc as it is now; returns the burn id.
-
-        The planned disc stays editable: later changes to it don't touch the
-        snapshot.
-        """
-        row = self._disc_row(disc_id)
-        entries = self.disc_entries(disc_id)
-        used = disc_used_sectors((e.sectors for e in entries), row["pregap_sectors"])
-        now = datetime.now(UTC).isoformat(timespec="seconds")
-        with self._conn:
-            cursor = self._conn.execute(
-                "INSERT INTO burn (disc_id, name, capacity_sectors, pregap_sectors,"
-                " used_sectors, drive, speed, simulated, burned_at)"
-                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (
-                    disc_id, row["name"], row["capacity_sectors"],
-                    row["pregap_sectors"], used, drive, speed, int(simulated), now,
-                ),
-            )  # fmt: skip
-            burn_id = cursor.lastrowid
-            assert burn_id is not None
-            self._conn.executemany(
-                "INSERT INTO burn_track (burn_id, position, track_id, title, artist,"
-                " sectors, path) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                [
-                    (
-                        burn_id, e.position, e.track.id, e.title,
-                        e.artist, e.sectors, e.track.path,
-                    )
-                    for e in entries
-                ],
-            )  # fmt: skip
-        return burn_id
-
-    def _burn_tracks(self, burn_id: int) -> tuple[BurnTrack, ...]:
-        rows = self._conn.execute(
-            "SELECT * FROM burn_track WHERE burn_id = ? ORDER BY position", (burn_id,)
-        )
-        return tuple(
-            BurnTrack(
-                r["position"], r["track_id"], r["title"], r["artist"],
-                r["sectors"], r["path"],
-            )
-            for r in rows
-        )  # fmt: skip
-
-    def _to_burn(self, r: sqlite3.Row) -> BurnRecord:
-        return BurnRecord(
-            r["id"], r["disc_id"], r["name"], r["capacity_sectors"],
-            r["pregap_sectors"], r["used_sectors"], r["drive"], r["speed"],
-            bool(r["simulated"]), r["burned_at"], self._burn_tracks(r["id"]),
-        )  # fmt: skip
-
-    def burns(self, disc_id: int | None = None) -> list[BurnRecord]:
-        """Burn records, newest first; only one disc's if `disc_id` is given."""
-        if disc_id is None:
-            rows = self._conn.execute("SELECT * FROM burn ORDER BY id DESC")
-        else:
-            rows = self._conn.execute(
-                "SELECT * FROM burn WHERE disc_id = ? ORDER BY id DESC", (disc_id,)
-            )
-        return [self._to_burn(r) for r in rows.fetchall()]
-
-    def burn(self, burn_id: int) -> BurnRecord:
+    def _folder_row(self, folder_id: int) -> sqlite3.Row:
         row = self._conn.execute(
-            "SELECT * FROM burn WHERE id = ?", (burn_id,)
+            "SELECT * FROM disc_folder WHERE id = ?", (folder_id,)
         ).fetchone()
         if row is None:
-            raise DiscError(f"no burn with id {burn_id}")
-        return self._to_burn(row)
+            raise DiscError(f"no disc folder with id {folder_id}")
+        return row
 
-    def delete_burn(self, burn_id: int) -> None:
-        self.burn(burn_id)
+    def disc_folders(self) -> list[DiscFolder]:
+        rows = self._conn.execute("SELECT * FROM disc_folder ORDER BY id")
+        return [DiscFolder(r["id"], r["name"], r["parent_id"]) for r in rows]
+
+    def create_disc_folder(self, name: str, parent_id: int | None = None) -> int:
+        name = name.strip()
+        if not name:
+            raise DiscError("a folder needs a name")
+        if parent_id is not None:
+            self._folder_row(parent_id)
         with self._conn:
-            self._conn.execute("DELETE FROM burn WHERE id = ?", (burn_id,))
+            cursor = self._conn.execute(
+                "INSERT INTO disc_folder (name, parent_id) VALUES (?, ?)",
+                (name, parent_id),
+            )
+        assert cursor.lastrowid is not None
+        return cursor.lastrowid
 
-    def duplicate_burn(self, burn_id: int, name: str | None = None) -> DuplicateResult:
-        """Make a new editable disc from a burn record, to re-burn or tweak.
+    def rename_disc_folder(self, folder_id: int, name: str) -> None:
+        self._folder_row(folder_id)
+        name = name.strip()
+        if not name:
+            raise DiscError("a folder needs a name")
+        with self._conn:
+            self._conn.execute(
+                "UPDATE disc_folder SET name = ? WHERE id = ?", (name, folder_id)
+            )
 
-        Tracks that have left the library since are skipped and reported.
-        """
-        record = self.burn(burn_id)
-        # track_id is NULLed when its track is deleted, so non-null means it's still here.
-        kept = [t for t in record.tracks if t.track_id is not None]
-        skipped = tuple(t for t in record.tracks if t.track_id is None)
-        disc_id = self.create_disc(
-            name or f"{record.name} (copy)",
-            capacity_sectors=record.capacity_sectors,
-            pregap_sectors=record.pregap_sectors,
+    def move_disc_folder(self, folder_id: int, parent_id: int | None) -> None:
+        """Put a folder inside another (or at the top level with None)."""
+        self._folder_row(folder_id)
+        if parent_id is not None:
+            self._folder_row(parent_id)
+            parents = {f.id: f.parent_id for f in self.disc_folders()}
+            here: int | None = parent_id
+            while (
+                here is not None
+            ):  # walk up: the new parent must not be inside this folder
+                if here == folder_id:
+                    raise DiscError("a folder can't go inside itself")
+                here = parents[here]
+        with self._conn:
+            self._conn.execute(
+                "UPDATE disc_folder SET parent_id = ? WHERE id = ?",
+                (parent_id, folder_id),
+            )
+
+    def delete_disc_folder(self, folder_id: int) -> None:
+        """Delete a folder. What was in it (discs and folders) moves up a level: this
+        never deletes a disc."""
+        row = self._folder_row(folder_id)
+        parent = row["parent_id"]
+        with self._conn:
+            self._conn.execute(
+                "UPDATE disc SET folder_id = ? WHERE folder_id = ?", (parent, folder_id)
+            )
+            self._conn.execute(
+                "UPDATE disc_folder SET parent_id = ? WHERE parent_id = ?",
+                (parent, folder_id),
+            )
+            self._conn.execute("DELETE FROM disc_folder WHERE id = ?", (folder_id,))
+
+    def move_disc(self, disc_id: int, folder_id: int | None) -> None:
+        """Put a disc in a folder (or at the top level with None)."""
+        self._disc_row(disc_id)
+        if folder_id is not None:
+            self._folder_row(folder_id)
+        with self._conn:
+            self._conn.execute(
+                "UPDATE disc SET folder_id = ? WHERE id = ?", (folder_id, disc_id)
+            )
+
+    # -- burned, and copies ------------------------------------------------
+
+    def mark_burned(self, disc_id: int, when: str | None = None) -> None:
+        """Note that the disc was burned. It is only a note: the disc is as editable as
+        ever, and nothing is copied."""
+        self._disc_row(disc_id)
+        when = when or datetime.now(UTC).isoformat(timespec="seconds")
+        with self._conn:
+            self._conn.execute(
+                "UPDATE disc SET last_burned_at = ? WHERE id = ?", (when, disc_id)
+            )
+
+    def duplicate_disc(self, disc_id: int, name: str | None = None) -> int:
+        """A copy of a disc: its tracks (with any CD text edits), size, gaps and folder.
+        The copy has not been burned."""
+        row = self._disc_row(disc_id)
+        copy = self.create_disc(
+            name or f"{row['name']} (copy)",
+            capacity_sectors=row["capacity_sectors"],
+            pregap_sectors=row["pregap_sectors"],
+            folder_id=row["folder_id"],
         )
-        library = {
-            t.id: t
-            for t in self.tracks_by_ids(
-                [b.track_id for b in kept if b.track_id is not None]
-            )
-        }
-        slots = []
-        for burned in kept:
-            assert burned.track_id is not None
-            own = library[burned.track_id]
-            # What was burned becomes an edit only where it differs from the track's own text.
-            slots.append(
-                _Slot(
-                    burned.track_id,
-                    burned.title if burned.title != own.title else None,
-                    burned.artist if burned.artist != own.artist else None,
-                )
-            )
         with self._conn:
-            self._write_disc_slots(disc_id, slots)
-        return DuplicateResult(disc_id, skipped)
+            self._write_disc_slots(copy, self._slots(disc_id))
+        return copy
 
     def track_usage(self, track_ids: Iterable[int]) -> dict[int, TrackUsage]:
-        """Where each track is already used; tracks used nowhere are left out.
-
-        Burn records from a simulated (test-write) run don't count: nothing
-        was put on a disc.
-        """
+        """The discs each track is already on; tracks on none are left out."""
         ids = list(dict.fromkeys(track_ids))
         discs: dict[int, dict[int, DiscRef]] = {}
-        burns: dict[int, dict[int, BurnRef]] = {}
         for start in range(0, len(ids), 500):
             chunk = ids[start : start + 500]
             marks = ",".join("?" * len(chunk))
             for r in self._conn.execute(
-                "SELECT DISTINCT dt.track_id, d.id, d.name FROM disc_track dt"
-                f" JOIN disc d ON d.id = dt.disc_id WHERE dt.track_id IN ({marks})"
-                " ORDER BY d.id",
+                "SELECT DISTINCT dt.track_id, d.id, d.name, d.last_burned_at"
+                " FROM disc_track dt JOIN disc d ON d.id = dt.disc_id"
+                f" WHERE dt.track_id IN ({marks}) ORDER BY d.id",
                 chunk,
             ):
                 discs.setdefault(r["track_id"], {})[r["id"]] = DiscRef(
-                    r["id"], r["name"]
-                )
-            for r in self._conn.execute(
-                "SELECT DISTINCT bt.track_id, b.id, b.name, b.burned_at"
-                " FROM burn_track bt JOIN burn b ON b.id = bt.burn_id"
-                f" WHERE b.simulated = 0 AND bt.track_id IN ({marks})"
-                " ORDER BY b.id DESC",
-                chunk,
-            ):
-                burns.setdefault(r["track_id"], {})[r["id"]] = BurnRef(
-                    r["id"], r["name"], r["burned_at"]
+                    r["id"], r["name"], r["last_burned_at"]
                 )
         return {
-            tid: TrackUsage(
-                tuple(discs.get(tid, {}).values()), tuple(burns.get(tid, {}).values())
-            )
-            for tid in ids
-            if tid in discs or tid in burns
+            tid: TrackUsage(tuple(discs[tid].values())) for tid in ids if tid in discs
         }

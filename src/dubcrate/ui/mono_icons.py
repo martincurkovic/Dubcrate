@@ -58,6 +58,18 @@ def _playlist(p: QPainter, ink) -> None:
         p.drawLine(QPointF(5, y), QPointF(14, y))
 
 
+def _disc_list(p: QPainter, ink) -> None:
+    """A playlist with a disc in the corner: a list of tracks going on a CD."""
+    p.setBrush(ink)
+    for y in (4, 8, 12):
+        p.drawRect(QRectF(1.5, y - 0.5, 1, 1))
+        p.drawLine(QPointF(4, y), QPointF(8, y))
+    p.setBrush(Qt.BrushStyle.NoBrush)
+    p.drawEllipse(QRectF(8.5, 4.5, 6, 6))  # the disc...
+    p.setBrush(ink)
+    p.drawEllipse(QRectF(10.7, 6.7, 1.6, 1.6))  # ...and its hole
+
+
 def folder(dpr: float = 1.0) -> QIcon:
     return _icon(_folder, dpr)
 
@@ -68,6 +80,11 @@ def floppy(dpr: float = 1.0) -> QIcon:
 
 def drive(dpr: float = 1.0) -> QIcon:
     return _icon(_drive, dpr)
+
+
+def disc_list(dpr: float = 1.0, muted: bool = False) -> QIcon:
+    """The icon for a disc in the tree. `muted` is as for `playlist`."""
+    return _icon(_disc_list, dpr, ink_alpha=170 if muted else 255)
 
 
 def playlist(dpr: float = 1.0, muted: bool = False) -> QIcon:

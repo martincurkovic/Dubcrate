@@ -5,17 +5,14 @@
 1. **Burn from the window.** *Built, not yet tried on hardware.* `ui/burn_dialog.py`
    shows the drive and what the inserted disc holds, asks to confirm a blank CD-R,
    takes a speed (default from Settings), can do a test-only burn, logs progress, and
-   saves a record. It renders and burns on a worker thread, which needs a hardware check
+   marks the disc as burned. It renders and burns on a worker thread, which needs a hardware check
    (see [burning.md](burning.md)). Still to do: a drive picker (it uses the first
    drive), and a way to cancel.
-2. **A record of what was burned.** *Store side done* (`record_burn`, `burns`,
-   `duplicate_burn`, schema v3), the CLI saves a record after a real burn, and the
-   disc panel has a *Planned | Burned* switch with *Duplicate* and *Delete*. The burn
-   window saves a record after a real burn and shows it under *Burned*.
-3. **The source rail** from the rbxport-style layout: Library, Explorer (a live
-   folder browser, no import needed) and Discs (the list of planned and burned
-   discs, with the disc currently in the burner so a finished burn can be read back
-   and checked).
+2. **Read a finished burn back.** With the burner attached, read the disc in the drive and
+   check it against the disc it was burned from (the old idea of a burn record became
+   "a disc just remembers when it was burned").
+3. **The Explorer** in the left tree: a live folder browser next to the Library (no
+   import needed).
 4. **Printable track list** for the disc sleeve, since old CDJs have no screen for it.
 
 5. **Help menu.** *Done:* *Help > User Guide* opens `ui/help_dialog.py`, which renders
@@ -37,7 +34,8 @@
 
 ## Decisions so far
 
-- The disc panel stays to the right of the track table; the player runs across the top.
+- The layout is three panes under the player: the library's file tree on the left, the track list (or the open disc) in the middle, and the **Discs** list on the right.
+- A **disc is a playlist**: in the right-hand list, filed in folders, opened in the middle by clicking it (which also makes it the target for adds). Burned or not makes no difference, and there are **no frozen burn snapshots**: a disc only remembers when it was last burned. Dragging tracks onto a disc adds them to it (rekordbox-style); discs and folders drag into folders. Folders are listed first, A to Z, then discs A to Z; deleting a folder moves its contents up a level. (Schema v6 converted old burn records: a burned disc got `last_burned_at`, and a burn of a deleted disc became a disc.)
 - Double-click previews a track; Return (or the button, or dragging) adds it to a disc.
 - Music/iTunes is skipped for now. The theme is shared with the owner's other apps.
 - Licensed GPL-3.0-or-later. No tag library: `ffprobe` reads tags.

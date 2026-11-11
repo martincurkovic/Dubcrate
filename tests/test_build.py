@@ -207,20 +207,25 @@ def _planned_cli_disc(tmp_path):
     run_cli(tmp_path, "disc", "add", "1", "--node", "1")
 
 
-def test_cli_burn_saves_a_record_of_a_real_burn(tmp_path, monkeypatch):
+def test_cli_burn_marks_the_disc_as_burned_and_leaves_it_editable(
+    tmp_path, monkeypatch, capsys
+):
     _planned_cli_disc(tmp_path)
     burner = FakeBurner()
     monkeypatch.setattr("dubcrate.cli_discs.get_burner", lambda _name: burner)
     assert run_cli(tmp_path, "burn", "1", "--yes", "--speed", "12") == 0
     assert len(burner.burned) == 1
+    assert burner.burned[0][1].speed == 12
+    assert "marked disc 1 as burned" in capsys.readouterr().out
     with Library.open(tmp_path / "lib.db") as lib:
-        [record] = lib.burns()
-        assert (record.disc_id, record.speed, record.simulated) == (1, 12, False)
-        assert [t.title for t in record.tracks] == ["one", "two"]
-        assert all(t.sectors > 0 for t in record.tracks)
+        assert lib.disc(1).last_burned_at is not None
+        lib.remove_from_disc(1, [0])  # a burned disc is an ordinary playlist
+        assert lib.disc(1).track_count == 1
+        # every exact length was learned while rendering
+        assert all(e.track.cd_sectors for e in lib.disc_entries(1))
 
 
-def test_cli_simulated_or_failed_burns_leave_no_record(tmp_path, monkeypatch):
+def test_cli_simulated_or_failed_burns_do_not_mark_the_disc(tmp_path, monkeypatch):
     _planned_cli_disc(tmp_path)
     monkeypatch.setattr("dubcrate.cli_discs.get_burner", lambda _name: FakeBurner())
     assert run_cli(tmp_path, "burn", "1", "--yes", "--simulate") == 0
@@ -229,7 +234,7 @@ def test_cli_simulated_or_failed_burns_leave_no_record(tmp_path, monkeypatch):
     )
     assert run_cli(tmp_path, "burn", "1", "--yes") == 1
     with Library.open(tmp_path / "lib.db") as lib:
-        assert lib.burns() == []
+        assert lib.disc(1).last_burned_at is None
 
 
 # -- the disc in the drive ----------------------------------------------------
@@ -271,7 +276,7 @@ def test_cli_refuses_to_burn_onto_a_disc_that_is_too_small(
     assert "burn failed" in err and "the disc in the drive holds" in err
     assert burner.burned == []
     with Library.open(tmp_path / "lib.db") as lib:
-        assert lib.burns() == []
+        assert lib.disc(1).last_burned_at is None
 
 
 def test_cli_burns_when_the_disc_is_big_enough_and_says_what_it_holds(

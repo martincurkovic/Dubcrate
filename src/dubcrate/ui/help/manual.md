@@ -13,9 +13,9 @@ Dubcrate helps you put music from your rekordbox library (or any folder) onto au
 - [Importing your music](#importing-your-music)
 - [Browsing and searching](#browsing-and-searching)
 - [Listening to tracks](#listening-to-tracks)
+- [Your discs](#your-discs)
 - [Planning a disc](#planning-a-disc)
 - [Checking tracks you already used](#checking-tracks-you-already-used)
-- [Discs you have burned](#discs-you-have-burned)
 - [Burning a disc](#burning-a-disc)
 - [Settings](#settings)
 - [Keyboard shortcuts](#keyboard-shortcuts)
@@ -28,9 +28,9 @@ Dubcrate helps you put music from your rekordbox library (or any folder) onto au
 
 1. **Import your music.** Choose **File > Import Folder…** for a folder of music, or **File > Import rekordbox Library…** for your rekordbox library.
 2. **Find some tracks.** Pick a playlist or folder on the left, or search.
-3. **Build a disc.** Drag tracks onto the disc on the right, or select them and press **Return**.
+3. **Build a disc.** Press **New Disc** on the right, then drag tracks onto it, or select them and press **Return**.
 4. **Watch the bar.** It shows how full the disc is and turns red if the disc is too long.
-5. **Burn it.** Press **Burn…** under the disc, check the drive, tick that a blank CD-R is inside, and burn.
+5. **Burn it.** Open the disc by clicking it, press **Burn…**, check the drive, tick that a blank CD-R is inside, and burn.
 
 You need **ffmpeg** installed: Dubcrate uses it to read tracks and to prepare them for the disc. With Homebrew: `brew install ffmpeg`.
 
@@ -38,10 +38,10 @@ You need **ffmpeg** installed: Dubcrate uses it to read tracks and to prepare th
 
 ## The main window
 
-- **Sources** (left): everything you have imported, with its playlists and folders beneath it.
-- **Tracks** (middle): the tracks of whatever is selected on the left, with a search box above, and the buttons **Add to Disc** and **Fit All to Disc** below.
+- **Library** (left): everything you have imported, with its playlists and folders beneath it. Click one to see its tracks.
+- **Tracks** (middle): the tracks of whatever is selected on the left, with a search box above, and the buttons **Add to Disc** and **Fit All to Disc** below. When you open a disc, the middle shows that disc instead.
 - **Player** (across the top): play and pause, previous and next, the title, time, key and BPM of the track you are previewing, a volume control, and two waveforms.
-- **Disc** (right): the disc you are planning, or the discs you have already burned. See [Planning a disc](#planning-a-disc) and [Discs you have burned](#discs-you-have-burned).
+- **Discs** (right): your burn playlists, filed in folders. See [Your discs](#your-discs).
 
 **View > Theme** switches between System, Light, Dark and Macintosh System 6 (black and white, with a bitmap-style font).
 
@@ -73,6 +73,7 @@ Supported music: MP3, WAV, FLAC, AIFF, AAC/M4A, Ogg, Opus and WMA.
 - Click a source, playlist or folder on the left to list its tracks.
 - Type in the **search box** to filter by title, artist, album or genre. Press **⌘F** from anywhere in the main window to jump to it.
 - Click a **column heading** to sort by it, and click again to reverse.
+- The marker, the Preview waveform and the short number and date columns have a **fixed width**, so they stay the same size when the window changes. The text columns can be resized by dragging the edge of their heading.
 - **Drag a column heading** left or right to reorder the columns. The ● marker column stays first, and your layout is remembered.
 - **Right-click a column heading** to show or hide columns, or choose **Reset Columns** to go back to the default layout and columns.
 
@@ -126,33 +127,49 @@ Choose where previews play, and test it, in [Settings](#settings).
 
 ---
 
+## Your discs
+
+A disc is a playlist that goes on a CD. They live in the **Discs** list on the right, just as your rekordbox playlists live in the Library on the left, and they can be filed in folders.
+
+- **Open a disc** by clicking it. Its tracks appear in the middle, ready to arrange and edit. Opening a disc also makes it the one that tracks are **added to**: its name is in bold, and under the track list it says **Adding to “…”**.
+- **Add tracks** by selecting them and pressing **Return**, **⌘D** or **Add to Disc** (they go to the open disc), or by **dragging** them from the track list onto any disc in the Discs list. Dragging onto a disc that isn't open adds to that one and leaves the open disc as it is.
+- **New Disc** and **New Folder** (under the list) make them. A new disc goes in the folder you have picked, or beside the disc you have picked.
+- **Drag a disc or folder** into a folder to file it, or onto empty space to move it to the top level. Folders can hold folders.
+- **Right-click** a disc to open, rename, duplicate, burn or delete it, or a folder to make something inside it, rename it or delete it. Deleting a folder moves what is in it up a level: **no disc is ever deleted with a folder**.
+- Discs and folders are listed A to Z, with folders first.
+
+**A burned disc is just a disc.** There is no separate record and nothing is frozen: you can keep editing a disc after you burn it. Dubcrate only remembers *when* it was last burned: hover over the disc to see it, and you'll be reminded if you add a track that is on a disc you burned. To keep a copy of a mix before you change it, right-click it and choose **Duplicate**.
+
+---
+
 ## Planning a disc
 
-The **Planned** view on the right shows the disc you are working on. Use the list at its top to switch discs, **New** to start another, and **⋯** to rename or delete one.
+The disc you open is shown in the middle: its tracks as they will be written on the CD, and a capacity bar under them.
 
 **Adding tracks**
 
 - Drag tracks from the track list onto the disc, **or** select them and press **Return**, **⌘D** or **Add to Disc**.
 - **Fit All to Disc** adds every track shown, in order, until the disc is full.
 - **Disc > Split Shown Tracks Across Discs…** (⇧⌘D) cuts a long list into as many discs as it takes, keeping the order.
-- If you add tracks and no disc exists yet, one is created for you.
+- If you add tracks and no disc is open yet, one is created for you.
 
 **What goes on the CD**
 
-The disc list shows only what a CD can hold: the track **#**, its **Time**, and the **Artist** and **Title** that are written to the disc as CD-TEXT and shown on a player's display. The CD's own title (the "album") is the **disc's name**: rename it from the **⋯** menu.
+The disc list shows only what a CD can hold: the track **#**, its **Time**, and the **Artist** and **Title** that are written to the disc as CD-TEXT and shown on a player's display. The CD's own title (the "album") is the **disc's name**: rename it from its right-click menu.
 
 You can change the artist and track name for the CD without touching anything else. **Double-click** an artist or title and type:
 
 - The edit is for **this disc only**. It never changes your rekordbox library, the original audio file, or the same track on another disc.
 - An edited cell is shown in *italics*. Hover over it to see what the library has, and clear the text to go back to that.
 - Edits stay with their track when you reorder the list or add and remove others.
-- The **Burned** view shows what was written to the CD, and **Duplicate** keeps those edits in the new disc.
+- **Duplicate** keeps the edits in the copy.
 - Characters CD-TEXT can't show are simplified when the disc is burned (see [Good to know](#good-to-know)).
 
 **Arranging**
 
 - Drag rows up and down to reorder them.
 - Select rows and press **Delete** (or click **Remove**) to take them off the disc.
+- **Double-click** a track's number or time to listen to it. **Space** plays and pauses, and **←** and **→** beat jump, as in the track list.
 
 **Size and gaps**
 
@@ -172,31 +189,17 @@ A disc can't be burned if it is empty, over its size, or holds a track whose fil
 
 ## Checking tracks you already used
 
-When you add a track that is **already on this disc, planned on another disc, or burned on a previous disc**, Dubcrate asks before adding it:
+When you add a track that is **already on this disc or on another disc**, Dubcrate asks before adding it:
 
 > 2 of the 5 tracks are already used:
 >
-> • Artist - Title: already on this disc; burned on "Friday night" (2026-11-01)
+> • Artist - Title: already on this disc; on "Friday night" (burned 2026-11-01)
 >
 > Add anyway?
 
 Choose **Yes** to add everything, or **No** to cancel and add nothing. It names each place the track is used, and lists the first eight tracks if there are more.
 
-Only discs that were really burned count. A test write (a simulated burn) puts nothing on a disc, so it doesn't trigger this message.
-
----
-
-## Discs you have burned
-
-Every real burn is saved as a record. Switch the right-hand panel from **Planned** to **Burned** to see them, newest first. Each record shows what went on the disc: the tracks in order, their times, and when, on which drive and at what speed it was burned.
-
-- A record is a **frozen snapshot**. Editing or deleting the planned disc afterwards never changes it, and neither does removing the music source.
-- It lists the artist and title as they were written to the CD, including any edits you made for that disc.
-- Tracks that are no longer in your library are dimmed. They were burned, but can't be put on another disc.
-- **Duplicate** makes a new, editable disc from the record, which is handy for re-burning or for tweaking a copy. Tracks no longer in your library are left out, and Dubcrate tells you how many.
-- **Delete** forgets the record. The CD itself is unaffected, but Dubcrate will stop warning you about its tracks.
-
-Your planned discs stay editable after a burn. The record is a separate copy of what was burned.
+A disc you burned says when. A test write (a simulated burn) puts nothing on a disc, so it doesn't count as a burn.
 
 ---
 
@@ -206,7 +209,7 @@ Your planned discs stay editable after a burn. The record is a separate copy of 
 
 **From the window**
 
-1. Plan the disc, then press **Burn…** under it (or choose **Disc > Burn Disc…**, ⌘B).
+1. Open the disc, then press **Burn…** under its tracks (or choose **Disc > Burn Disc…**, ⌘B, or right-click the disc in the Discs list and choose **Burn…**).
 2. Put a blank CD-R in the drive. Dubcrate asks the drive what is inside and shows it: the drive's name, whether the disc looks blank, and how much it holds. Press **Check Drive** after changing the disc.
 3. Check the **Speed**. It starts at your default from **File > Settings… > Burning**; change it here to use another speed for this burn only.
 4. Tick **A blank CD-R is in the drive**. The **Burn** button stays grey until you do, and Return never starts a burn.
@@ -215,9 +218,9 @@ Your planned discs stay editable after a burn. The record is a separate copy of 
 Things to know:
 
 - Dubcrate **won't burn** if there is no disc, if the music is longer than what the disc holds (a 74-minute disc with 78 minutes planned, say), or if the disc can't be burned as planned. The reasons are listed in red. If the drive can't say how much a disc holds, Dubcrate goes by the size the disc was planned for.
-- **Test only** runs everything except writing to the disc (the laser stays off), which is a safe way to check your drive. A test isn't saved under **Burned**.
-- After a real burn the disc is saved under **Burned** and the window shows it. Ticking the box is needed again before every burn.
-- A failed burn says why in the log, and nothing is saved. A burn can't be stopped once it has started.
+- **Test only** runs everything except writing to the disc (the laser stays off), which is a safe way to check your drive. A test doesn't mark the disc as burned.
+- After a real burn the disc is marked as burned, and it stays open and editable. Ticking the box is needed again before every burn.
+- A failed burn says why in the log, and the disc is not marked. A burn can't be stopped once it has started.
 
 **From the command line**
 
@@ -233,7 +236,7 @@ dubcrate burn 1 --yes                # really burns
 - Before burning for real, Dubcrate asks the drive about the disc inside. It says how much the disc holds, and **refuses to start if the music won't fit** (for example, a 74-minute disc with 78 minutes planned). It also stops if the drive says there is no disc. If the drive can't tell, Dubcrate goes by the size the disc was planned for.
 - **`--speed`** sets the burn speed. The default is 10x. **Burn slowly:** old players read discs burned at a low speed more reliably.
 - Every track is converted to CD quality (16-bit, 44.1 kHz stereo) and the disc gets **CD-TEXT** titles, so the artist and title show on the player.
-- After a successful real burn, Dubcrate saves the record shown under **Burned**.
+- After a successful real burn, Dubcrate marks the disc as burned.
 
 The full list of command-line options is in the project's developer notes.
 

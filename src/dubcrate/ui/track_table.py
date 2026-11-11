@@ -22,6 +22,28 @@ PREVIEW_WIDTH = 150
 ROW_HEIGHT = 28
 
 
+def transport_action(event) -> str | None:
+    """What a key does to the preview player, if anything: "play_pause" (Space), or
+    "jump_back" / "jump_forward" (Left / Right: beat jump, as in rekordbox).
+
+    On macOS Qt marks the arrow keys with KeypadModifier, so "no modifiers" would never
+    be true for them: only the modifiers that matter (shift, control, alt, command) count.
+    """
+    modifiers = event.modifiers() & ~Qt.KeyboardModifier.KeypadModifier
+    if modifiers:
+        return None
+    key = (
+        event.key()
+    )  # (compared, not looked up: any key code can arrive, not only Qt's named ones)
+    if key == Qt.Key.Key_Space:
+        return "play_pause"
+    if key == Qt.Key.Key_Left:
+        return "jump_back"
+    if key == Qt.Key.Key_Right:
+        return "jump_forward"
+    return None
+
+
 class TrackTable(QTableView):
     """Return adds the selection to the disc; Space plays or pauses the preview."""
 
@@ -33,12 +55,13 @@ class TrackTable(QTableView):
         if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
             self.add_requested.emit()
             return
-        if event.key() == Qt.Key.Key_Space and not event.modifiers():
+        action = transport_action(event)
+        if action == "play_pause":
             self.play_pause_requested.emit()
             return
-        if event.key() in (Qt.Key.Key_Left, Qt.Key.Key_Right) and not event.modifiers():
-            # Beat jump, as in rekordbox. (The table has no use for sideways cell moves.)
-            self.beat_jump_requested.emit(-1 if event.key() == Qt.Key.Key_Left else 1)
+        if action in ("jump_back", "jump_forward"):
+            # (The table has no use for sideways cell moves.)
+            self.beat_jump_requested.emit(-1 if action == "jump_back" else 1)
             return
         super().keyPressEvent(event)
 
