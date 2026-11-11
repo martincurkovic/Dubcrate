@@ -3,6 +3,7 @@
 import numpy as np
 from PySide6.QtCore import QTimer, Signal
 from PySide6.QtWidgets import (
+    QCheckBox,
     QComboBox,
     QDialog,
     QDialogButtonBox,
@@ -55,6 +56,7 @@ class SettingsDialog(QDialog):
         tabs.addTab(self._audio_tab(), "Audio")
         tabs.addTab(self._discs_tab(), "Discs")
         tabs.addTab(self._burning_tab(), "Burning")
+        tabs.addTab(self._library_tab(), "Library")
         tabs.addTab(self._appearance_tab(), "Appearance")
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
         buttons.rejected.connect(self.reject)
@@ -233,6 +235,27 @@ class SettingsDialog(QDialog):
         hint = QLabel(
             "Old players read discs burned slowly more reliably (10x to 16x is a good range)."
             " Your drive may not offer every speed."
+        )
+        hint.setWordWrap(True)
+        hint.setObjectName("mutedLabel")
+        form.addRow(hint)
+        return page
+
+    # -- library ----------------------------------------------------------
+
+    def _library_tab(self) -> QWidget:
+        page = QWidget()
+        form = QFormLayout(page)
+        self.auto_import_check = QCheckBox(
+            "Update my rekordbox library when Dubcrate starts"
+        )
+        self.auto_import_check.setChecked(settings.get_auto_import())
+        self.auto_import_check.toggled.connect(settings.set_auto_import)
+        form.addRow(self.auto_import_check)
+        hint = QLabel(
+            "Reads a temporary copy of your rekordbox library, so rekordbox is never changed,"
+            " and brings in new tracks and changes. It only updates a library you have already"
+            " imported. Folders are not re-scanned (use File > Re-import Selected Source)."
         )
         hint.setWordWrap(True)
         hint.setObjectName("mutedLabel")

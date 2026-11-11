@@ -49,7 +49,9 @@ whose track titles show on the player's display.
 1. **Import your music.** *File ▸ Import rekordbox Library…* reads your rekordbox
    library (it only reads a temporary copy, so rekordbox is never changed), or
    *File ▸ Import Folder…* reads a folder of music. Imported sources appear on the
-   left, with their playlists and folders beneath them.
+   left, with their playlists and folders beneath them. A rekordbox library you have
+   imported is brought up to date by itself each time Dubcrate starts (while a splash
+   screen shows); switch that off in *Settings ▸ Library*.
 2. **Browse and listen.** Pick a playlist, search by title, artist, album or genre,
    and sort by clicking a column heading. Double-click a track to preview it.
    Right-click the column headings to show or hide columns: only the essentials show at

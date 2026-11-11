@@ -58,6 +58,14 @@ You need **ffmpeg** installed: Dubcrate uses it to read tracks and to prepare th
 | **File > Re-import Selected Source** (⌘R) | Bring the selected source up to date after you added or moved music. |
 | **File > Remove Selected Source…** | Forget a source. Your music files are not touched. |
 
+**Dubcrate keeps your rekordbox library up to date by itself.** Each time it starts, a splash screen shows while it re-reads a rekordbox library you have already imported, so tracks you added in rekordbox are there when the window opens. Afterwards the status bar says what changed (for example, "Brought in 12 new tracks from rekordbox"). Things to know:
+
+- It only updates a library you imported yourself, and it never imports one on its own.
+- Folders are **not** re-scanned at startup, because that takes too long. Use **File > Re-import Selected Source** (⌘R) for those, or for a rekordbox update while Dubcrate is already open.
+- If rekordbox's library is missing, locked or unreadable, Dubcrate skips it and tells you in the status bar. If rekordbox reports no tracks at all, Dubcrate doesn't believe it and keeps your library as it was.
+- A track you deleted in rekordbox is removed here too, unless it is on one of your discs: that one is kept and marked, so no disc ever silently loses a track.
+- Turn this off under **File > Settings… > Library**, or start with `dubcrate-gui --no-import`.
+
 **Your music and your rekordbox library are never changed.** Dubcrate reads a temporary copy of the rekordbox database and only reads your audio files. It keeps its own library of imported track information and your discs.
 
 If Dubcrate can't find your rekordbox library, choose **Choose File…** when it asks and pick `master.db`, normally in `~/Library/Pioneer/rekordbox/`. Version 7 is the version Dubcrate has been tried with.
@@ -244,11 +252,12 @@ The full list of command-line options is in the project's developer notes.
 
 ## Settings
 
-**File > Settings…** (⌘,) has four tabs:
+**File > Settings…** (⌘,) has five tabs:
 
 - **Discs:** how **new** discs are planned: **Plan new discs for** 80 or 74 minutes, and **Between tracks**, which is **Gapless** unless you choose 1, 2 or 3 seconds of silence.
 - **Burning:** the **Burn speed** a burn starts with (10x unless you change it). Old players read discs burned slowly more reliably, and 10x to 16x is a good range. Your drive may not offer every speed. You can still pick another speed for a single burn in the burn window.
 - **Audio:** the **Output device** for previews and the **Buffer size**, with a button that plays a short test tone, and the **Beat jump** distance for the arrow keys.
+- **Library:** whether Dubcrate updates your rekordbox library each time it starts (on by default).
 - **Appearance:** the **Theme** (the same choice as **View > Theme**), the **Waveform style** (the same as **View > Waveform**), and the **Waveform background**.
 
 ---
@@ -280,6 +289,7 @@ The full list of command-line options is in the project's developer notes.
 - **A preview crackles.** Raise the buffer size in **Settings** (try 2048 frames).
 - **No sound, or the wrong output.** Choose the output device in **Settings** and press the test tone button.
 - **"ffmpeg not found".** Install it (`brew install ffmpeg`) and restart Dubcrate.
+- **New tracks from rekordbox aren't showing.** Dubcrate updates rekordbox when it starts, and only if **Settings > Library** is on. To update while it is open, select the rekordbox source and press ⌘R. If the status bar said it couldn't update, it says why.
 - **Dubcrate can't find my rekordbox library.** Choose **Choose File…** when importing and pick `master.db`.
 - **A track is greyed out, or its file is missing.** Reconnect the drive or put the file back, then re-import the source (⌘R).
 - **The Burn button is grey.** Read the red lines in the burn window: the disc may be empty, too long for the disc in the drive, or missing a file. Also tick **A blank CD-R is in the drive**, and press **Check Drive** if you just changed the disc.

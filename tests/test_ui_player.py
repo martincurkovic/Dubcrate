@@ -908,3 +908,25 @@ def test_nonsense_saved_disc_settings_fall_back_to_the_defaults(qapp):
     settings._qs().setValue("discs/minutes", 63)
     settings._qs().setValue("discs/pregap_seconds", "lots")
     assert (settings.get_disc_minutes(), settings.get_pregap_seconds()) == (80, 0)
+
+
+# -- the Library tab ----------------------------------------------------------
+
+
+def test_updating_the_rekordbox_library_at_startup_is_on_by_default(qapp):
+    assert settings.get_auto_import() is True
+
+
+def test_the_startup_update_can_be_switched_off_and_on_in_settings(qapp):
+    dialog = SettingsDialog()
+    assert dialog.auto_import_check.isChecked()
+    dialog.auto_import_check.setChecked(False)
+    assert settings.get_auto_import() is False
+    assert not SettingsDialog().auto_import_check.isChecked()  # and it is remembered
+    dialog.auto_import_check.setChecked(True)
+    assert settings.get_auto_import() is True
+
+
+def test_nonsense_saved_for_the_startup_update_means_on(qapp):
+    settings._qs().setValue("import/auto_rekordbox", "maybe")
+    assert settings.get_auto_import() is True

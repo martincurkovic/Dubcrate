@@ -136,6 +136,18 @@ def set_beat_jump(beats: int) -> None:
     _qs().setValue("playback/beat_jump", int(beats))
 
 
+def get_auto_import() -> bool:
+    """Whether Dubcrate re-reads your rekordbox library each time it starts (on by default)."""
+    value = _qs().value("import/auto_rekordbox", True)
+    if isinstance(value, str):  # an ini file keeps a bool as text
+        return value.strip().lower() not in ("false", "0", "no", "off")
+    return bool(value)
+
+
+def set_auto_import(enabled: bool) -> None:
+    _qs().setValue("import/auto_rekordbox", bool(enabled))
+
+
 def get_audio_device() -> str | None:
     """The saved output device id (hex), or None for the system default."""
     return _qs().value("audio/device", None) or None

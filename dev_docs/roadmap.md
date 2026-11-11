@@ -70,6 +70,13 @@
   schema v5, NULL = use the library's); they feed the burn, the burn record and *Duplicate*, and never
   touch the library, rekordbox or the file. Blank, or the track's own text, clears an edit.
   `dubcrate disc text DISC POS --title/--artist` does the same from a terminal.
+- On startup a splash screen (`ui/splash.py`, drawn in code with its own look, modelled on Cobalt's) shows while
+  `ui/startup.py` re-reads any **rekordbox** source already imported, on a worker, before the main window
+  is built. Folders are not re-scanned (an ffprobe per file is too slow for a launch), a first run imports
+  nothing, and a missing, locked or unreadable library is skipped with a status-bar note. A rekordbox that
+  reports no tracks is not believed (it would otherwise empty the library). `--no-import` and
+  *Settings > Library* turn it off. It always re-reads (no "unchanged since last time" shortcut): the
+  schema-v4 fields would otherwise stay empty until rekordbox changed.
 - The README is for end users only; developer notes live here and in `CONTRIBUTING.md`.
 
 ## Known rough edges
@@ -88,6 +95,12 @@
   [burning.md](burning.md)).
 
 ## Unverified
+
+- The splash on a real display and from a built app: a true splash window doesn't take focus on macOS, so
+  from source it is an ordinary frameless window (`activating`) and in a built app a real splash. Its own
+  `background: transparent` stylesheet (so the theme's can't fill its corners) is a precaution: offscreen
+  the corners stay transparent without it, so no test depends on it. Preview it with
+  `uv run python -m dubcrate.ui.splash`.
 
 - How the scratch *sounds* on a real output device. It is pitch-shifting by design (speed is
   pitch, like vinyl; no time-stretch). A first version made a steady drag swing between 0.7x

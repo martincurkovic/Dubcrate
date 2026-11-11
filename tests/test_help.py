@@ -135,7 +135,7 @@ def test_the_settings_tabs_the_guide_names_exist(qapp):
     dialog = SettingsDialog()
     tabs = dialog.findChild(QTabWidget)
     names = [tabs.tabText(i) for i in range(tabs.count())]
-    assert names == ["Audio", "Discs", "Burning", "Appearance"]
+    assert names == ["Audio", "Discs", "Burning", "Library", "Appearance"]
     for name in names:
         assert f"**{name}:**" in MANUAL, name
     assert "Plan new discs for" in MANUAL and "Between tracks" in MANUAL
@@ -203,3 +203,18 @@ def test_the_fixed_width_columns_the_guide_mentions_are_fixed():
     fixed = {c.title for c in TRACK_COLUMNS if c.fixed}
     assert {"", "Preview", "BPM", "Key", "Time"} <= fixed
     assert not {"Title", "Artist"} & fixed
+
+
+def test_the_startup_update_the_guide_describes_is_real(qapp):
+    from dubcrate import settings
+    from dubcrate.ui.settings_dialog import SettingsDialog
+
+    for phrase in ("keeps your rekordbox library up to date by itself", "--no-import", "splash screen",
+                   "File > Settings… > Library", "never imports one on its own"):  # fmt: skip
+        assert phrase in MANUAL, phrase
+    assert settings.get_auto_import() is True  # "on by default"
+    assert (
+        SettingsDialog()
+        .auto_import_check.text()
+        .startswith("Update my rekordbox library")
+    )
