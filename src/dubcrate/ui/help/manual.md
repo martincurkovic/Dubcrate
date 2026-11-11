@@ -45,6 +45,8 @@ You need **ffmpeg** installed: Dubcrate uses it to read tracks and to prepare th
 
 **View > Theme** switches between System, Light, Dark and Macintosh System 6 (black and white, with a bitmap-style font).
 
+**Help > User Guide** opens this guide in its own window, which can stay open beside the app. Press **⌘F** in it to search the page, and click the links in the contents to jump to a section.
+
 ---
 
 ## Importing your music
@@ -219,6 +221,7 @@ The full list of command-line options is in the project's developer notes.
 | ⌘B | Burn the disc |
 | ⇧⌘D | Split the shown tracks across discs |
 | ⌘, | Settings |
+| ⌘F (in the guide) | Find in the guide |
 
 ---
 

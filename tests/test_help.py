@@ -8,15 +8,11 @@ from PySide6.QtGui import QKeySequence
 from PySide6.QtWidgets import QMenu, QMessageBox
 
 from dubcrate.library import Library
+from dubcrate.ui.help_dialog import heading_slug
 from dubcrate.ui.main_window import MainWindow
 
 MANUAL_PATH = Path(__file__).resolve().parent.parent / "src/dubcrate/ui/help/manual.md"
 MANUAL = MANUAL_PATH.read_text(encoding="utf-8")
-
-
-def heading_slug(text: str) -> str:
-    """GitHub's anchor for a heading, which is what a Qt markdown viewer's links need."""
-    return re.sub(r"[^\w\s-]", "", text.lower()).replace(" ", "-")
 
 
 @pytest.fixture
@@ -69,6 +65,7 @@ def test_menu_items_the_guide_names_exist(window):
         "Settings…",
         "Split Shown Tracks Across Discs…",
         "Burn Disc…",
+        "User Guide",
     ):
         assert item in labels, item
         assert item in MANUAL, item

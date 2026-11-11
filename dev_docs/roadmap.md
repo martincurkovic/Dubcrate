@@ -18,10 +18,12 @@
    and checked).
 4. **Printable track list** for the disc sleeve, since old CDJs have no screen for it.
 
-5. **Help menu.** `src/dubcrate/ui/help/manual.md` is written; it needs a viewer dialog
-   (port akaiutil-GUI's `manual_dialog.py`) and a *Help > User Guide* item. Screenshots
-   still to take (`![...](screenshots/x.png)`; `tests/test_help.py` checks images exist).
-   Update the guide when the burn dialog lands: its "Burning a disc" section is CLI-only.
+5. **Help menu.** *Done:* *Help > User Guide* opens `ui/help_dialog.py`, which renders
+   `ui/help/manual.md` (find in page, working contents links, callout boxes, images that
+   fit the window). Still to do: take screenshots for the guide
+   (`![...](screenshots/x.png)`; the tests check any image paths exist), and look at the
+   window on a real display. The guide's "Burning a disc" section must be kept in step
+   with the burn window.
 
 ## Later
 

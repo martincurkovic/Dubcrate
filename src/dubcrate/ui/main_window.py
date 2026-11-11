@@ -38,6 +38,7 @@ from dubcrate.library.store import LibraryError
 from . import theme
 from .burn_dialog import BurnDialog, BurnerFactory
 from .disc_panel import DiscPanel
+from .help_dialog import show_help_dialog
 from .models import (
     NAME_ROLE,
     PREVIEW_COLUMN,
@@ -80,6 +81,7 @@ class MainWindow(QMainWindow):
         self._lib = lib
         self._burner_factory = burner_factory
         self.burn_dialog: BurnDialog | None = None
+        self._help_dialog = None
         self._player = player
         self._persist = persist
         self._selection: tuple = ("all",)
@@ -335,6 +337,10 @@ class MainWindow(QMainWindow):
             theme_menu.addAction(action)
 
         help_menu = menus.addMenu("&Help")
+        self.act_help = help_menu.addAction(
+            "&User Guide", self.show_help, QKeySequence.StandardKey.HelpContents
+        )
+        help_menu.addSeparator()
         about = help_menu.addAction("&About Dubcrate", self.show_about)
         about.setMenuRole(QAction.MenuRole.AboutRole)
 
@@ -348,6 +354,9 @@ class MainWindow(QMainWindow):
 
     def _on_theme_changed(self) -> None:
         self.refresh_sources()  # the tree's icons are baked in when it is built
+
+    def show_help(self) -> None:
+        show_help_dialog(self)
 
     def show_about(self) -> None:
         try:
