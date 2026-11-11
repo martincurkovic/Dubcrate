@@ -56,6 +56,7 @@ class BurnOptions:
 class MediaInfo:
     """What a burner can tell about the disc in the drive. None means unknown."""
 
+    drive: str = ""  # the drive's display name
     present: bool | None = None
     blank: bool | None = None
     free_sectors: int | None = None  # room for audio on a blank disc

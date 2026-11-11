@@ -111,3 +111,13 @@ def _no_real_audio(monkeypatch):
         "_miniaudio_device",
         lambda rate, msec, device_id: FakeAudioDevice(rate, msec, device_id),
     )
+
+
+@pytest.fixture(autouse=True)
+def _no_real_burner(monkeypatch):
+    """No test may reach a real drive: a burn window must be given a fake burner."""
+
+    def refuse():
+        raise AssertionError("a test tried to use the real burner; pass burner_factory")
+
+    monkeypatch.setattr("dubcrate.ui.burn_dialog._backend", refuse)

@@ -31,7 +31,7 @@ the repo; follow whatever it reports.
   - `lengths.py`: `measure_tracks` probes tracks and caches their exact CD length (`track.cd_sectors`).
   - Discs live in the same store (`disc`, `disc_track`): `create_disc`, `add_to_disc` (plain, `fit`, `strict`), `remove_from_disc`, `move_in_disc`, `split_into_discs`.
 - `src/dubcrate/planning.py`: pure packing algorithms (`fit_tracks`, `split_sequential`) on lists of sector lengths.
-- `src/dubcrate/build.py`: `build_burn_disc` turns a planned disc into rendered WAVs plus a `burn.Disc`, re-checking capacity against the rendered lengths. `disc_problems` lists what blocks a burn.
+- `src/dubcrate/build.py`: `build_burn_disc` turns a planned disc into rendered WAVs plus a `burn.Disc`, re-checking capacity against the rendered lengths. `disc_problems` lists what blocks a burn. `plan_burn` / `render_plan` are its library-free halves (the burn window renders on a worker), and `media_problems` checks the disc in the drive.
 - `src/dubcrate/cli.py`, `cli_discs.py`: the `dubcrate` command (import, sources, nodes, tracks, disc ..., burn) until there is a GUI.
 - `src/dubcrate/audio/`: preview playback through miniaudio, free of the library.
   - `devices.py` (output devices, buffer sizes), `decode.py` (any file to 44.1 kHz stereo int16 in memory: miniaudio first, ffmpeg for what it can't read, e.g. M4A/AIFF), `player.py` (`AudioPlayer`: play/pause/seek/volume; the audio thread runs only `render_block`, a pure function over `PlaybackState`, so it is tested with a fake device).
@@ -39,7 +39,7 @@ the repo; follow whatever it reports.
 - `src/dubcrate/ui/`: the PySide6 window (`dubcrate-gui`, or `python -m dubcrate.ui`).
   - `theme.py`, `style.qss.template`, `style_system6.qss.template`, `mono_icons.py`, `icons/`, `fonts/`, `splitter.py`, `track_colors.py` come from the sibling apps (akaiutil-GUI, JV Studio, AKAISDS) so all of them look alike: System / Light / Dark / Macintosh System 6. Dubcrate's own QSS goes under the "Dubcrate additions" marker at the bottom of `style.qss.template`; every colour is a `${key}` from the palettes in `theme.py` (add a key to ALL palettes, or startup raises a KeyError). Custom-painted widgets read `theme.current_palette()`.
   - `player_strip.py` (transport, title/time/key/BPM, volume), `waveform_view.py` (`OverviewView` with phrase bar and cues, `DetailView` scrolling past a fixed playhead with the beat grid), `preview.py` (`PreviewController`: loads a track on a worker, ignores stale loads, owns the player), `settings_dialog.py` (audio device, buffer size, test tone, theme), `track_table.py` (Return adds, Space plays; the Preview column delegate), `wave_style.py`.
-  - `overlaps.py` (the "already used" notice), `help/manual.md` (the user guide, checked by `tests/test_help.py`; keep it true when the UI changes).
+  - `burn_dialog.py` (the burn window: drive and disc check, confirmation, speed, worker-thread burn; tests inject a fake burner and `conftest.py` blocks the real one), `overlaps.py` (the "already used" notice), `help/manual.md` (the user guide, checked by `tests/test_help.py`; keep it true when the UI changes).
   - `main_window.py` (sources tree, track table, disc panel), `disc_panel.py`, `capacity_bar.py` (adapted from akaiutil-GUI's usage bar), `models.py` (track/disc/source-tree models), `tasks.py` (`run_async`).
   - `src/dubcrate/settings.py`: QSettings (theme, window layout, last disc, default disc size and gap).
 - `spikes/`: throwaway hardware drivers. Reusable logic belongs in the package.

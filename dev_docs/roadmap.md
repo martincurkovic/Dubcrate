@@ -2,16 +2,16 @@
 
 ## Next
 
-1. **Burn from the window.** A confirmation step ("is a blank CD-R loaded?"), a
-   progress log, drive and speed choice, and running DiscRecording off the GUI thread.
-   Show what the inserted disc holds (`Burner.media_info`, `build.media_problems`) and
-   check against it, as the CLI already does.
-   This needs a hardware check (see [burning.md](burning.md)). The burn path
-   in `build.py` and the backends already exist; only the dialog is missing.
+1. **Burn from the window.** *Built, not yet tried on hardware.* `ui/burn_dialog.py`
+   shows the drive and what the inserted disc holds, asks to confirm a blank CD-R,
+   takes a speed (default from Settings), can do a test-only burn, logs progress, and
+   saves a record. It renders and burns on a worker thread, which needs a hardware check
+   (see [burning.md](burning.md)). Still to do: a drive picker (it uses the first
+   drive), and a way to cancel.
 2. **A record of what was burned.** *Store side done* (`record_burn`, `burns`,
    `duplicate_burn`, schema v3), the CLI saves a record after a real burn, and the
-   disc panel has a *Planned | Burned* switch with *Duplicate* and *Delete*. Still to
-   do: save a record from the burn dialog once it exists, then `show_burned()`.
+   disc panel has a *Planned | Burned* switch with *Duplicate* and *Delete*. The burn
+   window saves a record after a real burn and shows it under *Burned*.
 3. **The source rail** from the rbxport-style layout: Library, Explorer (a live
    folder browser, no import needed) and Discs (the list of planned and burned
    discs, with the disc currently in the burner so a finished burn can be read back

@@ -36,6 +36,7 @@ from dubcrate.library.rekordbox import (
 from dubcrate.library.store import LibraryError
 
 from . import theme
+from .burn_dialog import BurnDialog, BurnerFactory
 from .disc_panel import DiscPanel
 from .models import (
     NAME_ROLE,
@@ -68,10 +69,17 @@ def _hours(seconds: float) -> str:
 
 class MainWindow(QMainWindow):
     def __init__(
-        self, lib: Library, *, persist: bool = False, player: AudioPlayer | None = None
+        self,
+        lib: Library,
+        *,
+        persist: bool = False,
+        player: AudioPlayer | None = None,
+        burner_factory: BurnerFactory | None = None,
     ):
         super().__init__()
         self._lib = lib
+        self._burner_factory = burner_factory
+        self.burn_dialog: BurnDialog | None = None
         self._player = player
         self._persist = persist
         self._selection: tuple = ("all",)
@@ -229,6 +237,7 @@ class MainWindow(QMainWindow):
             lambda text: self.statusBar().showMessage(text, 8000)
         )
         self.disc_panel.busy.connect(self._set_busy)
+        self.disc_panel.burn_requested.connect(self.burn_current_disc)
         self.disc_panel.progress.connect(self._on_progress)
 
         self.splitter = Splitter(Qt.Orientation.Horizontal)
@@ -297,6 +306,10 @@ class MainWindow(QMainWindow):
         )
         disc_menu.addAction("&Rename Disc…", self.disc_panel.rename_disc)
         disc_menu.addAction("&Delete Disc…", self.disc_panel.delete_disc)
+        disc_menu.addSeparator()
+        self.act_burn = disc_menu.addAction(
+            "&Burn Disc…", self.burn_current_disc, QKeySequence("Ctrl+B")
+        )
         disc_menu.addSeparator()
         disc_menu.addAction(
             "&Add Selected Tracks", self.add_selected_to_disc, QKeySequence("Ctrl+D")
@@ -368,6 +381,23 @@ class MainWindow(QMainWindow):
         if total > 0:
             self.busy_bar.setRange(0, total)
             self.busy_bar.setValue(done)
+
+    def burn_current_disc(self) -> None:
+        """Open the burn window for the disc being planned."""
+        disc_id = self.disc_panel.current_disc_id()
+        if disc_id is None:
+            self._notify("Burn Disc", "Make a disc and add some tracks first.")
+            return
+        self.burn_dialog = BurnDialog(
+            self._lib, disc_id, self, burner_factory=self._burner_factory
+        )
+        self.burn_dialog.burned.connect(self._on_burned)
+        self.burn_dialog.finished.connect(lambda _r: self.disc_panel.reload())
+        self.burn_dialog.open()
+
+    def _on_burned(self, burn_id: int) -> None:
+        self.disc_panel.show_burned(burn_id)
+        self.statusBar().showMessage("Burn finished and saved", 10000)
 
     def _notify(self, title: str, text: str) -> None:
         QMessageBox.information(self, title, text)

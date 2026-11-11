@@ -91,6 +91,7 @@ class DiscPanel(QWidget):
     busy = Signal(bool, str)  # (working, what it is doing)
     progress = Signal(int, int)
     message = Signal(str)
+    burn_requested = Signal()
 
     def __init__(self, lib: Library, parent=None):
         super().__init__(parent)
@@ -137,9 +138,13 @@ class DiscPanel(QWidget):
 
         self.remove_button = QPushButton("Remove")
         self.remove_button.clicked.connect(self.remove_selected)
+        self.burn_button = QPushButton("Burn…")
+        self.burn_button.setToolTip("Burn this disc to a blank CD-R")
+        self.burn_button.clicked.connect(self.burn_requested)
         buttons = QHBoxLayout()
         buttons.addWidget(self.remove_button)
         buttons.addStretch(1)
+        buttons.addWidget(self.burn_button)
 
         self.summary = CapacitySummary()
 
@@ -293,6 +298,7 @@ class DiscPanel(QWidget):
         has_disc = disc_id is not None
         self.rename_action.setEnabled(has_disc)
         self.delete_action.setEnabled(has_disc)
+        self.burn_button.setEnabled(has_disc)
         self.stack.setCurrentIndex(1 if has_disc else 0)
         if has_disc:
             summary = self._lib.disc(disc_id)

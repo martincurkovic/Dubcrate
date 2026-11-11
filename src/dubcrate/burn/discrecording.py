@@ -114,6 +114,7 @@ class DiscRecordingBurner:
         free = summary["media_free_blocks"]
         blank = summary["media_blank"]
         return MediaInfo(
+            drive=summary["name"] or "",
             present=summary["media_present"],
             blank=None if blank is None else bool(blank),
             free_sectors=int(free) if free else None,

@@ -78,6 +78,23 @@ def set_pregap_seconds(seconds: int) -> None:
     _qs().setValue("discs/pregap_seconds", int(seconds))
 
 
+BURN_SPEEDS = (4, 8, 10, 12, 16, 20, 24, 32, 48)
+DEFAULT_BURN_SPEED = 10  # old players read slow burns more reliably
+
+
+def get_burn_speed() -> int:
+    """The burn speed (the CD "x" factor) a burn starts with."""
+    try:
+        value = int(_qs().value("burn/speed", DEFAULT_BURN_SPEED))
+    except (TypeError, ValueError):
+        return DEFAULT_BURN_SPEED
+    return value if value in BURN_SPEEDS else DEFAULT_BURN_SPEED
+
+
+def set_burn_speed(speed: int) -> None:
+    _qs().setValue("burn/speed", int(speed))
+
+
 def get_audio_device() -> str | None:
     """The saved output device id (hex), or None for the system default."""
     return _qs().value("audio/device", None) or None

@@ -8,8 +8,9 @@ music), plan CDs that fit exactly, preview them with waveforms, and burn audio C
 whose track titles show on the player's display.
 
 > **Status: early development, not released yet.** You can already import, preview
-> and plan discs in the app. Burning from the app window is not finished: for now it
-> is done from a command line (see [dev_docs/burning.md](dev_docs/burning.md)).
+> and plan discs in the app. The app's Burn window is new and has not been tried on a
+> real drive yet; burning from a command line is the route that has been proven (see
+> [dev_docs/burning.md](dev_docs/burning.md)).
 > Pre-built downloads will appear here once there is a release; until then,
 > [CONTRIBUTING.md](CONTRIBUTING.md) explains how to run it from source.
 
@@ -57,7 +58,11 @@ whose track titles show on the player's display.
 4. **Check the bar.** It shows each track as a coloured block. A disc can't be burned
    if it is over its size or contains a track whose file can't be found. (A CD holds
    at most 99 tracks, and Dubcrate stops adding at that point.)
-5. **Burn it.** Coming to the app window; see the note above for now.
+5. **Burn it.** *Burn…* under the disc (or *Disc ▸ Burn Disc…*) shows the drive and
+   what the blank disc inside holds, and asks you to confirm that a blank CD-R is
+   loaded. The burn speed starts at your default from *Settings* and can be changed
+   for one burn. Each burn is kept under *Burned*, from where *Duplicate* makes an
+   editable copy.
 
 ### Keyboard shortcuts
 
@@ -70,6 +75,7 @@ whose track titles show on the player's display.
 | Import a folder / a rekordbox library | ⌘O / ⇧⌘O |
 | Re-import the selected source | ⌘R |
 | New disc | ⌘N |
+| Burn the disc | ⌘B |
 | Split the shown tracks across discs | ⇧⌘D |
 | Settings | ⌘, |
 
@@ -78,9 +84,10 @@ zoomed waveform zooms in and out.
 
 ### Settings
 
-*Settings* (⌘,), in the Dubcrate menu, chooses where previews play and how large the audio
-buffer is, with a button that plays a test tone. The *View ▸ Theme* menu switches
-between System, Light, Dark and a Macintosh System 6 look.
+*Settings* (⌘,), in the Dubcrate menu, has tabs for where previews play and how large the
+audio buffer is (with a button that plays a test tone), the length new discs are planned
+for (80 minutes) and the gap between tracks (gapless), and the burn speed (10x). The
+*View ▸ Theme* menu switches between System, Light, Dark and a Macintosh System 6 look.
 
 ## Good to know
 
@@ -114,8 +121,8 @@ between System, Light, Dark and a Macintosh System 6 look.
 
 ## What's coming
 
-Burning from the app window with a progress display, a record of the discs you have
-burned, a folder browser alongside your libraries, and Windows and Linux support.
+A folder browser alongside your libraries, a printable track list for the disc sleeve,
+and Windows and Linux support.
 
 ## License
 

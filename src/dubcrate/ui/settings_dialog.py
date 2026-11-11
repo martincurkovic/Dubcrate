@@ -54,6 +54,7 @@ class SettingsDialog(QDialog):
         tabs = QTabWidget()
         tabs.addTab(self._audio_tab(), "Audio")
         tabs.addTab(self._discs_tab(), "Discs")
+        tabs.addTab(self._burning_tab(), "Burning")
         tabs.addTab(self._appearance_tab(), "Appearance")
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
         buttons.rejected.connect(self.reject)
@@ -182,6 +183,37 @@ class SettingsDialog(QDialog):
 
         hint = QLabel(
             "Gapless puts no silence between tracks, so the most music fits on a disc."
+        )
+        hint.setWordWrap(True)
+        hint.setObjectName("mutedLabel")
+        form.addRow(hint)
+        return page
+
+    # -- burning ----------------------------------------------------------
+
+    def _burning_tab(self) -> QWidget:
+        page = QWidget()
+        form = QFormLayout(page)
+        note = QLabel(
+            "What a burn starts with. You can change the speed for a single burn in the burn window."
+        )
+        note.setWordWrap(True)
+        form.addRow(note)
+
+        self.speed_combo = QComboBox()
+        for speed in settings.BURN_SPEEDS:
+            self.speed_combo.addItem(f"{speed}x", speed)
+        self.speed_combo.setCurrentIndex(
+            max(0, self.speed_combo.findData(settings.get_burn_speed()))
+        )
+        self.speed_combo.activated.connect(
+            lambda _i: settings.set_burn_speed(self.speed_combo.currentData())
+        )
+        form.addRow("Burn speed:", self.speed_combo)
+
+        hint = QLabel(
+            "Old players read discs burned slowly more reliably (10x to 16x is a good range)."
+            " Your drive may not offer every speed."
         )
         hint.setWordWrap(True)
         hint.setObjectName("mutedLabel")

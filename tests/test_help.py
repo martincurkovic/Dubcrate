@@ -68,6 +68,7 @@ def test_menu_items_the_guide_names_exist(window):
         "Remove Selected Source…",
         "Settings…",
         "Split Shown Tracks Across Discs…",
+        "Burn Disc…",
     ):
         assert item in labels, item
         assert item in MANUAL, item
@@ -89,7 +90,8 @@ def test_the_shortcuts_the_guide_lists_are_the_real_ones(window):
     assert shortcuts["Add Selected Tracks"] == "Ctrl+D"
     assert shortcuts["Split Shown Tracks Across Discs…"] == "Ctrl+Shift+D"
     assert shortcuts["Settings…"] == "Ctrl+,"
-    for keys in ("⌘O", "⇧⌘O", "⌘R", "⌘N", "⌘D", "⇧⌘D", "⌘,"):
+    assert shortcuts["Burn Disc…"] == "Ctrl+B"
+    for keys in ("⌘O", "⇧⌘O", "⌘R", "⌘N", "⌘D", "⇧⌘D", "⌘,", "⌘B"):
         assert keys in MANUAL, keys
 
 
@@ -104,7 +106,15 @@ def test_the_buttons_the_guide_names_exist(window):
     assert panel.duplicate_button.text() == "Duplicate"
     assert panel.delete_burn_button.text() == "Delete"
     assert panel.remove_button.text() == "Remove"
-    for name in ("Add to Disc", "Fit All to Disc", "Duplicate", "Planned", "Burned"):
+    assert panel.burn_button.text() == "Burn…"
+    for name in (
+        "Add to Disc",
+        "Fit All to Disc",
+        "Duplicate",
+        "Planned",
+        "Burned",
+        "Burn…",
+    ):
         assert name in MANUAL, name
 
 
@@ -116,8 +126,9 @@ def test_the_settings_tabs_the_guide_names_exist(qapp):
     dialog = SettingsDialog()
     tabs = dialog.findChild(QTabWidget)
     names = [tabs.tabText(i) for i in range(tabs.count())]
-    assert names == ["Audio", "Discs", "Appearance"]
+    assert names == ["Audio", "Discs", "Burning", "Appearance"]
     for name in names:
         assert f"**{name}:**" in MANUAL, name
     assert "Plan new discs for" in MANUAL and "Between tracks" in MANUAL
     assert dialog.minutes_combo.currentData() == 80  # "80 minutes ... gapless"
+    assert "Burn speed" in MANUAL and dialog.speed_combo.currentData() == 10  # "10x"

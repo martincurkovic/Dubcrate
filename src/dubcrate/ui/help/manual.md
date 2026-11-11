@@ -2,7 +2,7 @@
 
 Dubcrate helps you put music from your rekordbox library (or any folder) onto audio CDs for older players such as the CDJ-1000MK3. You pick tracks, plan discs that fit exactly, preview them with waveforms, and burn CDs whose track titles show on the player's display.
 
-> **Burning is not in the window yet.** Importing, previewing and planning discs all work in the app. For now a disc is burned from a command line, as described in [Burning a disc](#burning-a-disc).
+> **Burning from the window is new.** It has been tried with a stand-in burner but not yet on a real drive. The command line is the route that has been proven: see [Burning a disc](#burning-a-disc).
 
 ---
 
@@ -30,6 +30,7 @@ Dubcrate helps you put music from your rekordbox library (or any folder) onto au
 2. **Find some tracks.** Pick a playlist or folder on the left, or search.
 3. **Build a disc.** Drag tracks onto the disc on the right, or select them and press **Return**.
 4. **Watch the bar.** It shows how full the disc is and turns red if the disc is too long.
+5. **Burn it.** Press **Burn…** under the disc, check the drive, tick that a blank CD-R is inside, and burn.
 
 You need **ffmpeg** installed: Dubcrate uses it to read tracks and to prepare them for the disc. With Homebrew: `brew install ffmpeg`.
 
@@ -120,7 +121,7 @@ The bar under the list shows each track as a coloured block, with the time used 
 
 A length shown with **~** is an estimate. Dubcrate measures each track's exact length when you add it and again when the disc is prepared, and the prepared length is the one that counts.
 
-A disc can't be burned if it is empty, over its size, or holds a track whose file is missing or no longer in its source.
+A disc can't be burned if it is empty, over its size, or holds a track whose file is missing or no longer in its source. When it's ready, press **Burn…**: see [Burning a disc](#burning-a-disc).
 
 ---
 
@@ -157,7 +158,24 @@ Your planned discs stay editable after a burn. The record is a separate copy of 
 
 > **A real burn uses up a blank CD-R.** Use a blank **CD-R**, not a CD-RW, which old players read badly.
 
-Burning is done from a terminal for now. Put the disc number in place of `1` (the number is shown by `dubcrate disc list`).
+**From the window**
+
+1. Plan the disc, then press **Burn…** under it (or choose **Disc > Burn Disc…**, ⌘B).
+2. Put a blank CD-R in the drive. Dubcrate asks the drive what is inside and shows it: the drive's name, whether the disc looks blank, and how much it holds. Press **Check Drive** after changing the disc.
+3. Check the **Speed**. It starts at your default from **File > Settings… > Burning**; change it here to use another speed for this burn only.
+4. Tick **A blank CD-R is in the drive**. The **Burn** button stays grey until you do, and Return never starts a burn.
+5. Press **Burn**. The log shows each track being prepared and then the burn. The window can't be closed until it finishes.
+
+Things to know:
+
+- Dubcrate **won't burn** if there is no disc, if the music is longer than what the disc holds (a 74-minute disc with 78 minutes planned, say), or if the disc can't be burned as planned. The reasons are listed in red. If the drive can't say how much a disc holds, Dubcrate goes by the size the disc was planned for.
+- **Test only** runs everything except writing to the disc (the laser stays off), which is a safe way to check your drive. A test isn't saved under **Burned**.
+- After a real burn the disc is saved under **Burned** and the window shows it. Ticking the box is needed again before every burn.
+- A failed burn says why in the log, and nothing is saved. A burn can't be stopped once it has started.
+
+**From the command line**
+
+The command line does the same job. Put the disc number in place of `1` (the number is shown by `dubcrate disc list`).
 
 ```
 dubcrate burn 1                      # a dry run: checks the disc and burns nothing
@@ -177,9 +195,10 @@ The full list of command-line options is in the project's developer notes.
 
 ## Settings
 
-**File > Settings…** (⌘,) has three tabs:
+**File > Settings…** (⌘,) has four tabs:
 
 - **Discs:** how **new** discs are planned: **Plan new discs for** 80 or 74 minutes, and **Between tracks**, which is **Gapless** unless you choose 1, 2 or 3 seconds of silence.
+- **Burning:** the **Burn speed** a burn starts with (10x unless you change it). Old players read discs burned slowly more reliably, and 10x to 16x is a good range. Your drive may not offer every speed. You can still pick another speed for a single burn in the burn window.
 - **Audio:** the **Output device** for previews and the **Buffer size**, with a button that plays a short test tone.
 - **Appearance:** the **Theme**, the same choice as **View > Theme**.
 
@@ -197,6 +216,7 @@ The full list of command-line options is in the project's developer notes.
 | ⇧⌘O | Import a rekordbox library |
 | ⌘R | Re-import the selected source |
 | ⌘N | New disc |
+| ⌘B | Burn the disc |
 | ⇧⌘D | Split the shown tracks across discs |
 | ⌘, | Settings |
 
@@ -209,6 +229,7 @@ The full list of command-line options is in the project's developer notes.
 - **"ffmpeg not found".** Install it (`brew install ffmpeg`) and restart Dubcrate.
 - **Dubcrate can't find my rekordbox library.** Choose **Choose File…** when importing and pick `master.db`.
 - **A track is greyed out, or its file is missing.** Reconnect the drive or put the file back, then re-import the source (⌘R).
+- **The Burn button is grey.** Read the red lines in the burn window: the disc may be empty, too long for the disc in the drive, or missing a file. Also tick **A blank CD-R is in the drive**, and press **Check Drive** if you just changed the disc.
 - **A disc is over its size.** Take tracks off, switch to a longer disc size, or split the playlist.
 - **A track says it is no longer in its source.** It disappeared from the source at the last re-import but is kept because a disc uses it. Take it off the disc before burning.
 

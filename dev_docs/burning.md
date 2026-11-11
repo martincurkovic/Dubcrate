@@ -81,6 +81,14 @@ Use a blank CD-R (not a CD-RW) and a low speed.
   359,850 and 333,000). The checks are deliberately cautious: unknown or 0 free blocks
   is never a reason to refuse, a disc that "isn't blank" only prints a note, and the
   `cdrdao` backend reports everything unknown.
+- **[not tried]** Burning from the window (`ui/burn_dialog.py`). The dialog is tested
+  only with a fake burner. What is unverified on hardware: DiscRecording's
+  `media_info` and `burn` called from a **worker thread** (the CLI runs them on the
+  main thread; `burn` pumps the run loop itself, and whether that is fine off the main
+  thread is unknown), the drive and disc shown in the window, and the **Test only**
+  option. If a window burn hangs or the progress log stays empty, suspect the thread
+  first and compare with `dubcrate burn`. Run a `--simulate`-style **Test only** from
+  the window before the first real one.
 - **[tests]** CD-TEXT cleaning (Latin-1 kept, others folded or `?`), TOC escaping,
   sector maths, and the packing algorithms.
 

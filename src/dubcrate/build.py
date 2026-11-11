@@ -1,6 +1,7 @@
 """Turn a planned disc from the library into something a burner can burn."""
 
 from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
 
 from dubcrate.burn.base import Disc as BurnDisc
@@ -73,44 +74,96 @@ def _performer(artists: list[str]) -> str:
     return "Various Artists"
 
 
+@dataclass(frozen=True)
+class PlanTrack:
+    track_id: int
+    path: str
+    title: str
+    artist: str
+
+
+@dataclass(frozen=True)
+class BurnPlan:
+    """A planned disc as plain data, so it can be rendered on a worker thread
+    without touching the library (which belongs to the GUI thread)."""
+
+    disc_id: int
+    name: str
+    performer: str
+    pregap_sectors: int
+    capacity_sectors: int
+    tracks: tuple[PlanTrack, ...]
+
+
+@dataclass(frozen=True)
+class Rendered:
+    disc: BurnDisc
+    pregap_sectors: int
+    lengths: dict[int, int]  # track id -> rendered sectors, to store afterwards
+
+
+def plan_burn(lib: Library, disc_id: int) -> BurnPlan:
+    """Snapshot a disc for burning; raises BuildError if it can't be burned."""
+    problems = disc_problems(lib, disc_id)
+    if problems:
+        raise BuildError("; ".join(problems))
+    summary = lib.disc(disc_id)
+    entries = lib.disc_entries(disc_id)
+    return BurnPlan(
+        disc_id=disc_id,
+        name=summary.name,
+        performer=_performer([e.track.artist for e in entries]),
+        pregap_sectors=summary.pregap_sectors,
+        capacity_sectors=summary.capacity_sectors,
+        tracks=tuple(
+            PlanTrack(e.track.id, e.track.path, e.track.title, e.track.artist)
+            for e in entries
+        ),
+    )
+
+
+def render_plan(
+    plan: BurnPlan, workdir: Path, progress: Progress | None = None
+) -> Rendered:
+    """Render a plan to CD-ready WAVs. Safe on a worker thread: no library access.
+
+    Rendered lengths are authoritative, so the disc is checked against its
+    capacity once more here.
+    """
+    say = progress or (lambda _msg: None)
+    burn_disc = BurnDisc(title=plan.name, performer=plan.performer)
+    workdir.mkdir(parents=True, exist_ok=True)
+    lengths: dict[int, int] = {}
+    for number, t in enumerate(plan.tracks, start=1):
+        say(f"rendering {number}/{len(plan.tracks)}: {t.title}")
+        wav = workdir / f"{number:02d}.wav"
+        try:
+            sectors = render_track(Path(t.path), wav)
+        except RenderError as exc:
+            raise BuildError(f"#{number} {t.title}: {exc}") from exc
+        lengths[t.track_id] = sectors
+        burn_disc.tracks.append(DiscTrack(wav, t.title, t.artist, sectors))
+
+    used = disc_used_sectors((t.sectors for t in burn_disc.tracks), plan.pregap_sectors)
+    if used > plan.capacity_sectors:
+        raise BuildError(
+            f"rendered audio is {format_msf(used)}, over the"
+            f" {format_msf(plan.capacity_sectors)} capacity"
+        )
+    return Rendered(burn_disc, plan.pregap_sectors, lengths)
+
+
 def build_burn_disc(
     lib: Library, disc_id: int, workdir: Path, progress: Progress | None = None
 ) -> tuple[BurnDisc, int]:
     """Render a planned disc to CD-ready WAVs; returns (burn disc, pregap sectors).
 
     Measures lengths first and refuses to render a disc that can't be burned.
-    Rendered lengths are authoritative: they are saved back to the library, and
-    the disc is checked against capacity once more before returning.
+    Rendered lengths are saved back to the library. For a worker thread, use
+    `plan_burn` here and `render_plan` there instead.
     """
-    say = progress or (lambda _msg: None)
-    summary = lib.disc(disc_id)
-    entries = lib.disc_entries(disc_id)
-    measure_tracks(lib, [e.track.id for e in entries])
-    problems = disc_problems(lib, disc_id)
-    if problems:
-        raise BuildError("; ".join(problems))
-
-    burn_disc = BurnDisc(
-        title=summary.name,
-        performer=_performer([e.track.artist for e in lib.disc_entries(disc_id)]),
-    )
-    workdir.mkdir(parents=True, exist_ok=True)
-    for e in lib.disc_entries(disc_id):
-        say(f"rendering {e.position + 1}/{summary.track_count}: {e.track.title}")
-        wav = workdir / f"{e.position + 1:02d}.wav"
-        try:
-            sectors = render_track(Path(e.track.path), wav)
-        except RenderError as exc:
-            raise BuildError(f"#{e.position + 1} {e.track.title}: {exc}") from exc
-        lib.set_cd_sectors(e.track.id, sectors)
-        burn_disc.tracks.append(DiscTrack(wav, e.track.title, e.track.artist, sectors))
-
-    used = disc_used_sectors(
-        (t.sectors for t in burn_disc.tracks), summary.pregap_sectors
-    )
-    if used > summary.capacity_sectors:
-        raise BuildError(
-            f"rendered audio is {format_msf(used)}, over the"
-            f" {format_msf(summary.capacity_sectors)} capacity"
-        )
-    return burn_disc, summary.pregap_sectors
+    measure_tracks(lib, [e.track.id for e in lib.disc_entries(disc_id)])
+    rendered = render_plan(plan_burn(lib, disc_id), workdir, progress)
+    for track_id, sectors in rendered.lengths.items():
+        lib.set_cd_sectors(track_id, sectors)
+    return rendered.disc, rendered.pregap_sectors
