@@ -10,6 +10,7 @@ is skipped (and the status bar says why), and a rekordbox that suddenly reports 
 is not believed, so a bad moment can never empty your library.
 """
 
+import logging
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -21,6 +22,8 @@ from dubcrate.library import Library
 from dubcrate.library.rekordbox import RekordboxLibrary, read_master_db
 
 from .tasks import run_async
+
+log = logging.getLogger(__name__)
 
 Say = Callable[[str], None]
 
@@ -88,14 +91,17 @@ def refresh_rekordbox_sources(lib: Library, say: Say) -> StartupImport:
             continue
         path = Path(source.path)
         if not path.is_file():
+            log.warning("start-up refresh: %s not found, skipped", path)
             result.notes.append(f"“{source.name}” wasn't found, so it wasn't updated")
             continue
         say("Reading the rekordbox library…")
         data, error = _read(path)
         if data is None:
+            log.warning("start-up refresh: couldn't read %s: %s", path, error)
             result.notes.append(f"“{source.name}” couldn't be updated: {error}")
             continue
         if not data.tracks and source.track_count:
+            log.warning("start-up refresh: %s reported no tracks, kept as it was", path)
             result.notes.append(
                 f"rekordbox reported no tracks, so “{source.name}” was kept as it was"
             )
@@ -108,6 +114,12 @@ def refresh_rekordbox_sources(lib: Library, say: Say) -> StartupImport:
             data.tracks,
             data.nodes,
             data.notes,
+        )
+        log.info(
+            "start-up refresh of %s: %d new, %d removed",
+            path,
+            summary.added,
+            summary.removed,
         )
         result.added += summary.added
         result.removed += summary.removed

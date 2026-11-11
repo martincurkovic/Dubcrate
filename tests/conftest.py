@@ -11,6 +11,7 @@ os.environ["QT_QPA_PLATFORM"] = "offscreen"
 _TMP = Path(tempfile.mkdtemp(prefix="dubcrate-tests-"))
 atexit.register(shutil.rmtree, _TMP, ignore_errors=True)
 os.environ["DUBCRATE_DATA_DIR"] = str(_TMP / "data")
+os.environ["DUBCRATE_LOG_DIR"] = str(_TMP / "logs")
 
 from PySide6.QtCore import QSettings
 

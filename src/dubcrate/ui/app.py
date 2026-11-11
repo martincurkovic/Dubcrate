@@ -1,19 +1,23 @@
 """Application entry point: `dubcrate-gui` or `python -m dubcrate.ui`."""
 
 import argparse
+import logging
 import os
 import sys
 
 from PySide6.QtGui import QIcon, QPixmap
 from PySide6.QtWidgets import QApplication
 
+from dubcrate import logsetup
 from dubcrate.library import Library
 
-from . import theme
+from . import dialog_log, theme
 from .main_window import MainWindow
 from .splash import StartupSplash
 from .startup import maybe_refresh
 from .version import app_version, icon_path
+
+log = logging.getLogger(__name__)
 
 # Where Homebrew puts ffmpeg (Apple Silicon, Intel). An app started from Finder or the Dock is
 # given only /usr/bin:/bin:/usr/sbin:/sbin, so without these it can't find the tools it runs.
@@ -40,6 +44,11 @@ def main(argv: list[str] | None = None) -> int:
         "--library", help="library database to use (default: the app data directory)"
     )
     parser.add_argument(
+        "--verbose",
+        action="store_true",
+        help="log fine detail too (to the log file and the terminal)",
+    )
+    parser.add_argument(
         "--no-import",
         action="store_true",
         help="don't bring the rekordbox library up to date on startup",
@@ -56,6 +65,21 @@ def main(argv: list[str] | None = None) -> int:
         return smoke_test.run(smoke.partition("=")[2] or None)
     args, qt_args = parser.parse_known_args(argv)
 
+    logsetup.setup(verbose=args.verbose)
+    logsetup.install_exception_hooks()
+    logsetup.enable_crash_log()
+    logsetup.log_startup()
+    try:
+        return _run(args, qt_args)
+    except Exception:
+        log.critical("Dubcrate failed to start or run", exc_info=True)
+        raise
+    finally:
+        log.info("---- Dubcrate exited ----")
+        logsetup.shutdown()
+
+
+def _run(args: argparse.Namespace, qt_args: list[str]) -> int:
     app = QApplication([sys.argv[0], *qt_args])
     app.setOrganizationName("Dubcrate")
     app.setApplicationName("Dubcrate")
@@ -72,6 +96,7 @@ def main(argv: list[str] | None = None) -> int:
     splash.show()
     splash.set_status("Opening your library…")
     theme.apply_to_app(app)
+    dialog_log.install()
 
     with Library.open(args.library) as lib:
         imported = maybe_refresh(lib, splash.set_status, skip=args.no_import)

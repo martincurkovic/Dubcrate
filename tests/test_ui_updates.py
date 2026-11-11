@@ -2,12 +2,13 @@
 
 import threading
 import time
+import urllib.error
 
 import pytest
 from PySide6.QtCore import QUrl
 from PySide6.QtWidgets import QMessageBox
 
-from dubcrate import settings
+from dubcrate import settings, updates
 from dubcrate.library import Library
 from dubcrate.ui import about_dialog, update_check, update_dialog
 from dubcrate.ui.about_dialog import AboutDialog, NoticesDialog
@@ -140,6 +141,25 @@ def test_a_failure_is_only_reported_when_you_asked_and_is_not_counted_as_a_check
     run(checker, wait_for, manual=True)
     [(kind, _title, text)] = boxes
     assert kind == "warning" and "no route to host" in text
+
+
+def test_an_expected_failure_is_logged_as_one_warning_without_a_traceback(
+    checker, wait_for, boxes, monkeypatch, caplog
+):
+    # What a private repository does: GitHub answers 404 (updates.py turns it into UpdateCheckError)
+    def refuse(*_a, **_k):
+        raise urllib.error.HTTPError(
+            "https://api.github.com/x", 404, "Not Found", {}, None
+        )  # type: ignore[arg-type]
+
+    monkeypatch.setattr(update_check, "check_for_update", lambda: updates.check_for_update("0.1.0", urlopen=refuse))  # fmt: skip
+    caplog.set_level("DEBUG")
+    run(checker, wait_for, manual=True)
+    [(kind, _title, text)] = boxes
+    assert kind == "warning" and "no public releases" in text
+    failures = [r for r in caplog.records if r.name == "dubcrate.ui.tasks"]
+    assert [r.levelname for r in failures] == ["WARNING"]
+    assert "Traceback" not in caplog.text and "unexpected" not in caplog.text
 
 
 def test_a_skipped_version_stays_quiet_at_startup_but_not_when_asked(

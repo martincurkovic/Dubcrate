@@ -9,6 +9,7 @@ the library, which belongs to the GUI thread. The disc is snapshotted first
 lengths and the burn record.
 """
 
+import logging
 from collections.abc import Callable
 from functools import wraps
 from pathlib import Path
@@ -45,6 +46,9 @@ from dubcrate.render import RenderError
 from .tasks import TaskError, run_async
 
 BurnerFactory = Callable[[], Burner]
+
+# (`logger`, since the dialog's own `self.log` is the progress box)
+logger = logging.getLogger(__name__)
 
 
 def _expected_failures(fn: Callable) -> Callable:
@@ -315,12 +319,23 @@ class BurnDialog(QDialog):
         self._append(
             f"{'Test burn' if simulate else 'Burning'} “{plan.name}” at {speed}x"
         )
+        logger.info(
+            "%s of disc %s “%s” at %sx",
+            "test burn" if simulate else "burn",
+            self._disc_id,
+            plan.name,
+            speed,
+        )
         self.status_label.setText("")
         self.progress.setRange(0, 0)  # busy
         self.progress.setVisible(True)
         self._busy = True
         self._update()
-        say = self._log.emit  # thread-safe: queued to this thread
+        emit = self._log.emit  # thread-safe: queued to this thread
+
+        def say(text: str) -> None:
+            logger.info("burn: %s", text)
+            emit(text)
 
         @_expected_failures
         def work():
@@ -351,6 +366,7 @@ class BurnDialog(QDialog):
         for track_id, sectors in lengths.items():
             self._lib.set_cd_sectors(track_id, sectors)
         self._after_attempt()
+        logger.info("%s finished", "test burn" if simulate else "burn")
         if simulate:
             self._append("Test burn finished. Nothing was written to the disc.")
             self.status_label.setText(

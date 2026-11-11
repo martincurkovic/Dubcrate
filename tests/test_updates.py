@@ -7,12 +7,19 @@ import urllib.error
 import pytest
 
 from dubcrate import updates
-from dubcrate.updates import UpdateInfo, check_for_update, parse_version
+from dubcrate.updates import (
+    UpdateCheckError,
+    UpdateInfo,
+    check_for_update,
+    parse_version,
+)
 
 
 class FakeResponse:
     def __init__(self, payload):
-        self._data = json.dumps(payload).encode()
+        self._data = (
+            payload if isinstance(payload, bytes) else json.dumps(payload).encode()
+        )
 
     def __enter__(self):
         return self
@@ -132,16 +139,46 @@ def test_the_request_names_the_app_and_never_waits_long():
 
 
 def test_an_answer_that_is_not_a_list_is_an_error():
-    with pytest.raises(ValueError, match="list of releases"):
+    with pytest.raises(UpdateCheckError, match="list of releases"):
         check_for_update("0.1.0", urlopen=answer({"message": "Not Found"}))
 
 
-def test_network_errors_reach_the_caller():
+def refusing(error):
     def refuse(*a, **k):
-        raise urllib.error.URLError("no route")
+        raise error
 
-    with pytest.raises(urllib.error.URLError):
-        check_for_update("0.1.0", urlopen=refuse)
+    return refuse
+
+
+def http_error(code, reason="x"):
+    return urllib.error.HTTPError(updates.RELEASES_API_URL, code, reason, {}, None)  # type: ignore[arg-type]
+
+
+def test_a_missing_repository_says_so_plainly():  # GitHub answers 404 while the repository is private
+    with pytest.raises(UpdateCheckError, match="no public releases") as caught:
+        check_for_update("0.1.0", urlopen=refusing(http_error(404, "Not Found")))
+    assert isinstance(caught.value.__cause__, urllib.error.HTTPError)
+
+
+def test_rate_limiting_and_other_http_errors_are_told_apart():
+    with pytest.raises(UpdateCheckError, match="limiting requests"):
+        check_for_update("0.1.0", urlopen=refusing(http_error(403)))
+    with pytest.raises(UpdateCheckError, match=r"500 Server Error"):
+        check_for_update("0.1.0", urlopen=refusing(http_error(500, "Server Error")))
+
+
+def test_network_errors_become_one_readable_error():
+    with pytest.raises(UpdateCheckError, match=r"Could not reach GitHub \(no route\)"):
+        check_for_update("0.1.0", urlopen=refusing(urllib.error.URLError("no route")))
+    with pytest.raises(UpdateCheckError, match="took too long"):
+        check_for_update("0.1.0", urlopen=refusing(TimeoutError()))
+    with pytest.raises(UpdateCheckError, match="Could not reach"):
+        check_for_update("0.1.0", urlopen=refusing(ConnectionResetError("reset")))
+
+
+def test_an_answer_that_is_not_json_is_an_error():
+    with pytest.raises(UpdateCheckError, match="could not be read"):
+        check_for_update("0.1.0", urlopen=answer(b"<html>not json</html>"))
 
 
 def test_the_repository_is_the_one_on_github():

@@ -10,13 +10,17 @@ No Qt here: the window runs this on a worker (`ui/update_check.py`).
 """
 
 import json
+import logging
 import re
 import ssl
+import urllib.error
 import urllib.request
 from collections.abc import Callable
 from dataclasses import dataclass
 
 from dubcrate.ui.version import app_version
+
+log = logging.getLogger(__name__)
 
 REPO = "martincurkovic/Dubcrate"
 RELEASES_PER_PAGE = 30  # more than anyone is behind by
@@ -35,6 +39,19 @@ class UpdateInfo:
     name: str  # the release's title
     html_url: str  # the GitHub release page, where the downloads are
     notes: str = ""  # Markdown: those of every release newer than the installed one, newest first
+
+
+class UpdateCheckError(RuntimeError):
+    """The check couldn't be done or understood. The message is written for the user."""
+
+
+def _http_failure(error: urllib.error.HTTPError) -> str:
+    if error.code == 404:
+        # GitHub answers 404 for a private repository too, so this is also "not published yet"
+        return "GitHub has no public releases of Dubcrate to find (the repository may not be public yet)."
+    if error.code in (403, 429):
+        return "GitHub is limiting requests from this connection right now. Try again later."
+    return f"GitHub answered with an error ({error.code} {error.reason})."
 
 
 def _ssl_context() -> ssl.SSLContext:
@@ -70,8 +87,8 @@ def check_for_update(
 ) -> UpdateInfo | None:
     """An `UpdateInfo` if a newer release exists, else None.
 
-    Raises `urllib.error.URLError` / `HTTPError` or `ValueError` if the network or the answer
-    fails; the caller decides whether that is worth telling anyone.
+    Raises `UpdateCheckError` (with a message for the user) if the network or the answer fails;
+    the caller decides whether that is worth telling anyone.
     """
     current_version = app_version() if current_version is None else current_version
     current = parse_version(current_version)
@@ -85,10 +102,22 @@ def check_for_update(
             "User-Agent": f"Dubcrate/{current_version}",  # GitHub's API refuses a request with none
         },
     )
-    with urlopen(request, timeout=REQUEST_TIMEOUT, context=_ssl_context()) as response:
-        payload = json.loads(response.read())
+    try:
+        with urlopen(
+            request, timeout=REQUEST_TIMEOUT, context=_ssl_context()
+        ) as response:
+            payload = json.loads(response.read())
+    except urllib.error.HTTPError as e:  # before URLError, which it subclasses
+        raise UpdateCheckError(_http_failure(e)) from e
+    except TimeoutError as e:
+        raise UpdateCheckError("GitHub took too long to answer.") from e
+    except (urllib.error.URLError, OSError) as e:
+        reason = getattr(e, "reason", None) or e
+        raise UpdateCheckError(f"Could not reach GitHub ({reason}).") from e
+    except ValueError as e:  # json.JSONDecodeError, or a body that isn't text
+        raise UpdateCheckError("GitHub's answer could not be read.") from e
     if not isinstance(payload, list):
-        raise ValueError("GitHub's answer wasn't a list of releases")  # noqa: TRY004  (a bad answer, not a bad argument)
+        raise UpdateCheckError("GitHub's answer wasn't a list of releases.")
 
     newer = []
     for release in payload:

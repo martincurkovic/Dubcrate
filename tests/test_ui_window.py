@@ -996,3 +996,15 @@ def test_a_fixed_column_keeps_its_width_when_the_window_is_resized(window, qapp)
         == main_window.TRACK_COLUMNS[preview].width
     )
     assert win.track_table.columnWidth(0) == main_window.TRACK_COLUMNS[0].width
+
+
+def test_help_menu_opens_the_log_folder(window, monkeypatch, tmp_path):
+    win, _lib = window
+    monkeypatch.setenv("DUBCRATE_LOG_DIR", str(tmp_path / "logs"))
+    opened = []
+    monkeypatch.setattr(
+        main_window.QDesktopServices, "openUrl", lambda url: opened.append(url)
+    )
+    win.act_show_log.trigger()
+    assert (tmp_path / "logs").is_dir()  # made, so there is something to open
+    assert [u.toLocalFile() for u in opened] == [str(tmp_path / "logs")]

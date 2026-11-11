@@ -1,10 +1,11 @@
 """The main window: the library's file tree on the left; in the middle the tracks of what
 you picked, or the disc you opened; your discs (burn playlists, in folders) on the right."""
 
+import logging
 from pathlib import Path
 
-from PySide6.QtCore import QEvent, QModelIndex, Qt, QTimer
-from PySide6.QtGui import QAction, QActionGroup, QKeySequence
+from PySide6.QtCore import QEvent, QModelIndex, Qt, QTimer, QUrl
+from PySide6.QtGui import QAction, QActionGroup, QDesktopServices, QKeySequence
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QApplication,
@@ -25,7 +26,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from dubcrate import settings
+from dubcrate import logsetup, settings
 from dubcrate.analysis import read_preview, share_root
 from dubcrate.audio.player import AudioPlayer
 from dubcrate.library import Library
@@ -68,6 +69,8 @@ from .track_table import (
 from .update_check import UpdateChecker
 from .update_check import due as update_check_due
 from .version import icon_path
+
+log = logging.getLogger(__name__)
 
 SEARCH_DELAY_MS = 200
 PREVIEW_DELAY_MS = 40
@@ -456,6 +459,10 @@ class MainWindow(QMainWindow):
         self.act_notices = help_menu.addAction(
             "Third-Party &Notices…", self.show_notices
         )
+        self.act_show_log = help_menu.addAction("Show &Log File", self.show_log_file)
+        self.act_show_log.setToolTip(
+            "Opens the folder with Dubcrate's log, to attach to a bug report."
+        )
         self.act_updates = help_menu.addAction(
             "Check for &Updates…", lambda: self.updates.start(manual=True)
         )
@@ -499,6 +506,12 @@ class MainWindow(QMainWindow):
 
     def show_notices(self) -> None:
         NoticesDialog(self).exec()
+
+    def show_log_file(self) -> None:
+        """Open the folder with the log (made first, if nothing has been logged yet)."""
+        folder = logsetup.log_dir()
+        folder.mkdir(parents=True, exist_ok=True)
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(folder)))
 
     # -- status / busy ----------------------------------------------------
 
@@ -880,6 +893,15 @@ class MainWindow(QMainWindow):
                 result.nodes,
                 result.notes,
             )
+        log.info(
+            "imported %s %s: %d new, %d updated, %d removed, %d notes",
+            kind,
+            path,
+            summary.added,
+            summary.updated,
+            summary.removed,
+            len(summary.notes),
+        )
         self._set_busy(False)
         self.refresh_sources(select=("source", summary.source_id))
         self.disc_view.reload()  # a re-import can mark tracks on a disc as no longer in their source

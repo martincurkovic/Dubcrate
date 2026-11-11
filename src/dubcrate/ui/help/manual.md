@@ -308,6 +308,7 @@ This is the only time Dubcrate uses the network. It asks `github.com` for the li
 - **A track is greyed out, or its file is missing.** Reconnect the drive or put the file back, then re-import the source (⌘R).
 - **The Burn button is grey.** Read the red lines in the burn window: the disc may be empty, too long for the disc in the drive, or missing a file. Also tick **A blank CD-R is in the drive**, and press **Check Drive** if you just changed the disc.
 - **A disc is over its size.** Take tracks off, switch to a longer disc size, or split the playlist.
+- **Something went wrong and I want to report it.** **Help > Show Log File** opens the folder with Dubcrate's log (`dubcrate.log`, and `crash.log` if it ever crashed). Attach them to the report. They list file paths and what Dubcrate did, never your audio. Starting Dubcrate with `--verbose` records more detail.
 - **A track says it is no longer in its source.** It disappeared from the source at the last re-import but is kept because a disc uses it. Take it off the disc before burning.
 
 ---

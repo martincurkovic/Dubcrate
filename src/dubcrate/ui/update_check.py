@@ -6,19 +6,31 @@ up to date" and failures. One at start-up is quiet unless there is something new
 day, and it stays quiet about a version you skipped.
 """
 
+import logging
 import time
 from collections.abc import Callable
 
 from PySide6.QtWidgets import QMessageBox, QWidget
 
 from dubcrate import settings
-from dubcrate.updates import UpdateInfo, check_for_update
+from dubcrate.updates import UpdateCheckError, UpdateInfo, check_for_update
 
-from .tasks import run_async
+from .tasks import TaskError, run_async
 from .update_dialog import UpdateAvailableDialog
 from .version import app_version
 
+log = logging.getLogger(__name__)
+
 UPDATE_CHECK_INTERVAL_SECONDS = 24 * 60 * 60
+
+
+def _check() -> UpdateInfo | None:
+    """`check_for_update` for a worker: a failed check is an expected outcome (offline, a private
+    repository), so it is logged as a one-line warning, not as a bug with a traceback."""
+    try:
+        return check_for_update()
+    except UpdateCheckError as e:
+        raise TaskError(str(e)) from e
 
 
 def due(now: float | None = None) -> bool:
@@ -58,6 +70,7 @@ class UpdateChecker:
             return
         self._running = True
         over = parent or self._parent
+        log.info("checking for updates (%s)", "asked for" if manual else "at start-up")
 
         def finish() -> None:
             self._running = False
@@ -79,10 +92,14 @@ class UpdateChecker:
                 )
             # silent at start-up: no need to nag about a flaky connection
 
-        run_async(check_for_update, answered, failed)
+        run_async(_check, answered, failed)
 
     def _show(self, info: UpdateInfo | None, manual: bool, over: QWidget) -> None:
         settings.set_last_update_check(time.time())
+        log.info(
+            "update check: %s",
+            f"{info.version} is available" if info else "up to date",
+        )
         if info is None:
             if manual:
                 QMessageBox.information(

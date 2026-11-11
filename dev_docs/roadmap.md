@@ -24,6 +24,8 @@
 
 ## Later
 
+- Logging follow-ups (the log file itself is done: `logsetup.py`): a Settings switch for verbose logging (only `--verbose` today), logging inside the library store and the CLI, and a dialog for an uncaught exception (it is only logged).
+
 - MP3 data discs as a secondary mode (ISO 9660 + Joliet; an old CDJ loads audio CDs
   faster, so audio CD stays the default).
 - Rekordbox XML export as an import path with no SQLCipher dependency (a fallback if
