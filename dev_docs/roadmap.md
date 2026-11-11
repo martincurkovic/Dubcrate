@@ -25,6 +25,29 @@
 - Music/iTunes as a source (decided to skip for now; it needs an exported library XML
   and can't give us files for streamed or protected tracks).
 
+## Decisions so far
+
+- The disc panel stays to the right of the track table; the player runs across the top.
+- Double-click previews a track; Return (or the button, or dragging) adds it to a disc.
+- Music/iTunes is skipped for now. The theme is shared with the owner's other apps.
+- Licensed GPL-3.0-or-later. No tag library: `ffprobe` reads tags.
+- The README is for end users only; developer notes live here and in `CONTRIBUTING.md`.
+
+## Known rough edges
+
+- Imports and measuring can't be cancelled, and there is no per-file progress detail.
+- A folder scan runs at about 120 files a second (ffprobe per file), so 50,000 files
+  would take several minutes. `tinytag` (MIT) would be the faster fallback.
+- A computed waveform isn't saved, so a folder track's Preview strip reappears only
+  after it has been previewed again in a new session (rekordbox tracks read theirs
+  from rekordbox's own files). Caching them in SQLite would fix that.
+- The waveform scaling (gamma, the overview's auto-gain) was tuned by eye against the
+  rbxport screenshot, not measured.
+- `spikes/burn_spike.py` duplicates some of what `build.py` and the CLI now do; it can
+  go once the window burns.
+- The GUI's *Between tracks* menu offers 1-3 s, whose unit is unverified (see
+  [burning.md](burning.md)).
+
 ## Unverified
 
 - Cue points: parsed defensively but none of the sampled tracks had any, so the

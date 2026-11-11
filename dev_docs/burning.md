@@ -74,3 +74,23 @@ Use a blank CD-R (not a CD-RW) and a low speed.
   the window offers 1, 2 and 3 s, so check the unit before relying on those.
 - **[tests]** CD-TEXT cleaning (Latin-1 kept, others folded or `?`), TOC escaping,
   sector maths, and the packing algorithms.
+
+## DiscRecording API notes
+
+- A burn is configured with `DRBurn.burnForDevice_(device)` then `setProperties_`, and
+  started with `writeLayout_(tracks)`, which returns **immediately**; poll
+  `burn.status()` until `DRStatusStateKey` is `DRStatusStateDone` or `...Failed`. A
+  `DRStatusPercentCompleteKey` of -1.0 means "indeterminate", not an error.
+- Tracks: `DRTrack.trackForAudioFile_(path)`. Strategy: `DRBurnStrategyCDSAO` with
+  `DRBurnStrategyIsRequiredKey`. Speed is in KB/s: `DRDeviceBurnSpeedCD1x` times the
+  "x" factor.
+- CD-TEXT: the `DRCDTextKey` burn property takes a `DRCDTextBlock`
+  (`initWithLanguage_encoding_("en", DRCDTextEncodingISOLatin1Modified)`), with the
+  disc's own text at **track index 0** and track *n* at index *n*
+  (`setObject_forKey_ofTrack_`). Check `DRDeviceCanWriteCDTextKey` first.
+- Pregap: `DRPreGapLengthKey` on a `DRTrack`, default 2 s; with
+  `DRPreGapIsRequiredKey` true the burn fails instead of picking another length.
+- **Not yet known (matters for the burn dialog):** the polling loop pumps the run
+  loop of the thread it runs on. It has only been run on the main thread (the spike).
+  Whether DiscRecording is happy being driven from a worker thread is untested; if
+  it isn't, start and poll the burn on the main thread with a `QTimer`.

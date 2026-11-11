@@ -101,3 +101,96 @@ the repo; follow whatever it reports.
 - macOS labels the drive "Unsupported", but DiscRecording reports it can write
   CD-R, CD-TEXT, SAO and test-write.
 - 80 min = 360,000 sectors, 74 min = 333,000. Use 10 to 16x for old players; this drive's slowest speed is 10x.
+
+## Working notes (from the first sessions)
+
+### Where things stand
+
+Built: library import (folders and rekordbox), disc planning (fit, split, reorder,
+exact capacity), the `dubcrate` command-line tool, the burn path (CLI only), and the
+PySide6 window with the preview player and waveforms. Burning through DiscRecording
+is proven on the owner's hardware (a disc burned and played on a CDJ-1000MK3, CD-TEXT
+shown); the gapless fix, the `cdrdao` backend and non-zero gaps are not. **Next:** the
+burn dialog, a record of burned discs, and the source rail: `dev_docs/roadmap.md`
+has the list, the decisions already made, the known rough edges and what is
+unverified. `dev_docs/rekordbox-analysis.md`, `audio.md` and `burning.md` hold what
+was measured, and how.
+
+### Shell and tooling gotchas (macOS)
+
+- The Bash tool runs zsh. `sed -i` needs `sed -i ''`; there is no `timeout` command;
+  an unmatched glob is an error (`rm -f a b c`, not `rm -f x*`); a variable holding
+  several words is not split. When a shell one-liner gets fiddly, use a short Python
+  script instead.
+- `uv run` uses the project of the **current directory**. Check you are in the Dubcrate
+  folder: running it from a sibling repo silently used that repo's environment.
+- `ruff format` re-wraps long lines, so an exact-string edit written from memory can
+  miss. Read the region first; a script that asserts each match fails loudly.
+- Imports of PySide6 at module level mean a plain `python -c` needs
+  `QT_QPA_PLATFORM=offscreen` to avoid opening a window.
+
+### The owner's data (read it, never change it)
+
+- `~/Library/Pioneer/rekordbox/` is the **live** rekordbox library. Only read a snapshot
+  (`library/rekordbox._snapshot`); never open `master.db` in place or write anything.
+- `~/Music/Rekordbox` is the live music folder that rekordbox's paths point to.
+  `~/Music/Rekordbox_copy` is a throwaway copy of the music files (about 12 GB, 1,084
+  tracks), meant for scanning. Both are read-only to us.
+- A real burn uses a blank CD-R the owner loads. Use `--simulate` first, and ask before
+  any real burn. Hardware: LiteOn eSAU108 USB burner, two CDJ-1000MK3.
+- Try things in a scratch library (`dubcrate --library /tmp/x.db`), never the owner's
+  default one.
+
+### Looking at the window
+
+The tests can't tell you whether it looks right. Render it offscreen and read the PNG,
+in all three looks (`dark`, `light`, `system6`). Send the settings and the theme's
+generated icons to temp locations, as `tests/conftest.py` does, and use a silent
+device so nothing plays:
+
+```python
+import os
+os.environ["QT_QPA_PLATFORM"] = "offscreen"
+os.environ["DUBCRATE_DATA_DIR"] = "/tmp/dc-shots/data"
+from PySide6.QtCore import QSettings
+QSettings.setDefaultFormat(QSettings.Format.IniFormat)
+QSettings.setPath(QSettings.Format.IniFormat, QSettings.Scope.UserScope, "/tmp/dc-shots/settings")
+from PySide6.QtWidgets import QApplication
+from dubcrate.audio.player import AudioPlayer
+from dubcrate.library import Library
+from dubcrate.ui import theme
+from dubcrate.ui.main_window import MainWindow
+
+class Silent:  # a stand-in sound card
+    def start(self, gen): pass
+    def stop(self): pass
+    def close(self): pass
+
+app = QApplication([]); app.setOrganizationName("shots"); app.setApplicationName("shots")
+theme.apply_to_app(app, "dark")
+win = MainWindow(Library.open("/tmp/dc-shots/library.db"), player=AudioPlayer(device_factory=lambda *a: Silent()))
+win.resize(1440, 920); win.show(); app.processEvents(); win.grab().save("/tmp/dc-shots/dark.png")
+```
+
+### Reference code in the owner's other apps
+
+They sit beside this repo and share its look and conventions: use them before writing
+something new.
+
+- **AKAISDS** (`src/core/audio_preview.py`, the audio section of its settings dialog):
+  the model for the preview player. It also has a reusable `Knob` class, if one is ever
+  needed. **akaiutil-GUI** (`ui/theme.py`, `usage_bar.py`, `splitter.py`, `tasks.py`):
+  where Dubcrate's theme and capacity bar come from. **JV Studio**: the `dev_docs/`,
+  `BUILDING.md` and hardware-test-plan style, and the Nuitka / `pysidedeploy` build.
+- The theme files are copies, so improvements in one app don't reach the others on their
+  own. `diff` against the sibling to port a change; keep Dubcrate's own QSS under the
+  "Dubcrate additions" marker.
+- akaiutil-GUI's `LICENSE` is GPL **version 2**, Dubcrate's is GPL-3.0-or-later. The
+  copied files come from the GPL-3 lineage (their headers say so), but flag it to the
+  owner before moving more code across.
+
+### How the owner works
+
+- The owner commits; you may `git add` and should suggest a short commit message.
+- Decisions go in `dev_docs/roadmap.md` ("Decisions so far"); keep `README.md` for end
+  users only.

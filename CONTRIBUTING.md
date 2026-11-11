@@ -64,7 +64,9 @@ dev_docs/                                command-line reference, burning and har
 | --- | --- |
 | [dev_docs/command-line.md](dev_docs/command-line.md) | the `dubcrate` command-line tool |
 | [dev_docs/burning.md](dev_docs/burning.md) | the burn spike, hardware findings, what is verified |
-| [dev_docs/roadmap.md](dev_docs/roadmap.md) | what is next, and what to do before a public release |
+| [dev_docs/rekordbox-analysis.md](dev_docs/rekordbox-analysis.md) | what we read from rekordbox, and what was measured |
+| [dev_docs/audio.md](dev_docs/audio.md) | miniaudio and the preview player |
+| [dev_docs/roadmap.md](dev_docs/roadmap.md) | what is next, decisions made, rough edges, and what to do before a public release |
 
 ## License
 
