@@ -148,6 +148,40 @@ def set_auto_import(enabled: bool) -> None:
     _qs().setValue("import/auto_rekordbox", bool(enabled))
 
 
+def get_auto_update_check() -> bool:
+    """Whether Dubcrate asks GitHub for a newer version when it starts (on by default). It is the
+    only time the app uses the network."""
+    value = _qs().value("updates/auto_check", True)
+    if isinstance(value, str):  # an ini file keeps a bool as text
+        return value.strip().lower() not in ("false", "0", "no", "off")
+    return bool(value)
+
+
+def set_auto_update_check(enabled: bool) -> None:
+    _qs().setValue("updates/auto_check", bool(enabled))
+
+
+def get_last_update_check() -> float:
+    """Unix time of the last update check that got an answer, or 0 if there has not been one."""
+    try:
+        return float(_qs().value("updates/last_check", 0))
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def set_last_update_check(timestamp: float) -> None:
+    _qs().setValue("updates/last_check", float(timestamp))
+
+
+def get_skipped_update() -> str | None:
+    """The version whose start-up notice was dismissed with "Skip This Version", if any."""
+    return str(_qs().value("updates/skipped", "") or "") or None
+
+
+def set_skipped_update(version: str) -> None:
+    _qs().setValue("updates/skipped", version)
+
+
 def get_audio_device() -> str | None:
     """The saved output device id (hex), or None for the system default."""
     return _qs().value("audio/device", None) or None

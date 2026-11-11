@@ -10,12 +10,15 @@ authors = [
 ]
 requires-python = ">=3.13"
 dependencies = [
+    # the update check's CA bundle: a standalone (Nuitka) build has no system CA store, so https to GitHub fails without it
+    "certifi>=2026.7.22",
     "miniaudio>=1.71",
     "numpy>=2",
     "platformdirs>=4.14.5",
     "pyobjc-framework-discrecording>=13.0 ; sys_platform == 'darwin'",
     "pyrekordbox>=0.5.0",
-    "pyside6-essentials>=6.9",
+    # Qt 6.12 is the current LTS line; its wheels need macOS 14, which is the floor of the built app
+    "pyside6-essentials>=6.12,<6.13",
 ]
 
 [project.scripts]
@@ -33,3 +36,17 @@ dev = [
     "pytest>=9.2.0",
     "ruff>=0.17.4",
 ]
+# Only needed to make the standalone app (scripts/build_macos.sh): Nuitka does the compiling, dmgbuild lays out the
+# DMG, and Pillow draws its background picture (assets/dmg/create_dmg_background.py). Same Nuitka pin as AKAISDS and JV Studio.
+# PySide6-Addons: Nuitka's PySide6 plugin refuses to run without it, even though the app only uses Essentials modules
+# (the standalone build still bundles just the Qt modules it imports).
+build = [
+    "Nuitka==4.1.3",
+    "PySide6-Addons>=6.12,<6.13",
+    "dmgbuild>=1.6.7",
+    "pillow>=11",
+]
+
+[tool.uv]
+# plain `uv sync` (which the build script runs) installs both groups; CI's test job passes --no-group build
+default-groups = ["dev", "build"]

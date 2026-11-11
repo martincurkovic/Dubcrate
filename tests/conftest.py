@@ -114,6 +114,16 @@ def _no_real_audio(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _no_real_network(monkeypatch):
+    """No test may reach GitHub: an update check must be given a fake `urlopen`."""
+
+    def refuse(*_a, **_k):
+        raise AssertionError("a test tried to use the network; pass a fake urlopen")
+
+    monkeypatch.setattr("urllib.request.urlopen", refuse)
+
+
+@pytest.fixture(autouse=True)
 def _no_real_burner(monkeypatch):
     """No test may reach a real drive: a burn window must be given a fake burner."""
 

@@ -1,0 +1,89 @@
+name: Build
+
+on:
+  workflow_dispatch: # allows for manual triggering
+  push:
+    tags:
+      - "v*.*.*"
+
+env:
+  # the one place the app's name lives for CI; scripts/build_macos.sh and the assets under assets/ use the same name
+  APP_NAME: Dubcrate
+
+jobs:
+  test:
+    uses: ./.github/workflows/test.yml
+
+  build-macos-arm:
+    needs: test
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # the version comes from the nearest git tag
+      - uses: actions/setup-python@v5
+        with:
+          python-version-file: ".python-version"
+      - uses: astral-sh/setup-uv@v6
+      - name: Sync environment
+        run: uv sync
+      - name: Build
+        run: |
+          chmod +x scripts/build_macos.sh scripts/make_icons.sh
+          ./scripts/build_macos.sh  # also builds $APP_NAME-macos-{arm,intel}.dmg at the repo root
+      - name: Smoke-test the built app
+        run: |
+          BIN=$(find "src/$APP_NAME.app/Contents/MacOS" -maxdepth 1 -type f -perm -u+x -name 'main*' | head -1)
+          echo "Running $BIN"
+          QT_QPA_PLATFORM=offscreen "$BIN" --smoke-test=smoke.txt || { cat smoke.txt; exit 1; }
+          cat smoke.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.APP_NAME }}-macos-arm
+          path: ${{ env.APP_NAME }}-macos-arm.dmg
+
+  build-macos-intel:
+    needs: test
+    runs-on: macos-15-intel
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version-file: ".python-version"
+      - uses: astral-sh/setup-uv@v6
+      - name: Sync environment
+        run: uv sync
+      - name: Build
+        run: |
+          chmod +x scripts/build_macos.sh scripts/make_icons.sh
+          ./scripts/build_macos.sh  # also builds $APP_NAME-macos-{arm,intel}.dmg at the repo root
+      - name: Smoke-test the built app
+        run: |
+          BIN=$(find "src/$APP_NAME.app/Contents/MacOS" -maxdepth 1 -type f -perm -u+x -name 'main*' | head -1)
+          echo "Running $BIN"
+          QT_QPA_PLATFORM=offscreen "$BIN" --smoke-test=smoke.txt || { cat smoke.txt; exit 1; }
+          cat smoke.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.APP_NAME }}-macos-intel
+          path: ${{ env.APP_NAME }}-macos-intel.dmg
+
+  release:
+    needs: [build-macos-arm, build-macos-intel]
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-files
+      - name: Create Release
+        uses: softprops/action-gh-release@v3
+        with:
+          files: release-files/**/*
+          draft: true # comment this out if u want the release to be auto-published

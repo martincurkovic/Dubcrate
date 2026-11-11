@@ -1,7 +1,6 @@
 """The main window: the library's file tree on the left; in the middle the tracks of what
 you picked, or the disc you opened; your discs (burn playlists, in folders) on the right."""
 
-from importlib import metadata
 from pathlib import Path
 
 from PySide6.QtCore import QEvent, QModelIndex, Qt, QTimer
@@ -39,6 +38,7 @@ from dubcrate.library.rekordbox import (
 from dubcrate.library.store import LibraryError
 
 from . import theme, wave_style
+from .about_dialog import AboutDialog, NoticesDialog
 from .burn_dialog import BurnDialog, BurnerFactory
 from .disc_tree import SLOT_WIDTH, DiscTree
 from .disc_view import DiscView
@@ -65,9 +65,15 @@ from .track_table import (
     transport_action,
     transport_key_is_taken,
 )
+from .update_check import UpdateChecker
+from .update_check import due as update_check_due
+from .version import icon_path
 
 SEARCH_DELAY_MS = 200
 PREVIEW_DELAY_MS = 40
+UPDATE_CHECK_DELAY_MS = (
+    2000  # the start-up update check waits until the window has settled
+)
 PREVIEW_ROWS_AROUND = 8  # also read this many rows above and below what is visible
 MAX_NOTE_LINES = 12
 
@@ -87,12 +93,15 @@ class MainWindow(QMainWindow):
         persist: bool = False,
         player: AudioPlayer | None = None,
         burner_factory: BurnerFactory | None = None,
+        update_check: bool = False,
     ):
         super().__init__()
         self._lib = lib
         self._burner_factory = burner_factory
         self.burn_dialog: BurnDialog | None = None
         self._help_dialog = None
+        # one update check at a time: the Help menu's, About's and the start-up one
+        self.updates = UpdateChecker(self)
         self._player = player
         self._persist = persist
         # the library item the middle's track list shows (a disc has its own view)
@@ -129,6 +138,12 @@ class MainWindow(QMainWindow):
         self.refresh_sources()
         self.refresh_discs()
         self._sync_disc_markers()
+        if (
+            update_check and update_check_due()
+        ):  # (the app turns it on; tests never touch the network)
+            QTimer.singleShot(
+                UPDATE_CHECK_DELAY_MS, lambda: self.updates.start(manual=False)
+            )
         if persist:
             geometry = settings.get_bytes("window/geometry")
             if geometry:
@@ -438,6 +453,15 @@ class MainWindow(QMainWindow):
         help_menu.addSeparator()
         about = help_menu.addAction("&About Dubcrate", self.show_about)
         about.setMenuRole(QAction.MenuRole.AboutRole)
+        self.act_notices = help_menu.addAction(
+            "Third-Party &Notices…", self.show_notices
+        )
+        self.act_updates = help_menu.addAction(
+            "Check for &Updates…", lambda: self.updates.start(manual=True)
+        )
+        self.act_updates.setToolTip(
+            "Asks GitHub whether a newer Dubcrate has been released. Nothing is downloaded or installed."
+        )
 
     # -- theme / about ----------------------------------------------------
 
@@ -471,17 +495,10 @@ class MainWindow(QMainWindow):
         show_help_dialog(self)
 
     def show_about(self) -> None:
-        try:
-            version = metadata.version("dubcrate")
-        except metadata.PackageNotFoundError:
-            version = "development"
-        QMessageBox.about(
-            self,
-            "About Dubcrate",
-            f"<b>Dubcrate</b> {version}<br>Burn audio CDs for old-style CDJs from your DJ library.<br><br>"
-            "The Macintosh System 6 theme uses the ChiKareGo2 font by Giles Booth "
-            "(a recreation of Chicago 12), licensed CC BY. Not affiliated with Apple.",
-        )
+        AboutDialog(self, self.updates, icon_path()).exec()
+
+    def show_notices(self) -> None:
+        NoticesDialog(self).exec()
 
     # -- status / busy ----------------------------------------------------
 
@@ -1184,6 +1201,7 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, event) -> None:
         QApplication.instance().removeEventFilter(self)
+        self.updates.close()
         self._search_timer.stop()
         self._preview_timer.stop()
         self.preview.shutdown()

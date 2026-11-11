@@ -121,6 +121,16 @@ def _restyle_code_runs(document) -> None:
             cursor.mergeCharFormat(fmt)
 
 
+def style_markdown(document) -> None:
+    """What a theme needs done to a Markdown document once it is loaded: links in its colour
+    (Qt draws them dark blue), and in a theme with a font of its own, inline code in that font.
+    The guide, the third-party notices and the release notes all go through this."""
+    palette = theme.current_palette()
+    link = palette.get("link")  # only a theme that sets one underlines its links
+    _recolor_links(document, QColor(link or palette["accent"]), underline=bool(link))
+    _restyle_code_runs(document)
+
+
 class HelpDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -169,12 +179,7 @@ class HelpDialog(QDialog):
             return
         self.viewer.setMarkdown(text)
         document = self.viewer.document()
-        palette = theme.current_palette()
-        link = palette.get("link")  # only a theme that sets one underlines its links
-        _recolor_links(
-            document, QColor(link or palette["accent"]), underline=bool(link)
-        )
-        _restyle_code_runs(document)
+        style_markdown(document)
         self._style_blockquotes()
         self._fit_images(self._target_width())
         self._add_heading_anchors()

@@ -1,9 +1,8 @@
 """Application entry point: `dubcrate-gui` or `python -m dubcrate.ui`."""
 
 import argparse
+import os
 import sys
-from importlib import metadata
-from pathlib import Path
 
 from PySide6.QtGui import QIcon, QPixmap
 from PySide6.QtWidgets import QApplication
@@ -14,19 +13,18 @@ from . import theme
 from .main_window import MainWindow
 from .splash import StartupSplash
 from .startup import maybe_refresh
+from .version import app_version, icon_path
+
+# Where Homebrew puts ffmpeg (Apple Silicon, Intel). An app started from Finder or the Dock is
+# given only /usr/bin:/bin:/usr/sbin:/sbin, so without these it can't find the tools it runs.
+TOOL_DIRS = ("/opt/homebrew/bin", "/usr/local/bin")
 
 
-def _icon_path() -> Path | None:
-    """The app icon, from a checkout's assets/icon (a built app bundles its own)."""
-    candidate = Path(__file__).resolve().parents[3] / "assets" / "icon" / "AppIcon.png"
-    return candidate if candidate.is_file() else None
-
-
-def _version() -> str:
-    try:
-        return metadata.version("dubcrate")
-    except metadata.PackageNotFoundError:
-        return "development"
+def extend_tool_path(path: str) -> str:
+    """`path` with the usual tool folders added at the end: the user's own order still wins."""
+    folders = [folder for folder in path.split(os.pathsep) if folder]
+    folders += [folder for folder in TOOL_DIRS if folder not in folders]
+    return os.pathsep.join(folders)
 
 
 def _is_bundled() -> bool:
@@ -46,18 +44,28 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="don't bring the rekordbox library up to date on startup",
     )
-    args, qt_args = parser.parse_known_args(sys.argv[1:] if argv is None else argv)
+    argv = sys.argv[1:] if argv is None else argv
+    if sys.platform == "darwin":
+        os.environ["PATH"] = extend_tool_path(os.environ.get("PATH", ""))
+    smoke = next(
+        (a for a in argv if a == "--smoke-test" or a.startswith("--smoke-test=")), None
+    )
+    if smoke is not None:  # before anything touches your settings, library or a drive
+        from . import smoke_test
+
+        return smoke_test.run(smoke.partition("=")[2] or None)
+    args, qt_args = parser.parse_known_args(argv)
 
     app = QApplication([sys.argv[0], *qt_args])
     app.setOrganizationName("Dubcrate")
     app.setApplicationName("Dubcrate")
-    icon = _icon_path()
+    icon = icon_path()
     if icon:
         app.setWindowIcon(QIcon(str(icon)))
     # The splash goes up first, before the (slower) theme and window: it has its own look and
     # says what is going on while the library opens and the rekordbox library is updated.
     splash = StartupSplash(
-        _version(),
+        app_version(),
         QPixmap(str(icon)) if icon else None,
         activating=not _is_bundled(),  # from source it brings itself forward, as a splash won't
     )
@@ -68,7 +76,7 @@ def main(argv: list[str] | None = None) -> int:
     with Library.open(args.library) as lib:
         imported = maybe_refresh(lib, splash.set_status, skip=args.no_import)
         splash.set_status("Loading Dubcrate…")
-        window = MainWindow(lib, persist=True)
+        window = MainWindow(lib, persist=True, update_check=True)
         window.show()
         splash.finish()
         if imported is not None and imported.message():

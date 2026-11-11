@@ -1,5 +1,14 @@
 # Dubcrate
 
+[![Build](https://github.com/martincurkovic/Dubcrate/actions/workflows/build.yml/badge.svg)](https://github.com/martincurkovic/Dubcrate/actions/workflows/build.yml)
+[![Tests](https://github.com/martincurkovic/Dubcrate/actions/workflows/test.yml/badge.svg)](https://github.com/martincurkovic/Dubcrate/actions/workflows/test.yml)
+[![Downloads](https://img.shields.io/github/downloads/martincurkovic/Dubcrate/total?label=downloads)](https://github.com/martincurkovic/Dubcrate/releases)
+[![Python 3.13+](https://img.shields.io/badge/python-3.13%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
+[![Qt 6.12 LTS](https://img.shields.io/badge/Qt-6.12%20LTS-41CD52?logo=qt&logoColor=white)](https://doc.qt.io/qtforpython-6/)
+[![uv](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/uv/main/assets/badge/v0.json)](https://github.com/astral-sh/uv)
+[![Platform: macOS](https://img.shields.io/badge/platform-macOS-lightgrey)](#what-you-need)
+[![License: GPL-3.0-or-later](https://img.shields.io/badge/license-GPL--3.0--or--later-blue)](LICENSE)
+
 **Burn audio CDs for old-style CDJs from your DJ library.**
 
 Older players like the CDJ-1000MK3 play audio CDs but can't read a rekordbox USB
@@ -11,8 +20,10 @@ whose track titles show on the player's display.
 > and plan discs in the app. The app's Burn window is new and has not been tried on a
 > real drive yet; burning from a command line is the route that has been proven (see
 > [dev_docs/burning.md](dev_docs/burning.md)).
-> Pre-built downloads will appear here once there is a release; until then,
-> [CONTRIBUTING.md](CONTRIBUTING.md) explains how to run it from source.
+> Pre-built downloads (a macOS `.dmg`) will appear on the
+> [Releases page](https://github.com/martincurkovic/Dubcrate/releases) once there is a
+> release; until then, [CONTRIBUTING.md](CONTRIBUTING.md) explains how to run it from
+> source and [BUILDING.md](BUILDING.md) how to build the app yourself.
 
 ## What it does
 
@@ -43,6 +54,24 @@ whose track titles show on the player's display.
 - Music as **MP3, WAV, FLAC, AIFF, AAC/M4A, Ogg, Opus or WMA**.
 - A **rekordbox 7** library if you want to import one. Version 7 is what Dubcrate
   has been tried with; 6 uses the same format and may work, but is untested.
+
+## Download & installation
+
+Download the latest `.dmg` from the [Releases page](https://github.com/martincurkovic/Dubcrate/releases)
+(`Dubcrate-macos-arm.dmg` for Apple Silicon, `Dubcrate-macos-intel.dmg` for Intel Macs),
+open it and drag Dubcrate to your Applications folder. It needs macOS 14 or later, and
+`ffmpeg` (see above). Dubcrate checks GitHub for a newer version when it starts, at most
+once a day (switch that off in *Settings ▸ Library*; *Help ▸ Check for Updates…* checks on
+request). That is the only time it uses the network.
+
+The app is not signed, because a signing certificate is hard to justify for a free
+single-person project, so macOS will warn about it the first time. To open it anyway:
+
+1. Try to open Dubcrate normally.
+2. Open System Settings ▸ Privacy & Security and scroll down.
+3. Click **Open Anyway**, and confirm with your password or Touch ID.
+
+If you would rather not trust a download, [BUILDING.md](BUILDING.md) builds it from source.
 
 ## Using Dubcrate
 
@@ -121,7 +150,8 @@ for (80 minutes) and the gap between tracks (gapless), and the burn speed (10x).
 - **A preview crackles.** Raise the buffer size in Settings (try 2048 frames).
 - **No sound, or the wrong output.** Choose the output device in Settings and press
   *Play Test Tone*.
-- **"ffmpeg not found."** Install it (`brew install ffmpeg`) and restart Dubcrate.
+- **"ffmpeg not found."** Install it (`brew install ffmpeg`) and restart Dubcrate. The
+  downloadable app finds Homebrew's copy in `/opt/homebrew/bin` and `/usr/local/bin`.
 - **Dubcrate can't find my rekordbox library.** Choose *Choose File…* when importing
   and pick `master.db`, normally in `~/Library/Pioneer/rekordbox/`.
 - **A track is greyed out, or its row says the file is missing.** The file has moved
@@ -138,6 +168,8 @@ and Windows and Linux support.
 
 Dubcrate is free software, released under the
 [GNU General Public License, version 3 or (at your option) any later version](LICENSE).
+The licences of what it includes are listed under *Help ▸ Third-Party Notices…*
+([the same text](src/dubcrate/ui/help/THIRD_PARTY_NOTICES.md)).
 
 The Macintosh System 6 theme uses the ChiKareGo2 font by Giles Booth (a recreation
 of Chicago 12), licensed [CC BY](src/dubcrate/ui/fonts/README.txt). Dubcrate is not

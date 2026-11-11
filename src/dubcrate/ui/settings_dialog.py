@@ -260,6 +260,20 @@ class SettingsDialog(QDialog):
         hint.setWordWrap(True)
         hint.setObjectName("mutedLabel")
         form.addRow(hint)
+        self.auto_update_check = QCheckBox(
+            "Check for a new version when Dubcrate starts"
+        )
+        self.auto_update_check.setChecked(settings.get_auto_update_check())
+        self.auto_update_check.toggled.connect(settings.set_auto_update_check)
+        form.addRow(self.auto_update_check)
+        update_hint = QLabel(
+            "Asks github.com whether a newer release exists, at most once a day. That is the only"
+            " time Dubcrate uses the network, and nothing is downloaded or installed."
+            " You can always check from Help > Check for Updates."
+        )
+        update_hint.setWordWrap(True)
+        update_hint.setObjectName("mutedLabel")
+        form.addRow(update_hint)
         return page
 
     # -- appearance -------------------------------------------------------

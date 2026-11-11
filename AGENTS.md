@@ -45,8 +45,11 @@ the repo; follow whatever it reports.
   - `disc_tree.py` (`DiscTree`: the right-hand tree, with rekordbox's + on the picked row in its own last column; it only emits `new_disc_requested`, the window creates the disc). Discs and folders are named in place, never in a dialog: a new one is created with a free default name and `MainWindow.edit_in_tree` opens its editor; `DiscTreeModel.setData` only emits `renamed`, and the window applies it on a deferred call (rebuilding the tree inside the editor's own commit crashes Qt).
   - `main_window.py` (three panes: the library tree on the left; in the middle a `QStackedWidget` of the track list and the open disc; the disc tree, with folders, on the right), `disc_view.py` (the open disc, and all disc/folder management; the open disc is also the *target* that tracks are added to), `capacity_bar.py` (adapted from akaiutil-GUI's usage bar), `models.py` (track/disc/library-tree and disc-tree models; `DiscTreeModel` does the drag and drop), `tasks.py` (`run_async`).
   - `src/dubcrate/settings.py`: QSettings (theme, window layout, last disc, default disc size and gap).
+- `src/dubcrate/updates.py`: the update check (GitHub Releases, no Qt, `urlopen` injectable). `ui/update_check.py` (`UpdateChecker`: runs it on a worker and applies the policy: you asked = say everything, start-up = only news, once a day, skipped versions stay quiet), `ui/update_dialog.py`, `ui/about_dialog.py` (About, and the third-party notices from `ui/help/THIRD_PARTY_NOTICES.md`), `ui/version.py` (the version and the icon: a built app reads `dubcrate/_build_version.py`, which the build script writes from the git tag and does not track).
+- `src/main.py`, `src/dubcrate/ui/smoke_test.py`: the entry that `pyside6-deploy` compiles, and `dubcrate-gui --smoke-test=FILE`, which CI runs against every built app (it never touches your settings, library, rekordbox or a drive).
+- `scripts/` (`build_macos.sh`, `make_icons.sh`, `dmg_settings.py`), `assets/dmg/`, `.github/workflows/` (`test.yml`: lint and tests on every push; `build.yml`: on a `v*.*.*` tag, tests, then the Apple Silicon and Intel builds, then a draft release), `BUILDING.md`: packaging, modelled on AKAISDS and JV Studio. `tests/test_build_files.py` checks that the script, the DMG layout and the workflows agree.
 - `spikes/`: throwaway hardware drivers. Reusable logic belongs in the package.
-- `tests/`: pytest. Tests must not need a drive or a disc.
+- `tests/`: pytest. Tests must not need a drive, a disc or the network (`conftest.py` blocks all three).
 - `assets/icon/`: `AppIcon.png` is the 1024x1024 master; `AppIcon.txt` holds the
   icon.kitchen link it came from. Platform icons (.icns, .ico) get derived from
   the master at build time.
@@ -99,7 +102,16 @@ the repo; follow whatever it reports.
 - GUI will be PySide6 and packaged with Nuitka. Avoid dependencies that make
   Nuitka bundling hard (SQLCipher bindings are the known risk).
 - Bundled binaries (ffmpeg, cdrdao) are run as subprocesses, never linked. An
-  eventual bundled ffmpeg must be an LGPL build.
+  eventual bundled ffmpeg must be an LGPL build. The built app does not bundle them yet:
+  it finds Homebrew's (`extend_tool_path` in `ui/app.py`, because Finder gives an app a
+  minimal `PATH`).
+- **The only network use is the update check** (`updates.py`, once a day at start-up
+  unless switched off in Settings, or when asked). Keep it that way, and keep what it
+  sends to a request for GitHub's release list.
+- **Add an entry to `ui/help/THIRD_PARTY_NOTICES.md` when a dependency or third-party
+  code, data or art is added** (`tests/test_notices.py` fails if a runtime package is
+  missing). Run `scripts/build_macos.sh` and its smoke test after adding a dependency:
+  a module Nuitka can't see only shows up in the built app.
 
 ## Hardware notes
 

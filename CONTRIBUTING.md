@@ -13,7 +13,7 @@ The optional `cdrdao` burn backend needs `brew install cdrdao`.
 uv sync                                    # install everything
 uv run dubcrate-gui                        # run the app
 uv run dubcrate-gui --library ~/try.db     # ...with a separate library, to try things safely
-uv run pytest                              # tests (no sound card, drive or disc needed)
+uv run pytest                              # tests (no sound card, drive, disc or network needed)
 uv run ruff check . && uv run ruff format .
 ```
 
@@ -24,7 +24,7 @@ uv run ruff check . && uv run ruff format .
 | Concern | Choice |
 | --- | --- |
 | GUI | PySide6 (Qt 6), themed like the author's other apps (System / Light / Dark / Macintosh System 6) |
-| Packaging | Nuitka (not set up yet) |
+| Packaging | Nuitka (via `pyside6-deploy`) and dmgbuild: [BUILDING.md](BUILDING.md) |
 | Burning (macOS) | Apple DiscRecording through PyObjC; `cdrdao` as the alternative backend |
 | Burning (later) | `cdrdao` on Linux; Windows to be decided; all behind one `Burner` interface |
 | Rekordbox | `pyrekordbox`, reading a temporary copy of `master.db` and the analysis files |

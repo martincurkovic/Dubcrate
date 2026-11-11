@@ -96,6 +96,15 @@
 
 ## Unverified
 
+- The built app (`scripts/build_macos.sh`). Checked on the owner's Apple Silicon Mac: it builds in about
+  two minutes with a warm cache, its `--smoke-test` passes (styles, font, guide, notices, DiscRecording and
+  SQLCipher load, window builds) even with Finder's minimal `PATH`, the signature verifies and the DMG holds
+  the app, the Applications shortcut, the background and the layout. NOT checked: opening it from Finder by
+  hand, the DMG window's look on a real display, the Intel build, the GitHub workflows (never run; the
+  repository is private), and whether DiscRecording can reach the drive from the bundled app (a hardware
+  check). The first smoke run caught a real fault (`_cffi_backend` missing); a new dependency can do the same.
+- The update check against real GitHub: `updates.py` is tested against a fake. While the repository is private
+  GitHub answers 404, so *Check for Updates* reports a failure and the start-up check stays silent.
 - The splash on a real display and from a built app: a true splash window doesn't take focus on macOS, so
   from source it is an ordinary frameless window (`activating`) and in a built app a real splash. Its own
   `background: transparent` stylesheet (so the theme's can't fill its corners) is a precaution: offscreen
@@ -136,16 +145,24 @@
 
 - [ ] Put the ruff settings in `pyproject.toml`. They currently come from a config
       outside the repository, so a contributor would get different results.
-- [ ] Packaging: Nuitka build scripts and a macOS DMG like the sibling apps, code
-      signing and notarisation, and an `Info.plist` that works for the drive access.
-- [ ] Decide how ffmpeg is supplied: bundle a build (and satisfy its license, with a
-      source offer if it is a GPL build) or keep requiring a Homebrew install.
-- [ ] Continuous integration that runs the tests on macOS.
+- [x] Packaging: Nuitka build script and a macOS DMG like the sibling apps
+      (`scripts/build_macos.sh`, [BUILDING.md](../BUILDING.md)). Still open: code signing
+      and notarisation, and whether the built app can use the drive (a hardware check).
+- [ ] Decide how ffmpeg is supplied. Recommended: bundle a minimal decode-only LGPL build
+      of ffmpeg and ffprobe per architecture (a few MB each, built in CI without
+      `--enable-gpl`, shipped with its licence and build configuration), looked up before
+      `PATH`. Homebrew's is GPL and can't be copied in. `cdrdao` is not needed on macOS.
+      For now the app finds Homebrew's.
+- [x] Continuous integration: `.github/workflows/test.yml` (lint and tests on macOS, every
+      push) and `build.yml` (tag: tests, builds, smoke tests, draft release). Unproven
+      until the first run on GitHub (the repository is private).
 - [ ] README: screenshots, real download and install steps, and a re-check that every
       claim in it is something that has been tried.
 - [ ] Re-read the README's trademark wording and the "not affiliated" notice.
-- [ ] A third-party notices file for the bundled font and the dependencies
-      (all are GPL-3 compatible: MIT, BSD, zlib, MPL-2.0, PySide6's LGPL).
+- [x] A third-party notices file, shown from About and the Help menu
+      (`ui/help/THIRD_PARTY_NOTICES.md`). Worth a careful read by the owner before release:
+      it names each licence and project but does not reproduce the full licence texts.
 - [ ] Look through the git history for anything personal that shouldn't be public.
-- [ ] A version number and changelog, and the version shown in *About*.
+- [ ] A changelog. (The version, from the git tag, is shown in *About* and on the splash,
+      and the update check reads GitHub's release notes.)
 - [ ] Decide whether `AGENTS.md` and `CLAUDE.md` stay in the public repo.

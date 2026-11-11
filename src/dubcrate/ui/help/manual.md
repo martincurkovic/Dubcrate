@@ -18,6 +18,7 @@ Dubcrate helps you put music from your rekordbox library (or any folder) onto au
 - [Checking tracks you already used](#checking-tracks-you-already-used)
 - [Burning a disc](#burning-a-disc)
 - [Settings](#settings)
+- [Updates, and what Dubcrate sends](#updates-and-what-dubcrate-sends)
 - [Keyboard shortcuts](#keyboard-shortcuts)
 - [Troubleshooting](#troubleshooting)
 - [Good to know](#good-to-know)
@@ -45,7 +46,7 @@ You need **ffmpeg** installed: Dubcrate uses it to read tracks and to prepare th
 
 **View > Theme** switches between System, Light, Dark and Macintosh System 6 (black and white, with a bitmap-style font).
 
-**Help > User Guide** opens this guide in its own window, which can stay open beside the app. Press **⌘F** in it to search the page, and click the links in the contents to jump to a section.
+**Help > User Guide** opens this guide in its own window, which can stay open beside the app. Press **⌘F** in it to search the page, and click the links in the contents to jump to a section. **Help > Check for Updates…** looks for a newer version ([Updates](#updates-and-what-dubcrate-sends)), **Help > Third-Party Notices…** lists the licences of what Dubcrate includes, and **Help > About Dubcrate** shows the version.
 
 ---
 
@@ -260,8 +261,18 @@ The full list of command-line options is in the project's developer notes.
 - **Discs:** how **new** discs are planned: **Plan new discs for** 80 or 74 minutes, and **Between tracks**, which is **Gapless** unless you choose 1, 2 or 3 seconds of silence.
 - **Burning:** the **Burn speed** a burn starts with (10x unless you change it). Old players read discs burned slowly more reliably, and 10x to 16x is a good range. Your drive may not offer every speed. You can still pick another speed for a single burn in the burn window.
 - **Audio:** the **Output device** for previews and the **Buffer size**, with a button that plays a short test tone, and the **Beat jump** distance for the arrow keys.
-- **Library:** whether Dubcrate updates your rekordbox library each time it starts (on by default).
+- **Library:** whether Dubcrate updates your rekordbox library each time it starts (on by default), and whether it checks for a newer version of Dubcrate when it starts (also on by default; see [Updates](#updates-and-what-dubcrate-sends)).
 - **Appearance:** the **Theme** (the same choice as **View > Theme**), the **Waveform style** (the same as **View > Waveform**), and the **Waveform background**.
+
+---
+
+## Updates, and what Dubcrate sends
+
+Dubcrate checks for a newer version when it starts, at most once a day, and tells you only if there is one: a notice with the release notes and a **View Release…** button that opens the download page. **Skip This Version** silences the notice for that version, and **Remind Me Later** leaves it for tomorrow. Nothing is downloaded or installed by Dubcrate itself; you download the new `.dmg` yourself.
+
+**Help > Check for Updates…** (or the button in **About**) checks straight away and tells you the result, even "you're up to date". Turn off the check at startup under **File > Settings… > Library > Check for a new version when Dubcrate starts**.
+
+This is the only time Dubcrate uses the network. It asks `github.com` for the list of Dubcrate's published releases; it sends nothing about you or your music, only the name and version of the app, as any request must. The version in **Help > About Dubcrate** is the one that is compared, so a build you made yourself that says `development` or `0.0.0-dev` never checks.
 
 ---
 

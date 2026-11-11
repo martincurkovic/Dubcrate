@@ -20,3 +20,13 @@ build/
 work/
 *.wav
 *.toc
+
+# standalone app build (pyside6-deploy / Nuitka), written by scripts/build_macos.sh: the version from the git tag, the
+# generated deploy spec, the app icon made from the master, and the outputs
+src/dubcrate/_build_version.py
+*.spec
+assets/icon/*.icns
+nuitka-crash-report.xml
+*.app/
+*.dmg
+deployment/

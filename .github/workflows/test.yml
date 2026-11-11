@@ -1,0 +1,36 @@
+name: Test
+
+on:
+  push: # every push, to any branch
+  workflow_dispatch: # run the suite by hand from the Actions tab
+  workflow_call: # build.yml runs this as its release gate
+
+concurrency:
+  group: test-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    # macOS, because that is the one platform Dubcrate supports (it burns through Apple's DiscRecording framework)
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version-file: ".python-version"
+      - uses: astral-sh/setup-uv@v6
+      - name: Install ffmpeg
+        # reading, probing and converting tracks run ffmpeg and ffprobe
+        run: brew install ffmpeg
+      - name: Sync environment
+        # the tests don't need the packaging tools (Nuitka, dmgbuild), so skip that dependency group
+        run: uv sync --no-group build
+      - name: Lint
+        run: |
+          uv run ruff check .
+          uv run ruff format --check .
+      - name: Run tests
+        # -v names every test; faulthandler_timeout dumps all thread stacks if one test runs over 90 s (a hang shows where it is stuck).
+        # The tests run on Qt's offscreen platform and never touch a drive, an audio device or the network.
+        run: uv run pytest tests/ -v -ra -o faulthandler_timeout=90

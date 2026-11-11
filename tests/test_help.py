@@ -139,6 +139,8 @@ def test_the_settings_tabs_the_guide_names_exist(qapp):
     tabs = dialog.findChild(QTabWidget)
     names = [tabs.tabText(i) for i in range(tabs.count())]
     assert names == ["Audio", "Discs", "Burning", "Library", "Appearance"]
+    assert "Check for a new version when Dubcrate starts" in dialog.auto_update_check.text()  # fmt: skip
+    assert "Check for a new version when Dubcrate starts" in MANUAL
     for name in names:
         assert f"**{name}:**" in MANUAL, name
     assert "Plan new discs for" in MANUAL and "Between tracks" in MANUAL
@@ -221,3 +223,23 @@ def test_the_startup_update_the_guide_describes_is_real(qapp):
         .auto_import_check.text()
         .startswith("Update my rekordbox library")
     )
+
+
+def test_the_help_menu_items_the_guide_names_exist(qapp):
+    from dubcrate.library import Library
+    from dubcrate.ui.main_window import MainWindow
+
+    with Library.open(":memory:") as lib:
+        window = MainWindow(lib)
+        names = {a.text().replace("&", "") for a in window.menuBar().findChildren(QMenu)[-1].actions()}  # fmt: skip
+        window.close()
+    for item in (
+        "User Guide",
+        "About Dubcrate",
+        "Third-Party Notices…",
+        "Check for Updates…",
+    ):
+        assert item in names, item
+        assert f"**Help > {item}**" in MANUAL or item == "User Guide" or item == "About Dubcrate", item  # fmt: skip
+    for phrase in ("## Updates, and what Dubcrate sends", "Skip This Version", "Remind Me Later", "View Release…"):  # fmt: skip
+        assert phrase in MANUAL, phrase
