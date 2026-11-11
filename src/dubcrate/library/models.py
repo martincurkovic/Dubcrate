@@ -34,6 +34,13 @@ class TrackRecord:
     rating: int | None = None
     file_size: int | None = None
     analysis_path: str | None = None  # rekordbox ANLZ file, for waveforms/cues later
+    # More of what rekordbox knows (empty for a folder, which has none of it):
+    label: str = ""
+    remixer: str = ""
+    composer: str = ""
+    my_tags: str = ""  # rekordbox "My Tag" names, joined with ", "
+    play_count: int | None = None  # None when never played
+    date_added: str = ""  # when it was added to rekordbox, "YYYY-MM-DD"
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -127,8 +134,33 @@ class DiscSummary:
 
 @dataclass(frozen=True)
 class DiscEntry:
+    """One place on a disc: a library track, and what is written on the CD for it.
+
+    The artist and title burned into the CD-TEXT can be edited for this disc alone: the
+    overrides live with the disc, and the library track (so rekordbox and the file) is
+    never touched. None means "use the track's own".
+    """
+
     position: int  # 0-based
     track: Track
+    title_override: str | None = None
+    artist_override: str | None = None
+
+    @property
+    def title(self) -> str:
+        """The track name for the CD."""
+        return self.track.title if self.title_override is None else self.title_override
+
+    @property
+    def artist(self) -> str:
+        """The artist for the CD."""
+        return (
+            self.track.artist if self.artist_override is None else self.artist_override
+        )
+
+    @property
+    def edited(self) -> bool:
+        return self.title_override is not None or self.artist_override is not None
 
     @property
     def sectors(self) -> int:

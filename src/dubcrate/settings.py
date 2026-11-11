@@ -173,7 +173,30 @@ def set_volume(volume: float) -> None:
     _qs().setValue("audio/volume", float(volume))
 
 
+def get_visible_columns() -> list[str] | None:
+    """The track table's visible columns, by title; None if they were never chosen
+    (the default columns then show)."""
+    import json
+
+    raw = _qs().value("tracks/visible_columns", None)
+    if raw is None:
+        return None
+    try:
+        names = json.loads(str(raw))
+    except ValueError:
+        return None
+    return [n for n in names if isinstance(n, str)] if isinstance(names, list) else None
+
+
+def set_visible_columns(names: list[str]) -> None:
+    import json
+
+    _qs().setValue("tracks/visible_columns", json.dumps(names))
+
+
 def get_hidden_columns() -> list[str]:
+    """The columns hidden in a layout saved before there were optional columns (that
+    version recorded what was hidden, not what was shown). Only read, to carry it over."""
     import json
 
     try:
@@ -198,9 +221,3 @@ def set_column_order(names: list[str]) -> None:
     import json
 
     _qs().setValue("tracks/column_order", json.dumps(names))
-
-
-def set_hidden_columns(names: list[str]) -> None:
-    import json
-
-    _qs().setValue("tracks/hidden_columns", json.dumps(sorted(names)))

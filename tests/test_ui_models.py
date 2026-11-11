@@ -49,9 +49,12 @@ def test_track_table_shows_the_fields_a_dj_picks_by(qapp):
     model = TrackTableModel()
     model.set_tracks(lib.tracks(sort="title"))
     assert model.rowCount() == 4
-    assert [model.headerData(i, Qt.Orientation.Horizontal) for i in range(model.columnCount())] == [
-        "", "Title", "Artist", "BPM", "Key", "Time", "Preview", "Genre",
-    ]  # fmt: skip
+    shown = [
+        model.headerData(i, Qt.Orientation.Horizontal)
+        for i, c in enumerate(TRACK_COLUMNS)
+        if c.shown
+    ]
+    assert shown == ["", "Title", "Artist", "BPM", "Key", "Time", "Preview", "Genre"]
     assert cell(model, 1, "Title") == "Title 1"
     assert cell(model, 1, "BPM") == "121.0"
     assert cell(model, 1, "Time") == "2:01"
@@ -356,3 +359,227 @@ def test_the_playlist_icon_exists_in_every_theme(qapp):
         playlist = model.invisibleRootItem().child(1).child(0).child(0)
         assert not playlist.icon().isNull(), preference
         lib.close()
+
+
+# -- the extra columns ---------------------------------------------------------
+
+
+def extras_track(**kw):
+    from dubcrate.library.models import Track
+
+    base = {
+        "id": 1,
+        "source_id": 1,
+        "ext_id": "x",
+        "path": "/music/Some Song.flac",
+        "title": "T",
+    }
+    return Track(**{**base, **kw})
+
+
+def extras_cell(track, title):
+    model = TrackTableModel()
+    model.set_tracks([track])
+    return cell(model, 0, title)
+
+
+def test_only_the_essential_columns_are_shown_by_default():
+    essential = [c.title for c in TRACK_COLUMNS if c.shown]
+    assert essential == [
+        "",
+        "Title",
+        "Artist",
+        "BPM",
+        "Key",
+        "Time",
+        "Preview",
+        "Genre",
+    ]
+    extras = [c.title for c in TRACK_COLUMNS if not c.shown]
+    assert extras == [
+        "Album", "Year", "Rating", "My Tags", "Label", "Remixer", "Composer", "Comment",
+        "Plays", "Date Added", "Bitrate", "Sample Rate", "Format", "Path",
+    ]  # fmt: skip
+
+
+def test_the_extra_columns_are_after_the_old_ones_so_saved_layouts_still_fit():
+    assert [c.title for c in TRACK_COLUMNS][:8] == [
+        "", "Title", "Artist", "BPM", "Key", "Time", "Preview", "Genre",
+    ]  # fmt: skip
+
+
+def test_the_extra_columns_show_what_rekordbox_knows(qapp):
+    t = extras_track(
+        album="An Album", year=2024, rating=4, my_tags="Pop Remix, Extended Pop", label="PMEDIA",
+        remixer="Some Remixer", composer="KETTAMA", comment="MAKE EDIT", play_count=7,
+        date_added="2025-10-04", bitrate=320, sample_rate=44100,
+    )  # fmt: skip
+    assert extras_cell(t, "Album") == "An Album"
+    assert extras_cell(t, "Year") == "2024"
+    assert extras_cell(t, "Rating") == "★★★★☆"
+    assert extras_cell(t, "My Tags") == "Pop Remix, Extended Pop"
+    assert (
+        extras_cell(t, "Label") == "PMEDIA"
+        and extras_cell(t, "Remixer") == "Some Remixer"
+    )
+    assert (
+        extras_cell(t, "Composer") == "KETTAMA"
+        and extras_cell(t, "Comment") == "MAKE EDIT"
+    )
+    assert (
+        extras_cell(t, "Plays") == "7" and extras_cell(t, "Date Added") == "2025-10-04"
+    )
+    assert extras_cell(t, "Bitrate") == "320"
+    assert extras_cell(t, "Sample Rate") == "44.1 kHz"
+    assert extras_cell(t, "Format") == "FLAC"
+    assert extras_cell(t, "Path") == "/music/Some Song.flac"
+
+
+def test_empty_extra_fields_are_blank_not_zero_or_none(qapp):
+    t = extras_track()
+    for title in ("Album", "Year", "Rating", "My Tags", "Label", "Remixer", "Composer",
+                  "Comment", "Plays", "Date Added", "Bitrate", "Sample Rate"):  # fmt: skip
+        assert extras_cell(t, title) == "", title
+    assert (
+        extras_cell(extras_track(rating=0), "Rating") == ""
+    )  # unrated, not five empty stars
+
+
+def test_every_star_rating_shows_that_many_filled_stars(qapp):
+    assert [extras_cell(extras_track(rating=n), "Rating") for n in (1, 2, 3, 4, 5)] == [
+        "★☆☆☆☆", "★★☆☆☆", "★★★☆☆", "★★★★☆", "★★★★★",
+    ]  # fmt: skip
+
+
+def test_numbers_and_dates_are_aligned_like_numbers(qapp):
+    model = TrackTableModel()
+    model.set_tracks([extras_track(year=2020, play_count=2, bitrate=256)])
+    for title in ("Year", "Plays", "Bitrate", "Sample Rate"):
+        assert (
+            cell(model, 0, title, Qt.ItemDataRole.TextAlignmentRole)
+            & Qt.AlignmentFlag.AlignRight
+        )
+
+
+def test_format_comes_from_the_file_name_in_capitals(qapp):
+    assert extras_cell(extras_track(path="/a/b/Track.mp3"), "Format") == "MP3"
+    assert extras_cell(extras_track(path="/a/b/Track.AIF"), "Format") == "AIF"
+    assert extras_cell(extras_track(path="/a/b/noextension"), "Format") == ""
+
+
+def test_every_column_has_a_sensible_width_and_unique_title():
+    titles = [c.title for c in TRACK_COLUMNS]
+    assert len(set(titles)) == len(titles)
+    assert all(c.width > 0 for c in TRACK_COLUMNS)
+
+
+# -- the disc list: what goes on the CD ---------------------------------------
+
+
+def edited_disc_model(lib):
+    disc_id = lib.create_disc("D")
+    lib.add_to_disc(disc_id, [t.id for t in lib.tracks(sort="title")][:3])
+    lib.set_entry_text(disc_id, 1, "title", "Edited Name")
+    model = DiscModel()
+    model.set_entries(lib.disc_entries(disc_id))
+    return model, disc_id
+
+
+def test_the_disc_list_has_only_what_the_cd_holds(qapp):
+    from dubcrate.ui.models import DISC_COLUMNS
+
+    lib = make_lib()
+    model = disc_model(lib)
+    assert DISC_COLUMNS == ("#", "Time", "Artist", "Title")
+    assert model.columnCount() == 4
+    assert [model.headerData(i, Qt.Orientation.Horizontal) for i in range(4)] == list(
+        DISC_COLUMNS
+    )
+    lib.close()
+
+
+def test_only_the_artist_and_title_can_be_edited(qapp):
+    lib = make_lib()
+    model = disc_model(lib)
+    editable = [
+        bool(model.flags(model.index(0, c)) & Qt.ItemFlag.ItemIsEditable)
+        for c in range(4)
+    ]
+    assert editable == [False, False, True, True]
+    lib.close()
+
+
+def test_the_list_shows_the_text_written_on_the_cd(qapp):
+    lib = make_lib()
+    model, _ = edited_disc_model(lib)
+    assert model.data(model.index(1, 3)) == "Edited Name"
+    assert model.data(model.index(1, 3), Qt.ItemDataRole.EditRole) == "Edited Name"
+    assert (
+        model.data(model.index(0, 3)) == "Title 0"
+    )  # unedited rows show the library's
+    lib.close()
+
+
+def test_an_edited_cell_looks_edited_and_says_what_it_was(qapp):
+    lib = make_lib()
+    model, _ = edited_disc_model(lib)
+    edited, plain = model.index(1, 3), model.index(0, 3)
+    assert model.data(edited, Qt.ItemDataRole.FontRole).italic()
+    assert model.data(plain, Qt.ItemDataRole.FontRole) is None
+    tip = model.data(edited, Qt.ItemDataRole.ToolTipRole)
+    assert "Title 1" in tip and "this disc only" in tip
+    assert "this disc only" not in (
+        model.data(plain, Qt.ItemDataRole.ToolTipRole) or ""
+    )
+    lib.close()
+
+
+def test_typing_in_a_cell_asks_for_the_edit_and_the_model_itself_does_not_change(qapp):
+    lib = make_lib()
+    model = disc_model(lib)
+    got = []
+    model.text_edited.connect(lambda pos, field, text: got.append((pos, field, text)))
+    assert (
+        model.setData(model.index(2, 2), "  New Artist ") is False
+    )  # nothing changes in here
+    assert model.setData(model.index(0, 3), "New Title") is False
+    assert got == [(2, "artist", "New Artist"), (0, "title", "New Title")]
+    assert (
+        model.data(model.index(2, 2)) == "Artist 2"
+    )  # until the panel updates the library
+    lib.close()
+
+
+def test_leaving_a_cell_unchanged_asks_for_nothing(qapp):
+    lib = make_lib()
+    model = disc_model(lib)
+    got = []
+    model.text_edited.connect(lambda *a: got.append(a))
+    model.setData(model.index(0, 3), model.data(model.index(0, 3)))
+    model.setData(model.index(0, 1), "9:99")  # the time can't be edited
+    model.setData(
+        model.index(0, 3), "x", Qt.ItemDataRole.DisplayRole
+    )  # only a real edit counts
+    assert got == []
+    lib.close()
+
+
+def test_clearing_a_cell_is_asked_for_as_empty_text(qapp):
+    lib = make_lib()
+    model, _ = edited_disc_model(lib)
+    got = []
+    model.text_edited.connect(lambda pos, field, text: got.append((pos, field, text)))
+    model.setData(model.index(1, 3), "")
+    assert got == [(1, "title", "")]  # empty means "back to the original"
+    lib.close()
+
+
+def test_the_capacity_bars_tooltips_use_the_text_on_the_cd(qapp):
+    lib = make_lib()
+    _model, disc_id = edited_disc_model(lib)
+    tips = [
+        s.tooltip for s in disc_spans(lib.disc_entries(disc_id)) if s.kind == "track"
+    ]
+    assert "Edited Name" in tips[1] and "Title 1" not in tips[1]
+    assert "Title 0" in tips[0]
+    lib.close()

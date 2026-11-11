@@ -8,9 +8,18 @@ one block, and the GUI thread only for a few assignments.
 Starting, pausing and seeking are ramped across one block, so they don't click.
 
 Scratching (dragging the zoomed waveform, as on a CDJ's jog wheel): while it lasts the
-normal playback is held, and the audio thread instead moves a read head towards a target
-position the GUI keeps updating. Whatever speed that implies is the speed it plays at,
-backwards included; a target that stands still is silence.
+normal playback is held, and the audio thread instead moves a read head after a target
+position the GUI keeps updating. Pitch is not preserved on purpose: speed is pitch, as
+with vinyl, and a held head is silent.
+
+What makes a scratch sound right is a smooth speed. Mouse events (about 60 a second) and
+audio blocks (about 43) arrive at unrelated rates, so a head that jumped to the target each
+block turned a steady drag into a speed flipping between 0.7x and 1.4x, which sounds like
+time-stretching. Two things fix it: the head has inertia (a critically damped spring that
+carries its speed from block to block), and the drag's velocity is estimated from the
+events' timestamps (`note_scratch_target`) so the target keeps moving between events
+instead of moving in steps. A spring after a target that moves at a steady speed has no lag,
+so it can be soft enough to smooth out the rest.
 
 Lifecycle note (from AKAISDS): a miniaudio device's CoreAudio thread calls back INTO
 Python. If the process starts to exit while one is still running, macOS kills the whole
@@ -19,7 +28,9 @@ process, so every player's device is stopped at interpreter exit.
 
 import atexit
 import logging
+import math
 import threading
+import time
 import weakref
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -35,12 +46,24 @@ log = logging.getLogger(__name__)
 
 _LIVE_PLAYERS: "weakref.WeakSet[AudioPlayer]" = weakref.WeakSet()
 _TICK_MS = 30  # how often the playhead is re-emitted: smooth enough, and costs nothing
-MAX_SCRATCH_RATE = (
-    16.0  # the fastest the head may move, in source frames per output frame
-)
-_FULL_GAIN_RATE = (
-    0.02  # at this speed or above a scratch is at full volume; slower fades out
-)
+# Scratching. Speeds are in source frames per output frame (1.0 is normal speed).
+# About the fastest the head may move:
+MAX_SCRATCH_RATE = 16.0
+# At this speed or above a scratch is at full volume (slower fades to silence):
+_FULL_GAIN_RATE = 0.02
+# How stiffly the head follows the target, per second:
+_SCRATCH_OMEGA = 40.0
+# A head this close (in frames) to the target needn't fade back in on release:
+_SCRATCH_SEAMLESS_FRAMES = 64
+# Seconds (least, most) the target keeps moving at the drag's speed after the last event:
+_SCRATCH_EXTRAPOLATE = (0.02, 0.06)
+# Seconds of events the drag's speed is measured over, and the least gap that says anything:
+_SCRATCH_VELOCITY_WINDOW = 0.05
+_SCRATCH_MIN_SPAN = 0.012
+# A critically damped follower started at rest peaks at omega * lag / e, so limiting how far
+# behind the target the head may be bounds its speed to MAX_SCRATCH_RATE (0.9: it also
+# carries speed over from the previous block).
+_SCRATCH_MAX_LAG = 0.9 * MAX_SCRATCH_RATE * SAMPLE_RATE * math.e / _SCRATCH_OMEGA
 
 
 def _stop_all_players() -> None:
@@ -65,35 +88,110 @@ class PlaybackState:
     scratching: bool = False
     scratch_pos: float = 0.0  # where the head is, in (fractional) frames
     scratch_target: float = 0.0  # where the GUI wants it
+    scratch_vel: float = 0.0  # the head's speed, in frames a second
+    scratch_ff: float = (
+        0.0  # the drag's own speed, estimated from the events (frames a second)
+    )
+    scratch_time: float = 0.0  # when the last event arrived (a clock reading, seconds)
+    scratch_interval: float = 0.0  # the typical gap between events, in seconds
+    scratch_history: list = field(default_factory=list)  # recent (time, target) events
     scratch_gain: float = 0.0
     lock: threading.Lock = field(default_factory=threading.Lock)
 
 
-def _render_scratch(state: PlaybackState, frames: int, out: np.ndarray) -> None:
-    """One block of a scratch: read from the head towards the target, at that speed."""
+def note_scratch_target(state: PlaybackState, target: float, now: float) -> None:
+    """The drag reached `target` (frames) at clock time `now` (seconds). Call with the lock held.
+
+    Keeps the recent events and from them the drag's speed and how often events come, so
+    the audio thread can carry the target on between events. Events too close together to
+    tell a speed from (the window system sometimes delivers two at once) leave the speed
+    estimate alone.
+    """
+    history = state.scratch_history
+    if history and now - history[-1][0] >= 0.002:
+        gap = now - history[-1][0]
+        state.scratch_interval = (
+            gap
+            if not state.scratch_interval
+            else 0.7 * state.scratch_interval + 0.3 * gap
+        )
+    history.append((now, target))
+    while len(history) > 1 and history[0][0] < now - _SCRATCH_VELOCITY_WINDOW:
+        history.pop(0)
+    first_time, first_target = history[0]
+    if now - first_time >= _SCRATCH_MIN_SPAN:
+        state.scratch_ff = (target - first_target) / (now - first_time)
+    elif len(history) == 1:
+        state.scratch_ff = 0.0  # the first event of a drag: no speed yet
+    state.scratch_target = target
+    state.scratch_time = now
+
+
+def _render_scratch(
+    state: PlaybackState, frames: int, out: np.ndarray, now: float
+) -> None:
+    """One block of a scratch: the head follows the (moving) target like a damped spring.
+
+    Over a block the target moves at a steady speed u from `target0`. The spring's lag
+    behind it, y = pos - target(t), then obeys y'' + 2w y' + w^2 y = 0, so every output
+    sample's position and speed come straight from y(t) = (y0 + c t) e^(-w t) with
+    c = (v0 - u) + w y0, in one vectorised step, and the speed carries on into the next
+    block.
+    """
     assert state.samples is not None
     total = len(state.samples)
-    displacement = state.scratch_target - state.scratch_pos
-    rate = float(np.clip(displacement / frames, -MAX_SCRATCH_RATE, MAX_SCRATCH_RATE))
-    positions = state.scratch_pos + rate * np.arange(frames, dtype=np.float64)
+    w = _SCRATCH_OMEGA
+    span = frames / SAMPLE_RATE
+    # where the drag has got to, and how fast it is going, over this block: it keeps moving
+    # at the estimated speed for a short while after the last event, then holds
+    age = max(0.0, now - state.scratch_time)  # how long ago the last event was
+    least, most = _SCRATCH_EXTRAPOLATE
+    # A block plays audio from the near future, so the target is predicted a block ahead of
+    # the last event as well as however long ago that was.
+    reach = min(max(1.2 * state.scratch_interval, least), most) + span
+    ahead_now = min(age, reach)
+    ahead_end = min(age + span, reach)
+    target0 = state.scratch_target + state.scratch_ff * ahead_now
+    u = state.scratch_ff * (ahead_end - ahead_now) / span
+    lag0 = float(
+        np.clip(state.scratch_pos - target0, -_SCRATCH_MAX_LAG, _SCRATCH_MAX_LAG)
+    )
+    anchor = state.scratch_pos - lag0
+    c = (state.scratch_vel - u) + w * lag0
+    t = np.arange(frames, dtype=np.float64) / SAMPLE_RATE
+    decay = np.exp(-w * t)
+    positions = anchor + u * t + (lag0 + c * t) * decay
+    speeds = u + ((state.scratch_vel - u) - w * c * t) * decay  # frames a second
     base = np.floor(positions).astype(np.int64)
     fraction = (positions - base).astype(np.float32)[:, None]
     first = state.samples[np.clip(base, 0, total - 1)].astype(np.float32)
     second = state.samples[np.clip(base + 1, 0, total - 1)].astype(np.float32)
     chunk = first + (second - first) * fraction  # linear interpolation between frames
-    target = state.volume * min(1.0, abs(rate) / _FULL_GAIN_RATE)
-    chunk *= np.linspace(state.scratch_gain, target, frames, dtype=np.float32)[:, None]
+    gain = state.volume * np.minimum(
+        1.0, np.abs(speeds) / (_FULL_GAIN_RATE * SAMPLE_RATE)
+    )
+    chunk *= gain.astype(np.float32)[:, None]
     out[:] = np.clip(chunk, -32768, 32767).astype(np.int16)
-    state.scratch_gain = target
-    state.scratch_pos = float(np.clip(state.scratch_pos + rate * frames, 0, total))
+    end_decay = math.exp(-w * span)
+    position = anchor + u * span + (lag0 + c * span) * end_decay
+    velocity = u + ((state.scratch_vel - u) - w * c * span) * end_decay
+    if position <= 0.0 or position >= total:  # against the end of the track: stopped
+        position, velocity = float(np.clip(position, 0, total)), 0.0
+    state.scratch_pos, state.scratch_vel = position, velocity
+    state.scratch_gain = float(gain[-1])
 
 
-def render_block(state: PlaybackState, frames: int) -> bytes:
-    """The next `frames` frames of 16-bit stereo audio, advancing `state`. Silence when paused."""
+def render_block(state: PlaybackState, frames: int, now: float | None = None) -> bytes:
+    """The next `frames` frames of 16-bit stereo audio, advancing `state`. Silence when paused.
+
+    `now` is the clock reading (seconds) used to age a scratch's last event; tests pass a
+    simulated one."""
     out = np.zeros((frames, CHANNELS), dtype=np.int16)
     with state.lock:
         if state.samples is not None and state.scratching:
-            _render_scratch(state, frames, out)
+            _render_scratch(
+                state, frames, out, time.monotonic() if now is None else now
+            )
             return out.tobytes()
         if state.samples is None or (not state.playing and state.gain <= 0.0):
             return out.tobytes()
@@ -261,9 +359,13 @@ class AudioPlayer(QObject):
             state.scratching = True
             state.scratch_pos = float(state.frame)
             state.scratch_target = state.scratch_pos
-            state.scratch_gain = (
-                state.gain
-            )  # continue from the level it was at: no click
+            # A playing track is going at normal speed when grabbed, and the head slows from
+            # there, so the audio carries on without a click. A paused one starts at rest.
+            state.scratch_vel = float(SAMPLE_RATE) if state.playing else 0.0
+            state.scratch_ff, state.scratch_interval = 0.0, 0.0
+            state.scratch_time = time.monotonic()
+            state.scratch_history.clear()
+            state.scratch_gain = state.gain
         self._timer.start()
 
     def scratch_to(self, seconds: float) -> None:
@@ -272,9 +374,8 @@ class AudioPlayer(QObject):
         if state.samples is None or not state.scratching:
             return
         with state.lock:
-            state.scratch_target = max(
-                0.0, min(seconds * SAMPLE_RATE, float(len(state.samples)))
-            )
+            target = max(0.0, min(seconds * SAMPLE_RATE, float(len(state.samples))))
+            note_scratch_target(state, target, time.monotonic())
 
     def end_scratch(self) -> None:
         state = self._state
@@ -282,8 +383,12 @@ class AudioPlayer(QObject):
             return
         with state.lock:
             assert state.samples is not None
-            state.frame = max(0, min(round(state.scratch_pos), len(state.samples)))
-            state.gain = state.scratch_gain  # the normal path ramps on from here
+            # Resume where the waveform is on screen (the target): the head may still be
+            # catching up. Fade in from silence if that is a jump, else carry on smoothly.
+            landed = max(0.0, min(state.scratch_target, float(len(state.samples))))
+            smooth = abs(state.scratch_pos - landed) <= _SCRATCH_SEAMLESS_FRAMES
+            state.frame = round(landed)
+            state.gain = state.scratch_gain if smooth else 0.0
             state.scratching = False
             state.finished = False
         self.position_changed.emit(self.position)

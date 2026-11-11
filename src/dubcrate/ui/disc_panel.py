@@ -3,7 +3,7 @@ and the discs already burned, shown read-only beside it."""
 
 from datetime import datetime
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QComboBox,
@@ -55,7 +55,11 @@ class DiscTable(QTableView):
         self.setShowGrid(False)
         self.setAlternatingRowColors(True)
         self.verticalHeader().hide()
-        self.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        # Double-click (or the edit key) edits the artist and title written on the CD.
+        self.setEditTriggers(
+            QAbstractItemView.EditTrigger.DoubleClicked
+            | QAbstractItemView.EditTrigger.EditKeyPressed
+        )
 
     def dropEvent(self, event) -> None:
         if event.source() is self:
@@ -123,13 +127,16 @@ class DiscPanel(QWidget):
             lambda ids, row: self.add_tracks(ids, position=row)
         )
         self.model.rows_moved.connect(self._move_rows)
+        self.model.text_edited.connect(self._edit_text)
         self.table = DiscTable()
         self.table.setModel(self.model)
         header = self.table.horizontalHeader()
         header.setStretchLastSection(False)
         header.setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
-        for column, width in ((0, 58), (1, 50), (2, 120), (3, 150), (4, 52), (5, 46)):
+        for column, width in ((0, 52), (1, 54)):
             self.table.setColumnWidth(column, width)
+        # the artist and the title share what is left: both are text that wants room
+        header.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
         header.setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
         self.table.remove_requested.connect(self.remove_selected)
         self.table.selectionModel().selectionChanged.connect(
@@ -451,6 +458,20 @@ class DiscPanel(QWidget):
             disc_id, [self.model.entry_at(r).position for r in rows]
         )
         self._show_disc()
+
+    def _edit_text(self, position: int, field: str, text: str) -> None:
+        """The user edited an artist or title: change what is written on the CD for this
+        disc. Only this disc's list changes: the library, rekordbox and the audio file don't."""
+        disc_id = self.current_disc_id()
+        if disc_id is None:
+            return
+        try:
+            self._lib.set_entry_text(disc_id, position, field, text)
+        except LibraryError as exc:
+            self._warn("Can't change that", str(exc))
+        # Rebuild once the editor has finished committing: resetting the model inside its
+        # own setData would pull the editor out from under Qt.
+        QTimer.singleShot(0, self._show_disc)
 
     def _move_rows(self, rows: list[int], target: int) -> None:
         disc_id = self.current_disc_id()

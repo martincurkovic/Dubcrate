@@ -71,10 +71,26 @@ Supported music: MP3, WAV, FLAC, AIFF, AAC/M4A, Ogg, Opus and WMA.
 ## Browsing and searching
 
 - Click a source, playlist or folder on the left to list its tracks.
-- Type in the **search box** to filter by title, artist, album or genre.
+- Type in the **search box** to filter by title, artist, album or genre. Press **⌘F** from anywhere in the main window to jump to it.
 - Click a **column heading** to sort by it, and click again to reverse.
 - **Drag a column heading** left or right to reorder the columns. The ● marker column stays first, and your layout is remembered.
-- **Right-click a column heading** to show or hide columns, or choose **Reset Columns** to go back to the default layout.
+- **Right-click a column heading** to show or hide columns, or choose **Reset Columns** to go back to the default layout and columns.
+
+Only the essentials show at first: Title, Artist, BPM, Key, Time, the Preview waveform and Genre. Everything else is under **More Columns** in that menu, off until you switch it on:
+
+| Column | What it shows |
+| --- | --- |
+| Album, Year | From the track's tags |
+| Rating | rekordbox's star rating, as ★★★★☆ |
+| My Tags | rekordbox's My Tag names, separated by commas |
+| Label, Remixer, Composer | From rekordbox |
+| Comment | The track's comment |
+| Plays | How many times it has been played in rekordbox |
+| Date Added | When it was added to rekordbox |
+| Bitrate, Sample Rate, Format | The audio file's details |
+| Path | Where the file is |
+
+Click any of these headings to sort by it. rekordbox's own fields (Rating, My Tags, Label, Remixer, Composer, Plays, Date Added) are read when you import, so **re-import your rekordbox library once** (⌘R) after updating Dubcrate to fill in the ones that are new. Music imported from a folder has none of rekordbox's fields.
 - A **●** at the start of a row shows that the track is already on the disc you are planning.
 
 Tracks whose file can't be found are greyed out in the list, and shown in red on the disc. The file has moved, or the drive it lives on isn't connected. Reconnect it and re-import the source.
@@ -121,6 +137,18 @@ The **Planned** view on the right shows the disc you are working on. Use the lis
 - **Disc > Split Shown Tracks Across Discs…** (⇧⌘D) cuts a long list into as many discs as it takes, keeping the order.
 - If you add tracks and no disc exists yet, one is created for you.
 
+**What goes on the CD**
+
+The disc list shows only what a CD can hold: the track **#**, its **Time**, and the **Artist** and **Title** that are written to the disc as CD-TEXT and shown on a player's display. The CD's own title (the "album") is the **disc's name**: rename it from the **⋯** menu.
+
+You can change the artist and track name for the CD without touching anything else. **Double-click** an artist or title and type:
+
+- The edit is for **this disc only**. It never changes your rekordbox library, the original audio file, or the same track on another disc.
+- An edited cell is shown in *italics*. Hover over it to see what the library has, and clear the text to go back to that.
+- Edits stay with their track when you reorder the list or add and remove others.
+- The **Burned** view shows what was written to the CD, and **Duplicate** keeps those edits in the new disc.
+- Characters CD-TEXT can't show are simplified when the disc is burned (see [Good to know](#good-to-know)).
+
 **Arranging**
 
 - Drag rows up and down to reorder them.
@@ -163,6 +191,7 @@ Only discs that were really burned count. A test write (a simulated burn) puts n
 Every real burn is saved as a record. Switch the right-hand panel from **Planned** to **Burned** to see them, newest first. Each record shows what went on the disc: the tracks in order, their times, and when, on which drive and at what speed it was burned.
 
 - A record is a **frozen snapshot**. Editing or deleting the planned disc afterwards never changes it, and neither does removing the music source.
+- It lists the artist and title as they were written to the CD, including any edits you made for that disc.
 - Tracks that are no longer in your library are dimmed. They were burned, but can't be put on another disc.
 - **Duplicate** makes a new, editable disc from the record, which is handy for re-burning or for tweaking a copy. Tracks no longer in your library are left out, and Dubcrate tells you how many.
 - **Delete** forgets the record. The CD itself is unaffected, but Dubcrate will stop warning you about its tracks.
@@ -238,6 +267,7 @@ The full list of command-line options is in the project's developer notes.
 | ⌘B | Burn the disc |
 | ⇧⌘D | Split the shown tracks across discs |
 | ⌘, | Settings |
+| ⌘F | Find tracks: go to the search box (**View > Find Tracks**) |
 | ⌘F (in the guide) | Find in the guide |
 
 ---

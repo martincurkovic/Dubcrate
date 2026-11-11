@@ -186,8 +186,8 @@ class MainWindow(QMainWindow):
         header.setSortIndicatorShown(True)
         header.setSortIndicator(-1, Qt.SortOrder.AscendingOrder)
         header.setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
-        for column, width in enumerate((24, 230, 130, 50, 40, 46, 120, 90)):
-            self.track_table.setColumnWidth(column, width)
+        for column, spec in enumerate(TRACK_COLUMNS):
+            self.track_table.setColumnWidth(column, spec.width)
         header.setStretchLastSection(
             True
         )  # the last column takes the slack; the title keeps its width
@@ -207,7 +207,7 @@ class MainWindow(QMainWindow):
         header.setFirstSectionMovable(
             False
         )  # the "already on the disc" marker stays first
-        self._apply_hidden_columns()
+        self._apply_column_visibility()
         self._apply_column_order()
         header.sectionMoved.connect(lambda *_: self._save_column_order())
         header.sortIndicatorChanged.connect(self._on_sort_changed)
@@ -332,6 +332,10 @@ class MainWindow(QMainWindow):
         )
 
         view_menu = menus.addMenu("&View")
+        self.act_find = view_menu.addAction(
+            "&Find Tracks", self.focus_search, QKeySequence.StandardKey.Find
+        )  # Cmd+F on a Mac, Ctrl+F elsewhere
+        view_menu.addSeparator()
         theme_menu: QMenu = view_menu.addMenu("&Theme")
         group = QActionGroup(self)
         group.setExclusive(True)
@@ -381,6 +385,11 @@ class MainWindow(QMainWindow):
         current = settings.get_wave_style()
         for key, action in self._wave_actions.items():
             action.setChecked(key == current)
+
+    def focus_search(self) -> None:
+        """Put the cursor in the search box, with what was typed selected to type over."""
+        self.search.setFocus()
+        self.search.selectAll()
 
     def show_help(self) -> None:
         show_help_dialog(self)
@@ -746,11 +755,29 @@ class MainWindow(QMainWindow):
 
     # -- columns ----------------------------------------------------------
 
-    def _apply_hidden_columns(self) -> None:
-        hidden = set(settings.get_hidden_columns())
+    def _visible_titles(self) -> set[str]:
+        saved = settings.get_visible_columns()
+        if saved is not None:
+            return set(saved)
+        # Never chosen: the default columns, minus any a layout from before there were
+        # optional columns had hidden (it recorded what was hidden, not what was shown).
+        legacy = set(settings.get_hidden_columns())
+        return {c.title for c in TRACK_COLUMNS if c.shown and c.title not in legacy}
+
+    def _apply_column_visibility(self) -> None:
+        visible = self._visible_titles()
         for column, spec in enumerate(TRACK_COLUMNS):
             if column > 1:  # the marker and the title are always there
-                self.track_table.setColumnHidden(column, spec.title in hidden)
+                self.track_table.setColumnHidden(column, spec.title not in visible)
+
+    def _save_visible_columns(self) -> None:
+        settings.set_visible_columns(
+            [
+                spec.title
+                for column, spec in enumerate(TRACK_COLUMNS)
+                if column <= 1 or not self.track_table.isColumnHidden(column)
+            ]
+        )
 
     def _apply_column_order(self) -> None:
         """Put the columns in their saved order. Names it doesn't know are ignored,
@@ -775,36 +802,38 @@ class MainWindow(QMainWindow):
         )
 
     def reset_columns(self) -> None:
-        """Back to the default order, with every column shown."""
+        """Back to the default order and the default columns."""
         settings.set_column_order([])
-        settings.set_hidden_columns([])
-        self._apply_hidden_columns()
+        settings.set_visible_columns([c.title for c in TRACK_COLUMNS if c.shown])
+        self._apply_column_visibility()
         self._apply_column_order()
         self._preview_timer.start()
 
-    def _show_column_menu(self, position) -> None:
+    def column_menu(self) -> QMenu:
+        """Which columns to show: the usual ones, and the rest under "More Columns"."""
         menu = QMenu(self)
+        more = QMenu("More Columns", menu)
         for column, spec in enumerate(TRACK_COLUMNS):
-            if column > 1:
-                action = menu.addAction(spec.title)
-                action.setCheckable(True)
-                action.setChecked(not self.track_table.isColumnHidden(column))
-                action.toggled.connect(
-                    lambda shown, c=column: self.set_column_visible(c, shown)
-                )
+            if column <= 1:  # the marker and the title are always there
+                continue
+            action = (menu if spec.shown else more).addAction(spec.title)
+            action.setCheckable(True)
+            action.setChecked(not self.track_table.isColumnHidden(column))
+            action.toggled.connect(
+                lambda shown, c=column: self.set_column_visible(c, shown)
+            )
+        menu.addMenu(more)
         menu.addSeparator()
         menu.addAction("Reset Columns", self.reset_columns)
+        return menu
+
+    def _show_column_menu(self, position) -> None:
+        menu = self.column_menu()
         menu.popup(self.track_table.horizontalHeader().mapToGlobal(position))
 
     def set_column_visible(self, column: int, visible: bool) -> None:
         self.track_table.setColumnHidden(column, not visible)
-        settings.set_hidden_columns(
-            [
-                TRACK_COLUMNS[c].title
-                for c in range(2, len(TRACK_COLUMNS))
-                if self.track_table.isColumnHidden(c)
-            ]
-        )
+        self._save_visible_columns()
         self._preview_timer.start()
 
     def open_settings(self) -> None:

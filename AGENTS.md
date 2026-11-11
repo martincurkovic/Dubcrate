@@ -34,7 +34,7 @@ the repo; follow whatever it reports.
 - `src/dubcrate/build.py`: `build_burn_disc` turns a planned disc into rendered WAVs plus a `burn.Disc`, re-checking capacity against the rendered lengths. `disc_problems` lists what blocks a burn. `plan_burn` / `render_plan` are its library-free halves (the burn window renders on a worker), and `media_problems` checks the disc in the drive.
 - `src/dubcrate/cli.py`, `cli_discs.py`: the `dubcrate` command (import, sources, nodes, tracks, disc ..., burn) until there is a GUI.
 - `src/dubcrate/audio/`: preview playback through miniaudio, free of the library.
-  - `devices.py` (output devices, buffer sizes), `decode.py` (any file to 44.1 kHz stereo int16 in memory: miniaudio first, ffmpeg for what it can't read, e.g. M4A/AIFF), `player.py` (`AudioPlayer`: play/pause/seek/volume, and scratching: `begin_scratch` / `scratch_to` / `end_scratch` make the audio thread chase a target the GUI moves; the audio thread runs only `render_block`, a pure function over `PlaybackState`, so it is tested with a fake device).
+  - `devices.py` (output devices, buffer sizes), `decode.py` (any file to 44.1 kHz stereo int16 in memory: miniaudio first, ffmpeg for what it can't read, e.g. M4A/AIFF), `player.py` (`AudioPlayer`: play/pause/seek/volume, and scratching: `begin_scratch` / `scratch_to` / `end_scratch` make the audio thread chase a target the GUI moves, with inertia and the drag's speed estimated from event timestamps (`note_scratch_target`; `render_block` takes an optional `now` clock so tests can simulate mouse timing); the audio thread runs only `render_block`, a pure function over `PlaybackState`, so it is tested with a fake device).
 - `src/dubcrate/beatjump.py`: `jump_time`, beat jump along a beat grid (pure). Drag-to-scratch lives in `ui/waveform_view.py` (`DetailView`) and `ui/preview.py`.
 - `src/dubcrate/waveform.py`: the 3-band `Waveform` (low blue / mid amber / high white), from rekordbox's bytes or computed from audio (`compute_waveform`), plus the RGB and blue looks derived from the same bands (`rgb_colors`, `whiteness`, `overall_height`, `raster_columns`). `src/dubcrate/analysis.py`: reads rekordbox's ANLZ files (read-only): waveforms, beat grid, cues, phrases.
 - `src/dubcrate/ui/`: the PySide6 window (`dubcrate-gui`, or `python -m dubcrate.ui`).
@@ -77,6 +77,7 @@ the repo; follow whatever it reports.
 - Every track must be a whole number of sectors (588 samples) before it reaches a
   burner. `render_track` guarantees this; keep it that way.
 - CD-TEXT is required, not optional. Text goes through `cdtext_clean` first.
+- What is written on a CD for a track is `DiscEntry.title` / `.artist`: the disc's own edit if any, else the library track's. Edits are stored on the `disc_track` row (they travel with it through add, remove and reorder: the store moves `_Slot`s, never bare track ids) and must never be written to `track`, rekordbox or an audio file. Burning, burn records and problem messages use the entry's text, not `entry.track.title`.
 
 ## Conventions
 

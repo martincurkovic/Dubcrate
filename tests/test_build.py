@@ -11,6 +11,7 @@ from dubcrate.build import (
     disc_problems,
     media_notes,
     media_problems,
+    plan_burn,
 )
 from dubcrate.burn import BurnError, MediaInfo
 from dubcrate.cd import SAMPLES_PER_SECTOR
@@ -291,3 +292,106 @@ def test_cli_stops_when_the_drive_says_there_is_no_disc(tmp_path, monkeypatch, c
     assert run_cli(tmp_path, "burn", "1", "--yes") == 1
     assert "no disc in the drive" in capsys.readouterr().err
     assert burner.burned == []
+
+
+# -- what is written on the CD: the disc's own text, not the library's ---------
+
+
+def test_the_burn_uses_the_text_edited_for_the_disc_not_the_librarys(lib, tmp_path):
+    ids = all_ids(lib)
+    disc_id = lib.create_disc("My Mix")
+    lib.add_to_disc(disc_id, ids)
+    lib.set_entry_text(disc_id, 0, "title", "Cleaner Title")
+    lib.set_entry_text(disc_id, 1, "artist", "Better Artist")
+    plan = plan_burn(lib, disc_id)
+    assert [(t.title, t.artist) for t in plan.tracks] == [
+        ("Cleaner Title", "Same"), ("Beta", "Better Artist"), ("Gamma", "Other"),
+    ]  # fmt: skip
+    burn_disc, _ = build_burn_disc(lib, disc_id, tmp_path / "w")
+    assert [(t.title, t.performer) for t in burn_disc.tracks] == [
+        ("Cleaner Title", "Same"), ("Beta", "Better Artist"), ("Gamma", "Other"),
+    ]  # fmt: skip
+    assert burn_disc.title == "My Mix"  # the CD's own title is the disc's name
+
+
+def test_the_files_and_the_library_are_untouched_by_editing_for_a_burn(lib, tmp_path):
+    before = {t.title: t.artist for t in lib.tracks()}
+    music = tmp_path / "music"
+    sizes = {p.name: p.stat().st_size for p in music.glob("*.flac")}
+    mtimes = {p.name: p.stat().st_mtime for p in music.glob("*.flac")}
+    disc_id = lib.create_disc("D")
+    lib.add_to_disc(disc_id, all_ids(lib))
+    lib.set_entry_text(disc_id, 0, "title", "Renamed")
+    build_burn_disc(lib, disc_id, tmp_path / "w")
+    assert {t.title: t.artist for t in lib.tracks()} == before
+    assert {p.name: p.stat().st_size for p in music.glob("*.flac")} == sizes
+    assert {p.name: p.stat().st_mtime for p in music.glob("*.flac")} == mtimes
+
+
+def test_the_discs_performer_follows_the_edited_artists(lib):
+    disc_id = lib.create_disc("D")
+    lib.add_to_disc(disc_id, all_ids(lib))
+    for position in range(3):
+        lib.set_entry_text(disc_id, position, "artist", "One Artist For All")
+    assert plan_burn(lib, disc_id).performer == "One Artist For All"
+
+
+def test_a_problem_names_the_track_as_it_is_written_on_the_disc(lib, tmp_path):
+    disc_id = lib.create_disc("D")
+    lib.add_to_disc(disc_id, all_ids(lib))
+    lib.set_entry_text(disc_id, 0, "title", "Edited Name")
+    (tmp_path / "music" / "a.flac").unlink()
+    scan = scan_folder(tmp_path / "music")
+    [source] = lib.sources()
+    lib.replace_source("folder", source.path, "music", scan.tracks, scan.nodes)
+    problems = disc_problems(lib, disc_id)
+    assert any("Edited Name" in p for p in problems)
+
+
+def test_cli_text_edits_one_discs_cd_text_and_shows_it_marked(tmp_path, capsys):
+    music = tmp_path / "music"
+    make_flac(music / "one.flac", 2, title="Original Title", artist="Original Artist")
+    run_cli(tmp_path, "import-folder", str(music))
+    run_cli(tmp_path, "disc", "new", "D")
+    run_cli(tmp_path, "disc", "add", "1", "--node", "1")
+    capsys.readouterr()
+    assert (
+        run_cli(
+            tmp_path,
+            "disc",
+            "text",
+            "1",
+            "1",
+            "--title",
+            "On The CD",
+            "--artist",
+            "CD Artist",
+        )
+        == 0
+    )
+    out = capsys.readouterr().out
+    assert "On The CD" in out and "CD Artist" in out and "Original Title" not in out
+    assert "* = artist or title edited for this disc only" in out
+    with Library.open(tmp_path / "lib.db") as lib:
+        assert (lib.tracks()[0].title, lib.tracks()[0].artist) == (
+            "Original Title",
+            "Original Artist",
+        )
+        assert lib.disc_entries(1)[0].title == "On The CD"
+    assert (
+        run_cli(tmp_path, "disc", "text", "1", "1", "--title", "", "--artist", "") == 0
+    )
+    assert (
+        "Original Title" in capsys.readouterr().out
+    )  # blank goes back to the original
+
+
+def test_cli_text_needs_something_to_change_and_a_real_position(tmp_path, capsys):
+    music = tmp_path / "music"
+    make_flac(music / "one.flac", 2, title="T")
+    run_cli(tmp_path, "import-folder", str(music))
+    run_cli(tmp_path, "disc", "new", "D")
+    run_cli(tmp_path, "disc", "add", "1", "--node", "1")
+    capsys.readouterr()
+    assert run_cli(tmp_path, "disc", "text", "1", "1") == 2
+    assert "give --title and/or --artist" in capsys.readouterr().err

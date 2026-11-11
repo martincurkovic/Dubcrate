@@ -75,6 +75,12 @@ def _int_or_none(value: Any) -> int | None:
     return number if number > 0 else None
 
 
+def _text(row: Any, name: str) -> str:
+    """A text attribute of a row, '' if it is missing or empty (older databases lack some)."""
+    value = getattr(row, name, None)
+    return "" if value is None else str(value)
+
+
 def track_from_content(row: Any) -> TrackRecord | None:
     """Map a djmdContent row to a TrackRecord; None if it has no file path."""
     path = getattr(row, "FolderPath", None)
@@ -99,6 +105,12 @@ def track_from_content(row: Any) -> TrackRecord | None:
         rating=row.Rating if row.Rating else None,
         file_size=_int_or_none(row.FileSize),
         analysis_path=row.AnalysisDataPath or None,
+        label=_text(row, "LabelName"),
+        remixer=_text(row, "RemixerName"),
+        composer=_text(row, "ComposerName"),
+        my_tags=", ".join(getattr(row, "MyTagNames", None) or []),
+        play_count=_int_or_none(getattr(row, "DJPlayCount", None)),
+        date_added=_text(row, "StockDate"),
     )
 
 

@@ -786,6 +786,27 @@ def test_the_capacity_bar_has_no_seam_between_neighbouring_tracks(qapp):
     bar.close()
 
 
+# -- find --------------------------------------------------------------------
+
+
+def test_the_find_shortcut_is_the_platform_one_and_focuses_the_search_box(window):
+    from PySide6.QtGui import QKeySequence
+
+    win, _lib = window
+    assert win.act_find.text().replace("&", "") == "Find Tracks"
+    assert win.act_find.shortcut() == QKeySequence(QKeySequence.StandardKey.Find)
+    assert (
+        win.act_find.shortcut().toString(QKeySequence.SequenceFormat.PortableText)
+        == "Ctrl+F"
+    )
+    win.show()
+    win.track_table.setFocus()
+    win.search.setText("kettama")
+    win.act_find.trigger()
+    assert win.focusWidget() is win.search
+    assert win.search.selectedText() == "kettama"  # ready to type over
+
+
 # -- reordering columns -------------------------------------------------------
 
 
@@ -841,13 +862,237 @@ def test_sorting_still_follows_the_column_after_it_moved(window):
     assert titles(win) == sorted(titles(win))
 
 
-def test_reset_columns_restores_the_default_order_and_shows_everything(window):
+def test_reset_columns_restores_the_default_order_and_columns(window):
     win, _lib = window
     header = win.track_table.horizontalHeader()
     header.moveSection(header.visualIndex(7), 1)
     win.set_column_visible(4, False)
+    win.set_column_visible(col("Year"), True)
     win.reset_columns()
     assert column_titles(win) == [
         "", "Title", "Artist", "BPM", "Key", "Time", "Preview", "Genre",
     ]  # fmt: skip
-    assert settings.get_column_order() == [] and settings.get_hidden_columns() == []
+    assert settings.get_column_order() == []
+
+
+# -- more columns, off by default ----------------------------------------------
+
+ESSENTIAL = ["", "Title", "Artist", "BPM", "Key", "Time", "Preview", "Genre"]
+
+
+def col(title):
+    return next(i for i, c in enumerate(main_window.TRACK_COLUMNS) if c.title == title)
+
+
+def test_only_the_essential_columns_show_until_more_are_switched_on(window):
+    win, _lib = window
+    assert column_titles(win) == ESSENTIAL
+    assert win.track_table.isColumnHidden(col("Year"))
+    assert win.track_table.isColumnHidden(col("My Tags"))
+
+
+def test_switching_an_extra_column_on_shows_it_and_it_is_remembered(window):
+    win, lib = window
+    win.set_column_visible(col("Rating"), True)
+    win.set_column_visible(col("My Tags"), True)
+    assert {"Rating", "My Tags"} <= set(column_titles(win))
+    assert {"Rating", "My Tags"} <= set(settings.get_visible_columns())
+    again = MainWindow(lib)
+    try:
+        assert {"Rating", "My Tags"} <= set(column_titles(again))
+        assert not again.track_table.isColumnHidden(col("Rating"))
+        assert again.track_table.isColumnHidden(col("Year"))  # the rest still off
+    finally:
+        again.close()
+        again.deleteLater()
+
+
+def test_the_marker_and_title_are_never_offered_in_the_column_menu(window):
+    from PySide6.QtWidgets import QMenu
+
+    win, _lib = window
+    menu = win.column_menu()
+    every = [a.text() for a in menu.actions() if not a.isSeparator()]
+    for submenu in menu.findChildren(QMenu):
+        every += [a.text() for a in submenu.actions() if not a.isSeparator()]
+    assert "Title" not in every and "" not in every
+    assert "Artist" in every and "Year" in every  # but the rest are
+
+
+def test_a_layout_saved_before_the_extra_columns_existed_keeps_what_it_hid(window):
+    _win, lib = window
+    settings._qs().setValue(
+        "tracks/hidden_columns", '["Genre", "Preview"]'
+    )  # the old setting
+    again = MainWindow(lib)
+    try:
+        assert column_titles(again) == ["", "Title", "Artist", "BPM", "Key", "Time"]
+        assert again.track_table.isColumnHidden(col("Year"))  # and the new ones are off
+        again.set_column_visible(
+            col("Genre"), True
+        )  # changing anything saves the new kind
+        assert "Genre" in settings.get_visible_columns()
+        assert "Year" not in settings.get_visible_columns()
+        assert "Preview" not in settings.get_visible_columns()
+    finally:
+        again.close()
+        again.deleteLater()
+
+
+def test_reset_brings_back_what_an_old_layout_had_hidden(window):
+    _win, lib = window
+    settings._qs().setValue("tracks/hidden_columns", '["Genre"]')
+    again = MainWindow(lib)
+    try:
+        assert again.track_table.isColumnHidden(col("Genre"))
+        again.reset_columns()
+        assert column_titles(again) == ESSENTIAL
+    finally:
+        again.close()
+        again.deleteLater()
+
+
+def test_the_column_menu_keeps_the_extras_in_a_submenu_of_their_own(window):
+    from PySide6.QtWidgets import QMenu
+
+    win, _lib = window
+    menu = win.column_menu()
+    top = [a.text() for a in menu.actions() if not a.isSeparator()]
+    assert top == [
+        "Artist",
+        "BPM",
+        "Key",
+        "Time",
+        "Preview",
+        "Genre",
+        "More Columns",
+        "Reset Columns",
+    ]
+    [more] = [a.menu() for a in menu.actions() if a.text() == "More Columns"]
+    assert isinstance(more, QMenu)
+    assert [a.text() for a in more.actions()] == [
+        c.title for c in main_window.TRACK_COLUMNS if not c.shown
+    ]
+    year = next(a for a in more.actions() if a.text() == "Year")
+    assert year.isCheckable() and not year.isChecked()
+    year.trigger()
+    assert not win.track_table.isColumnHidden(col("Year"))
+    assert next(
+        a
+        for a in win.column_menu().findChildren(QMenu)[0].actions()
+        if a.text() == "Year"
+    ).isChecked()
+
+
+def test_each_column_opens_at_its_own_width(window):
+    win, _lib = window
+    for index, spec in enumerate(main_window.TRACK_COLUMNS):
+        win.track_table.setColumnHidden(
+            index, False
+        )  # (Qt reports a hidden column as 0 wide)
+        assert win.track_table.columnWidth(index) == spec.width, spec.title
+
+
+def test_every_sortable_column_sorts_the_list(window):
+    win, _lib = window
+    header = win.track_table.horizontalHeader()
+    count = len(titles(win))
+    for index, spec in enumerate(main_window.TRACK_COLUMNS):
+        if spec.sort_key is None:
+            continue
+        header.setSortIndicator(index, Qt.SortOrder.AscendingOrder)
+        assert win._sort == (spec.sort_key, False), spec.title
+        assert len(titles(win)) == count, spec.title
+
+
+# -- editing the artist and track name for the CD ------------------------------
+
+
+def disc_cell(win, row, column):
+    return win.disc_panel.model.data(win.disc_panel.model.index(row, column))
+
+
+def edit_cell(win, qapp, row, column, text):
+    win.disc_panel.model.setData(win.disc_panel.model.index(row, column), text)
+    qapp.processEvents()  # the panel applies it a moment later, not inside the editor's commit
+
+
+def test_editing_the_disc_list_changes_the_cd_text_and_not_the_library(window, qapp):
+    win, lib = window
+    ids = [t.id for t in lib.tracks(sort="title")]
+    win.disc_panel.add_tracks(ids[:3])
+    edit_cell(win, qapp, 1, 3, "Clean Name")
+    edit_cell(win, qapp, 1, 2, "Clean Artist")
+    assert (
+        disc_cell(win, 1, 3) == "Clean Name" and disc_cell(win, 1, 2) == "Clean Artist"
+    )
+    entry = lib.disc_entries(win.disc_panel.current_disc_id())[1]
+    assert (entry.title_override, entry.artist_override) == (
+        "Clean Name",
+        "Clean Artist",
+    )
+    assert (
+        lib.track(ids[1]).title == "Song 1" and lib.track(ids[1]).artist == "Artist 1"
+    )
+    assert "Clean Name" not in titles(win)  # the browser still shows the library's text
+
+
+def test_clearing_an_edited_cell_in_the_list_restores_the_original(window, qapp):
+    win, _lib = window
+    win.disc_panel.add_tracks([t.id for t in _lib.tracks(sort="title")][:2])
+    edit_cell(win, qapp, 0, 3, "Temporary")
+    edit_cell(win, qapp, 0, 3, "")
+    assert disc_cell(win, 0, 3) == "Song 0"
+
+
+def test_edits_stay_with_their_tracks_when_the_list_is_reordered(window, qapp):
+    win, lib = window
+    ids = [t.id for t in lib.tracks(sort="title")]
+    win.disc_panel.add_tracks(ids[:3])
+    edit_cell(win, qapp, 0, 3, "First, Edited")
+    disc_id = win.disc_panel.current_disc_id()
+    lib.move_in_disc(disc_id, 0, 2)
+    win.disc_panel.reload(select_id=disc_id)
+    assert [disc_cell(win, r, 3) for r in range(3)] == [
+        "Song 1",
+        "Song 2",
+        "First, Edited",
+    ]
+
+
+def test_the_disc_list_is_edited_by_double_clicking_or_the_edit_key(window):
+    from PySide6.QtWidgets import QAbstractItemView
+
+    win, _lib = window
+    triggers = win.disc_panel.table.editTriggers()
+    assert triggers & QAbstractItemView.EditTrigger.DoubleClicked
+    assert triggers & QAbstractItemView.EditTrigger.EditKeyPressed
+
+
+def test_a_burned_record_shows_the_text_that_went_on_the_cd(window, qapp):
+    win, lib = window
+    win.disc_panel.add_tracks([t.id for t in lib.tracks(sort="title")][:2])
+    edit_cell(win, qapp, 0, 3, "As Burned")
+    burn_id = lib.record_burn(win.disc_panel.current_disc_id())
+    edit_cell(win, qapp, 0, 3, "Changed Since")
+    win.disc_panel.show_burned(burn_id)
+    assert win.disc_panel.burn_model.track_at(0).title == "As Burned"
+
+
+def test_a_duplicate_of_a_burn_keeps_its_cd_text_edits(window, qapp):
+    win, lib = window
+    win.disc_panel.add_tracks([t.id for t in lib.tracks(sort="title")][:2])
+    edit_cell(win, qapp, 0, 3, "As Burned")
+    burn_id = lib.record_burn(win.disc_panel.current_disc_id())
+    win.disc_panel.show_burned(burn_id)
+    win.disc_panel.duplicate_burn()
+    assert disc_cell(win, 0, 3) == "As Burned"
+
+
+def test_the_disc_panel_no_longer_lists_bpm_or_key(window):
+    win, _lib = window
+    headers = [
+        win.disc_panel.model.headerData(c, Qt.Orientation.Horizontal)
+        for c in range(win.disc_panel.model.columnCount())
+    ]
+    assert headers == ["#", "Time", "Artist", "Title"]

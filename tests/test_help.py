@@ -90,7 +90,8 @@ def test_the_shortcuts_the_guide_lists_are_the_real_ones(window):
     assert shortcuts["Split Shown Tracks Across Discs…"] == "Ctrl+Shift+D"
     assert shortcuts["Settings…"] == "Ctrl+,"
     assert shortcuts["Burn Disc…"] == "Ctrl+B"
-    for keys in ("⌘O", "⇧⌘O", "⌘R", "⌘N", "⌘D", "⇧⌘D", "⌘,", "⌘B"):
+    assert shortcuts["Find Tracks"] == "Ctrl+F"
+    for keys in ("⌘O", "⇧⌘O", "⌘R", "⌘N", "⌘D", "⇧⌘D", "⌘,", "⌘B", "⌘F"):
         assert keys in MANUAL, keys
 
 
@@ -154,3 +155,33 @@ def test_the_scratch_and_beat_jump_the_guide_describes_exist():
     assert (
         settings.DEFAULT_BEAT_JUMP == 4 and "4 unless" in MANUAL
     )  # "4 unless you change it"
+
+
+def test_the_extra_columns_the_guide_lists_are_the_real_ones():
+    from dubcrate.ui.models import TRACK_COLUMNS
+
+    extras = [c.title for c in TRACK_COLUMNS if not c.shown]
+    assert "More Columns" in MANUAL and "Reset Columns" in MANUAL
+    for title in ("Album", "Year", "Rating", "My Tags", "Label", "Remixer", "Composer",
+                  "Comment", "Plays", "Date Added", "Bitrate", "Sample Rate", "Format", "Path"):  # fmt: skip
+        assert title in extras, (
+            title
+        )  # a column the guide names exists, and is off by default
+        assert title in MANUAL, title
+    assert set(extras) == {
+        "Album", "Year", "Rating", "My Tags", "Label", "Remixer", "Composer", "Comment",
+        "Plays", "Date Added", "Bitrate", "Sample Rate", "Format", "Path",
+    }  # and the guide doesn't miss one  # fmt: skip
+
+
+def test_the_disc_list_the_guide_describes_is_the_real_one(qapp):
+    from dubcrate.ui.models import DISC_COLUMNS
+
+    assert DISC_COLUMNS == ("#", "Time", "Artist", "Title")
+    assert "What goes on the CD" in MANUAL and "this disc only" in MANUAL
+    for phrase in ("Double-click", "disc's name", "Duplicate", "CD-TEXT"):
+        assert phrase in MANUAL, phrase
+    assert (
+        "BPM"
+        not in MANUAL.split("**What goes on the CD**")[1].split("**Arranging**")[0]
+    )

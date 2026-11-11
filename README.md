@@ -27,7 +27,9 @@ whose track titles show on the player's display.
   and turns red when a disc is too long. It fills a disc in order, or splits a long
   playlist across as many discs as it takes. Drag tracks on, drag them around.
 - **Burns audio CDs with CD-TEXT**, gapless by default, converting every track to
-  CD quality (16-bit, 44.1 kHz).
+  CD quality (16-bit, 44.1 kHz). The disc list shows just what a CD holds (artist,
+  track name and time), and you can edit the artist and track name for a disc without
+  changing rekordbox or your files.
 - **Keeps its own playlists.** Your discs live in Dubcrate and never touch rekordbox.
 
 ## What you need
@@ -50,7 +52,8 @@ whose track titles show on the player's display.
    left, with their playlists and folders beneath them.
 2. **Browse and listen.** Pick a playlist, search by title, artist, album or genre,
    and sort by clicking a column heading. Double-click a track to preview it.
-   Right-click the column headings to show or hide columns.
+   Right-click the column headings to show or hide columns: only the essentials show at
+   first, and *More Columns* adds year, star rating, My Tags, label and more from rekordbox.
 3. **Build a disc.** Drag tracks onto the disc on the right, or select them and press
    Return. *Disc ▸ New Disc…* starts another. Drag rows to reorder, and press Delete
    to take a track off. **Fit All to Disc** adds tracks in order until the disc is
@@ -76,6 +79,7 @@ whose track titles show on the player's display.
 | Take the selected tracks off the disc | Delete |
 | Import a folder / a rekordbox library | ⌘O / ⇧⌘O |
 | Re-import the selected source | ⌘R |
+| Search for a track | ⌘F |
 | New disc | ⌘N |
 | Burn the disc | ⌘B |
 | Split the shown tracks across discs | ⇧⌘D |

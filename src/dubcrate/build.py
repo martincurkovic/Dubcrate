@@ -28,7 +28,7 @@ def disc_problems(lib: Library, disc_id: int) -> list[str]:
     if len(entries) > MAX_TRACKS:
         problems.append(f"{len(entries)} tracks; a CD holds at most {MAX_TRACKS}")
     for e in entries:
-        label = f"#{e.position + 1} {e.track.artist} - {e.track.title}".strip()
+        label = f"#{e.position + 1} {e.artist} - {e.title}".strip()
         if e.track.stale:
             problems.append(f"{label}: no longer in its source")
         if e.track.missing:
@@ -103,7 +103,10 @@ class Rendered:
 
 
 def plan_burn(lib: Library, disc_id: int) -> BurnPlan:
-    """Snapshot a disc for burning; raises BuildError if it can't be burned."""
+    """Snapshot a disc for burning; raises BuildError if it can't be burned.
+
+    The text for the CD is the disc's own (what was edited for it), else the track's.
+    """
     problems = disc_problems(lib, disc_id)
     if problems:
         raise BuildError("; ".join(problems))
@@ -112,12 +115,11 @@ def plan_burn(lib: Library, disc_id: int) -> BurnPlan:
     return BurnPlan(
         disc_id=disc_id,
         name=summary.name,
-        performer=_performer([e.track.artist for e in entries]),
+        performer=_performer([e.artist for e in entries]),
         pregap_sectors=summary.pregap_sectors,
         capacity_sectors=summary.capacity_sectors,
         tracks=tuple(
-            PlanTrack(e.track.id, e.track.path, e.track.title, e.track.artist)
-            for e in entries
+            PlanTrack(e.track.id, e.track.path, e.title, e.artist) for e in entries
         ),
     )
 

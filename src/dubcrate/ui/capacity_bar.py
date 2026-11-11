@@ -38,9 +38,8 @@ def disc_spans(entries: list[DiscEntry], pregap_sectors: int = 0) -> list[Span]:
     for entry in entries:
         if entry.position > 0 and pregap_sectors:
             spans.append(Span(pregap_sectors, "gap", tooltip="Silence between tracks"))
-        t = entry.track
-        note = "" if t.length_exact else "  (estimated)"
-        name = " – ".join(part for part in (t.artist, t.title) if part)
+        note = "" if entry.track.length_exact else "  (estimated)"
+        name = " – ".join(part for part in (entry.artist, entry.title) if part)
         spans.append(
             Span(
                 entry.sectors,

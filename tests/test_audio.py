@@ -375,82 +375,210 @@ def test_missing_ffmpeg_is_a_clear_error(tmp_path, monkeypatch):
 
 # -- scratching: the head follows a target the GUI moves ------------------------------
 
+MOUSE_HZ = 60  # how often a drag reports its position
+BLOCK = 1024  # a typical audio block
+WRAP = 32_768
 
-def ramp(frames=44_100):
-    """Sample n is n (clipped to int16), so what was read is readable from the output."""
-    values = np.arange(frames, dtype=np.int64).clip(0, 32_000).astype(np.int16)
+
+def sawtooth(frames=SAMPLE_RATE * 8):
+    """Sample n is n modulo 32768 (in both channels): what was read is recoverable from the
+    output, and a steady slope per block IS the playback speed."""
+    values = (np.arange(frames, dtype=np.int64) % WRAP).astype(np.int16)
     return np.stack([values, values], axis=1)
 
 
-def scratching_state(frame=1000, volume=1.0, gain=1.0) -> PlaybackState:
-    state = PlaybackState(samples=ramp(), frame=frame, volume=volume, gain=gain)
+def scratching_state(frame=1000, volume=1.0, velocity=0.0, gain=None) -> PlaybackState:
+    """A track being held, with the head at `frame` and moving at `velocity` frames a second."""
+    playing_level = volume if gain is None else gain
+    state = PlaybackState(
+        samples=sawtooth(), frame=frame, volume=volume, gain=playing_level
+    )
     state.scratching = True
     state.scratch_pos = float(frame)
     state.scratch_target = float(frame)
-    state.scratch_gain = gain
+    state.scratch_vel = velocity
+    state.scratch_gain = playing_level
     return state
 
 
+def slope(block_values: np.ndarray) -> float:
+    """Frames of the source read per output frame: the playback speed, from the sawtooth.
+
+    The sawtooth wraps, and reading across the wrap interpolates between its top and
+    bottom, which is one huge bogus step: steps that no speed could make are dropped.
+    """
+    steps = (np.diff(block_values) + WRAP / 2) % WRAP - WRAP / 2  # undo the wrap
+    steps = steps[
+        np.abs(steps) <= 64
+    ]  # (the fastest scratch reads 16 frames per frame)
+    return float(np.polyfit(np.arange(len(steps)), np.cumsum(steps), 1)[0])
+
+
+def drag(state, speed, seconds, block=BLOCK, mouse_hz=MOUSE_HZ, start=None):
+    """Drag steadily at `speed` x normal for `seconds`, with the mouse reporting at its own
+    rate and the audio pulled in blocks (the two never line up). Returns, per block, the
+    playback speed heard and where the hand was minus where the head is (frames)."""
+    from dubcrate.audio.player import note_scratch_target
+
+    origin = state.scratch_target if start is None else start
+    t, next_event = 0.0, 0.0
+    speeds, behind = [], []
+    for _ in range(round(seconds * SAMPLE_RATE / block)):
+        end = t + block / SAMPLE_RATE
+        while next_event <= end:  # mouse events that arrived during this block
+            note_scratch_target(
+                state, origin + speed * SAMPLE_RATE * next_event, next_event
+            )
+            next_event += 1.0 / mouse_hz
+        out = blocks(render_block(state, block, now=end))[:, 0].astype(float)
+        speeds.append(slope(out))
+        behind.append(origin + speed * SAMPLE_RATE * end - state.scratch_pos)
+        t = end
+    return speeds, behind
+
+
+def test_a_steady_drag_plays_at_a_steady_speed_whatever_the_mouse_timing():
+    # The bug this guards: a head that jumped to the target every block alternated
+    # 0.72x and 1.44x on a steady drag, because mouse events and blocks don't line up.
+    speeds, _ = drag(scratching_state(frame=2000), speed=1.0, seconds=1.5)
+    settled = np.array(speeds[10:])
+    assert settled.min() > 0.97 and settled.max() < 1.03
+
+
+def test_the_speed_is_just_as_steady_at_other_mouse_rates_and_buffer_sizes():
+    for mouse_hz in (30, 120):
+        for block in (512, 2048):
+            speeds, _ = drag(
+                scratching_state(frame=2000), 1.0, 1.5, block=block, mouse_hz=mouse_hz
+            )
+            settled = np.array(speeds[len(speeds) // 3 :])
+            assert settled.min() > 0.93 and settled.max() < 1.07, (mouse_hz, block)
+
+
+def test_the_audio_does_not_trail_the_hand():
+    # With the lag of a plain spring (~90 ms to be this smooth) a scratch feels sluggish.
+    _, behind = drag(scratching_state(frame=2000), speed=1.0, seconds=1.5)
+    typical = abs(np.mean(behind[15:])) / SAMPLE_RATE * 1000
+    assert typical < 25  # milliseconds of audio behind where the hand is
+
+
 def test_scratching_plays_the_audio_forward_at_the_speed_of_the_drag():
-    state = scratching_state(frame=1000)
-    state.scratch_target = 1000 + 200  # 200 frames of track over a 100 frame block: 2x
-    out = blocks(render_block(state, 100))[:, 0].astype(int)
-    assert state.scratch_pos == pytest.approx(1200)
-    assert out[50] == pytest.approx(
-        1000 + 50 * 2, abs=1
-    )  # reads two source frames per output
-    assert (np.diff(out[10:]) > 0).all()
+    speeds, _ = drag(scratching_state(frame=2000), speed=2.0, seconds=1.5)
+    assert np.mean(speeds[10:]) == pytest.approx(2.0, abs=0.04)
 
 
 def test_scratching_backwards_plays_the_audio_in_reverse():
-    state = scratching_state(frame=5000)
-    state.scratch_target = 5000 - 100
-    out = blocks(render_block(state, 100))[:, 0].astype(int)
-    assert state.scratch_pos == pytest.approx(4900)
-    assert (np.diff(out[10:]) < 0).all()  # descending: the record is going backwards
-    assert out[50] == pytest.approx(5000 - 50, abs=1)
+    speeds, _ = drag(scratching_state(frame=200_000), speed=-1.0, seconds=1.5)
+    assert np.mean(speeds[10:]) == pytest.approx(-1.0, abs=0.04)
+
+
+def test_a_slow_drag_is_a_low_pitch_not_a_stretched_one():
+    # Like vinyl: half speed reads half the frames per frame (an octave down).
+    speeds, _ = drag(scratching_state(frame=2000), speed=0.5, seconds=2.0)
+    assert np.mean(speeds[15:]) == pytest.approx(0.5, abs=0.03)
 
 
 def test_a_stationary_target_is_silence_not_a_held_note():
     state = scratching_state(frame=3000)
-    render_block(state, 256)  # the fade-out block
     assert not blocks(render_block(state, 256)).any()
     assert state.scratch_pos == 3000
+
+
+def test_the_head_stops_quickly_when_the_hand_does_and_never_runs_on_far():
+    from dubcrate.audio.player import note_scratch_target
+
+    state = scratching_state(frame=2000)
+    drag(state, speed=1.0, seconds=0.5)
+    held = state.scratch_target  # the hand stops dead here
+    reached = []
+    clock = 0.5
+    for _ in range(60):
+        clock += 256 / SAMPLE_RATE
+        render_block(state, 256, now=clock)
+        reached.append(state.scratch_pos)
+    # It runs on a little: a block plays audio from the near future, so the target is predicted
+    # about 40 ms ahead, and a hand that stops inside that window was over-predicted (about
+    # 50 ms of audio at normal speed, measured).
+    assert max(reached) - held < 0.06 * SAMPLE_RATE
+    assert reached[-1] == pytest.approx(reached[-2], abs=0.5)  # and then rests
+    assert abs(reached[-1] - held) < 0.05 * SAMPLE_RATE
+    assert (
+        abs(state.scratch_vel) < 0.001 * SAMPLE_RATE
+    )  # under a thousandth of normal speed
+    del note_scratch_target
 
 
 def test_the_head_never_moves_faster_than_the_speed_limit():
     from dubcrate.audio.player import MAX_SCRATCH_RATE
 
     state = scratching_state(frame=1000)
-    state.scratch_target = 40_000  # a huge flick
-    render_block(state, 100)
-    assert state.scratch_pos == pytest.approx(1000 + MAX_SCRATCH_RATE * 100)
-    assert state.scratch_pos < state.scratch_target  # still catching up
+    state.scratch_target = 300_000  # a huge flick
+    advance = []
+    for _ in range(120):
+        before = state.scratch_pos
+        render_block(state, BLOCK)
+        advance.append((state.scratch_pos - before) / BLOCK)
+    assert max(advance) <= MAX_SCRATCH_RATE * 1.05
+    assert max(advance) > MAX_SCRATCH_RATE * 0.5  # but it does go fast: it is chasing
 
 
-def test_starting_a_scratch_does_not_click_and_the_volume_applies():
-    state = scratching_state(frame=1000, volume=0.5, gain=0.0)  # coming from silence
-    state.scratch_target = 1000 + 400
-    out = blocks(render_block(state, 200))[:, 0].astype(int)
-    assert out[0] == pytest.approx(1000 * 0.0, abs=2)  # begins silent...
-    assert out[-1] > out[10]  # ...and is faded in across the block
-    full = scratching_state(frame=1000, volume=0.5, gain=0.5)
-    full.scratch_target = 1000 + 400
-    assert blocks(render_block(full, 200))[100, 0] == pytest.approx(
-        (1000 + 100 * 2) * 0.5, abs=2
-    )
+def test_a_pause_in_the_mouse_events_does_not_make_the_audio_run_away():
+    from dubcrate.audio.player import note_scratch_target
+
+    state = scratching_state(frame=2000)
+    t = 0.0
+    for i in range(6):  # a drag at 1x, 60 Hz
+        t = i / MOUSE_HZ
+        note_scratch_target(state, 2000 + SAMPLE_RATE * t, t)
+    last = 2000 + SAMPLE_RATE * t
+    clock = t
+    for _ in range(80):  # then no more events for a long time (the hand froze)
+        clock += BLOCK / SAMPLE_RATE
+        render_block(state, BLOCK, now=clock)
+    assert state.scratch_pos - last < 0.05 * SAMPLE_RATE  # extrapolation is short-lived
+
+
+def test_the_drag_velocity_comes_from_the_events_not_from_two_that_arrive_together():
+    from dubcrate.audio.player import note_scratch_target
+
+    state = scratching_state(frame=2000)
+    note_scratch_target(state, 2000, 0.000)
+    note_scratch_target(state, 2800, 0.001)  # two events delivered back to back
+    assert state.scratch_ff == 0.0  # too close in time to tell a speed from
+    note_scratch_target(state, 3600, 0.020)
+    assert state.scratch_ff == pytest.approx((3600 - 2000) / 0.020)
+
+
+def test_grabbing_a_playing_track_carries_on_smoothly_instead_of_clicking():
+    state = scratching_state(frame=5000, velocity=float(SAMPLE_RATE))  # was playing
+    first = blocks(render_block(state, 256))[:, 0].astype(float)
+    assert first[0] == pytest.approx(5000, abs=2)  # picks up exactly where it was
+    assert first[10] > first[0]  # still moving forward, then easing off
+    assert (np.diff(first) >= 0).all()
+
+
+def test_starting_from_rest_fades_in_and_the_volume_applies():
+    state = scratching_state(frame=2000, volume=0.5)
+    state.scratch_target = 2000 + 20_000
+    out = blocks(render_block(state, 2048))[:, 0].astype(float)
+    assert out[0] == pytest.approx(0.0, abs=2)  # begins silent, no click
+    assert out.max() <= 32_000 * 0.5 + 1  # and the volume scales it
 
 
 def test_scratching_past_either_end_stays_in_the_track_and_never_crashes():
     state = scratching_state(frame=10)
     state.scratch_target = -5000
-    out = render_block(state, 128)
-    assert len(out) == 128 * 4 and state.scratch_pos == 0.0
-    end = scratching_state(frame=44_000)
-    end.scratch_target = 90_000
-    render_block(end, 128)
-    render_block(end, 128)
-    assert end.scratch_pos <= len(end.samples)
+    for _ in range(10):
+        assert len(render_block(state, 128)) == 128 * 4
+    assert (
+        state.scratch_pos == pytest.approx(0.0, abs=1e-3) and state.scratch_vel == 0.0
+    )
+    total = len(sawtooth())
+    end = scratching_state(frame=total - 50)
+    end.scratch_target = total + 90_000
+    for _ in range(10):
+        render_block(end, 128)
+    assert end.scratch_pos <= total
 
 
 def test_scratching_without_a_track_is_silence():
@@ -460,7 +588,7 @@ def test_scratching_without_a_track_is_silence():
 
 
 def test_a_scratch_leaves_a_playing_track_playing(player):
-    player.load(DecodedAudio(ramp()))
+    player.load(DecodedAudio(sawtooth()))
     player.play()
     device = player.opened[0]
     device.pull(1000)
@@ -468,7 +596,9 @@ def test_a_scratch_leaves_a_playing_track_playing(player):
     assert player.scratching and player.playing  # held, not stopped
     before = player.position
     device.pull(1000)
-    assert player.position == pytest.approx(before)  # a held track doesn't advance
+    assert player.position == pytest.approx(
+        before, abs=0.01
+    )  # it slows at once; nothing runs on
     player.scratch_to(before + 0.5)
     for _ in range(40):
         device.pull(1024)
@@ -482,7 +612,7 @@ def test_a_scratch_leaves_a_playing_track_playing(player):
 
 
 def test_a_scratch_on_a_paused_track_stays_paused_and_is_heard(player):
-    player.load(DecodedAudio(ramp()))
+    player.load(DecodedAudio(sawtooth()))
     assert player.opened == []
     player.begin_scratch()
     assert len(player.opened) == 1 and not player.playing  # opened the device itself
@@ -498,7 +628,7 @@ def test_a_scratch_on_a_paused_track_stays_paused_and_is_heard(player):
 
 
 def test_scratch_to_is_clamped_to_the_track(player):
-    player.load(DecodedAudio(ramp(SAMPLE_RATE)))  # one second
+    player.load(DecodedAudio(sawtooth(SAMPLE_RATE)))  # one second
     player.begin_scratch()
     player.scratch_to(99.0)
     for _ in range(80):
@@ -507,7 +637,7 @@ def test_scratch_to_is_clamped_to_the_track(player):
     player.scratch_to(-9.0)
     for _ in range(80):
         player.opened[0].pull(1024)
-    assert player.position == 0.0
+    assert player.position == pytest.approx(0.0, abs=1e-3)
 
 
 def test_scratch_calls_without_a_scratch_or_a_track_do_nothing(player):
@@ -515,13 +645,13 @@ def test_scratch_calls_without_a_scratch_or_a_track_do_nothing(player):
     player.end_scratch()
     player.begin_scratch()
     assert not player.scratching and player.opened == []
-    player.load(DecodedAudio(ramp()))
+    player.load(DecodedAudio(sawtooth()))
     player.scratch_to(1.0)  # no scratch in progress
     assert player.position == 0.0
 
 
 def test_loading_a_new_track_ends_any_scratch(player):
-    player.load(DecodedAudio(ramp()))
+    player.load(DecodedAudio(sawtooth()))
     player.begin_scratch()
-    player.load(DecodedAudio(ramp()))
+    player.load(DecodedAudio(sawtooth()))
     assert not player.scratching and player.position == 0.0

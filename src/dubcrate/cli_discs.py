@@ -71,15 +71,21 @@ def _show(lib: Library, disc_id: int) -> None:
             "!" if t.missing or t.stale else " "
         )
         bpm = f"{t.bpm:6.1f}" if t.bpm else "     -"
+        # the text shown is what will be written on the CD; a * marks one edited for this disc
+        edited = "*" if e.edited else " "
         print(
             f"  {e.position + 1:2d}. {_mmss(e.sectors):>6s}{flags}"
-            f" {_fit(t.artist, 24):24s}  {_fit(t.title, 38):38s}  {bpm}  {t.key or '-':>4s}"
+            f" {_fit(e.artist, 24):24s}  {_fit(e.title, 38):38s}{edited} {bpm}  {t.key or '-':>4s}"
         )
     print(_summary_line(s, approx=any(not e.track.length_exact for e in entries)))
     if any(not e.track.length_exact for e in entries):
         print("  (~ = estimated length; measured when the disc is burned)")
     if any(e.track.missing or e.track.stale for e in entries):
         print("  (! = file missing or track no longer in its source)")
+    if any(e.edited for e in entries):
+        print(
+            "  (* = artist or title edited for this disc only; the library is unchanged)"
+        )
 
 
 def cmd_new(lib: Library, args: argparse.Namespace) -> int:
@@ -133,6 +139,23 @@ def cmd_remove(lib: Library, args: argparse.Namespace) -> int:
 
 def cmd_move(lib: Library, args: argparse.Namespace) -> int:
     lib.move_in_disc(args.disc, args.from_position - 1, args.to_position - 1)
+    _show(lib, args.disc)
+    return 0
+
+
+def cmd_text(lib: Library, args: argparse.Namespace) -> int:
+    """Edit the artist and/or title written on the CD for one track of one disc."""
+    if args.title is None and args.artist is None:
+        print(
+            "give --title and/or --artist (an empty value goes back to the original)",
+            file=sys.stderr,
+        )
+        return 2
+    position = args.position - 1
+    if args.title is not None:
+        lib.set_entry_text(args.disc, position, "title", args.title)
+    if args.artist is not None:
+        lib.set_entry_text(args.disc, position, "artist", args.artist)
     _show(lib, args.disc)
     return 0
 
@@ -275,6 +298,18 @@ def add_parsers(sub: argparse._SubParsersAction) -> None:
     p.add_argument("from_position", type=int)
     p.add_argument("to_position", type=int)
     p.set_defaults(fn=cmd_move)
+
+    p = disc.add_parser(
+        "text",
+        help="edit the artist/title written on the CD for a track (this disc only)",
+    )
+    p.add_argument("disc", type=int)
+    p.add_argument("position", type=int, help="1-based")
+    p.add_argument(
+        "--title", help="the track name on the CD; empty restores the original"
+    )
+    p.add_argument("--artist", help="the artist on the CD; empty restores the original")
+    p.set_defaults(fn=cmd_text)
 
     p = disc.add_parser("set", help="rename a disc or change its size/gaps")
     p.add_argument("disc", type=int)

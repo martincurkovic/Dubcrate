@@ -801,17 +801,18 @@ def test_hidden_columns_are_remembered_and_the_title_cannot_be_hidden(audible):
     genre = next(i for i, c in enumerate(TRACK_COLUMNS) if c.title == "Genre")
     win.set_column_visible(genre, False)
     win.set_column_visible(PREVIEW_COLUMN, False)
-    assert win.track_table.isColumnHidden(genre) and settings.get_hidden_columns() == [
-        "Genre",
-        "Preview",
-    ]
+    assert win.track_table.isColumnHidden(genre)
+    assert "Genre" not in settings.get_visible_columns()
+    assert "Preview" not in settings.get_visible_columns()
+    assert "Title" in settings.get_visible_columns()
     other = MainWindow(lib)
     assert other.track_table.isColumnHidden(genre) and other.track_table.isColumnHidden(
         PREVIEW_COLUMN
     )
     assert not other.track_table.isColumnHidden(1)
     win.set_column_visible(genre, True)
-    assert settings.get_hidden_columns() == ["Preview"]
+    assert "Genre" in settings.get_visible_columns()
+    assert "Preview" not in settings.get_visible_columns()
     other.deleteLater()
 
 

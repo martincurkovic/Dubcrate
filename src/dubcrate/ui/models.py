@@ -2,6 +2,7 @@
 
 import json
 from collections.abc import Sequence
+from pathlib import PurePath
 from typing import NamedTuple
 
 from PySide6.QtCore import (
@@ -55,24 +56,52 @@ class TrackColumn(NamedTuple):
     title: str
     sort_key: str | None  # a `Library.tracks(sort=...)` key; None can't be sorted
     right: bool = False
+    shown: bool = True  # on by default; the rest are there to switch on
+    width: int = 90  # pixels, when first shown
 
 
-# The marker, then what matters when picking tracks. Album and year are left out (search
-# still matches the album): they are rarely how a DJ picks, and they crowd the table.
+# The marker, then what matters when picking tracks: these are the columns shown by default.
+# The rest come from what rekordbox knows about a track; there are many, and few matter to
+# most people, so they are all off until switched on (right-click a column heading). They
+# come after the first ones, so a saved layout of the first ones stays valid.
 TRACK_COLUMNS = (
-    TrackColumn("", None),  # the "already on the disc" marker
-    TrackColumn("Title", "title"),
-    TrackColumn("Artist", "artist"),
-    TrackColumn("BPM", "bpm", right=True),
-    TrackColumn("Key", "key"),
-    TrackColumn("Time", "duration", right=True),
-    TrackColumn("Preview", None),  # the whole-track waveform, drawn by PreviewDelegate
+    TrackColumn("", None, width=24),  # the "already on the disc" marker
+    TrackColumn("Title", "title", width=230),
+    TrackColumn("Artist", "artist", width=130),
+    TrackColumn("BPM", "bpm", right=True, width=50),
+    TrackColumn("Key", "key", width=40),
+    TrackColumn("Time", "duration", right=True, width=46),
+    TrackColumn(
+        "Preview", None, width=120
+    ),  # the whole-track waveform (PreviewDelegate)
     TrackColumn("Genre", "genre"),
+    TrackColumn("Album", "album", shown=False, width=160),
+    TrackColumn("Year", "year", right=True, shown=False, width=50),
+    TrackColumn("Rating", "rating", shown=False, width=70),
+    TrackColumn("My Tags", "my_tags", shown=False, width=140),
+    TrackColumn("Label", "label", shown=False, width=120),
+    TrackColumn("Remixer", "remixer", shown=False, width=120),
+    TrackColumn("Composer", "composer", shown=False, width=120),
+    TrackColumn("Comment", "comment", shown=False, width=160),
+    TrackColumn("Plays", "play_count", right=True, shown=False, width=46),
+    TrackColumn("Date Added", "date_added", shown=False, width=90),
+    TrackColumn("Bitrate", "bitrate", right=True, shown=False, width=56),
+    TrackColumn("Sample Rate", "sample_rate", right=True, shown=False, width=80),
+    TrackColumn("Format", None, shown=False, width=56),
+    TrackColumn("Path", "path", shown=False, width=260),
 )
 
 
 PREVIEW_COLUMN = next(i for i, c in enumerate(TRACK_COLUMNS) if c.title == "Preview")
 MAX_PREVIEWS = 4000
+
+
+def _stars(rating: int | None) -> str:
+    """Five stars, as many filled as the rating (none for unrated)."""
+    if not rating:
+        return ""
+    filled = max(0, min(5, rating))
+    return "★" * filled + "☆" * (5 - filled)
 
 
 def _track_cell(track: Track, column: int) -> str:
@@ -89,6 +118,34 @@ def _track_cell(track: Track, column: int) -> str:
             return _clock(track.duration)
         case "Genre":
             return track.genre
+        case "Album":
+            return track.album
+        case "Year":
+            return str(track.year) if track.year else ""
+        case "Rating":
+            return _stars(track.rating)
+        case "My Tags":
+            return track.my_tags
+        case "Label":
+            return track.label
+        case "Remixer":
+            return track.remixer
+        case "Composer":
+            return track.composer
+        case "Comment":
+            return track.comment
+        case "Plays":
+            return str(track.play_count) if track.play_count else ""
+        case "Date Added":
+            return track.date_added
+        case "Bitrate":
+            return str(track.bitrate) if track.bitrate else ""
+        case "Sample Rate":
+            return f"{track.sample_rate / 1000:g} kHz" if track.sample_rate else ""
+        case "Format":
+            return PurePath(track.path).suffix.lstrip(".").upper()
+        case "Path":
+            return track.path
     return ""  # (the marker and the preview are drawn, not written)
 
 
@@ -193,19 +250,24 @@ class TrackTableModel(QAbstractTableModel):
         return mime
 
 
-DISC_COLUMNS = ("#", "Time", "Artist", "Title", "BPM", "Key")
+# Only what a CD can hold: the track number, its length, and the CD-TEXT artist and
+# track name (the disc's own name is the CD title). Artist and title can be edited here.
+DISC_COLUMNS = ("#", "Time", "Artist", "Title")
+_EDITABLE = {2: "artist", 3: "title"}  # column -> the CD text field it edits
 
 
 class DiscModel(QAbstractTableModel):
     """The tracks on the current disc, in order.
 
-    Dropping tracks from the track table emits `tracks_dropped(ids, row)`, and
-    dragging rows within the list emits `rows_moved(positions, row)`. The model
-    never changes anything itself: the panel updates the library and reloads.
+    Dropping tracks from the track table emits `tracks_dropped(ids, row)`, dragging
+    rows within the list emits `rows_moved(positions, row)`, and editing an artist or
+    title emits `text_edited(position, field, text)`. The model never changes anything
+    itself: the panel updates the library and reloads.
     """
 
     tracks_dropped = Signal(list, int)
     rows_moved = Signal(list, int)
+    text_edited = Signal(int, str, str)  # (position, "artist" | "title", the new text)
 
     def __init__(self, parent: QObject | None = None):
         super().__init__(parent)
@@ -239,7 +301,7 @@ class DiscModel(QAbstractTableModel):
             if role == Qt.ItemDataRole.DisplayRole:
                 return DISC_COLUMNS[section]
             if role == Qt.ItemDataRole.TextAlignmentRole:
-                return _RIGHT if section in (1, 4) else _LEFT
+                return _RIGHT if section == 1 else _LEFT
         return None
 
     def _swatch(self, position: int) -> QIcon:
@@ -254,7 +316,7 @@ class DiscModel(QAbstractTableModel):
         entry = self._entries[index.row()]
         track = entry.track
         column = index.column()
-        if role == Qt.ItemDataRole.DisplayRole:
+        if role in (Qt.ItemDataRole.DisplayRole, Qt.ItemDataRole.EditRole):
             match column:
                 case 0:
                     return str(entry.position + 1)
@@ -263,36 +325,69 @@ class DiscModel(QAbstractTableModel):
                         entry.sectors
                     )
                 case 2:
-                    return track.artist
+                    return entry.artist  # what is written on the CD, not the library's
                 case 3:
-                    return track.title
-                case 4:
-                    return f"{track.bpm:.1f}" if track.bpm else ""
-                case 5:
-                    return track.key
+                    return entry.title
         elif role == Qt.ItemDataRole.DecorationRole and column == 0:
             return self._swatch(entry.position)
         elif role == Qt.ItemDataRole.TextAlignmentRole:
-            return _RIGHT if column in (1, 4) else _LEFT
+            return _RIGHT if column == 1 else _LEFT
         elif role == Qt.ItemDataRole.ForegroundRole and (track.missing or track.stale):
             return QColor(theme.current_palette()["critical"])
+        elif role == Qt.ItemDataRole.FontRole and self._is_edited(entry, column):
+            font = QGuiApplication.font()
+            font.setItalic(True)  # edited for this disc: it differs from the library's
+            return font
         elif role == Qt.ItemDataRole.ToolTipRole:
+            lines = []
+            if self._is_edited(entry, column):
+                original = track.artist if column == 2 else track.title
+                lines.append(
+                    f"Edited for this disc only. The library has “{original}”."
+                    " Clear the text to go back to it."
+                )
+            elif column in _EDITABLE:
+                lines.append("Double-click to edit what is written on the CD")
             if track.stale:
-                return "No longer in its source. Remove it before burning."
-            if track.missing:
-                return f"File not found: {track.path}"
-            return track.path + (
-                ""
-                if track.length_exact
-                else "\nLength estimated; measured when the disc is burned"
-            )
+                lines.append("No longer in its source. Remove it before burning.")
+            elif track.missing:
+                lines.append(f"File not found: {track.path}")
+            else:
+                lines.append(track.path)
+                if not track.length_exact:
+                    lines.append("Length estimated; measured when the disc is burned")
+            return "\n".join(lines)
         return None
+
+    @staticmethod
+    def _is_edited(entry: DiscEntry, column: int) -> bool:
+        return (column == 2 and entry.artist_override is not None) or (
+            column == 3 and entry.title_override is not None
+        )
+
+    def setData(self, index: QModelIndex, value, role=Qt.ItemDataRole.EditRole) -> bool:
+        """An edit of the artist or title: ask for it, but change nothing here."""
+        if role != Qt.ItemDataRole.EditRole or not index.isValid():
+            return False
+        field = _EDITABLE.get(index.column())
+        if field is None:
+            return False
+        entry = self._entries[index.row()]
+        text = str(value).strip()
+        if text != (entry.artist if field == "artist" else entry.title):
+            self.text_edited.emit(entry.position, field, text)
+        return False  # the panel updates the library and reloads; the model never edits
 
     # -- drag and drop ----------------------------------------------------
 
     def flags(self, index: QModelIndex) -> Qt.ItemFlag:
         base = super().flags(index) | Qt.ItemFlag.ItemIsDropEnabled
-        return base | Qt.ItemFlag.ItemIsDragEnabled if index.isValid() else base
+        if not index.isValid():
+            return base
+        base |= Qt.ItemFlag.ItemIsDragEnabled
+        if index.column() in _EDITABLE:
+            base |= Qt.ItemFlag.ItemIsEditable
+        return base
 
     def supportedDragActions(self) -> Qt.DropAction:
         return Qt.DropAction.MoveAction

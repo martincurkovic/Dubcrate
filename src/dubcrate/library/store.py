@@ -9,6 +9,7 @@ is rebuilt.
 import os
 import sqlite3
 from collections.abc import Iterable
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from types import TracebackType
@@ -36,6 +37,16 @@ from dubcrate.library.models import (
 )
 from dubcrate.library.paths import default_library_path
 from dubcrate.planning import fit_tracks, split_sequential
+
+
+@dataclass(frozen=True)
+class _Slot:
+    """A row of a disc as the store moves it about: a track and the CD text edits that
+    belong to this place on this disc (None: the track's own)."""
+
+    track_id: int
+    title: str | None = None
+    artist: str | None = None
 
 
 class LibraryError(RuntimeError):
@@ -144,13 +155,27 @@ CREATE TABLE burn_track (
 )
 """
 
-_MIGRATIONS = (_SCHEMA_V1, _SCHEMA_V2, _SCHEMA_V3)
+_SCHEMA_V4 = """
+ALTER TABLE track ADD COLUMN label TEXT NOT NULL DEFAULT '';
+ALTER TABLE track ADD COLUMN remixer TEXT NOT NULL DEFAULT '';
+ALTER TABLE track ADD COLUMN composer TEXT NOT NULL DEFAULT '';
+ALTER TABLE track ADD COLUMN my_tags TEXT NOT NULL DEFAULT '';
+ALTER TABLE track ADD COLUMN play_count INTEGER;
+ALTER TABLE track ADD COLUMN date_added TEXT NOT NULL DEFAULT ''
+"""
+
+_SCHEMA_V5 = """
+ALTER TABLE disc_track ADD COLUMN title TEXT;
+ALTER TABLE disc_track ADD COLUMN artist TEXT
+"""
+
+_MIGRATIONS = (_SCHEMA_V1, _SCHEMA_V2, _SCHEMA_V3, _SCHEMA_V4, _SCHEMA_V5)
 SCHEMA_VERSION = len(_MIGRATIONS)
 
 _TRACK_FIELDS = (
     "path", "title", "artist", "album", "genre", "year", "comment", "bpm", "key",
     "duration", "bitrate", "sample_rate", "bit_depth", "rating", "file_size",
-    "analysis_path",
+    "analysis_path", "label", "remixer", "composer", "my_tags", "play_count", "date_added",
 )  # fmt: skip
 
 _SORTS = {
@@ -164,6 +189,15 @@ _SORTS = {
     "year": "t.year",
     "rating": "t.rating",
     "path": "t.path COLLATE NOCASE",
+    "comment": "t.comment COLLATE NOCASE",
+    "bitrate": "t.bitrate",
+    "sample_rate": "t.sample_rate",
+    "label": "t.label COLLATE NOCASE",
+    "remixer": "t.remixer COLLATE NOCASE",
+    "composer": "t.composer COLLATE NOCASE",
+    "my_tags": "t.my_tags COLLATE NOCASE",
+    "play_count": "t.play_count",
+    "date_added": "t.date_added",
 }
 
 
@@ -605,18 +639,40 @@ class Library:
 
     def disc_entries(self, disc_id: int) -> list[DiscEntry]:
         rows = self._conn.execute(
-            "SELECT dt.position AS disc_position, t.* FROM disc_track dt"
+            "SELECT dt.position AS disc_position, dt.title AS dt_title,"
+            " dt.artist AS dt_artist, t.* FROM disc_track dt"
             " JOIN track t ON t.id = dt.track_id WHERE dt.disc_id = ? ORDER BY dt.position",
             (disc_id,),
         )
-        return [DiscEntry(r["disc_position"], self._to_track(r)) for r in rows]
+        return [
+            DiscEntry(
+                r["disc_position"], self._to_track(r), r["dt_title"], r["dt_artist"]
+            )
+            for r in rows
+        ]
+
+    def _slots(self, disc_id: int) -> list[_Slot]:
+        rows = self._conn.execute(
+            "SELECT track_id, title, artist FROM disc_track WHERE disc_id = ?"
+            " ORDER BY position",
+            (disc_id,),
+        )
+        return [_Slot(r["track_id"], r["title"], r["artist"]) for r in rows]
 
     def _write_disc_tracks(self, disc_id: int, track_ids: list[int]) -> None:
-        """Replace a disc's track list; positions are always 0..n-1."""
+        """Replace a disc's track list with plain tracks (no CD text edits)."""
+        self._write_disc_slots(disc_id, [_Slot(tid) for tid in track_ids])
+
+    def _write_disc_slots(self, disc_id: int, slots: list[_Slot]) -> None:
+        """Replace a disc's rows; positions are always 0..n-1."""
         self._conn.execute("DELETE FROM disc_track WHERE disc_id = ?", (disc_id,))
         self._conn.executemany(
-            "INSERT INTO disc_track (disc_id, track_id, position) VALUES (?, ?, ?)",
-            [(disc_id, tid, pos) for pos, tid in enumerate(track_ids)],
+            "INSERT INTO disc_track (disc_id, track_id, position, title, artist)"
+            " VALUES (?, ?, ?, ?, ?)",
+            [
+                (disc_id, s.track_id, pos, s.title, s.artist)
+                for pos, s in enumerate(slots)
+            ],
         )
         self._conn.execute(
             "UPDATE disc SET updated_at = ? WHERE id = ?",
@@ -657,11 +713,11 @@ class Library:
             accepted, rejected = list(range(len(candidates))), []
         if len(current) + len(accepted) > MAX_TRACKS:
             raise DiscError(f"a disc holds at most {MAX_TRACKS} tracks")
-        ids = [e.track.id for e in current]
-        at = len(ids) if position is None else max(0, min(position, len(ids)))
-        ids[at:at] = [candidates[i].id for i in accepted]
+        slots = self._slots(disc_id)
+        at = len(slots) if position is None else max(0, min(position, len(slots)))
+        slots[at:at] = [_Slot(candidates[i].id) for i in accepted]
         with self._conn:
-            self._write_disc_tracks(disc_id, ids)
+            self._write_disc_slots(disc_id, slots)
         return AddResult(
             tuple(candidates[i].id for i in accepted),
             tuple(candidates[i].id for i in rejected),
@@ -674,19 +730,20 @@ class Library:
         bad = sorted(drop - {e.position for e in entries})
         if bad:
             raise DiscError(f"no track at position(s) {bad}")
+        slots = self._slots(disc_id)
         with self._conn:
-            self._write_disc_tracks(
-                disc_id, [e.track.id for e in entries if e.position not in drop]
+            self._write_disc_slots(
+                disc_id, [s for i, s in enumerate(slots) if i not in drop]
             )
 
     def move_in_disc(self, disc_id: int, from_position: int, to_position: int) -> None:
         self._disc_row(disc_id)
-        ids = [e.track.id for e in self.disc_entries(disc_id)]
-        if not (0 <= from_position < len(ids) and 0 <= to_position < len(ids)):
-            raise DiscError(f"positions must be between 0 and {len(ids) - 1}")
-        ids.insert(to_position, ids.pop(from_position))
+        slots = self._slots(disc_id)
+        if not (0 <= from_position < len(slots) and 0 <= to_position < len(slots)):
+            raise DiscError(f"positions must be between 0 and {len(slots) - 1}")
+        slots.insert(to_position, slots.pop(from_position))
         with self._conn:
-            self._write_disc_tracks(disc_id, ids)
+            self._write_disc_slots(disc_id, slots)
 
     def reorder_disc(
         self, disc_id: int, positions: Iterable[int], to_position: int
@@ -698,17 +755,45 @@ class Library:
         their relative order.
         """
         self._disc_row(disc_id)
-        ids = [e.track.id for e in self.disc_entries(disc_id)]
+        slots = self._slots(disc_id)
         moving = sorted(set(positions))
-        if not moving or moving[0] < 0 or moving[-1] >= len(ids):
-            raise DiscError(f"positions must be between 0 and {len(ids) - 1}")
-        at = max(0, min(to_position, len(ids)))
+        if not moving or moving[0] < 0 or moving[-1] >= len(slots):
+            raise DiscError(f"positions must be between 0 and {len(slots) - 1}")
+        at = max(0, min(to_position, len(slots)))
         before = sum(1 for p in moving if p < at)
-        moved = [ids[p] for p in moving]
-        rest = [t for i, t in enumerate(ids) if i not in set(moving)]
+        moved = [slots[p] for p in moving]
+        rest = [s for i, s in enumerate(slots) if i not in set(moving)]
         rest[at - before : at - before] = moved
         with self._conn:
-            self._write_disc_tracks(disc_id, rest)
+            self._write_disc_slots(disc_id, rest)
+
+    def set_entry_text(
+        self, disc_id: int, position: int, field: str, text: str
+    ) -> None:
+        """Change what is written on the CD for the track at `position`: its "title"
+        (the track name) or "artist". This is for this disc only; the library track,
+        and so rekordbox and the audio file, are untouched.
+
+        Empty text, or the track's own text, clears the edit.
+        """
+        if field not in ("title", "artist"):
+            raise ValueError(f"field must be title or artist, not {field!r}")
+        self._disc_row(disc_id)
+        entries = self.disc_entries(disc_id)
+        if not 0 <= position < len(entries):
+            raise DiscError(f"no track at position {position}")
+        text = text.strip()
+        own = getattr(entries[position].track, field)
+        value = None if not text or text == own else text
+        with self._conn:
+            self._conn.execute(
+                f"UPDATE disc_track SET {field} = ? WHERE disc_id = ? AND position = ?",
+                (value, disc_id, position),
+            )
+            self._conn.execute(
+                "UPDATE disc SET updated_at = ? WHERE id = ?",
+                (datetime.now(UTC).isoformat(timespec="seconds"), disc_id),
+            )
 
     def split_into_discs(
         self,
@@ -777,8 +862,8 @@ class Library:
                 " sectors, path) VALUES (?, ?, ?, ?, ?, ?, ?)",
                 [
                     (
-                        burn_id, e.position, e.track.id, e.track.title,
-                        e.track.artist, e.sectors, e.track.path,
+                        burn_id, e.position, e.track.id, e.title,
+                        e.artist, e.sectors, e.track.path,
                     )
                     for e in entries
                 ],
@@ -841,10 +926,26 @@ class Library:
             capacity_sectors=record.capacity_sectors,
             pregap_sectors=record.pregap_sectors,
         )
-        with self._conn:
-            self._write_disc_tracks(
-                disc_id, [t.track_id for t in kept if t.track_id is not None]
+        library = {
+            t.id: t
+            for t in self.tracks_by_ids(
+                [b.track_id for b in kept if b.track_id is not None]
             )
+        }
+        slots = []
+        for burned in kept:
+            assert burned.track_id is not None
+            own = library[burned.track_id]
+            # What was burned becomes an edit only where it differs from the track's own text.
+            slots.append(
+                _Slot(
+                    burned.track_id,
+                    burned.title if burned.title != own.title else None,
+                    burned.artist if burned.artist != own.artist else None,
+                )
+            )
+        with self._conn:
+            self._write_disc_slots(disc_id, slots)
         return DuplicateResult(disc_id, skipped)
 
     def track_usage(self, track_ids: Iterable[int]) -> dict[int, TrackUsage]:

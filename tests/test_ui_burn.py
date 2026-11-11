@@ -237,6 +237,30 @@ def test_the_window_cannot_be_closed_in_the_middle_of_a_burn(make_dialog):
     assert not dialog.isVisible()
 
 
+def test_the_burn_writes_the_text_edited_for_the_disc(
+    lib, disc_id, make_dialog, wait_for
+):
+    lib.set_entry_text(disc_id, 0, "title", "On The CD")
+    lib.set_entry_text(disc_id, 1, "artist", "CD Artist")
+    dialog, burner = make_dialog()
+    burn(dialog, wait_for)
+    [(disc, _options)] = burner.burned
+    assert [(t.title, t.performer) for t in disc.tracks] == [
+        ("On The CD", "Same"),
+        ("Beta", "CD Artist"),
+    ]
+    assert disc.title == "Friday"  # the CD's own title is the disc's name
+    [record] = lib.burns()
+    assert [(t.title, t.artist) for t in record.tracks] == [
+        ("On The CD", "Same"),
+        ("Beta", "CD Artist"),
+    ]
+    assert {t.title for t in lib.tracks()} == {
+        "Alpha",
+        "Beta",
+    }  # the library is as it was
+
+
 # -- when the disc can't be burned --------------------------------------------
 
 
