@@ -150,26 +150,45 @@ device so nothing plays:
 
 ```python
 import os
+
 os.environ["QT_QPA_PLATFORM"] = "offscreen"
 os.environ["DUBCRATE_DATA_DIR"] = "/tmp/dc-shots/data"
 from PySide6.QtCore import QSettings
+
 QSettings.setDefaultFormat(QSettings.Format.IniFormat)
-QSettings.setPath(QSettings.Format.IniFormat, QSettings.Scope.UserScope, "/tmp/dc-shots/settings")
+QSettings.setPath(
+    QSettings.Format.IniFormat, QSettings.Scope.UserScope, "/tmp/dc-shots/settings"
+)
 from PySide6.QtWidgets import QApplication
 from dubcrate.audio.player import AudioPlayer
 from dubcrate.library import Library
 from dubcrate.ui import theme
 from dubcrate.ui.main_window import MainWindow
 
-class Silent:  # a stand-in sound card
-    def start(self, gen): pass
-    def stop(self): pass
-    def close(self): pass
 
-app = QApplication([]); app.setOrganizationName("shots"); app.setApplicationName("shots")
+class Silent:  # a stand-in sound card
+    def start(self, gen):
+        pass
+
+    def stop(self):
+        pass
+
+    def close(self):
+        pass
+
+
+app = QApplication([])
+app.setOrganizationName("shots")
+app.setApplicationName("shots")
 theme.apply_to_app(app, "dark")
-win = MainWindow(Library.open("/tmp/dc-shots/library.db"), player=AudioPlayer(device_factory=lambda *a: Silent()))
-win.resize(1440, 920); win.show(); app.processEvents(); win.grab().save("/tmp/dc-shots/dark.png")
+win = MainWindow(
+    Library.open("/tmp/dc-shots/library.db"),
+    player=AudioPlayer(device_factory=lambda *a: Silent()),
+)
+win.resize(1440, 920)
+win.show()
+app.processEvents()
+win.grab().save("/tmp/dc-shots/dark.png")
 ```
 
 ### Reference code in the owner's other apps

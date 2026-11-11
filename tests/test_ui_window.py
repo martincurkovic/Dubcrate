@@ -24,6 +24,7 @@ needs_ffmpeg = pytest.mark.skipif(
     reason="ffmpeg not installed",
 )
 YES = QMessageBox.StandardButton.Yes
+NO = QMessageBox.StandardButton.No
 ROWS = QItemSelectionModel.SelectionFlag.Select | QItemSelectionModel.SelectionFlag.Rows
 
 
@@ -560,3 +561,59 @@ def test_the_app_starts_and_quits(tmp_path):
     )
     assert result.returncode == 0, result.stderr
     assert Path(tmp_path / "lib.db").is_file()
+
+
+# -- already-used warning -----------------------------------------------------
+
+
+def ask_overlap(monkeypatch, answer):
+    asked = []
+
+    def question(_parent, title, text, *a, **k):
+        asked.append(text)
+        return answer
+
+    monkeypatch.setattr(QMessageBox, "question", staticmethod(question))
+    return asked
+
+
+def test_adding_a_track_already_on_the_disc_asks_first(window, monkeypatch):
+    win, lib = window
+    ids = [t.id for t in lib.tracks(sort="title")]
+    win.disc_panel.add_tracks(ids[:2])
+    asked = ask_overlap(monkeypatch, NO)
+    win.disc_panel.add_tracks(ids[1:3])
+    assert len(asked) == 1 and "already on this disc" in asked[0]
+    assert disc_titles(win) == ["Song 0", "Song 1"]  # declined: nothing added
+
+
+def test_agreeing_adds_them_anyway(window, monkeypatch):
+    win, lib = window
+    ids = [t.id for t in lib.tracks(sort="title")]
+    win.disc_panel.add_tracks(ids[:1])
+    ask_overlap(monkeypatch, YES)
+    win.disc_panel.add_tracks(ids[:1])
+    assert disc_titles(win) == ["Song 0", "Song 0"]
+
+
+def test_a_track_from_a_previous_burn_is_flagged_on_a_new_disc(window, monkeypatch):
+    win, lib = window
+    ids = [t.id for t in lib.tracks(sort="title")]
+    old = lib.create_disc("Friday")
+    lib.add_to_disc(old, ids[:1])
+    lib.record_burn(old)
+    lib.delete_disc(old)
+    win.disc_panel.reload()
+    asked = ask_overlap(monkeypatch, YES)
+    win.disc_panel.add_tracks(ids[:2])
+    assert len(asked) == 1
+    assert "burned on “Friday”" in asked[0] and "Song 1" not in asked[0]
+
+
+def test_fresh_tracks_are_added_without_asking(window, monkeypatch):
+    win, lib = window
+    ids = [t.id for t in lib.tracks(sort="title")]
+    asked = ask_overlap(monkeypatch, NO)
+    win.disc_panel.add_tracks(ids[:2])
+    assert asked == []
+    assert disc_titles(win) == ["Song 0", "Song 1"]

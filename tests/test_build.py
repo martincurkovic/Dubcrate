@@ -6,6 +6,7 @@ import pytest
 
 from dubcrate import cli
 from dubcrate.build import BuildError, build_burn_disc, disc_problems
+from dubcrate.burn import BurnError
 from dubcrate.cd import SAMPLES_PER_SECTOR
 from dubcrate.library import Library
 from dubcrate.library.folder import scan_folder
@@ -173,3 +174,48 @@ def test_cli_burn_refuses_an_overfull_disc(tmp_path, capsys):
     capsys.readouterr()
     assert run_cli(tmp_path, "burn", "1", "--yes") == 2
     assert "over capacity" in capsys.readouterr().err
+
+
+class FakeBurner:
+    def __init__(self, fail: bool = False):
+        self.fail = fail
+        self.burned = []
+
+    def burn(self, disc, options, progress=None):
+        if self.fail:
+            raise BurnError("drive on fire")
+        self.burned.append((disc, options))
+
+
+def _planned_cli_disc(tmp_path):
+    music = tmp_path / "music"
+    for name in ("one", "two"):
+        make_flac(music / f"{name}.flac", 2, title=name, artist="X")
+    run_cli(tmp_path, "import-folder", str(music))
+    run_cli(tmp_path, "disc", "new", "D")
+    run_cli(tmp_path, "disc", "add", "1", "--node", "1")
+
+
+def test_cli_burn_saves_a_record_of_a_real_burn(tmp_path, monkeypatch):
+    _planned_cli_disc(tmp_path)
+    burner = FakeBurner()
+    monkeypatch.setattr("dubcrate.cli_discs.get_burner", lambda _name: burner)
+    assert run_cli(tmp_path, "burn", "1", "--yes", "--speed", "12") == 0
+    assert len(burner.burned) == 1
+    with Library.open(tmp_path / "lib.db") as lib:
+        [record] = lib.burns()
+        assert (record.disc_id, record.speed, record.simulated) == (1, 12, False)
+        assert [t.title for t in record.tracks] == ["one", "two"]
+        assert all(t.sectors > 0 for t in record.tracks)
+
+
+def test_cli_simulated_or_failed_burns_leave_no_record(tmp_path, monkeypatch):
+    _planned_cli_disc(tmp_path)
+    monkeypatch.setattr("dubcrate.cli_discs.get_burner", lambda _name: FakeBurner())
+    assert run_cli(tmp_path, "burn", "1", "--yes", "--simulate") == 0
+    monkeypatch.setattr(
+        "dubcrate.cli_discs.get_burner", lambda _name: FakeBurner(fail=True)
+    )
+    assert run_cli(tmp_path, "burn", "1", "--yes") == 1
+    with Library.open(tmp_path / "lib.db") as lib:
+        assert lib.burns() == []

@@ -26,6 +26,7 @@ from dubcrate.library.store import LibraryError
 
 from .capacity_bar import CapacitySummary
 from .models import DiscModel
+from .overlaps import overlap_message
 from .tasks import run_async
 
 SIZES = ((80, DISC_80_SECTORS), (74, DISC_74_SECTORS))
@@ -365,6 +366,18 @@ class DiscPanel(QWidget):
             on_progress=self.progress.emit,
         )
 
+    def _confirm_overlaps(self, disc_id: int | None, track_ids: list[int]) -> bool:
+        """Tell the user which tracks are already on a disc; False if they back out."""
+        text = overlap_message(
+            self._lib.tracks_by_ids(track_ids),
+            self._lib.track_usage(track_ids),
+            disc_id,
+        )
+        if text is None:
+            return True
+        answer = QMessageBox.question(self, "Already used", text)
+        return answer == QMessageBox.StandardButton.Yes
+
     def add_tracks(
         self,
         track_ids: list[int],
@@ -379,6 +392,8 @@ class DiscPanel(QWidget):
 
         def add() -> None:
             disc_id = self.current_disc_id()
+            if not self._confirm_overlaps(disc_id, track_ids):
+                return
             if disc_id is None:
                 disc_id = self._create("Disc 1")
             try:

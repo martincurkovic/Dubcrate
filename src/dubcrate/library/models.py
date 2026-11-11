@@ -184,3 +184,24 @@ class BurnRecord:
 class DuplicateResult:
     disc_id: int
     skipped: tuple[BurnTrack, ...]  # tracks no longer in the library
+
+
+@dataclass(frozen=True)
+class DiscRef:
+    id: int
+    name: str
+
+
+@dataclass(frozen=True)
+class BurnRef:
+    id: int
+    name: str
+    burned_at: str
+
+
+@dataclass(frozen=True)
+class TrackUsage:
+    """Where a track is already used: planned discs and burned discs."""
+
+    discs: tuple[DiscRef, ...] = ()
+    burns: tuple[BurnRef, ...] = ()

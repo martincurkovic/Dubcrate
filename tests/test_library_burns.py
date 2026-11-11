@@ -115,3 +115,39 @@ def test_deleting_a_burn_record_keeps_the_disc(lib, disc):
     assert lib.disc(disc).track_count == 3
     with pytest.raises(DiscError, match="no burn with id"):
         lib.burn(burn_id)
+
+
+def test_track_usage_reports_planned_discs_and_burns(lib, disc):
+    ids = [t.id for t in lib.tracks(sort="path")]
+    lib.record_burn(disc)
+    other = lib.create_disc("Other")
+    lib.add_to_disc(other, ids[:1])
+    usage = lib.track_usage(ids)
+    assert [d.name for d in usage[ids[0]].discs] == ["Night", "Other"]
+    assert [b.name for b in usage[ids[0]].burns] == ["Night"]
+    assert [d.name for d in usage[ids[1]].discs] == ["Night"]
+
+
+def test_track_usage_leaves_out_unused_tracks_and_simulated_burns(lib, disc):
+    lib.replace_source("folder", "/n", "N", [rec("fresh")])
+    fresh = next(t.id for t in lib.tracks() if t.title == "fresh")
+    used = [t.id for t in lib.tracks(sort="path") if t.title != "fresh"]
+    lib.delete_disc(disc)
+    burn_disc = lib.create_disc("Test run")
+    lib.add_to_disc(burn_disc, used[:1])
+    lib.record_burn(burn_disc, simulated=True)
+    lib.delete_disc(burn_disc)
+    assert lib.track_usage([fresh, *used]) == {}
+
+
+def test_track_usage_keeps_burns_of_deleted_discs(lib, disc):
+    ids = [t.id for t in lib.tracks(sort="path")]
+    lib.record_burn(disc)
+    lib.delete_disc(disc)
+    usage = lib.track_usage(ids)
+    assert usage[ids[0]].discs == ()
+    assert [b.name for b in usage[ids[0]].burns] == ["Night"]
+
+
+def test_track_usage_handles_more_ids_than_one_query_chunk(lib):
+    assert lib.track_usage(range(1, 1500)) == {}

@@ -35,6 +35,9 @@
   (`burn` / `burn_track`, copies of title, artist, length and path), so editing or
   deleting the disc, or removing its source, never changes the record. *Duplicate*
   makes a new editable disc from a snapshot and skips tracks no longer in the library.
+- Adding a track that is already on the disc, on another planned disc, or on a past
+  burn asks "Add anyway?" first, listing where it is used (`Library.track_usage`,
+  `ui/overlaps.py`). Simulated burns don't count. Splitting into discs doesn't check yet.
 - The README is for end users only; developer notes live here and in `CONTRIBUTING.md`.
 
 ## Known rough edges

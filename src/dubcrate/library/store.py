@@ -18,8 +18,10 @@ from dubcrate.cd import DISC_80_SECTORS, MAX_TRACKS, disc_used_sectors
 from dubcrate.library.models import (
     AddResult,
     BurnRecord,
+    BurnRef,
     BurnTrack,
     DiscEntry,
+    DiscRef,
     DiscSummary,
     DuplicateResult,
     ImportSummary,
@@ -30,6 +32,7 @@ from dubcrate.library.models import (
     SplitResult,
     Track,
     TrackRecord,
+    TrackUsage,
 )
 from dubcrate.library.paths import default_library_path
 from dubcrate.planning import fit_tracks, split_sequential
@@ -843,3 +846,42 @@ class Library:
                 disc_id, [t.track_id for t in kept if t.track_id is not None]
             )
         return DuplicateResult(disc_id, skipped)
+
+    def track_usage(self, track_ids: Iterable[int]) -> dict[int, TrackUsage]:
+        """Where each track is already used; tracks used nowhere are left out.
+
+        Burn records from a simulated (test-write) run don't count: nothing
+        was put on a disc.
+        """
+        ids = list(dict.fromkeys(track_ids))
+        discs: dict[int, dict[int, DiscRef]] = {}
+        burns: dict[int, dict[int, BurnRef]] = {}
+        for start in range(0, len(ids), 500):
+            chunk = ids[start : start + 500]
+            marks = ",".join("?" * len(chunk))
+            for r in self._conn.execute(
+                "SELECT DISTINCT dt.track_id, d.id, d.name FROM disc_track dt"
+                f" JOIN disc d ON d.id = dt.disc_id WHERE dt.track_id IN ({marks})"
+                " ORDER BY d.id",
+                chunk,
+            ):
+                discs.setdefault(r["track_id"], {})[r["id"]] = DiscRef(
+                    r["id"], r["name"]
+                )
+            for r in self._conn.execute(
+                "SELECT DISTINCT bt.track_id, b.id, b.name, b.burned_at"
+                " FROM burn_track bt JOIN burn b ON b.id = bt.burn_id"
+                f" WHERE b.simulated = 0 AND bt.track_id IN ({marks})"
+                " ORDER BY b.id DESC",
+                chunk,
+            ):
+                burns.setdefault(r["track_id"], {})[r["id"]] = BurnRef(
+                    r["id"], r["name"], r["burned_at"]
+                )
+        return {
+            tid: TrackUsage(
+                tuple(discs.get(tid, {}).values()), tuple(burns.get(tid, {}).values())
+            )
+            for tid in ids
+            if tid in discs or tid in burns
+        }
