@@ -609,3 +609,175 @@ def test_the_disc_pane_remembers_the_last_open_disc_next_time(window):
     finally:
         again.close()
         again.deleteLater()
+
+
+# -- the + button on the picked row, and the "too long" cue ---------------------------
+
+
+def plus_point(win, selection):
+    """Where the + sits on a row, in the tree viewport's coordinates."""
+    index = find_selection(win.disc_tree.model(), selection)
+    return win.disc_tree.plus_rect(index).center(), index
+
+
+def click_at(win, point):
+    from PySide6.QtTest import QTest
+
+    QTest.mouseClick(win.disc_tree.viewport(), Qt.MouseButton.LeftButton, pos=point)
+
+
+def ask(monkeypatch, name="Friday", ok=True):
+    asked = []
+    monkeypatch.setattr(
+        QInputDialog,
+        "getText",
+        staticmethod(lambda *a, **k: asked.append(1) or (name, ok)),
+    )
+    return asked
+
+
+def test_a_folders_plus_makes_a_disc_inside_it(window, monkeypatch):
+    win, lib = window
+    folder = lib.create_disc_folder("Gigs")
+    win.refresh_discs()
+    win.show()
+    ask(monkeypatch)
+    point, index = plus_point(win, ("disc_folder", folder))
+    win.disc_tree.setCurrentIndex(index)
+    click_at(win, point)
+    disc = next(d for d in lib.discs() if d.name == "Friday")
+    assert disc.folder_id == folder
+    assert win.disc_view.current_disc_id() == disc.id  # and it is open, ready to fill
+    assert win.center.currentIndex() == 1
+
+
+def test_a_discs_plus_makes_another_disc_beside_it(window, monkeypatch):
+    win, lib = window
+    folder = lib.create_disc_folder("Gigs")
+    inside = lib.create_disc("Inside", folder_id=folder)
+    top = lib.create_disc("Top")
+    win.refresh_discs()
+    win.show()
+    win.disc_tree.expandAll()
+    ask(monkeypatch, "Second")
+    point, index = plus_point(win, ("disc", inside))
+    win.disc_tree.setCurrentIndex(index)
+    click_at(win, point)
+    assert next(d for d in lib.discs() if d.name == "Second").folder_id == folder
+    ask(monkeypatch, "Third")
+    point, index = plus_point(win, ("disc", top))
+    win.disc_tree.setCurrentIndex(index)
+    click_at(win, point)
+    assert next(d for d in lib.discs() if d.name == "Third").folder_id is None
+
+
+def test_every_row_has_a_plus_but_only_the_picked_one_shows_it(window):
+    win, lib = window
+    folder = lib.create_disc_folder("Gigs")
+    disc = lib.create_disc("Night")
+    inside = lib.create_disc("Inside", folder_id=folder)
+    win.refresh_discs()
+    win.show()
+    win.disc_tree.expandAll()
+    tree, model = win.disc_tree, win.disc_tree.model()
+    index = {
+        key: find_selection(model, key)
+        for key in (("disc_folder", folder), ("disc", disc), ("disc", inside))
+    }
+    tree.clearSelection()
+    assert not any(tree.plus_visible(i) for i in index.values())
+    for picked in index.values():
+        tree.setCurrentIndex(picked)
+        shown = [i for i in index.values() if tree.plus_visible(i)]
+        assert shown == [picked]
+
+
+def test_hovering_a_row_does_not_show_its_plus(window):
+    from PySide6.QtCore import QPointF
+    from PySide6.QtGui import QMouseEvent
+    from PySide6.QtWidgets import QApplication
+
+    win, lib = window
+    one, two = lib.create_disc_folder("One"), lib.create_disc_folder("Two")
+    win.refresh_discs()
+    win.show()
+    tree = win.disc_tree
+    pick(win, ("disc_folder", one))
+    second = find_selection(tree.model(), ("disc_folder", two))
+    point = tree.visualRect(second).center()
+    QApplication.sendEvent(
+        tree.viewport(),
+        QMouseEvent(
+            QEvent.Type.MouseMove,
+            QPointF(point),
+            QPointF(tree.viewport().mapToGlobal(point)),
+            Qt.MouseButton.NoButton,
+            Qt.MouseButton.NoButton,
+            Qt.KeyboardModifier.NoModifier,
+        ),
+    )
+    assert not tree.plus_visible(second)
+
+
+def test_clicking_the_plus_of_an_unpicked_row_just_picks_the_row(window, monkeypatch):
+    win, lib = window
+    one, two = lib.create_disc_folder("One"), lib.create_disc_folder("Two")
+    win.refresh_discs()
+    win.show()
+    asked = ask(monkeypatch)
+    pick(win, ("disc_folder", one))
+    point, index = plus_point(win, ("disc_folder", two))  # where it would be
+    click_at(win, point)
+    assert not asked and lib.discs() == []
+    assert win.disc_tree.currentIndex().siblingAtColumn(0) == index
+
+
+def test_cancelling_the_name_makes_nothing(window, monkeypatch):
+    win, lib = window
+    folder = lib.create_disc_folder("Gigs")
+    win.refresh_discs()
+    win.show()
+    ask(monkeypatch, "", ok=False)
+    point, index = plus_point(win, ("disc_folder", folder))
+    win.disc_tree.setCurrentIndex(index)
+    click_at(win, point)
+    assert lib.discs() == [] and win.center.currentIndex() == 0
+
+
+def test_clicking_elsewhere_on_a_picked_row_does_not_make_a_disc(window, monkeypatch):
+    win, lib = window
+    folder = lib.create_disc_folder("Gigs")
+    win.refresh_discs()
+    win.show()
+    asked = ask(monkeypatch)
+    _point, index = plus_point(win, ("disc_folder", folder))
+    win.disc_tree.setCurrentIndex(index)
+    click_at(win, win.disc_tree.visualRect(index).center())
+    assert not asked and lib.discs() == []
+
+
+def test_a_disc_over_its_length_is_starred_and_explained(window):
+    win, lib = window
+    ok, long = lib.create_disc("Fits"), lib.create_disc("Too long")
+    lib.add_to_disc(ok, ids(lib)[:1])
+    lib.update_disc(long, capacity_sectors=8000)  # two 5,000-sector tracks do not fit
+    lib.add_to_disc(long, ids(lib)[:2])
+    win.refresh_discs()
+    model = win.disc_tree.model()
+
+    def cells(disc_id):
+        index = find_selection(model, ("disc", disc_id))
+        return index, index.siblingAtColumn(1)
+
+    fits_name, fits_count = cells(ok)
+    long_name, long_count = cells(long)
+    assert fits_count.data(Qt.ItemDataRole.DisplayRole) == "1"
+    assert "*" not in fits_name.data(Qt.ItemDataRole.ToolTipRole)
+    assert long_count.data(Qt.ItemDataRole.DisplayRole) == "* 2"
+    assert long_name.data(Qt.ItemDataRole.DisplayRole) == "Too long"  # the name is left alone  # fmt: skip
+    for cell in (long_name, long_count):
+        tip = cell.data(Qt.ItemDataRole.ToolTipRole)
+        assert "Too long" in tip and "over" in tip.lower() and "0:" in tip
+    assert long_count.data(Qt.ItemDataRole.ForegroundRole) != fits_count.data(
+        Qt.ItemDataRole.ForegroundRole
+    )

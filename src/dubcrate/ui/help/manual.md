@@ -108,7 +108,7 @@ Tracks whose file can't be found are greyed out in the list, and shown in red on
 
 ## Listening to tracks
 
-**Double-click** a track to preview it, and press **Space** to play or pause. The **Preview** column shows the whole track as a waveform.
+**Double-click** a track to preview it, and press **Space** to play or pause (and **←** and **→** to beat jump). These keys work wherever you are in the window, except where you are typing, so the search box, a title you are editing and a setting you are typing into keep their keys. A slider keeps its own arrows, and in the Library and Discs lists **←** and **→** still close and open folders, but **Space** works there too. The **Preview** column shows the whole track as a waveform.
 
 The two waveforms in the player:
 
@@ -142,6 +142,8 @@ A disc is a playlist that goes on a CD. They live in the **Discs** list on the r
 - **Open a disc** by clicking it. Its tracks appear in the middle, ready to arrange and edit. Opening a disc also makes it the one that tracks are **added to**: its name is in bold, and under the track list it says **Adding to “…”**.
 - **Add tracks** by selecting them and pressing **Return**, **⌘D** or **Add to Disc** (they go to the open disc), or by **dragging** them from the track list onto any disc in the Discs list. Dragging onto a disc that isn't open adds to that one and leaves the open disc as it is.
 - **New Disc** and **New Folder** (under the list) make them. A new disc goes in the folder you have picked, or beside the disc you have picked.
+- **The + button** does the same in one click, as in rekordbox. Click a row and a **+** appears at its right-hand end: on a folder it makes a disc inside the folder, and on a disc it makes another disc beside it, in the same folder.
+- **A disc that is too long** is marked with an orange **\*** before its track count. Hover over it to see how far over it is. It can still be saved, but it can't be burned until it fits.
 - **Drag a disc or folder** into a folder to file it, or onto empty space to move it to the top level. Folders can hold folders.
 - **Right-click** a disc to open, rename, duplicate, burn or delete it, or a folder to make something inside it, rename it or delete it. Deleting a folder moves what is in it up a level: **no disc is ever deleted with a folder**.
 - Discs and folders are listed A to Z, with folders first.
@@ -267,9 +269,9 @@ The full list of command-line options is in the project's developer notes.
 | Shortcut | Does |
 | --- | --- |
 | Double-click a track | Preview it |
-| Space | Play or pause |
+| Space | Play or pause (anywhere except a text box) |
 | Return, or ⌘D | Add the selected tracks to the disc |
-| ← / → | Beat jump back / forward (in the track list) |
+| ← / → | Beat jump back / forward (anywhere except a text box, a slider or a folder list) |
 | Drag the zoomed waveform | Scratch |
 | Delete | Take the selected tracks off the disc |
 | ⌘O | Import a folder |

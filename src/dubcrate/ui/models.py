@@ -564,6 +564,10 @@ def _disc_tooltip(disc) -> str:
     n = disc.track_count
     fill = f"{format_clock(disc.used_sectors)} of {format_clock(disc.capacity_sectors)}"
     lines = [disc.name, f"{n} track{'s' if n != 1 else ''} · {fill}"]
+    if disc.over:
+        lines.append(
+            f"Over by {format_clock(-disc.free_sectors)}: too long for this disc"
+        )
     if disc.last_burned_at:
         lines.append(f"Last burned {disc.last_burned_at[:10]}")
     return "\n".join(lines)
@@ -648,8 +652,14 @@ def build_disc_model(lib: Library, target_disc_id: int | None = None) -> DiscTre
             font = item.font()
             font.setBold(True)  # tracks are being added to this one
             item.setFont(font)
+        count = _count_item(disc.track_count)
+        if disc.over:
+            # a cue that does not rely on colour alone (the System 6 look has none to spare)
+            count.setText(f"* {disc.track_count:,}")
+            count.setForeground(QColor(theme.current_palette()["warning"]))
+            count.setToolTip(item.toolTip())
         parent = folder_items.get(disc.folder_id, root)
-        parent.appendRow([item, _count_item(disc.track_count)])
+        parent.appendRow([item, count])
     return model
 
 

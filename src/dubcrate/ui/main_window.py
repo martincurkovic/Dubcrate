@@ -4,10 +4,11 @@ you picked, or the disc you opened; your discs (burn playlists, in folders) on t
 from importlib import metadata
 from pathlib import Path
 
-from PySide6.QtCore import QModelIndex, Qt, QTimer
+from PySide6.QtCore import QEvent, QModelIndex, Qt, QTimer
 from PySide6.QtGui import QAction, QActionGroup, QKeySequence
 from PySide6.QtWidgets import (
     QAbstractItemView,
+    QApplication,
     QFileDialog,
     QHBoxLayout,
     QHeaderView,
@@ -39,6 +40,7 @@ from dubcrate.library.store import LibraryError
 
 from . import theme, wave_style
 from .burn_dialog import BurnDialog, BurnerFactory
+from .disc_tree import DiscTree
 from .disc_view import DiscView
 from .help_dialog import show_help_dialog
 from .models import (
@@ -56,7 +58,13 @@ from .preview import PreviewController
 from .settings_dialog import SettingsDialog
 from .splitter import Splitter
 from .tasks import run_async
-from .track_table import ROW_HEIGHT, PreviewDelegate, TrackTable
+from .track_table import (
+    ROW_HEIGHT,
+    PreviewDelegate,
+    TrackTable,
+    transport_action,
+    transport_key_is_taken,
+)
 
 SEARCH_DELAY_MS = 200
 PREVIEW_DELAY_MS = 40
@@ -115,6 +123,8 @@ class MainWindow(QMainWindow):
         self._preview_timer.setInterval(PREVIEW_DELAY_MS)
         self._preview_timer.timeout.connect(self._request_previews)
         theme.notifier.changed.connect(self._on_theme_changed)
+        # Space and Left / Right drive the preview from anywhere in this window
+        QApplication.instance().installEventFilter(self)
 
         self.refresh_sources()
         self.refresh_discs()
@@ -273,7 +283,8 @@ class MainWindow(QMainWindow):
 
         # your discs: burn playlists, filed in folders. Click one to open it in the middle;
         # drag tracks onto one to add them; drag discs and folders about to file them.
-        self.disc_tree = QTreeView()
+        self.disc_tree = DiscTree()
+        self.disc_tree.new_disc_requested.connect(self._on_plus_clicked)
         self.disc_tree.setHeaderHidden(True)
         self.disc_tree.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.disc_tree.setUniformRowHeights(True)
@@ -599,6 +610,9 @@ class MainWindow(QMainWindow):
         header.setStretchLastSection(False)
         header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
         header.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
+        header.setMinimumSectionSize(
+            36
+        )  # room for a folder's + when no disc has a count
         self._restore_expanded(self.disc_tree, expanded)
         index = (
             find_selection(model, self._disc_pick) if self._disc_pick else QModelIndex()
@@ -641,15 +655,22 @@ class MainWindow(QMainWindow):
     def _on_tracks_dropped(self, disc_id: int, track_ids: list) -> None:
         self.disc_view.add_tracks(track_ids, disc_id=disc_id)
 
-    def _folder_here(self) -> int | None:
-        """The folder a new disc or folder goes in: the one picked in the disc tree, or the
-        one holding the picked disc, else the top level."""
-        pick = self._disc_pick
+    def _folder_of(self, pick: tuple | None) -> int | None:
+        """The folder a new disc beside `pick` goes in: the folder itself, or the one
+        holding a disc; the top level if there is no pick."""
         if pick is None:
             return None
         if pick[0] == "disc_folder":
             return pick[1]
         return self._lib.disc(pick[1]).folder_id
+
+    def _folder_here(self) -> int | None:
+        """The folder a new disc or folder goes in: the one picked in the disc tree, or the
+        one holding the picked disc, else the top level."""
+        return self._folder_of(self._disc_pick)
+
+    def _on_plus_clicked(self, pick: tuple) -> None:
+        self.new_disc(self._folder_of(pick))
 
     def new_disc(self, folder_id: int | None | object = ...) -> None:
         folder = self._folder_here() if folder_id is ... else folder_id
@@ -1094,9 +1115,39 @@ class MainWindow(QMainWindow):
         else:
             self.target_label.setText(f"Adding to “{self._lib.disc(disc_id).name}”")
 
+    # -- the transport keys -----------------------------------------------
+
+    def eventFilter(self, watched, event) -> bool:
+        """Space plays or pauses, Left and Right beat jump, wherever focus is in this window.
+
+        The two track lists handle these keys themselves, but focus is often elsewhere (the
+        trees, the disc's title, a button), and then nothing happened. A modal dialog, a
+        menu or another window in front gets its own keys, and so does a widget that is
+        being typed into (see `transport_key_is_taken`).
+        """
+        if event.type() == QEvent.Type.KeyPress and self._owns_keys():
+            action = transport_action(event)
+            if action and not transport_key_is_taken(
+                QApplication.focusWidget(), action
+            ):
+                if action == "play_pause":
+                    if not event.isAutoRepeat():  # (holding Space must not flicker)
+                        self.preview.toggle()
+                else:
+                    self.preview.beat_jump(-1 if action == "jump_back" else 1)
+                return True
+        return super().eventFilter(watched, event)
+
+    def _owns_keys(self) -> bool:
+        return (
+            QApplication.activeWindow() is self
+            and QApplication.activePopupWidget() is None
+        )
+
     # -- closing ----------------------------------------------------------
 
     def closeEvent(self, event) -> None:
+        QApplication.instance().removeEventFilter(self)
         self._search_timer.stop()
         self._preview_timer.stop()
         self.preview.shutdown()

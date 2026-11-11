@@ -2,7 +2,19 @@
 
 from PySide6.QtCore import QModelIndex, QPointF, QRect, QSize, Qt, Signal
 from PySide6.QtGui import QColor, QPainter, QPen, QPixmap
-from PySide6.QtWidgets import QStyledItemDelegate, QStyleOptionViewItem, QTableView
+from PySide6.QtWidgets import (
+    QAbstractSlider,
+    QAbstractSpinBox,
+    QComboBox,
+    QLineEdit,
+    QPlainTextEdit,
+    QStyledItemDelegate,
+    QStyleOptionViewItem,
+    QTableView,
+    QTextEdit,
+    QTreeView,
+    QWidget,
+)
 
 from dubcrate.waveform import BAND_HIGH, BAND_LOW, BAND_MID, STYLE_BANDS, Waveform
 
@@ -42,6 +54,22 @@ def transport_action(event) -> str | None:
     if key == Qt.Key.Key_Right:
         return "jump_forward"
     return None
+
+
+def transport_key_is_taken(widget: QWidget | None, action: str) -> bool:
+    """Whether the focused widget needs this key for itself, so it must not play or jump.
+
+    Anything you type into keeps every one of them (Space is a character, the arrows move
+    the cursor); a slider or drop-down keeps its arrows; a tree keeps Left and Right, which
+    close and open its folders. Space is free everywhere else, even on a button.
+    """
+    if isinstance(
+        widget, QLineEdit | QTextEdit | QPlainTextEdit | QAbstractSpinBox | QComboBox
+    ):
+        return True
+    if action == "play_pause":
+        return False
+    return isinstance(widget, QAbstractSlider | QTreeView)
 
 
 class TrackTable(QTableView):
