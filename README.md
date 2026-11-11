@@ -68,6 +68,28 @@ uv run dubcrate tracks --node 40                     # a playlist, in its runnin
 The library lives in the platform app-data directory; pass `--library PATH` to
 use another one. Re-importing a source syncs it in place and keeps track ids.
 
+### Planning and burning discs
+
+Discs are Dubcrate's own playlists, capped to a real CD (74 or 80 min, at most
+99 tracks). Lengths are measured with ffprobe when tracks go on a disc, and the
+rendered audio is checked against capacity again before anything is burned.
+
+```sh
+uv run dubcrate disc new "Warm Up night"             # 80 min, gapless; --minutes 74, --pregap 2
+uv run dubcrate disc add 1 --node 40                 # a whole playlist, in order
+uv run dubcrate disc add 1 --node 44 --fit           # only what still fits (--strict stops at the first misfit)
+uv run dubcrate disc add 1 --track 1475 1473 --at 1  # specific tracks, at a position
+uv run dubcrate disc show 1                          # tracks, times, capacity (~ = not yet measured)
+uv run dubcrate disc move 1 3 1 && uv run dubcrate disc remove 1 2
+uv run dubcrate disc split --node 44 --name "Pop"    # as many discs as it takes, order kept
+uv run dubcrate burn 1                               # dry run: checks the disc, burns nothing
+uv run dubcrate burn 1 --yes --simulate              # laser-off test write
+uv run dubcrate burn 1 --yes                         # really burn (uses up the blank CD-R)
+```
+
+If a track disappears from its source on re-import but a disc still uses it, the
+track is kept and flagged rather than silently dropped from the disc.
+
 ### Burn spike
 
 `spikes/burn_spike.py` renders tracks, builds the disc and burns it. It is a

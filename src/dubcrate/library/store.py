@@ -14,20 +14,33 @@ from pathlib import Path
 from types import TracebackType
 from typing import Self
 
+from dubcrate.cd import DISC_80_SECTORS, MAX_TRACKS, disc_used_sectors
 from dubcrate.library.models import (
+    AddResult,
+    DiscEntry,
+    DiscSummary,
     ImportSummary,
     Node,
     NodeRecord,
     Source,
     SourceKind,
+    SplitResult,
     Track,
     TrackRecord,
 )
 from dubcrate.library.paths import default_library_path
+from dubcrate.planning import fit_tracks, split_sequential
 
-SCHEMA_VERSION = 1
 
-_SCHEMA = """
+class LibraryError(RuntimeError):
+    pass
+
+
+class DiscError(LibraryError):
+    pass
+
+
+_SCHEMA_V1 = """
 CREATE TABLE source (
     id INTEGER PRIMARY KEY,
     kind TEXT NOT NULL CHECK (kind IN ('folder', 'rekordbox')),
@@ -78,6 +91,29 @@ CREATE TABLE node_track (
 );
 CREATE INDEX node_track_track ON node_track(track_id);
 """
+
+_SCHEMA_V2 = """
+ALTER TABLE track ADD COLUMN cd_sectors INTEGER;
+ALTER TABLE track ADD COLUMN stale INTEGER NOT NULL DEFAULT 0;
+CREATE TABLE disc (
+    id INTEGER PRIMARY KEY,
+    name TEXT NOT NULL,
+    capacity_sectors INTEGER NOT NULL,
+    pregap_sectors INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE TABLE disc_track (
+    disc_id INTEGER NOT NULL REFERENCES disc(id) ON DELETE CASCADE,
+    track_id INTEGER NOT NULL REFERENCES track(id) ON DELETE RESTRICT,
+    position INTEGER NOT NULL,
+    PRIMARY KEY (disc_id, position)
+);
+CREATE INDEX disc_track_track ON disc_track(track_id)
+"""
+
+_MIGRATIONS = (_SCHEMA_V1, _SCHEMA_V2)
+SCHEMA_VERSION = len(_MIGRATIONS)
 
 _TRACK_FIELDS = (
     "path", "title", "artist", "album", "genre", "year", "comment", "bpm", "key",
@@ -147,18 +183,19 @@ class Library:
             raise RuntimeError(
                 f"library schema v{version} is newer than this Dubcrate (v{SCHEMA_VERSION})"
             )
-        if version < 1:
-            with self._conn:
-                for statement in _SCHEMA.split(";"):
-                    if statement.strip():
-                        self._conn.execute(statement)
-                self._conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
+        for target, script in enumerate(_MIGRATIONS, start=1):
+            if version < target:
+                with self._conn:
+                    for statement in script.split(";"):
+                        if statement.strip():
+                            self._conn.execute(statement)
+                    self._conn.execute(f"PRAGMA user_version = {target}")
 
     # -- sources ---------------------------------------------------------
 
     def sources(self) -> list[Source]:
         rows = self._conn.execute(
-            "SELECT s.*, (SELECT COUNT(*) FROM track WHERE source_id = s.id) AS n"
+            "SELECT s.*, (SELECT COUNT(*) FROM track WHERE source_id = s.id AND stale = 0) AS n"
             " FROM source s ORDER BY s.name COLLATE NOCASE, s.id"
         )
         return [
@@ -166,8 +203,25 @@ class Library:
             for r in rows
         ]
 
-    def remove_source(self, source_id: int) -> None:
+    def remove_source(self, source_id: int, *, force: bool = False) -> None:
+        """Delete a source and its tracks.
+
+        Refuses if any of its tracks are on a disc, unless `force`, which
+        takes them off those discs first.
+        """
         with self._conn:
+            on_discs = self._conn.execute(
+                "SELECT COUNT(DISTINCT dt.disc_id) FROM disc_track dt"
+                " JOIN track t ON t.id = dt.track_id WHERE t.source_id = ?",
+                (source_id,),
+            ).fetchone()[0]
+            if on_discs and not force:
+                raise LibraryError(f"source has tracks on {on_discs} disc(s)")
+            self._conn.execute(
+                "DELETE FROM disc_track WHERE track_id IN"
+                " (SELECT id FROM track WHERE source_id = ?)",
+                (source_id,),
+            )
             self._conn.execute("DELETE FROM source WHERE id = ?", (source_id,))
 
     def replace_source(
@@ -214,9 +268,12 @@ class Library:
                 missing = int(not os.path.exists(rec.path))
                 if rec.ext_id in existing:
                     track_id = existing[rec.ext_id]
+                    # A changed file size means the measured CD length is out of date.
                     self._conn.execute(
-                        f"UPDATE track SET {assignments}, missing = ? WHERE id = ?",
-                        [*values, missing, track_id],
+                        "UPDATE track SET cd_sectors = CASE WHEN file_size IS ?"
+                        f" THEN cd_sectors END, {assignments}, missing = ?, stale = 0"
+                        " WHERE id = ?",
+                        [rec.file_size, *values, missing, track_id],
                     )
                     updated += rec.ext_id not in ids
                 else:
@@ -230,14 +287,34 @@ class Library:
                     added += 1
                 ids[rec.ext_id] = track_id
 
-            stale = [i for ext, i in existing.items() if ext not in ids]
+            # Tracks that left the source are deleted, unless a disc uses them:
+            # those are kept (marked stale) so no disc silently loses a track.
+            gone = [i for ext, i in existing.items() if ext not in ids]
+            on_discs = {
+                r[0]
+                for r in self._conn.execute(
+                    "SELECT DISTINCT dt.track_id FROM disc_track dt"
+                    " JOIN track t ON t.id = dt.track_id WHERE t.source_id = ?",
+                    (source_id,),
+                )
+            }
+            kept = [i for i in gone if i in on_discs]
+            dropped = [i for i in gone if i not in on_discs]
             self._conn.executemany(
-                "DELETE FROM track WHERE id = ?", [(i,) for i in stale]
+                "UPDATE track SET stale = 1 WHERE id = ?", [(i,) for i in kept]
             )
+            self._conn.executemany(
+                "DELETE FROM track WHERE id = ?", [(i,) for i in dropped]
+            )
+            notes = list(notes)
+            if kept:
+                notes.append(
+                    f"kept {len(kept)} track(s) no longer in the source: they're on discs"
+                )
 
             node_count = self._replace_nodes(source_id, list(nodes), ids)
         return ImportSummary(
-            source_id, added, updated, len(stale), node_count, tuple(notes)
+            source_id, added, updated, len(dropped), node_count, tuple(notes)
         )
 
     def _replace_nodes(
@@ -309,9 +386,10 @@ class Library:
         source_id: int | None,
         node_id: int | None,
         search: str | None,
+        include_stale: bool = False,
     ) -> tuple[str, list]:
         sql = f"SELECT {select} FROM track t"
-        where: list[str] = []
+        where: list[str] = [] if include_stale else ["t.stale = 0"]
         params: list = []
         if node_id is not None:
             sql += " JOIN node_track nt ON nt.track_id = t.id"
@@ -337,8 +415,11 @@ class Library:
         source_id: int | None = None,
         node_id: int | None = None,
         search: str | None = None,
+        include_stale: bool = False,
     ) -> int:
-        sql, params = self._track_query("COUNT(*)", source_id, node_id, search)
+        sql, params = self._track_query(
+            "COUNT(*)", source_id, node_id, search, include_stale
+        )
         return self._conn.execute(sql, params).fetchone()[0]
 
     def tracks(
@@ -351,6 +432,7 @@ class Library:
         descending: bool = False,
         limit: int | None = None,
         offset: int = 0,
+        include_stale: bool = False,
     ) -> list[Track]:
         """Tracks matching the filters.
 
@@ -360,7 +442,9 @@ class Library:
         """
         if sort is not None and sort not in _SORTS:
             raise ValueError(f"unknown sort {sort!r}; choose from {sorted(_SORTS)}")
-        sql, params = self._track_query("t.*", source_id, node_id, search)
+        sql, params = self._track_query(
+            "t.*", source_id, node_id, search, include_stale
+        )
         direction = "DESC" if descending else "ASC"
         if sort:
             sql += f" ORDER BY {_SORTS[sort]} {direction}, t.id"
@@ -387,5 +471,218 @@ class Library:
             source_id=r["source_id"],
             ext_id=r["ext_id"],
             missing=bool(r["missing"]),
+            stale=bool(r["stale"]),
+            cd_sectors=r["cd_sectors"],
             **fields,
         )
+
+    # -- discs -----------------------------------------------------------
+
+    def set_cd_sectors(self, track_id: int, sectors: int) -> None:
+        """Record a track's measured (or rendered) length on a CD."""
+        with self._conn:
+            self._conn.execute(
+                "UPDATE track SET cd_sectors = ? WHERE id = ?", (sectors, track_id)
+            )
+
+    def tracks_by_ids(self, track_ids: Iterable[int]) -> list[Track]:
+        """Tracks for `track_ids`, in that order (repeats allowed). Raises on unknown ids."""
+        wanted = list(track_ids)
+        unique = list(dict.fromkeys(wanted))
+        found: dict[int, Track] = {}
+        for start in range(0, len(unique), 500):
+            chunk = unique[start : start + 500]
+            marks = ", ".join("?" for _ in chunk)
+            for r in self._conn.execute(
+                f"SELECT * FROM track WHERE id IN ({marks})", chunk
+            ):
+                found[r["id"]] = self._to_track(r)
+        unknown = [i for i in unique if i not in found]
+        if unknown:
+            raise LibraryError(f"unknown track id(s): {unknown[:5]}")
+        return [found[i] for i in wanted]
+
+    def create_disc(
+        self,
+        name: str,
+        *,
+        capacity_sectors: int = DISC_80_SECTORS,
+        pregap_sectors: int = 0,
+    ) -> int:
+        now = datetime.now(UTC).isoformat(timespec="seconds")
+        with self._conn:
+            cursor = self._conn.execute(
+                "INSERT INTO disc (name, capacity_sectors, pregap_sectors, created_at, updated_at)"
+                " VALUES (?, ?, ?, ?, ?)",
+                (name, capacity_sectors, pregap_sectors, now, now),
+            )
+        assert cursor.lastrowid is not None
+        return cursor.lastrowid
+
+    def _disc_row(self, disc_id: int) -> sqlite3.Row:
+        row = self._conn.execute(
+            "SELECT * FROM disc WHERE id = ?", (disc_id,)
+        ).fetchone()
+        if row is None:
+            raise DiscError(f"no disc with id {disc_id}")
+        return row
+
+    def _summarize(self, row: sqlite3.Row) -> DiscSummary:
+        entries = self.disc_entries(row["id"])
+        used = disc_used_sectors((e.sectors for e in entries), row["pregap_sectors"])
+        return DiscSummary(
+            row["id"], row["name"], row["capacity_sectors"], row["pregap_sectors"],
+            len(entries), used, row["created_at"],
+        )  # fmt: skip
+
+    def discs(self) -> list[DiscSummary]:
+        rows = self._conn.execute("SELECT * FROM disc ORDER BY id").fetchall()
+        return [self._summarize(r) for r in rows]
+
+    def disc(self, disc_id: int) -> DiscSummary:
+        return self._summarize(self._disc_row(disc_id))
+
+    def update_disc(
+        self,
+        disc_id: int,
+        *,
+        name: str | None = None,
+        capacity_sectors: int | None = None,
+        pregap_sectors: int | None = None,
+    ) -> None:
+        row = self._disc_row(disc_id)
+        with self._conn:
+            self._conn.execute(
+                "UPDATE disc SET name = ?, capacity_sectors = ?, pregap_sectors = ?,"
+                " updated_at = ? WHERE id = ?",
+                (
+                    row["name"] if name is None else name,
+                    row["capacity_sectors"]
+                    if capacity_sectors is None
+                    else capacity_sectors,
+                    row["pregap_sectors"] if pregap_sectors is None else pregap_sectors,
+                    datetime.now(UTC).isoformat(timespec="seconds"),
+                    disc_id,
+                ),
+            )
+
+    def delete_disc(self, disc_id: int) -> None:
+        self._disc_row(disc_id)
+        with self._conn:
+            self._conn.execute("DELETE FROM disc WHERE id = ?", (disc_id,))
+
+    def disc_entries(self, disc_id: int) -> list[DiscEntry]:
+        rows = self._conn.execute(
+            "SELECT dt.position AS disc_position, t.* FROM disc_track dt"
+            " JOIN track t ON t.id = dt.track_id WHERE dt.disc_id = ? ORDER BY dt.position",
+            (disc_id,),
+        )
+        return [DiscEntry(r["disc_position"], self._to_track(r)) for r in rows]
+
+    def _write_disc_tracks(self, disc_id: int, track_ids: list[int]) -> None:
+        """Replace a disc's track list; positions are always 0..n-1."""
+        self._conn.execute("DELETE FROM disc_track WHERE disc_id = ?", (disc_id,))
+        self._conn.executemany(
+            "INSERT INTO disc_track (disc_id, track_id, position) VALUES (?, ?, ?)",
+            [(disc_id, tid, pos) for pos, tid in enumerate(track_ids)],
+        )
+        self._conn.execute(
+            "UPDATE disc SET updated_at = ? WHERE id = ?",
+            (datetime.now(UTC).isoformat(timespec="seconds"), disc_id),
+        )
+
+    def add_to_disc(
+        self,
+        disc_id: int,
+        track_ids: Iterable[int],
+        *,
+        position: int | None = None,
+        fit: bool = False,
+        strict: bool = False,
+    ) -> AddResult:
+        """Add tracks to a disc, at `position` (default: the end).
+
+        By default everything is added, even past capacity, so a planner can
+        show the overflow. With `fit`, only tracks that still fit are added
+        (see `fit_tracks`; `strict` stops at the first one that doesn't).
+        Going over 99 tracks is never allowed.
+        """
+        row = self._disc_row(disc_id)
+        candidates = self.tracks_by_ids(track_ids)
+        current = self.disc_entries(disc_id)
+        if fit:
+            accepted, rejected = fit_tracks(
+                [t.length_sectors for t in candidates],
+                used=disc_used_sectors(
+                    (e.sectors for e in current), row["pregap_sectors"]
+                ),
+                count=len(current),
+                capacity=row["capacity_sectors"],
+                pregap=row["pregap_sectors"],
+                strict=strict,
+            )
+        else:
+            accepted, rejected = list(range(len(candidates))), []
+        if len(current) + len(accepted) > MAX_TRACKS:
+            raise DiscError(f"a disc holds at most {MAX_TRACKS} tracks")
+        ids = [e.track.id for e in current]
+        at = len(ids) if position is None else max(0, min(position, len(ids)))
+        ids[at:at] = [candidates[i].id for i in accepted]
+        with self._conn:
+            self._write_disc_tracks(disc_id, ids)
+        return AddResult(
+            tuple(candidates[i].id for i in accepted),
+            tuple(candidates[i].id for i in rejected),
+        )
+
+    def remove_from_disc(self, disc_id: int, positions: Iterable[int]) -> None:
+        self._disc_row(disc_id)
+        drop = set(positions)
+        entries = self.disc_entries(disc_id)
+        bad = sorted(drop - {e.position for e in entries})
+        if bad:
+            raise DiscError(f"no track at position(s) {bad}")
+        with self._conn:
+            self._write_disc_tracks(
+                disc_id, [e.track.id for e in entries if e.position not in drop]
+            )
+
+    def move_in_disc(self, disc_id: int, from_position: int, to_position: int) -> None:
+        self._disc_row(disc_id)
+        ids = [e.track.id for e in self.disc_entries(disc_id)]
+        if not (0 <= from_position < len(ids) and 0 <= to_position < len(ids)):
+            raise DiscError(f"positions must be between 0 and {len(ids) - 1}")
+        ids.insert(to_position, ids.pop(from_position))
+        with self._conn:
+            self._write_disc_tracks(disc_id, ids)
+
+    def split_into_discs(
+        self,
+        track_ids: Iterable[int],
+        name: str,
+        *,
+        capacity_sectors: int = DISC_80_SECTORS,
+        pregap_sectors: int = 0,
+    ) -> SplitResult:
+        """Cut an ordered track list into as many discs as it takes.
+
+        Discs are named "<name> 1", "<name> 2", ... (just "<name>" if one is
+        enough). Tracks longer than an empty disc are skipped and returned.
+        """
+        tracks = self.tracks_by_ids(track_ids)
+        groups, too_long = split_sequential(
+            [t.length_sectors for t in tracks],
+            capacity=capacity_sectors,
+            pregap=pregap_sectors,
+        )
+        disc_ids: list[int] = []
+        for number, group in enumerate(groups, start=1):
+            disc_id = self.create_disc(
+                name if len(groups) == 1 else f"{name} {number}",
+                capacity_sectors=capacity_sectors,
+                pregap_sectors=pregap_sectors,
+            )
+            with self._conn:
+                self._write_disc_tracks(disc_id, [tracks[i].id for i in group])
+            disc_ids.append(disc_id)
+        return SplitResult(tuple(disc_ids), tuple(tracks[i].id for i in too_long))

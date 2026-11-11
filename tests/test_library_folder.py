@@ -112,3 +112,12 @@ def test_scan_round_trips_through_the_store(tmp_path):
         assert (first.added, again.added, again.updated) == (1, 0, 1)
         node = next(n for n in lib.nodes(first.source_id) if n.name == "Crate")
         assert [t.title for t in lib.tracks(node_id=node.id)] == ["A"]
+
+
+@needs_ffmpeg
+def test_a_corrupt_flac_that_probes_cleanly_is_still_unreadable(tmp_path):
+    make_flac(tmp_path / "good.flac")
+    touch(tmp_path / "corrupt.flac")  # ffprobe exits 0 for this but finds no audio
+    scan = scan_folder(tmp_path)
+    assert [t.title for t in scan.tracks] == ["good"]
+    assert [p.rsplit("/", 1)[1] for p, _ in scan.errors] == ["corrupt.flac"]

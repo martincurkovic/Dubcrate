@@ -3,6 +3,8 @@
 from dataclasses import dataclass, field
 from typing import Literal
 
+from dubcrate.cd import estimate_sectors
+
 SourceKind = Literal["folder", "rekordbox"]
 
 
@@ -39,6 +41,20 @@ class Track(TrackRecord):
     id: int
     source_id: int
     missing: bool = False  # file wasn't on disk at the last import
+    # No longer in its source but kept because a disc still uses it.
+    stale: bool = False
+    cd_sectors: int | None = None  # measured length once known
+
+    @property
+    def length_sectors(self) -> int:
+        """Length on a CD: measured if we have it, else a conservative estimate."""
+        if self.cd_sectors is not None:
+            return self.cd_sectors
+        return estimate_sectors(self.duration)
+
+    @property
+    def length_exact(self) -> bool:
+        return self.cd_sectors is not None
 
 
 @dataclass(frozen=True)
@@ -86,3 +102,46 @@ class ImportSummary:
     removed: int
     nodes: int
     notes: tuple[str, ...] = field(default=())
+
+
+@dataclass(frozen=True)
+class DiscSummary:
+    """A disc being planned: its settings and how full it is."""
+
+    id: int
+    name: str
+    capacity_sectors: int
+    pregap_sectors: int
+    track_count: int
+    used_sectors: int
+    created_at: str
+
+    @property
+    def free_sectors(self) -> int:
+        return self.capacity_sectors - self.used_sectors
+
+    @property
+    def over(self) -> bool:
+        return self.used_sectors > self.capacity_sectors
+
+
+@dataclass(frozen=True)
+class DiscEntry:
+    position: int  # 0-based
+    track: Track
+
+    @property
+    def sectors(self) -> int:
+        return self.track.length_sectors
+
+
+@dataclass(frozen=True)
+class AddResult:
+    added: tuple[int, ...]  # track ids
+    rejected: tuple[int, ...]  # track ids that didn't fit (fit mode only)
+
+
+@dataclass(frozen=True)
+class SplitResult:
+    disc_ids: tuple[int, ...]
+    too_long: tuple[int, ...]  # track ids longer than an empty disc

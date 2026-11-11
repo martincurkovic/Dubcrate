@@ -1,6 +1,8 @@
 """Red Book (audio CD) constants, sector maths and CD-TEXT string handling."""
 
+import math
 import unicodedata
+from collections.abc import Iterable
 
 SAMPLE_RATE = 44_100
 CHANNELS = 2
@@ -69,3 +71,30 @@ def cdtext_toc_escape(value: str) -> str:
         else:
             parts.append(f"\\{code:03o}")
     return "".join(parts)
+
+
+# The Red Book allows at most 99 tracks on a disc.
+MAX_TRACKS = 99
+
+
+def estimate_sectors(duration: float) -> int:
+    """Conservative length of an unmeasured track, in sectors.
+
+    Tag durations can be whole seconds (rekordbox stores integers), so add one
+    second of margin to avoid planning a disc that turns out to be too long.
+    """
+    return math.ceil(duration * SECTORS_PER_SECOND) + SECTORS_PER_SECOND
+
+
+def measured_sectors(duration: float) -> int:
+    """Length in sectors from a precise duration (e.g. ffprobe's)."""
+    return math.ceil(duration * SECTORS_PER_SECOND)
+
+
+def disc_used_sectors(lengths: Iterable[int], pregap_sectors: int = 0) -> int:
+    """Sectors a disc consumes: track lengths plus the pregap before tracks 2+.
+
+    Track 1's pregap is the mandatory lead-in, which isn't part of capacity.
+    """
+    lengths = list(lengths)
+    return sum(lengths) + max(len(lengths) - 1, 0) * pregap_sectors

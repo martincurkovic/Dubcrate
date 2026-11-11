@@ -95,9 +95,14 @@ def probe(path: Path) -> SourceInfo:
         except ValueError:
             return None
 
+    # ffprobe exits 0 for some corrupt files but reports no duration for them.
+    duration = float(fmt.get("duration") or 0.0)
+    if duration <= 0:
+        raise RenderError(f"no playable audio found in {path}")
+
     return SourceInfo(
         path=path,
-        duration=float(fmt.get("duration") or 0.0),
+        duration=duration,
         sample_rate=_int(stream.get("sample_rate")),
         bits=_int(stream.get("bits_per_raw_sample"))
         or _int(stream.get("bits_per_sample")),

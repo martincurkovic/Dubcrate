@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Protocol
 
-from dubcrate.cd import DISC_80_SECTORS
+from dubcrate.cd import DISC_80_SECTORS, disc_used_sectors
 
 
 class BurnError(RuntimeError):
@@ -33,12 +33,8 @@ class Disc:
         return sum(t.sectors for t in self.tracks)
 
     def used_sectors(self, pregap_sectors: int = 0) -> int:
-        """Sectors the disc consumes, counting silence before tracks 2 and up.
-
-        Track 1's pregap is the mandatory lead-in, which isn't part of capacity.
-        """
-        gaps = max(len(self.tracks) - 1, 0) * pregap_sectors
-        return self.total_sectors + gaps
+        """Sectors the disc consumes, counting silence before tracks 2 and up."""
+        return disc_used_sectors((t.sectors for t in self.tracks), pregap_sectors)
 
     def fits(self, capacity: int = DISC_80_SECTORS, pregap_sectors: int = 0) -> bool:
         return self.used_sectors(pregap_sectors) <= capacity

@@ -27,7 +27,11 @@ the repo; follow whatever it reports.
   - `store.py`: `Library`. `replace_source` syncs a source in one transaction and keeps track ids stable across re-imports.
   - `folder.py`: scan a folder of audio files (ffprobe tags); directories become browse nodes.
   - `rekordbox.py`: read a rekordbox 6/7 `master.db` via pyrekordbox. Mapping is in pure functions so it is testable with fake rows.
-- `src/dubcrate/cli.py`: `dubcrate` command (import, sources, nodes, tracks) until there is a GUI.
+  - `lengths.py`: `measure_tracks` probes tracks and caches their exact CD length (`track.cd_sectors`).
+  - Discs live in the same store (`disc`, `disc_track`): `create_disc`, `add_to_disc` (plain, `fit`, `strict`), `remove_from_disc`, `move_in_disc`, `split_into_discs`.
+- `src/dubcrate/planning.py`: pure packing algorithms (`fit_tracks`, `split_sequential`) on lists of sector lengths.
+- `src/dubcrate/build.py`: `build_burn_disc` turns a planned disc into rendered WAVs plus a `burn.Disc`, re-checking capacity against the rendered lengths. `disc_problems` lists what blocks a burn.
+- `src/dubcrate/cli.py`, `cli_discs.py`: the `dubcrate` command (import, sources, nodes, tracks, disc ..., burn) until there is a GUI.
 - `spikes/`: throwaway hardware drivers. Reusable logic belongs in the package.
 - `tests/`: pytest. Tests must not need a drive or a disc.
 - `assets/icon/`: `AppIcon.png` is the 1024x1024 master; `AppIcon.txt` holds the
@@ -55,6 +59,10 @@ the repo; follow whatever it reports.
 - Tracks are gapless by default (`BurnOptions.pregap_sectors = 0`). DiscRecording
   would otherwise insert 2 s of silence before every track. Capacity checks must
   count any pregap via `Disc.used_sectors`.
+- A track's length for capacity purposes is `Track.length_sectors`: measured if known,
+  else a conservative estimate (rekordbox durations are whole seconds). Rendered length
+  is authoritative, and `build_burn_disc` writes it back. Never plan with raw `duration`.
+- Re-imports must not silently drop a track a disc uses: it is kept and marked `stale`.
 - Every track must be a whole number of sectors (588 samples) before it reaches a
   burner. `render_track` guarantees this; keep it that way.
 - CD-TEXT is required, not optional. Text goes through `cdtext_clean` first.
