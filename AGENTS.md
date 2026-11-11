@@ -1,7 +1,8 @@
 # AGENTS.md
 
-Guidance for AI coding agents working in this repo. See `README.md` for what the
-project is.
+Guidance for AI coding agents working in this repo. `README.md` is for end users;
+`CONTRIBUTING.md` has setup and an overview, and `dev_docs/` has the command-line
+reference, the burning and hardware notes, and the roadmap.
 
 ## Commands
 

@@ -1,151 +1,128 @@
 # Dubcrate
 
-Burn audio CDs for old-style CDJs (CDJ-1000MK3 and friends) from your DJ library.
+**Burn audio CDs for old-style CDJs from your DJ library.**
 
-Pick a folder of tracks, or import a whole rekordbox library. Build disc-sized
-playlists that live only in Dubcrate, never in rekordbox. Then burn them to an
-audio CD with CD-TEXT through an attached USB burner.
+Older players like the CDJ-1000MK3 play audio CDs but can't read a rekordbox USB
+stick. Dubcrate lets you pick tracks from your rekordbox library (or any folder of
+music), plan CDs that fit exactly, preview them with waveforms, and burn audio CDs
+whose track titles show on the player's display.
 
-> **Status:** early. The burn pipeline is being proven on real hardware before
-> any GUI exists. Nothing here is usable as an app yet.
+> **Status: early development, not released yet.** You can already import, preview
+> and plan discs in the app. Burning from the app window is not finished: for now it
+> is done from a command line (see [dev_docs/burning.md](dev_docs/burning.md)).
+> Pre-built downloads will appear here once there is a release; until then,
+> [CONTRIBUTING.md](CONTRIBUTING.md) explains how to run it from source.
 
-## Goals
+## What it does
 
-- Import a folder of tracks or a rekordbox library (read-only).
-- Playlists capped to the length of an audio CD (74 or 80 min), measured in exact
-  sectors, with auto-fill and "split into N discs".
-- Render to CD-ready audio (16-bit / 44.1 kHz stereo, dithered) and burn
-  disc-at-once, gapless, **with CD-TEXT**.
-- Show what rekordbox knows (BPM, key, waveform, cues, beat grid) when a rekordbox
-  library is loaded, even though none of it can go on the disc.
-- Printable track list for the disc sleeve, since old CDJs have no screen for it.
-- Later: MP3 data discs as a secondary mode.
+- **Imports your rekordbox library** (read-only), with your folders and playlists
+  in their running order, or **any folder of music**.
+- **Previews tracks** with a full-track waveform and a zoomed waveform that scrolls
+  past the playhead. For rekordbox tracks it shows rekordbox's own waveform, beat
+  grid, phrases (INTRO, CHORUS, DOWN, UP, OUTRO) and any cue points; for other music it
+  draws the waveform itself.
+- **Plans discs** of 74 or 80 minutes, with a capacity bar that shows every track
+  and turns red when a disc is too long. It fills a disc in order, or splits a long
+  playlist across as many discs as it takes. Drag tracks on, drag them around.
+- **Burns audio CDs with CD-TEXT**, gapless by default, converting every track to
+  CD quality (16-bit, 44.1 kHz).
+- **Keeps its own playlists.** Your discs live in Dubcrate and never touch rekordbox.
 
-## Non-goals
+## What you need
 
-- No writing to rekordbox's database, ever. Dubcrate keeps its own SQLite store.
-- No beat grids, cue points or analysis on the disc. Old CDJs can't read them.
-- Not a DJ player and not a rekordbox replacement.
+- **A Mac.** Windows and Linux are planned.
+- **A CD burner** that can write CD-R (an external USB one is fine) and blank
+  **CD-R** discs. CD-RW is not recommended for old players.
+- **[ffmpeg](https://ffmpeg.org/)**, which Dubcrate uses to read tracks and prepare
+  them for the disc. On a Mac with Homebrew: `brew install ffmpeg`.
+- **A player that reads audio CDs**, such as the CDJ-1000MK3 it was built for.
+- Music as **MP3, WAV, FLAC, AIFF, AAC/M4A, Ogg, Opus or WMA**.
+- A **rekordbox 7** library if you want to import one. Version 7 is what Dubcrate
+  has been tried with; 6 uses the same format and may work, but is untested.
 
-## Stack
+## Using Dubcrate
 
-Python 3.13, [uv](https://docs.astral.sh/uv/), PySide6, ffmpeg for
-decoding and resampling, Nuitka for packaging. macOS first.
+1. **Import your music.** *File ▸ Import rekordbox Library…* reads your rekordbox
+   library (it only reads a temporary copy, so rekordbox is never changed), or
+   *File ▸ Import Folder…* reads a folder of music. Imported sources appear on the
+   left, with their playlists and folders beneath them.
+2. **Browse and listen.** Pick a playlist, search by title, artist, album or genre,
+   and sort by clicking a column heading. Double-click a track to preview it.
+   Right-click the column headings to show or hide columns.
+3. **Build a disc.** Drag tracks onto the disc on the right, or select them and press
+   Return. *Disc ▸ New Disc…* starts another. Drag rows to reorder, and press Delete
+   to take a track off. **Fit All to Disc** adds tracks in order until the disc is
+   full, and *Disc ▸ Split Shown Tracks Across Discs…* turns a long list into several
+   discs.
+4. **Check the bar.** It shows each track as a coloured block. A disc can't be burned
+   if it is over its size or contains a track whose file can't be found. (A CD holds
+   at most 99 tracks, and Dubcrate stops adding at that point.)
+5. **Burn it.** Coming to the app window; see the note above for now.
 
-| Concern | Choice |
+### Keyboard shortcuts
+
+| | |
 | --- | --- |
-| Burning (macOS) | Apple DiscRecording via PyObjC, with `cdrdao` as the alternative backend |
-| Burning (later) | `cdrdao` on Linux, TBD on Windows behind the same `Burner` interface |
-| Rekordbox reading | `pyrekordbox` (planned) behind a read-only library interface |
-| Audio preview | miniaudio (as in AKAISDS), with ffmpeg for formats it can't decode |
-| Tags | `ffprobe` (no tag library needed) |
+| Preview a track | Double-click |
+| Play / pause | Space |
+| Add the selected tracks to the disc | Return, or ⌘D |
+| Take the selected tracks off the disc | Delete |
+| Import a folder / a rekordbox library | ⌘O / ⇧⌘O |
+| Re-import the selected source | ⌘R |
+| New disc | ⌘N |
+| Split the shown tracks across discs | ⇧⌘D |
+| Settings | ⌘, |
 
-## Development
+In the waveforms, click to jump to a place in the track. The mouse wheel over the
+zoomed waveform zooms in and out.
 
-```sh
-uv sync
-uv run pytest
-uv run ruff check . && uv run ruff format .
-```
+### Settings
 
-Requires `ffmpeg` and `ffprobe` on `PATH` (`brew install ffmpeg`). The `cdrdao`
-backend also needs `brew install cdrdao`.
+*Settings* (⌘,), in the Dubcrate menu, chooses where previews play and how large the audio
+buffer is, with a button that plays a test tone. The *View ▸ Theme* menu switches
+between System, Light, Dark and a Macintosh System 6 look.
 
-### Running the app
+## Good to know
 
-```sh
-uv run dubcrate-gui                        # the app
-uv run dubcrate-gui --library ~/try.db     # a separate library, handy for trying things out
-uv run python -m dubcrate.ui               # the same, without the installed script
-```
+- **Your music and rekordbox are never modified.** Dubcrate only reads them. It keeps
+  its own library (imported track information and your discs) in
+  `~/Library/Application Support/Dubcrate/`.
+- **Cue points, beat grids and analysis are not put on the CD.** An audio CD can't
+  hold them and an old CDJ couldn't read them anyway. Dubcrate shows them so you can
+  plan, but the disc holds only the audio and the titles.
+- **Titles use CD-TEXT**, which handles Western European characters. Characters
+  outside that set are simplified, or become a question mark, on the disc.
+- **Discs are gapless** unless you choose a pause between tracks, so there is no
+  two-second silence between songs.
+- **Everything is converted to CD quality** when burned, so a high-resolution file
+  becomes 16-bit, 44.1 kHz, with the dither a proper conversion needs.
+- **Burn slowly.** Old players read discs burned at a low speed more reliably than
+  fast ones.
 
-Across the top is the preview player: double-click a track to hear it (Space plays
-and pauses, the arrows step through the list). It shows the whole track with its
-phrases (INTRO, CHORUS, ...) and cues, and a zoomed waveform scrolling past a fixed
-playhead with the beat grid (mouse wheel zooms; click either to seek). For rekordbox
-tracks these come from rekordbox's own analysis; for anything else the waveform is
-computed from the audio. The track list has a **Preview** column with each track's
-whole waveform, and a column chooser (right-click the header). **File ▸ Settings**
-(Ctrl+,) picks the audio output device and buffer size and has a test tone.
+## Troubleshooting
 
-Below that, three panes: your sources (imported folders and rekordbox libraries, with their
-playlists) on the left, the tracks in the middle, and the disc you are planning on
-the right. Drag tracks onto the disc (or press Return, or **Add to Disc**), drag rows
-on the disc to reorder, and watch the bar: it shows each track and goes red past the
-end of the disc. **Fit All to Disc** fills a disc in order; **Disc ▸ Split Shown
-Tracks Across Discs** cuts a playlist into as many discs as it takes. **File ▸ Import**
-reads a folder or your rekordbox library (read-only). The look follows your system
-(View ▸ Theme also has Light, Dark and Macintosh System 6, shared with the author's
-other apps). Burning is not in the window yet: use `dubcrate burn` below.
+- **A preview crackles.** Raise the buffer size in Settings (try 2048 frames).
+- **No sound, or the wrong output.** Choose the output device in Settings and press
+  *Play Test Tone*.
+- **"ffmpeg not found."** Install it (`brew install ffmpeg`) and restart Dubcrate.
+- **Dubcrate can't find my rekordbox library.** Choose *Choose File…* when importing
+  and pick `master.db`, normally in `~/Library/Pioneer/rekordbox/`.
+- **A track is greyed out, or its row says the file is missing.** The file has moved
+  or its drive is not connected. Reconnect it, then re-import the source (⌘R).
+- **A disc says it is over its size.** The capacity bar shows where the disc ends.
+  Take tracks off, switch to a longer disc size, or split the playlist.
 
-### Library
+## What's coming
 
-Import a folder of audio files, or a rekordbox library, into Dubcrate's own
-SQLite database. Both are read-only: rekordbox's `master.db` is copied to a
-temp directory and the copy is read, and audio files are only probed.
-
-```sh
-uv run dubcrate import-folder ~/Music/Crate          # directories become browsable nodes
-uv run dubcrate import-rekordbox                     # the installed library, or --db PATH
-uv run dubcrate sources
-uv run dubcrate nodes 1                              # a source's playlist/folder tree
-uv run dubcrate tracks --source 1 --search kettama --sort bpm --desc
-uv run dubcrate tracks --node 40                     # a playlist, in its running order
-```
-
-The library lives in the platform app-data directory; pass `--library PATH` to
-use another one. Re-importing a source syncs it in place and keeps track ids.
-
-### Planning and burning discs
-
-Discs are Dubcrate's own playlists, capped to a real CD (74 or 80 min, at most
-99 tracks). Lengths are measured with ffprobe when tracks go on a disc, and the
-rendered audio is checked against capacity again before anything is burned.
-
-```sh
-uv run dubcrate disc new "Warm Up night"             # 80 min, gapless; --minutes 74, --pregap 2
-uv run dubcrate disc add 1 --node 40                 # a whole playlist, in order
-uv run dubcrate disc add 1 --node 44 --fit           # only what still fits (--strict stops at the first misfit)
-uv run dubcrate disc add 1 --track 1475 1473 --at 1  # specific tracks, at a position
-uv run dubcrate disc show 1                          # tracks, times, capacity (~ = not yet measured)
-uv run dubcrate disc move 1 3 1 && uv run dubcrate disc remove 1 2
-uv run dubcrate disc split --node 44 --name "Pop"    # as many discs as it takes, order kept
-uv run dubcrate burn 1                               # dry run: checks the disc, burns nothing
-uv run dubcrate burn 1 --yes --simulate              # laser-off test write
-uv run dubcrate burn 1 --yes                         # really burn (uses up the blank CD-R)
-```
-
-If a track disappears from its source on re-import but a disc still uses it, the
-track is kept and flagged rather than silently dropped from the disc.
-
-### Burn spike
-
-`spikes/burn_spike.py` renders tracks, builds the disc and burns it. It is a
-dry run unless you pass `--yes`.
-
-```sh
-uv run spikes/burn_spike.py doctor                 # tools, drive, media
-uv run spikes/burn_spike.py tones work/tones       # synthetic test tracks
-uv run spikes/burn_spike.py plan work/tones/* --work work/render
-uv run spikes/burn_spike.py toc  work/tones/* --work work/render
-uv run spikes/burn_spike.py burn work/tones/* --work work/render \
-    --backend discrecording --yes --simulate       # laser-off test write, needs a disc in the drive
-uv run spikes/burn_spike.py burn ... --backend discrecording --yes
-```
-
-Use a blank CD-R (not a CD-RW) and a low speed (10x is this drive's slowest). A
-failed burn wastes the disc.
-
-Discs are gapless by default. `--pregap SECONDS` adds silence before tracks 2 and
-up; without our override DiscRecording would insert 2 s between every track.
+Burning from the app window with a progress display, a record of the discs you have
+burned, a folder browser alongside your libraries, and Windows and Linux support.
 
 ## License
 
 Dubcrate is free software, released under the
-[GNU General Public License, version 3 or (at your option) any later version](LICENSE)
-(`GPL-3.0-or-later`).
+[GNU General Public License, version 3 or (at your option) any later version](LICENSE).
 
-Third-party material: the Macintosh System 6 theme uses the ChiKareGo2 font by Giles
-Booth (a recreation of Chicago 12), licensed
-[CC BY](src/dubcrate/ui/fonts/README.txt). Dubcrate is not affiliated with Apple,
-AlphaTheta or Pioneer DJ; rekordbox is a trademark of its owner.
+The Macintosh System 6 theme uses the ChiKareGo2 font by Giles Booth (a recreation
+of Chicago 12), licensed [CC BY](src/dubcrate/ui/fonts/README.txt). Dubcrate is not
+affiliated with Apple, AlphaTheta or Pioneer DJ. rekordbox, CDJ and Pioneer DJ are
+trademarks of their owners.

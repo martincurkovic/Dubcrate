@@ -1,0 +1,76 @@
+# Burning: the spike, and what has been tried on hardware
+
+Notes are tagged by how we know: **[hardware DATE]** measured on the real drive or
+player, **[tests]** covered by the automated tests, **[not tried]** written but never
+run. Update this file when something is checked.
+
+## The burn pipeline
+
+1. Tracks are decoded and rendered to 16-bit / 44.1 kHz stereo WAV with ffmpeg, with
+   dither when reducing bit depth, and padded with silence to a whole CD sector
+   (588 samples) so track boundaries fall where the table of contents says.
+2. A `Burner` backend writes the disc session-at-once (disc-at-once for audio),
+   with CD-TEXT for the disc and every track.
+   - `burn/discrecording.py`: Apple's DiscRecording framework through PyObjC.
+   - `burn/cdrdao.py`: builds a cdrdao TOC and runs `cdrdao`.
+3. Capacity is checked before rendering (from measured lengths) and again after
+   (from the rendered lengths, which are the truth).
+
+## The burn spike
+
+`spikes/burn_spike.py` is the original hardware driver: it renders tracks from files
+and burns them without the library. It is a dry run unless you pass `--yes`.
+
+```sh
+uv run spikes/burn_spike.py doctor                 # tools, drive, media state
+uv run spikes/burn_spike.py tones work/tones       # synthetic test tracks (24-bit FLAC, WAV, MP3)
+uv run spikes/burn_spike.py plan work/tones/* --work work/render
+uv run spikes/burn_spike.py toc  work/tones/* --work work/render     # the cdrdao TOC
+uv run spikes/burn_spike.py burn work/tones/* --work work/render \
+    --backend discrecording --yes --simulate       # laser-off test write, needs a disc in the drive
+uv run spikes/burn_spike.py burn work/tones/* --work work/render \
+    --backend discrecording --yes                  # really burn
+```
+
+`--pregap SECONDS` adds silence before tracks 2 and up. `work/` is git-ignored.
+
+## A hardware check, step by step
+
+Use a blank CD-R (not a CD-RW) and a low speed.
+
+1. Put the disc in, run `doctor`: it should show the disc as blank, and the drive as
+   able to write CD-R, CD-TEXT, SAO and test-write.
+2. Run the burn with `--simulate --yes`. The laser stays off, so the disc survives.
+3. Burn for real.
+4. `drutil toc` on the burned disc. With gapless discs, track *n+1* should start
+   exactly where track *n* ends (for the three test tones: 00:02.00, 00:42.00,
+   01:12.00).
+5. Play it in the CDJ: track times, CD-TEXT titles, gaps between tracks.
+
+## Findings
+
+- **[hardware 2026-11-11]** The drive is a LiteOn eSAU108 (`slimtype eSAU108`, USB).
+  macOS labels it "Unsupported", but DiscRecording reports it can write CD-R,
+  CD-TEXT, SAO (session-at-once) and test-write. Offered write speeds: 10x, 16x,
+  20x, 24x (so 8x is not available).
+- **[hardware 2026-11-11]** A simulated (laser-off) burn through DiscRecording
+  completed, and the disc ejected blank.
+- **[hardware 2026-11-11]** A real burn of three tones through DiscRecording
+  completed with no errors. On a CDJ-1000MK3 the track times were right and the
+  **CD-TEXT displayed correctly, including accented characters** (`é`, `Ü`, `ï`).
+  A character outside Latin-1 (`☆`) is replaced by `?`, as designed.
+- **[hardware 2026-11-11]** The same disc had a slight gap between tracks.
+  `drutil toc` showed tracks starting at 00:02.00, 00:44.00 and 01:16.00: a
+  **2-second pregap** after tracks 1 and 2. Cause: DiscRecording's default pregap
+  is 2 s of silence (`DRPreGapLengthKey`), which we hadn't overridden.
+- **[not tried]** The fix: discs are now gapless by default (`pregap_sectors = 0`,
+  and `DRPreGapIsRequiredKey` set so a drive that can't do it fails the burn
+  rather than silently falling back to 2 s). Expected after the fix: tracks at
+  00:02.00, 00:42.00 and 01:12.00. [tests] cover the planning and capacity side.
+- **[not tried]** The `cdrdao` backend has never been run (cdrdao isn't installed on
+  the dev machine). Its TOC generation is covered by [tests].
+- **[not tried]** A non-zero gap. The unit of `DRPreGapLengthKey` isn't documented;
+  we treat it as sectors (its 2-second default is 150). Only 0 has been used, and
+  the window offers 1, 2 and 3 s, so check the unit before relying on those.
+- **[tests]** CD-TEXT cleaning (Latin-1 kept, others folded or `?`), TOC escaping,
+  sector maths, and the packing algorithms.
