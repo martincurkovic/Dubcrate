@@ -24,10 +24,14 @@ from PySide6.QtWidgets import QApplication, QStyle
 from dubcrate.cd import format_clock
 from dubcrate.library import Library
 from dubcrate.library.models import DiscEntry, Track
+from dubcrate.waveform import Waveform
 
 from . import mono_icons, theme
 from .track_colors import swatch_icon
 
+PREVIEW_ROLE = (
+    Qt.ItemDataRole.UserRole + 10
+)  # the track's whole-track Waveform, if known
 TRACK_MIME = "application/x-dubcrate-tracks"  # track ids dragged from the track table
 DISC_ROWS_MIME = (
     "application/x-dubcrate-disc-rows"  # positions dragged inside the disc list
@@ -62,8 +66,13 @@ TRACK_COLUMNS = (
     TrackColumn("BPM", "bpm", right=True),
     TrackColumn("Key", "key"),
     TrackColumn("Time", "duration", right=True),
+    TrackColumn("Preview", None),  # the whole-track waveform, drawn by PreviewDelegate
     TrackColumn("Genre", "genre"),
 )
+
+
+PREVIEW_COLUMN = next(i for i, c in enumerate(TRACK_COLUMNS) if c.title == "Preview")
+MAX_PREVIEWS = 4000
 
 
 def _track_cell(track: Track, column: int) -> str:
@@ -80,7 +89,7 @@ def _track_cell(track: Track, column: int) -> str:
             return _clock(track.duration)
         case "Genre":
             return track.genre
-    return ""
+    return ""  # (the marker and the preview are drawn, not written)
 
 
 class TrackTableModel(QAbstractTableModel):
@@ -90,11 +99,29 @@ class TrackTableModel(QAbstractTableModel):
         super().__init__(parent)
         self._tracks: list[Track] = []
         self._on_disc: set[int] = set()
+        self._previews: dict[int, Waveform] = {}
+        self._rows: dict[int, int] = {}
 
     def set_tracks(self, tracks: list[Track]) -> None:
         self.beginResetModel()
         self._tracks = tracks
+        self._rows = {t.id: row for row, t in enumerate(tracks)}
         self.endResetModel()
+
+    def set_preview(self, track_id: int, waveform: Waveform) -> None:
+        """Remember a track's whole-track waveform and redraw its row's preview."""
+        self._previews[track_id] = waveform
+        while (
+            len(self._previews) > MAX_PREVIEWS
+        ):  # forget the oldest: a big library shouldn't hold them all
+            self._previews.pop(next(iter(self._previews)))
+        row = self._rows.get(track_id)
+        if row is not None:
+            index = self.index(row, PREVIEW_COLUMN)
+            self.dataChanged.emit(index, index)
+
+    def has_preview(self, track_id: int) -> bool:
+        return track_id in self._previews
 
     def set_on_disc(self, track_ids: set[int]) -> None:
         self._on_disc = track_ids
@@ -143,6 +170,8 @@ class TrackTableModel(QAbstractTableModel):
             )
         if role == Qt.ItemDataRole.UserRole:
             return track.id
+        if role == PREVIEW_ROLE:
+            return self._previews.get(track.id)
         return None
 
     def flags(self, index: QModelIndex) -> Qt.ItemFlag:

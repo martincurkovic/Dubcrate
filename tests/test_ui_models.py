@@ -50,7 +50,7 @@ def test_track_table_shows_the_fields_a_dj_picks_by(qapp):
     model.set_tracks(lib.tracks(sort="title"))
     assert model.rowCount() == 4
     assert [model.headerData(i, Qt.Orientation.Horizontal) for i in range(model.columnCount())] == [
-        "", "Title", "Artist", "BPM", "Key", "Time", "Genre",
+        "", "Title", "Artist", "BPM", "Key", "Time", "Preview", "Genre",
     ]  # fmt: skip
     assert cell(model, 1, "Title") == "Title 1"
     assert cell(model, 1, "BPM") == "121.0"

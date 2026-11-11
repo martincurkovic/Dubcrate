@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 from PySide6.QtCore import QItemSelectionModel, QMimeData, QModelIndex, Qt
 from PySide6.QtGui import QKeyEvent
+from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QFileDialog, QInputDialog, QMessageBox
 
 from dubcrate import settings
@@ -170,10 +171,11 @@ def test_adding_selected_tracks_creates_a_disc_and_marks_them(window):
     assert "Added 2 tracks" in win.statusBar().currentMessage()
 
 
-def test_double_clicking_a_track_adds_it(window):
+def test_return_adds_the_selected_tracks_to_the_disc(window):
     win, _ = window
-    win._on_track_double_clicked(win.track_model.index(1, 1))
-    assert disc_titles(win) == ["Song 1"]
+    select_rows(win.track_table, [1, 3])
+    QTest.keyClick(win.track_table, Qt.Key.Key_Return)
+    assert disc_titles(win) == ["Song 1", "Song 3"]
 
 
 def test_fit_all_stops_when_the_disc_is_full(window):

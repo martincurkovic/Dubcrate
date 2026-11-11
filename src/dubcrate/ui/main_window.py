@@ -18,13 +18,14 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QProgressBar,
     QPushButton,
-    QTableView,
     QTreeView,
     QVBoxLayout,
     QWidget,
 )
 
 from dubcrate import settings
+from dubcrate.analysis import read_preview, share_root
+from dubcrate.audio.player import AudioPlayer
 from dubcrate.library import Library
 from dubcrate.library.folder import FolderScan, scan_folder
 from dubcrate.library.rekordbox import (
@@ -38,16 +39,23 @@ from . import theme
 from .disc_panel import DiscPanel
 from .models import (
     NAME_ROLE,
+    PREVIEW_COLUMN,
     SELECTION_ROLE,
     TRACK_COLUMNS,
     TrackTableModel,
     build_source_model,
     find_selection,
 )
+from .player_strip import PlayerStrip
+from .preview import PreviewController
+from .settings_dialog import SettingsDialog
 from .splitter import Splitter
 from .tasks import run_async
+from .track_table import ROW_HEIGHT, PreviewDelegate, TrackTable
 
 SEARCH_DELAY_MS = 200
+PREVIEW_DELAY_MS = 40
+PREVIEW_ROWS_AROUND = 8  # also read this many rows above and below what is visible
 MAX_NOTE_LINES = 12
 
 
@@ -59,9 +67,12 @@ def _hours(seconds: float) -> str:
 
 
 class MainWindow(QMainWindow):
-    def __init__(self, lib: Library, *, persist: bool = False):
+    def __init__(
+        self, lib: Library, *, persist: bool = False, player: AudioPlayer | None = None
+    ):
         super().__init__()
         self._lib = lib
+        self._player = player
         self._persist = persist
         self._selection: tuple = ("all",)
         self._sort: tuple[str | None, bool] = (None, False)
@@ -69,9 +80,9 @@ class MainWindow(QMainWindow):
         self._theme_actions: dict[str, QAction] = {}
         self.setWindowTitle("Dubcrate")
         self.setMinimumSize(
-            980, 560
-        )  # below this the three panes are too cramped to use
-        self.resize(1440, 800)
+            980, 660
+        )  # below this the player and the three panes are too cramped to use
+        self.resize(1440, 920)
 
         self._build_panes()
         self._build_menus()
@@ -80,6 +91,12 @@ class MainWindow(QMainWindow):
         self._search_timer.setSingleShot(True)
         self._search_timer.setInterval(SEARCH_DELAY_MS)
         self._search_timer.timeout.connect(self.refresh_tracks)
+        self._preview_timer = QTimer(
+            self
+        )  # previews are read for the rows on screen, a moment after scrolling stops
+        self._preview_timer.setSingleShot(True)
+        self._preview_timer.setInterval(PREVIEW_DELAY_MS)
+        self._preview_timer.timeout.connect(self._request_previews)
         theme.notifier.changed.connect(self._on_theme_changed)
 
         self.refresh_sources()
@@ -127,8 +144,19 @@ class MainWindow(QMainWindow):
         self.search.setClearButtonEnabled(True)
         self.search.textChanged.connect(lambda _text: self._search_timer.start())
 
+        self.player_strip = PlayerStrip()
+        self.preview = PreviewController(
+            self._lib, self.player_strip, self._player, parent=self
+        )
+        self.preview.message.connect(
+            lambda text: self.statusBar().showMessage(text, 8000)
+        )
+        self.preview.preview_ready.connect(self._on_preview_ready)
+        self.player_strip.previous_requested.connect(lambda: self._step_track(-1))
+        self.player_strip.next_requested.connect(lambda: self._step_track(1))
+
         self.track_model = TrackTableModel(self)
-        self.track_table = QTableView()
+        self.track_table = TrackTable()
         self.track_table.setModel(self.track_model)
         self.track_table.setSelectionBehavior(
             QAbstractItemView.SelectionBehavior.SelectRows
@@ -147,9 +175,23 @@ class MainWindow(QMainWindow):
         header.setSortIndicatorShown(True)
         header.setSortIndicator(-1, Qt.SortOrder.AscendingOrder)
         header.setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
-        for column, width in enumerate((24, 200, 150, 52, 44, 48, 110)):
+        for column, width in enumerate((24, 230, 130, 50, 40, 46, 120, 90)):
             self.track_table.setColumnWidth(column, width)
-        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        header.setStretchLastSection(
+            True
+        )  # the last column takes the slack; the title keeps its width
+        self.track_table.setItemDelegateForColumn(
+            PREVIEW_COLUMN, PreviewDelegate(self.track_table)
+        )
+        self.track_table.verticalHeader().setDefaultSectionSize(ROW_HEIGHT + 4)
+        self.track_table.add_requested.connect(self.add_selected_to_disc)
+        self.track_table.play_pause_requested.connect(self.preview.toggle)
+        self.track_table.verticalScrollBar().valueChanged.connect(
+            lambda _v: self._preview_timer.start()
+        )
+        header.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        header.customContextMenuRequested.connect(self._show_column_menu)
+        self._apply_hidden_columns()
         header.sortIndicatorChanged.connect(self._on_sort_changed)
         self.track_table.doubleClicked.connect(self._on_track_double_clicked)
         self.track_table.selectionModel().selectionChanged.connect(
@@ -196,8 +238,14 @@ class MainWindow(QMainWindow):
         self.splitter.setStretchFactor(0, 0)
         self.splitter.setStretchFactor(1, 3)
         self.splitter.setStretchFactor(2, 2)
-        self.splitter.setSizes([250, 660, 530])
-        self.setCentralWidget(self.splitter)
+        self.splitter.setSizes([210, 760, 470])
+        body = QWidget()
+        body_layout = QVBoxLayout(body)
+        body_layout.setContentsMargins(0, 0, 0, 0)
+        body_layout.setSpacing(0)
+        body_layout.addWidget(self.player_strip)
+        body_layout.addWidget(self.splitter, 1)
+        self.setCentralWidget(body)
         self._update_track_buttons()
 
     def _build_status_bar(self) -> None:
@@ -226,6 +274,11 @@ class MainWindow(QMainWindow):
         self.act_remove_source = file_menu.addAction(
             "&Remove Selected Source…", self.remove_selected_source
         )
+        file_menu.addSeparator()
+        settings_action = file_menu.addAction(
+            "&Settings…", self.open_settings, QKeySequence("Ctrl+,")
+        )
+        settings_action.setMenuRole(QAction.MenuRole.PreferencesRole)
         file_menu.addSeparator()
         quit_action = file_menu.addAction(
             "&Quit", self.close, QKeySequence.StandardKey.Quit
@@ -535,6 +588,7 @@ class MainWindow(QMainWindow):
         count = f"{len(tracks):,} track{'s' if len(tracks) != 1 else ''}"
         self.tracks_count.setText(f"{count}  ·  {_hours(total)}" if tracks else count)
         self._update_track_buttons()
+        self._preview_timer.start()
 
     def _on_sort_changed(self, column: int, order: Qt.SortOrder) -> None:
         key = TRACK_COLUMNS[column].sort_key if column >= 0 else None
@@ -562,7 +616,104 @@ class MainWindow(QMainWindow):
         self.fit_button.setEnabled(self.track_model.rowCount() > 0)
 
     def _on_track_double_clicked(self, index: QModelIndex) -> None:
-        self.disc_panel.add_tracks([self.track_model.track_at(index.row()).id])
+        self.preview.load(self.track_model.track_at(index.row()))
+
+    def _step_track(self, delta: int) -> None:
+        """Load the track before or after the loaded one in the list (or the selected one)."""
+        tracks = self.track_model.tracks()
+        if not tracks:
+            return
+        current = (
+            self.preview.requested
+        )  # not the last one finished loading: quick clicks must add up
+        row = next(
+            (
+                i
+                for i, t in enumerate(tracks)
+                if current is not None and t.id == current.id
+            ),
+            None,
+        )
+        if (
+            row is None
+        ):  # nothing requested yet (or it isn't in this list): go on from the selection
+            chosen = self.track_table.selectionModel().selectedRows()
+            row = chosen[0].row() if chosen else (-1 if delta > 0 else len(tracks))
+        target = row + delta
+        if 0 <= target < len(tracks):
+            self.track_table.selectRow(target)
+            self.preview.load(tracks[target])
+
+    def _on_preview_ready(self, track_id: int, waveform) -> None:
+        self.track_model.set_preview(track_id, waveform)
+
+    def _request_previews(self) -> None:
+        """Read the stored waveform for the rows on screen (rekordbox tracks: 0.4 ms each)."""
+        model = self.track_model
+        if model.rowCount() == 0:
+            return
+        first = max(0, self.track_table.rowAt(0))
+        last = self.track_table.rowAt(self.track_table.viewport().height() - 1)
+        last = model.rowCount() - 1 if last < 0 else last
+        roots = {
+            s.id: share_root(s.path)
+            for s in self._lib.sources()
+            if s.kind == "rekordbox"
+        }
+        for row in range(
+            max(0, first - PREVIEW_ROWS_AROUND),
+            min(model.rowCount(), last + PREVIEW_ROWS_AROUND + 1),
+        ):
+            track = model.track_at(row)
+            if (
+                track.analysis_path
+                and track.source_id in roots
+                and not model.has_preview(track.id)
+            ):
+                waveform = read_preview(roots[track.source_id], track.analysis_path)
+                if waveform is not None:
+                    model.set_preview(track.id, waveform)
+
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        self._preview_timer.start()
+
+    # -- columns ----------------------------------------------------------
+
+    def _apply_hidden_columns(self) -> None:
+        hidden = set(settings.get_hidden_columns())
+        for column, spec in enumerate(TRACK_COLUMNS):
+            if column > 1:  # the marker and the title are always there
+                self.track_table.setColumnHidden(column, spec.title in hidden)
+
+    def _show_column_menu(self, position) -> None:
+        menu = QMenu(self)
+        for column, spec in enumerate(TRACK_COLUMNS):
+            if column > 1:
+                action = menu.addAction(spec.title)
+                action.setCheckable(True)
+                action.setChecked(not self.track_table.isColumnHidden(column))
+                action.toggled.connect(
+                    lambda shown, c=column: self.set_column_visible(c, shown)
+                )
+        menu.popup(self.track_table.horizontalHeader().mapToGlobal(position))
+
+    def set_column_visible(self, column: int, visible: bool) -> None:
+        self.track_table.setColumnHidden(column, not visible)
+        settings.set_hidden_columns(
+            [
+                TRACK_COLUMNS[c].title
+                for c in range(2, len(TRACK_COLUMNS))
+                if self.track_table.isColumnHidden(c)
+            ]
+        )
+        self._preview_timer.start()
+
+    def open_settings(self) -> None:
+        dialog = SettingsDialog(self)
+        dialog.audio_changed.connect(self.preview.apply_settings)
+        dialog.theme_chosen.connect(self.set_theme)
+        dialog.exec()
 
     def add_selected_to_disc(self) -> None:
         self.disc_panel.add_tracks(self.selected_track_ids())
@@ -590,6 +741,9 @@ class MainWindow(QMainWindow):
     # -- closing ----------------------------------------------------------
 
     def closeEvent(self, event) -> None:
+        self._search_timer.stop()
+        self._preview_timer.stop()
+        self.preview.shutdown()
         if self._persist:
             settings.set_bytes("window/geometry", self.saveGeometry())
             settings.set_bytes("window/splitter", self.splitter.saveState())

@@ -71,6 +71,15 @@ DARK_PALETTE = {
     "volume_color_6": "#008300",
     "volume_color_7": "#9085e9",
     "volume_color_8": "#e66767",
+    # Dubcrate additions: the waveform display. Painted, not styled, so no template uses them.
+    # Like rekordbox, the waveform sits on black in every colour theme: lows blue, mids amber, highs white.
+    "wave_bg": "#0b0b0f",
+    "wave_low": "#2f62ff",
+    "wave_mid": "#e8922b",
+    "wave_high": "#f4f4f4",
+    "wave_playhead": "#ffffff",
+    "wave_beat": "#3a3a48",
+    "wave_text": "#ffffff",
 }
 
 LIGHT_PALETTE = {
@@ -116,6 +125,14 @@ LIGHT_PALETTE = {
     "volume_color_6": "#008300",
     "volume_color_7": "#4a3aa7",
     "volume_color_8": "#e34948",
+    # Dubcrate additions: the waveform display (see DARK_PALETTE). Black here too, as in rekordbox.
+    "wave_bg": "#0b0b0f",
+    "wave_low": "#2f62ff",
+    "wave_mid": "#e8922b",
+    "wave_high": "#f4f4f4",
+    "wave_playhead": "#ffffff",
+    "wave_beat": "#3a3a48",
+    "wave_text": "#ffffff",
 }
 
 
@@ -191,6 +208,14 @@ SYSTEM6_PALETTE = {
     "square_corners": True,  # every border-radius in the shared stylesheet becomes 0
     "scroll_track_pattern": True,  # a 50% black/white checker under the scroll bar handles
     "extra_template": True,  # append ui/style_system6.qss.template
+    # Dubcrate additions: the waveform display, black on white with greys for the bands
+    "wave_bg": "#ffffff",
+    "wave_low": "#000000",
+    "wave_mid": "#707070",
+    "wave_high": "#c4c4c4",
+    "wave_playhead": "#dd0907",
+    "wave_beat": "#a0a0a0",
+    "wave_text": "#000000",
 }
 
 

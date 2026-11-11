@@ -78,3 +78,36 @@ def _destroy_qt_widgets_before_exit():
         QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
         app.processEvents()
         gc.collect()
+
+
+class FakeAudioDevice:
+    """Stands in for a sound card: records what is asked of it and lets a test pull audio blocks."""
+
+    def __init__(self, rate=44_100, msec=23, device_id=None):
+        self.args = (rate, msec, device_id)
+        self.gen = None
+        self.stopped = self.closed = False
+
+    def start(self, gen):
+        self.gen = gen
+
+    def stop(self):
+        self.stopped = True
+
+    def close(self):
+        self.closed = True
+
+    def pull(self, frames):
+        return self.gen.send(frames)
+
+
+@pytest.fixture(autouse=True)
+def _no_real_audio(monkeypatch):
+    """No test may open the machine's real audio output."""
+    from dubcrate.audio import player
+
+    monkeypatch.setattr(
+        player,
+        "_miniaudio_device",
+        lambda rate, msec, device_id: FakeAudioDevice(rate, msec, device_id),
+    )

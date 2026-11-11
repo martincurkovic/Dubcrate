@@ -46,3 +46,56 @@ def set_last_disc(disc_id: int | None) -> None:
         _qs().remove("last_disc")
     else:
         _qs().setValue("last_disc", int(disc_id))
+
+
+def get_audio_device() -> str | None:
+    """The saved output device id (hex), or None for the system default."""
+    return _qs().value("audio/device", None) or None
+
+
+def set_audio_device(device_id: str | None) -> None:
+    if device_id:
+        _qs().setValue("audio/device", device_id)
+    else:
+        _qs().remove("audio/device")
+
+
+def get_audio_buffer() -> int:
+    from dubcrate.audio.devices import BUFFER_SIZES, DEFAULT_BUFFER
+
+    try:
+        value = int(_qs().value("audio/buffer", DEFAULT_BUFFER))
+    except (TypeError, ValueError):
+        return DEFAULT_BUFFER
+    return value if value in BUFFER_SIZES else DEFAULT_BUFFER
+
+
+def set_audio_buffer(frames: int) -> None:
+    _qs().setValue("audio/buffer", int(frames))
+
+
+def get_volume() -> float:
+    try:
+        return max(0.0, min(1.0, float(_qs().value("audio/volume", 0.8))))
+    except (TypeError, ValueError):
+        return 0.8
+
+
+def set_volume(volume: float) -> None:
+    _qs().setValue("audio/volume", float(volume))
+
+
+def get_hidden_columns() -> list[str]:
+    import json
+
+    try:
+        names = json.loads(str(_qs().value("tracks/hidden_columns", "[]") or "[]"))
+    except ValueError:
+        return []
+    return [n for n in names if isinstance(n, str)]
+
+
+def set_hidden_columns(names: list[str]) -> None:
+    import json
+
+    _qs().setValue("tracks/hidden_columns", json.dumps(sorted(names)))

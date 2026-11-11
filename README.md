@@ -37,7 +37,8 @@ decoding and resampling, Nuitka for packaging. macOS first.
 | Burning (macOS) | Apple DiscRecording via PyObjC, with `cdrdao` as the alternative backend |
 | Burning (later) | `cdrdao` on Linux, TBD on Windows behind the same `Burner` interface |
 | Rekordbox reading | `pyrekordbox` (planned) behind a read-only library interface |
-| Tags | read-only tag reader (license-dependent, see below) |
+| Audio preview | miniaudio (as in AKAISDS), with ffmpeg for formats it can't decode |
+| Tags | `ffprobe` (no tag library needed) |
 
 ## Development
 
@@ -58,9 +59,18 @@ uv run dubcrate-gui --library ~/try.db     # a separate library, handy for tryin
 uv run python -m dubcrate.ui               # the same, without the installed script
 ```
 
-Three panes: your sources (imported folders and rekordbox libraries, with their
+Across the top is the preview player: double-click a track to hear it (Space plays
+and pauses, the arrows step through the list). It shows the whole track with its
+phrases (INTRO, CHORUS, ...) and cues, and a zoomed waveform scrolling past a fixed
+playhead with the beat grid (mouse wheel zooms; click either to seek). For rekordbox
+tracks these come from rekordbox's own analysis; for anything else the waveform is
+computed from the audio. The track list has a **Preview** column with each track's
+whole waveform, and a column chooser (right-click the header). **File ▸ Settings**
+(Ctrl+,) picks the audio output device and buffer size and has a test tone.
+
+Below that, three panes: your sources (imported folders and rekordbox libraries, with their
 playlists) on the left, the tracks in the middle, and the disc you are planning on
-the right. Drag tracks onto the disc (or double-click, or **Add to Disc**), drag rows
+the right. Drag tracks onto the disc (or press Return, or **Add to Disc**), drag rows
 on the disc to reorder, and watch the bar: it shows each track and goes red past the
 end of the disc. **Fit All to Disc** fills a disc in order; **Disc ▸ Split Shown
 Tracks Across Discs** cuts a playlist into as many discs as it takes. **File ▸ Import**
@@ -131,4 +141,11 @@ up; without our override DiscRecording would insert 2 s between every track.
 
 ## License
 
-Not chosen yet.
+Dubcrate is free software, released under the
+[GNU General Public License, version 3 or (at your option) any later version](LICENSE)
+(`GPL-3.0-or-later`).
+
+Third-party material: the Macintosh System 6 theme uses the ChiKareGo2 font by Giles
+Booth (a recreation of Chicago 12), licensed
+[CC BY](src/dubcrate/ui/fonts/README.txt). Dubcrate is not affiliated with Apple,
+AlphaTheta or Pioneer DJ; rekordbox is a trademark of its owner.
