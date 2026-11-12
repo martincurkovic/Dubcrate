@@ -125,6 +125,17 @@ def _no_real_network(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _no_modal_question(monkeypatch):
+    """A question box blocks the test for ever: a test that expects one patches it itself."""
+    from PySide6.QtWidgets import QMessageBox
+
+    def refuse(*_a, **_k):
+        raise AssertionError("a test opened a question box; patch QMessageBox.question")
+
+    monkeypatch.setattr(QMessageBox, "question", staticmethod(refuse))
+
+
+@pytest.fixture(autouse=True)
 def _no_real_burner(monkeypatch):
     """No test may reach a real drive: a burn window must be given a fake burner."""
 

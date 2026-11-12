@@ -2,6 +2,8 @@
 
 from PySide6.QtCore import QByteArray, QSettings
 
+from dubcrate import mp3
+
 THEME_SYSTEM = "system"
 THEME_LIGHT = "light"
 THEME_DARK = "dark"
@@ -76,6 +78,19 @@ def get_pregap_seconds() -> int:
 
 def set_pregap_seconds(seconds: int) -> None:
     _qs().setValue("discs/pregap_seconds", int(seconds))
+
+
+def get_mp3_bitrate() -> int:
+    """What new MP3 discs encode tracks that aren't MP3 at, in kbit/s (320 unless changed)."""
+    try:
+        value = int(_qs().value("discs/mp3_bitrate", mp3.DEFAULT_BITRATE))
+    except (TypeError, ValueError):
+        return mp3.DEFAULT_BITRATE
+    return value if value in mp3.BITRATES else mp3.DEFAULT_BITRATE
+
+
+def set_mp3_bitrate(kbps: int) -> None:
+    _qs().setValue("discs/mp3_bitrate", int(kbps))
 
 
 BURN_SPEEDS = (4, 8, 10, 12, 16, 20, 24, 32, 48)

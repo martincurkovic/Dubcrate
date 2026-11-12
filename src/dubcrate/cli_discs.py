@@ -5,6 +5,7 @@ import sys
 import tempfile
 from pathlib import Path
 
+from dubcrate import mp3
 from dubcrate.build import (
     BuildError,
     build_burn_disc,
@@ -12,7 +13,7 @@ from dubcrate.build import (
     media_notes,
     media_problems,
 )
-from dubcrate.burn import BurnError, BurnOptions, get_burner
+from dubcrate.burn import BurnError, BurnOptions, DataDisc, get_burner
 from dubcrate.cd import (
     DISC_74_SECTORS,
     DISC_80_SECTORS,
@@ -51,25 +52,29 @@ def _minutes(sectors: int) -> str:
 def _summary_line(s: DiscSummary, approx: bool = False) -> str:
     mark = "~" if approx else ""
     state = (
-        f"OVER by {format_msf(-s.free_sectors)}"
+        f"OVER by {mp3.format_amount(-s.free_sectors, s.kind)}"
         if s.over
-        else f"{format_msf(s.free_sectors)} free"
+        else f"{mp3.format_amount(s.free_sectors, s.kind)} free"
     )
     return (
-        f"  {s.track_count} tracks, {mark}{format_msf(s.used_sectors)} of"
-        f" {format_msf(s.capacity_sectors)} ({state})"
+        f"  {s.track_count} tracks, {mark}{mp3.format_amount(s.used_sectors, s.kind)} of"
+        f" {mp3.format_amount(s.capacity_sectors, s.kind)} ({state})"
     )
 
 
 def _show(lib: Library, disc_id: int) -> None:
     s = lib.disc(disc_id)
-    print(f'Disc {s.id} "{s.name}": {_minutes(s.capacity_sectors)}, {_gap(s)}')
+    if s.kind == "mp3":
+        print(
+            f'Disc {s.id} "{s.name}": MP3 CD, {_minutes(s.capacity_sectors)} size,'
+            f" other formats encoded at {s.mp3_bitrate} kbit/s"
+        )
+    else:
+        print(f'Disc {s.id} "{s.name}": {_minutes(s.capacity_sectors)}, {_gap(s)}')
     entries = lib.disc_entries(disc_id)
     for e in entries:
         t = e.track
-        flags = ("~" if not t.length_exact else " ") + (
-            "!" if t.missing or t.stale else " "
-        )
+        flags = ("~" if not e.exact else " ") + ("!" if t.missing or t.stale else " ")
         bpm = f"{t.bpm:6.1f}" if t.bpm else "     -"
         # the text shown is what will be written on the CD; a * marks one edited for this disc
         edited = "*" if e.edited else " "
@@ -77,9 +82,9 @@ def _show(lib: Library, disc_id: int) -> None:
             f"  {e.position + 1:2d}. {_mmss(e.sectors):>6s}{flags}"
             f" {_fit(e.artist, 24):24s}  {_fit(e.title, 38):38s}{edited} {bpm}  {t.key or '-':>4s}"
         )
-    print(_summary_line(s, approx=any(not e.track.length_exact for e in entries)))
-    if any(not e.track.length_exact for e in entries):
-        print("  (~ = estimated length; measured when the disc is burned)")
+    print(_summary_line(s, approx=any(not e.exact for e in entries)))
+    if any(not e.exact for e in entries):
+        print("  (~ = estimated; exact once the disc is burned)")
     if any(e.track.missing or e.track.stale for e in entries):
         print("  (! = file missing or track no longer in its source)")
     if any(e.edited for e in entries):
@@ -93,18 +98,22 @@ def cmd_new(lib: Library, args: argparse.Namespace) -> int:
         args.name,
         capacity_sectors=_CAPACITY[args.minutes],
         pregap_sectors=round(args.pregap * SECTORS_PER_SECOND),
+        kind="mp3" if args.mp3 else "audio",
+        mp3_bitrate=args.bitrate if args.mp3 else None,
     )
-    print(f"created disc {disc_id}")
+    print(f"created {'MP3 ' if args.mp3 else ''}disc {disc_id}")
     return 0
 
 
 def cmd_list(lib: Library, _: argparse.Namespace) -> int:
     for s in lib.discs():
         flag = "  OVER" if s.over else ""
-        print(
-            f"{s.id:3d}  {s.name:30s}  {s.track_count:2d} tracks"
-            f"  {format_msf(s.used_sectors)} / {_minutes(s.capacity_sectors)}{flag}"
+        size = (
+            f"{mp3.format_size(s.used_sectors)} / {mp3.format_size(s.capacity_sectors)}  MP3"
+            if s.kind == "mp3"
+            else f"{format_msf(s.used_sectors)} / {_minutes(s.capacity_sectors)}"
         )
+        print(f"{s.id:3d}  {s.name:30s}  {s.track_count:2d} tracks  {size}{flag}")
     return 0
 
 
@@ -118,7 +127,9 @@ def cmd_add(lib: Library, args: argparse.Namespace) -> int:
         track_ids = [t.id for t in lib.tracks(node_id=args.node)]
     else:
         track_ids = args.track
-    problems = measure_tracks(lib, track_ids)
+    problems = (
+        measure_tracks(lib, track_ids) if lib.disc(args.disc).kind == "audio" else []
+    )
     for problem in problems:
         print(f"warning: couldn't measure {problem}", file=sys.stderr)
     position = args.at - 1 if args.at else None
@@ -181,13 +192,16 @@ def cmd_delete(lib: Library, args: argparse.Namespace) -> int:
 
 def cmd_split(lib: Library, args: argparse.Namespace) -> int:
     track_ids = [t.id for t in lib.tracks(node_id=args.node)]
-    for problem in measure_tracks(lib, track_ids):
-        print(f"warning: couldn't measure {problem}", file=sys.stderr)
+    if not args.mp3:
+        for problem in measure_tracks(lib, track_ids):
+            print(f"warning: couldn't measure {problem}", file=sys.stderr)
     result = lib.split_into_discs(
         track_ids,
         args.name,
         capacity_sectors=_CAPACITY[args.minutes],
         pregap_sectors=round(args.pregap * SECTORS_PER_SECOND),
+        kind="mp3" if args.mp3 else "audio",
+        mp3_bitrate=args.bitrate if args.mp3 else None,
     )
     for disc_id in result.disc_ids:
         _show(lib, disc_id)
@@ -201,8 +215,10 @@ def cmd_split(lib: Library, args: argparse.Namespace) -> int:
 
 def cmd_burn(lib: Library, args: argparse.Namespace) -> int:
     entries = lib.disc_entries(args.disc)
-    for problem in measure_tracks(lib, [e.track.id for e in entries]):
-        print(f"warning: couldn't measure {problem}", file=sys.stderr)
+    kind = lib.disc(args.disc).kind
+    if kind == "audio":
+        for problem in measure_tracks(lib, [e.track.id for e in entries]):
+            print(f"warning: couldn't measure {problem}", file=sys.stderr)
     _show(lib, args.disc)
     problems = disc_problems(lib, args.disc)
     if problems:
@@ -221,15 +237,20 @@ def cmd_burn(lib: Library, args: argparse.Namespace) -> int:
     options = BurnOptions(speed=args.speed, simulate=args.simulate, device=args.device)
     try:
         media = burner.media_info(args.device)
-        for note in media_notes(media):
+        for note in media_notes(media, kind):
             print(note)
-        problems = media_problems(lib.disc(args.disc).used_sectors, media)
+        problems = media_problems(lib.disc(args.disc).used_sectors, media, kind)
         if problems:
             raise BurnError("; ".join(problems))
         with tempfile.TemporaryDirectory(prefix="dubcrate-burn-") as tmp:
             work = Path(args.work).expanduser() if args.work else Path(tmp)
             burn_disc, pregap = build_burn_disc(lib, args.disc, work, progress=print)
-            problems = media_problems(burn_disc.used_sectors(pregap), media)
+            exact = (
+                burn_disc.sectors
+                if isinstance(burn_disc, DataDisc)
+                else burn_disc.used_sectors(pregap)
+            )
+            problems = media_problems(exact, media, kind)
             if problems:  # the rendered lengths are the exact ones
                 raise BurnError("; ".join(problems))
             options = BurnOptions(
@@ -238,7 +259,10 @@ def cmd_burn(lib: Library, args: argparse.Namespace) -> int:
                 device=options.device,
                 pregap_sectors=pregap,
             )
-            burner.burn(burn_disc, options, progress=print)
+            if isinstance(burn_disc, DataDisc):
+                burner.burn_data(burn_disc, options, progress=print)
+            else:
+                burner.burn(burn_disc, options, progress=print)
     except (BuildError, BurnError) as exc:
         print(f"burn failed: {exc}", file=sys.stderr)
         return 1
@@ -247,6 +271,19 @@ def cmd_burn(lib: Library, args: argparse.Namespace) -> int:
         print(f"marked disc {args.disc} as burned")
     print("done")
     return 0
+
+
+def _mp3_flags(p: argparse.ArgumentParser) -> None:
+    p.add_argument(
+        "--mp3", action="store_true", help="an MP3 CD (a data disc of MP3 files)"
+    )
+    p.add_argument(
+        "--bitrate",
+        type=int,
+        choices=mp3.BITRATES,
+        default=mp3.DEFAULT_BITRATE,
+        help="with --mp3: kbit/s for tracks that aren't MP3 (default %(default)s)",
+    )
 
 
 def add_parsers(sub: argparse._SubParsersAction) -> None:
@@ -258,6 +295,7 @@ def add_parsers(sub: argparse._SubParsersAction) -> None:
 
     p = disc.add_parser("new", help="create a disc")
     p.add_argument("name")
+    _mp3_flags(p)
     p.add_argument("--minutes", default=80, **capacity, help="disc size (default 80)")
     p.add_argument(
         "--pregap", type=float, default=0.0, help="seconds between tracks (default 0)"
@@ -327,6 +365,7 @@ def add_parsers(sub: argparse._SubParsersAction) -> None:
     p.add_argument("--name", required=True)
     p.add_argument("--minutes", default=80, **capacity)
     p.add_argument("--pregap", type=float, default=0.0)
+    _mp3_flags(p)
     p.set_defaults(fn=cmd_split)
 
     p = sub.add_parser("burn", help="burn a disc (dry run unless --yes)")

@@ -40,6 +40,19 @@ class Disc:
         return self.used_sectors(pregap_sectors) <= capacity
 
 
+@dataclass
+class DataDisc:
+    """An MP3 CD: a staging folder of files, written as an ISO 9660 + Joliet data disc.
+
+    `folder` holds exactly what goes on the disc (named in play order); `sectors` is its size
+    in 2048-byte data sectors, from the real file sizes."""
+
+    title: str  # the volume name
+    folder: Path
+    files: list[Path] = field(default_factory=list)
+    sectors: int = 0
+
+
 @dataclass(frozen=True)
 class BurnOptions:
     speed: int | None = 10  # CD "x" factor; None means the drive's maximum
@@ -69,5 +82,9 @@ class Burner(Protocol):
     name: str
 
     def burn(self, disc: Disc, options: BurnOptions, progress: Progress) -> None: ...
+
+    def burn_data(
+        self, disc: DataDisc, options: BurnOptions, progress: Progress
+    ) -> None: ...
 
     def media_info(self, device: str | None) -> MediaInfo: ...

@@ -25,6 +25,7 @@ from PySide6.QtWidgets import QApplication, QStyle
 from dubcrate.cd import format_clock
 from dubcrate.library import Library
 from dubcrate.library.models import DiscEntry, Track
+from dubcrate.mp3 import format_span
 from dubcrate.waveform import Waveform
 
 from . import mono_icons, theme
@@ -586,11 +587,12 @@ class DiscTreeModel(QStandardItemModel):
 
 def _disc_tooltip(disc) -> str:
     n = disc.track_count
-    fill = f"{format_clock(disc.used_sectors)} of {format_clock(disc.capacity_sectors)}"
-    lines = [disc.name, f"{n} track{'s' if n != 1 else ''} · {fill}"]
+    fill = f"{format_span(disc.used_sectors, disc.kind)} of {format_span(disc.capacity_sectors, disc.kind)}"
+    kind = "MP3 CD · " if disc.kind == "mp3" else ""
+    lines = [disc.name, f"{kind}{n} track{'s' if n != 1 else ''} · {fill}"]
     if disc.over:
         lines.append(
-            f"Over by {format_clock(-disc.free_sectors)}: too long for this disc"
+            f"Over by {format_span(-disc.free_sectors, disc.kind)}: too long for this disc"
         )
     if disc.last_burned_at:
         lines.append(f"Last burned {disc.last_burned_at[:10]}")

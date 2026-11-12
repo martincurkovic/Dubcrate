@@ -15,11 +15,13 @@ from pathlib import Path
 from types import TracebackType
 from typing import Self
 
+from dubcrate import mp3
 from dubcrate.cd import DISC_80_SECTORS, MAX_TRACKS, disc_used_sectors
 from dubcrate.library.models import (
     AddResult,
     DiscEntry,
     DiscFolder,
+    DiscKind,
     DiscRef,
     DiscSummary,
     ImportSummary,
@@ -34,6 +36,11 @@ from dubcrate.library.models import (
 )
 from dubcrate.library.paths import default_library_path
 from dubcrate.planning import fit_tracks, split_sequential
+
+
+def _max_tracks(kind: str) -> int:
+    """Red Book allows 99 tracks on an audio CD; a data disc has no such limit."""
+    return MAX_TRACKS if kind == "audio" else 1 << 30
 
 
 @dataclass(frozen=True)
@@ -223,8 +230,14 @@ def _migrate_to_v6(conn: sqlite3.Connection) -> None:
     conn.execute("DROP TABLE burn")
 
 
+_SCHEMA_V7 = """
+ALTER TABLE disc ADD COLUMN kind TEXT NOT NULL DEFAULT 'audio';
+ALTER TABLE disc ADD COLUMN mp3_bitrate INTEGER
+"""
+
 _MIGRATIONS = (
     _SCHEMA_V1, _SCHEMA_V2, _SCHEMA_V3, _SCHEMA_V4, _SCHEMA_V5, _migrate_to_v6,
+    _SCHEMA_V7,
 )  # fmt: skip
 SCHEMA_VERSION = len(_MIGRATIONS)
 
@@ -634,15 +647,35 @@ class Library:
         capacity_sectors: int = DISC_80_SECTORS,
         pregap_sectors: int = 0,
         folder_id: int | None = None,
+        kind: DiscKind = "audio",
+        mp3_bitrate: int | None = None,
     ) -> int:
+        """Make a disc. An "mp3" disc is a data disc: no gaps, and its sectors are 2048-byte
+        data sectors (`capacity_sectors` is still the disc's size, 360,000 for 80 minutes)."""
+        if kind not in ("audio", "mp3"):
+            raise DiscError(f"unknown disc kind {kind!r}")
         if folder_id is not None:
             self._folder_row(folder_id)
+        if kind == "mp3":
+            pregap_sectors = 0
+            mp3_bitrate = mp3_bitrate or mp3.DEFAULT_BITRATE
+        else:
+            mp3_bitrate = None
         now = datetime.now(UTC).isoformat(timespec="seconds")
         with self._conn:
             cursor = self._conn.execute(
                 "INSERT INTO disc (name, capacity_sectors, pregap_sectors, folder_id,"
-                " created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
-                (name, capacity_sectors, pregap_sectors, folder_id, now, now),
+                " created_at, updated_at, kind, mp3_bitrate) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    name,
+                    capacity_sectors,
+                    pregap_sectors,
+                    folder_id,
+                    now,
+                    now,
+                    kind,
+                    mp3_bitrate,
+                ),
             )
         assert cursor.lastrowid is not None
         return cursor.lastrowid
@@ -661,6 +694,7 @@ class Library:
         return DiscSummary(
             row["id"], row["name"], row["capacity_sectors"], row["pregap_sectors"],
             len(entries), used, row["created_at"], row["folder_id"], row["last_burned_at"],
+            row["kind"], row["mp3_bitrate"],
         )  # fmt: skip
 
     def discs(self) -> list[DiscSummary]:
@@ -677,18 +711,47 @@ class Library:
         name: str | None = None,
         capacity_sectors: int | None = None,
         pregap_sectors: int | None = None,
+        mp3_bitrate: int | None = None,
     ) -> None:
         row = self._disc_row(disc_id)
+        if row["kind"] == "mp3":
+            pregap_sectors = 0
+        else:
+            mp3_bitrate = None  # only an MP3 disc has one
         with self._conn:
             self._conn.execute(
                 "UPDATE disc SET name = ?, capacity_sectors = ?, pregap_sectors = ?,"
-                " updated_at = ? WHERE id = ?",
+                " mp3_bitrate = ?, updated_at = ? WHERE id = ?",
                 (
                     row["name"] if name is None else name,
                     row["capacity_sectors"]
                     if capacity_sectors is None
                     else capacity_sectors,
                     row["pregap_sectors"] if pregap_sectors is None else pregap_sectors,
+                    row["mp3_bitrate"] if mp3_bitrate is None else mp3_bitrate,
+                    datetime.now(UTC).isoformat(timespec="seconds"),
+                    disc_id,
+                ),
+            )
+
+    def set_disc_kind(
+        self, disc_id: int, kind: DiscKind, mp3_bitrate: int | None = None
+    ) -> None:
+        """Turn a disc into an audio CD or an MP3 CD. Its tracks stay as they are and are
+        measured the new way (so it can go from over-length to fitting, or back). Going to
+        audio makes it gapless; going to MP3 uses `mp3_bitrate` (default 320)."""
+        row = self._disc_row(disc_id)
+        if kind not in ("audio", "mp3"):
+            raise DiscError(f"unknown disc kind {kind!r}")
+        if kind == row["kind"]:
+            return
+        with self._conn:
+            self._conn.execute(
+                "UPDATE disc SET kind = ?, mp3_bitrate = ?, pregap_sectors = 0,"
+                " updated_at = ? WHERE id = ?",
+                (
+                    kind,
+                    (mp3_bitrate or mp3.DEFAULT_BITRATE) if kind == "mp3" else None,
                     datetime.now(UTC).isoformat(timespec="seconds"),
                     disc_id,
                 ),
@@ -700,6 +763,8 @@ class Library:
             self._conn.execute("DELETE FROM disc WHERE id = ?", (disc_id,))
 
     def disc_entries(self, disc_id: int) -> list[DiscEntry]:
+        disc = self._disc_row(disc_id)
+        kind, bitrate = disc["kind"], disc["mp3_bitrate"]
         rows = self._conn.execute(
             "SELECT dt.position AS disc_position, dt.title AS dt_title,"
             " dt.artist AS dt_artist, t.* FROM disc_track dt"
@@ -708,7 +773,12 @@ class Library:
         )
         return [
             DiscEntry(
-                r["disc_position"], self._to_track(r), r["dt_title"], r["dt_artist"]
+                r["disc_position"],
+                self._to_track(r),
+                r["dt_title"],
+                r["dt_artist"],
+                kind,
+                bitrate,
             )
             for r in rows
         ]
@@ -762,18 +832,19 @@ class Library:
         current = self.disc_entries(disc_id)
         if fit:
             accepted, rejected = fit_tracks(
-                [t.length_sectors for t in candidates],
+                [t.sectors_on(row["kind"], row["mp3_bitrate"]) for t in candidates],
                 used=disc_used_sectors(
                     (e.sectors for e in current), row["pregap_sectors"]
                 ),
                 count=len(current),
                 capacity=row["capacity_sectors"],
                 pregap=row["pregap_sectors"],
+                max_tracks=_max_tracks(row["kind"]),
                 strict=strict,
             )
         else:
             accepted, rejected = list(range(len(candidates))), []
-        if len(current) + len(accepted) > MAX_TRACKS:
+        if len(current) + len(accepted) > _max_tracks(row["kind"]):
             raise DiscError(f"a disc holds at most {MAX_TRACKS} tracks")
         slots = self._slots(disc_id)
         at = len(slots) if position is None else max(0, min(position, len(slots)))
@@ -864,6 +935,8 @@ class Library:
         *,
         capacity_sectors: int = DISC_80_SECTORS,
         pregap_sectors: int = 0,
+        kind: DiscKind = "audio",
+        mp3_bitrate: int | None = None,
     ) -> SplitResult:
         """Cut an ordered track list into as many discs as it takes.
 
@@ -871,10 +944,13 @@ class Library:
         enough). Tracks longer than an empty disc are skipped and returned.
         """
         tracks = self.tracks_by_ids(track_ids)
+        if kind == "mp3":
+            pregap_sectors = 0
         groups, too_long = split_sequential(
-            [t.length_sectors for t in tracks],
+            [t.sectors_on(kind, mp3_bitrate) for t in tracks],
             capacity=capacity_sectors,
             pregap=pregap_sectors,
+            max_tracks=_max_tracks(kind),
         )
         disc_ids: list[int] = []
         for number, group in enumerate(groups, start=1):
@@ -882,6 +958,8 @@ class Library:
                 name if len(groups) == 1 else f"{name} {number}",
                 capacity_sectors=capacity_sectors,
                 pregap_sectors=pregap_sectors,
+                kind=kind,
+                mp3_bitrate=mp3_bitrate,
             )
             with self._conn:
                 self._write_disc_tracks(disc_id, [tracks[i].id for i in group])
@@ -991,6 +1069,8 @@ class Library:
             capacity_sectors=row["capacity_sectors"],
             pregap_sectors=row["pregap_sectors"],
             folder_id=row["folder_id"],
+            kind=row["kind"],
+            mp3_bitrate=row["mp3_bitrate"],
         )
         with self._conn:
             self._write_disc_slots(copy, self._slots(disc_id))

@@ -19,6 +19,7 @@ from dubcrate.cd import (
     SAMPLES_PER_SECTOR,
     samples_to_sectors,
 )
+from dubcrate.mp3 import is_mp3
 
 _CHUNK = 1 << 20
 
@@ -156,3 +157,44 @@ def render_track(src: Path, dst: Path) -> int:
         dst.unlink(missing_ok=True)
         raise RenderError(f"ffmpeg failed for {src}: {stderr or 'no audio decoded'}")
     return samples_to_sectors(frames)
+
+
+def render_mp3(
+    src: Path,
+    dst: Path,
+    *,
+    title: str,
+    artist: str,
+    album: str = "",
+    number: int | None = None,
+    bitrate: int = 320,
+) -> int:
+    """Write `src` to `dst` as an MP3 for an MP3 CD; returns the file's size in bytes.
+
+    An MP3 is copied without re-encoding (a second lossy pass would only lose quality); anything
+    else is encoded at `bitrate` kbit/s, constant, at 44.1 kHz stereo. Either way the tags are
+    written fresh from the disc's own text (title and artist as edited for this disc) and cover
+    art is left off, which keeps the size predictable. `src` is only read.
+    """
+    cmd = [
+        _require("ffmpeg"), "-nostdin", "-v", "error", "-y", "-i", str(src),
+        "-map", "0:a:0", "-vn", "-map_metadata", "-1",
+        "-metadata", f"title={title}", "-metadata", f"artist={artist}",
+    ]  # fmt: skip
+    if album:
+        cmd += ["-metadata", f"album={album}"]
+    if number is not None:
+        cmd += ["-metadata", f"track={number}"]
+    if is_mp3(src):
+        cmd += ["-c:a", "copy"]
+    else:
+        cmd += ["-c:a", "libmp3lame", "-b:a", f"{bitrate}k", "-ar", "44100", "-ac", "2"]
+    cmd += ["-id3v2_version", "3", "-write_id3v1", "1", "-f", "mp3", str(dst)]
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    proc = subprocess.run(cmd, check=False, capture_output=True, text=True)
+    if proc.returncode != 0 or not dst.exists() or dst.stat().st_size == 0:
+        dst.unlink(missing_ok=True)
+        raise RenderError(
+            f"ffmpeg failed for {src}: {proc.stderr.strip() or 'nothing was written'}"
+        )
+    return dst.stat().st_size

@@ -552,7 +552,14 @@ def test_a_discs_menu_opens_renames_duplicates_burns_and_deletes(window):
     disc = lib.create_disc("Night")
     win.refresh_discs()
     menu = win.disc_tree_menu(find_selection(win.disc_tree.model(), ("disc", disc)))
-    assert menu_texts(menu) == ["Open", "Rename", "Duplicate", "Burn…", "Delete…"]
+    assert menu_texts(menu) == [
+        "Open",
+        "Rename",
+        "Duplicate",
+        "Make MP3 CD",
+        "Burn…",
+        "Delete…",
+    ]
 
 
 def test_a_folders_menu_makes_things_inside_it_renames_and_deletes(window):
@@ -564,6 +571,7 @@ def test_a_folders_menu_makes_things_inside_it_renames_and_deletes(window):
     )
     assert menu_texts(menu) == [
         "New Disc Here",
+        "New MP3 Disc Here",
         "New Folder Here",
         "Rename",
         "Delete Folder…",
@@ -578,7 +586,7 @@ def test_empty_space_offers_a_new_disc_or_folder_at_the_top_level(window, monkey
         win, ("disc_folder", folder)
     )  # something is picked, but the menu is for empty space
     menu = win.disc_tree_menu(QModelIndex())
-    assert menu_texts(menu) == ["New Disc", "New Folder"]
+    assert menu_texts(menu) == ["New Disc", "New MP3 Disc", "New Folder"]
     no_dialog(monkeypatch)
     menu.actions()[0].trigger()
     assert lib.discs()[0].folder_id is None  # the top level, not the picked folder

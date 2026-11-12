@@ -26,8 +26,11 @@
 
 - Logging follow-ups (the log file itself is done: `logsetup.py`): a Settings switch for verbose logging (only `--verbose` today), logging inside the library store and the CLI, and a dialog for an uncaught exception (it is only logged).
 
-- MP3 data discs as a secondary mode (ISO 9660 + Joliet; an old CDJ loads audio CDs
-  faster, so audio CD stays the default).
+- MP3 CDs: *built, never burned.* A disc is an audio CD or an MP3 CD (`disc.kind`, schema
+  v7). See Decisions, and [burning.md](burning.md) for the hardware check. Still to do: split
+  across MP3 discs from the window (the CLI's `disc split --mp3` does), a way to pick the kind
+  in the + button, burning an MP3 disc with the cdrdao backend, and whatever the first
+  real test shows about the CDJ.
 - Rekordbox XML export as an import path with no SQLCipher dependency (a fallback if
   `pyrekordbox` ever lags behind a rekordbox update).
 - Windows and Linux burn backends behind the existing `Burner` interface.
@@ -80,6 +83,18 @@
   *Settings > Library* turn it off. It always re-reads (no "unchanged since last time" shortcut): the
   schema-v4 fields would otherwise stay empty until rekordbox changed.
 - The README is for end users only; developer notes live here and in `CONTRIBUTING.md`.
+
+- **MP3 CDs.** The kind is fixed per disc (`disc.kind`, `mp3_bitrate`) and can be changed
+  with *Make MP3 CD / Make Audio CD*, because a disc's tracks are only measured differently:
+  `DiscEntry.sectors` is CD audio sectors for an audio disc and 2048-byte data sectors for an
+  MP3 one, so capacity, fit, split and the over-length flag work the same for both and
+  `capacity_sectors` (360,000 for 80 minutes, 703 MB) is shared. A track that is already MP3
+  is copied (tags rewritten from the disc's text, cover art left off), anything else is
+  encoded constant-bitrate at the disc's rate. Files are `NN Artist - Title.mp3` in a folder
+  named for the disc (the volume label), written ISO 9660 + Joliet by DiscRecording's folder
+  track. The planner estimates sizes conservatively; the staged files' real sizes
+  (plus `FILESYSTEM_OVERHEAD_SECTORS`) are what the burn checks. Adding past an audio CD's
+  length asks once per disc whether to make it an MP3 CD.
 
 ## Known rough edges
 

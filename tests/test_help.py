@@ -127,7 +127,11 @@ def test_the_right_hand_pane_the_guide_describes_is_the_real_one(window):
     menu = window.disc_tree_menu(
         __import__("PySide6.QtCore", fromlist=["QModelIndex"]).QModelIndex()
     )
-    assert [a.text() for a in menu.actions()] == ["New Disc", "New Folder"]
+    assert [a.text() for a in menu.actions()] == [
+        "New Disc",
+        "New MP3 Disc",
+        "New Folder",
+    ]
 
 
 def test_the_settings_tabs_the_guide_names_exist(qapp):

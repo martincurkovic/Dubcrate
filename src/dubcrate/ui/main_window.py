@@ -31,6 +31,7 @@ from dubcrate.analysis import read_preview, share_root
 from dubcrate.audio.player import AudioPlayer
 from dubcrate.library import Library
 from dubcrate.library.folder import FolderScan, scan_folder
+from dubcrate.library.models import DiscKind
 from dubcrate.library.rekordbox import (
     RekordboxLibrary,
     default_master_db,
@@ -399,6 +400,14 @@ class MainWindow(QMainWindow):
         disc_menu.addAction(
             "&New Disc", lambda: self.new_disc(), QKeySequence("Ctrl+N")
         )
+        self.act_new_mp3_disc = disc_menu.addAction(
+            "New &MP3 Disc",
+            lambda: self.new_disc(kind="mp3"),
+            QKeySequence("Ctrl+Shift+N"),
+        )
+        self.act_new_mp3_disc.setToolTip(
+            "Make a disc for an MP3 CD: a data disc of MP3 files, sized in megabytes, for players that read MP3 discs."
+        )
         disc_menu.addAction("New &Folder", lambda: self.new_disc_folder())
         disc_menu.addAction("&Rename Disc", self._rename_open_disc)
         disc_menu.addAction("D&uplicate Disc", lambda: self.disc_view.duplicate_disc())
@@ -704,10 +713,12 @@ class MainWindow(QMainWindow):
     def _on_plus_clicked(self, pick: tuple) -> None:
         self.new_disc(self._folder_of(pick))
 
-    def new_disc(self, folder_id: int | None | object = ...) -> None:
-        """Make a disc and put its name in the tree up for editing."""
+    def new_disc(
+        self, folder_id: int | None | object = ..., kind: DiscKind = "audio"
+    ) -> None:
+        """Make a disc (an audio CD, or an MP3 CD) and put its name in the tree up for editing."""
         folder = self._folder_here() if folder_id is ... else folder_id
-        self.edit_in_tree(("disc", self.disc_view.new_disc(folder)))
+        self.edit_in_tree(("disc", self.disc_view.new_disc(folder, kind)))
 
     def new_disc_folder(self, parent_id: int | None | object = ...) -> None:
         """Make a folder and put its name in the tree up for editing."""
@@ -756,6 +767,15 @@ class MainWindow(QMainWindow):
             menu.addAction("Open", lambda: self.open_disc(disc_id))
             menu.addAction("Rename", lambda: self.edit_in_tree(("disc", disc_id)))
             menu.addAction("Duplicate", lambda: self.disc_view.duplicate_disc(disc_id))
+            if self._lib.disc(disc_id).kind == "audio":
+                menu.addAction(
+                    "Make MP3 CD", lambda: self.disc_view.set_disc_kind(disc_id, "mp3")
+                )
+            else:
+                menu.addAction(
+                    "Make Audio CD",
+                    lambda: self.disc_view.set_disc_kind(disc_id, "audio"),
+                )
             menu.addSeparator()
             menu.addAction("Burn…", lambda: self._open_and_burn(disc_id))
             menu.addSeparator()
@@ -763,6 +783,9 @@ class MainWindow(QMainWindow):
         elif kind == "disc_folder":
             folder_id = selection[1]
             menu.addAction("New Disc Here", lambda: self.new_disc(folder_id))
+            menu.addAction(
+                "New MP3 Disc Here", lambda: self.new_disc(folder_id, kind="mp3")
+            )
             menu.addAction("New Folder Here", lambda: self.new_disc_folder(folder_id))
             menu.addSeparator()
             menu.addAction(
@@ -773,6 +796,7 @@ class MainWindow(QMainWindow):
             )
         else:  # empty space: the top level
             menu.addAction("New Disc", lambda: self.new_disc(None))
+            menu.addAction("New MP3 Disc", lambda: self.new_disc(None, kind="mp3"))
             menu.addAction("New Folder", lambda: self.new_disc_folder(None))
         return menu
 

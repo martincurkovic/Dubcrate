@@ -13,7 +13,14 @@ if sys.platform != "darwin":  # pragma: no cover
 import DiscRecording as DR
 from Foundation import NSDate, NSRunLoop
 
-from dubcrate.burn.base import BurnError, BurnOptions, Disc, MediaInfo, Progress
+from dubcrate.burn.base import (
+    BurnError,
+    BurnOptions,
+    DataDisc,
+    Disc,
+    MediaInfo,
+    Progress,
+)
 from dubcrate.cd import cdtext_clean
 
 _POLL_SECONDS = 0.5
@@ -94,6 +101,22 @@ def build_tracks(disc: Disc, pregap_sectors: int = 0) -> list:
     return tracks
 
 
+def build_data_track(disc: DataDisc):
+    """A DRTrack for the staging folder, written as ISO 9660 and Joliet (long names).
+
+    The folder's name is the volume's, so the disc is named after the staged folder."""
+    root = DR.DRFolder.folderWithPath_(str(disc.folder.resolve()))
+    if root is None:
+        raise BurnError(f"DiscRecording could not open {disc.folder}")
+    root.setExplicitFilesystemMask_(
+        DR.DRFilesystemInclusionMaskISO9660 | DR.DRFilesystemInclusionMaskJoliet
+    )
+    track = DR.DRTrack.trackForRootFolder_(root)
+    if track is None:
+        raise BurnError(f"DiscRecording could not make a data track of {disc.folder}")
+    return track
+
+
 class DiscRecordingBurner:
     name = "discrecording"
 
@@ -129,24 +152,52 @@ class DiscRecordingBurner:
         if not summary["can_write_cdtext"]:
             raise BurnError("drive reports it cannot write CD-TEXT")
 
+        props = {
+            DR.DRBurnStrategyKey: DR.DRBurnStrategyCDSAO,
+            DR.DRBurnStrategyIsRequiredKey: True,
+            DR.DRCDTextKey: build_cdtext(disc),
+        }
+        self._run(
+            device, options, props, build_tracks(disc, options.pregap_sectors), progress
+        )
+
+    def burn_data(
+        self, disc: DataDisc, options: BurnOptions, progress: Progress
+    ) -> None:
+        """Write an MP3 CD: the staging folder as one data track (ISO 9660 + Joliet)."""
+        device = self._pick_device(options.device)
+        summary = describe_device(device)
+        progress(f"drive: {summary['name']} (support level: {summary['support']})")
+        if not summary["media_present"]:
+            raise BurnError("no disc in the drive")
+        track = build_data_track(disc)
+        free = summary["media_free_blocks"]
+        needs = int(track.estimateLength())
+        progress(f"the disc image is about {needs} sectors")
+        if free and needs > int(free):
+            raise BurnError(
+                f"the disc in the drive holds {int(free)} sectors but this one needs {needs}"
+            )
+        self._run(device, options, {}, [track], progress)
+
+    def _run(self, device, options: BurnOptions, extra: dict, layout, progress) -> None:
+        """Configure a burn, start it and follow it to the end."""
         burn = DR.DRBurn.burnForDevice_(device)
         speed = DR.DRDeviceBurnSpeedMax
         if options.speed:
             speed = DR.DRDeviceBurnSpeedCD1x * options.speed
         props = {
             DR.DRBurnRequestedSpeedKey: speed,
-            DR.DRBurnStrategyKey: DR.DRBurnStrategyCDSAO,
-            DR.DRBurnStrategyIsRequiredKey: True,
             DR.DRBurnUnderrunProtectionKey: True,
             DR.DRBurnVerifyDiscKey: options.verify,
             DR.DRBurnTestingKey: options.simulate,
             DR.DRBurnAppendableKey: False,
-            DR.DRCDTextKey: build_cdtext(disc),
+            **extra,
         }
         if options.eject:
             props[DR.DRBurnCompletionActionKey] = DR.DRBurnCompletionActionEject
         burn.setProperties_(props)
-        burn.writeLayout_(build_tracks(disc, options.pregap_sectors))
+        burn.writeLayout_(layout)
 
         last = None
         while True:

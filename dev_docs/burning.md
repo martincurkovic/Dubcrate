@@ -92,6 +92,36 @@ Use a blank CD-R (not a CD-RW) and a low speed.
 - **[tests]** CD-TEXT cleaning (Latin-1 kept, others folded or `?`), TOC escaping,
   sector maths, and the packing algorithms.
 
+## MP3 CDs
+
+An MP3 disc (`disc.kind = "mp3"`) is staged by `build.render_plan` as a folder of numbered
+MP3s (`render.render_mp3`: an MP3 is copied with fresh tags, anything else encoded with
+libmp3lame at the disc's bitrate) and written by `DiscRecordingBurner.burn_data` as one data
+track: `DRFolder` with `explicitFilesystemMask` ISO 9660 | Joliet, `DRTrack.trackForRootFolder_`.
+
+- **[tests]** Sizes and file names, the library and conversion, staging with real ffmpeg, the
+  burn window with a fake burner, and that DiscRecording builds the data track from a folder
+  without a drive (its `estimateLength()` for one tiny file is 178 sectors, which is where
+  `FILESYSTEM_OVERHEAD_SECTORS` comes from).
+- **[not tried]** Everything that touches the drive or the player. Check, with a CD-R you can
+  spare, in this order:
+  1. A **Test only** burn of a small MP3 disc from the window. It exercises the data-track
+     path (and that DiscRecording takes a data track from a worker thread, as for audio).
+  2. A real burn of a few tracks (one MP3, one FLAC). Mount the disc on the Mac: are the
+     files there, in order, with their tags? `drutil status` / `diskutil info` shows the
+     file system. Joliet names should be long; the ISO 9660 names are DiscRecording's own
+     8.3 forms.
+  3. The CDJ-1000MK3: does it read the disc and how long does it take to load, which order
+     does it play in (the name prefix is meant to make that the disc's order), what does it
+     show (the ID3 title and artist, or the file name), and is anything refused (the
+     bitrate, the sample rate of a copied MP3, a name Joliet allows but the player doesn't)?
+  4. The `DRBurnStrategy` for a data track is left to DiscRecording; if a burn fails to
+     start, try `DRBurnStrategyCDTAO` or `CDSAO` in `burn_data`.
+- **[not tried]** How near the limit a disc can get: `used` is the sum of the files plus the
+  estimated overhead, checked again against the drive's free blocks. Try a nearly full one.
+- **[not tried]** The CDJ's limits on files per disc and folder depth (this puts every file
+  in the root, so only the file count could matter). `MAX_TRACKS` is not applied to MP3 discs.
+
 ## DiscRecording API notes
 
 - A burn is configured with `DRBurn.burnForDevice_(device)` then `setProperties_`, and

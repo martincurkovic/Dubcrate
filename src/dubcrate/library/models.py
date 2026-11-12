@@ -3,9 +3,12 @@
 from dataclasses import dataclass, field
 from typing import Literal
 
+from dubcrate import mp3
 from dubcrate.cd import estimate_sectors
 
 SourceKind = Literal["folder", "rekordbox"]
+# An audio CD is limited by minutes; an MP3 CD is a data disc, limited by bytes.
+DiscKind = Literal["audio", "mp3"]
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -62,6 +65,25 @@ class Track(TrackRecord):
     @property
     def length_exact(self) -> bool:
         return self.cd_sectors is not None
+
+    def sectors_on(self, kind: DiscKind, mp3_bitrate: int | None = None) -> int:
+        """Sectors this track takes on a disc of `kind`: CD audio sectors for an audio CD,
+        2048-byte data sectors for an MP3 CD (`mp3_bitrate`: what a non-MP3 is encoded at)."""
+        if kind == "audio":
+            return self.length_sectors
+        return mp3.track_sectors(
+            self.path,
+            file_size=self.file_size,
+            duration=self.duration,
+            source_bitrate=self.bitrate,
+            disc_bitrate=mp3_bitrate or mp3.DEFAULT_BITRATE,
+        )
+
+    def exact_on(self, kind: DiscKind) -> bool:
+        """Whether `sectors_on` is the real size rather than an estimate."""
+        if kind == "audio":
+            return self.length_exact
+        return mp3.is_mp3(self.path) and bool(self.file_size)
 
 
 @dataclass(frozen=True)
@@ -124,6 +146,10 @@ class DiscSummary:
     created_at: str
     folder_id: int | None = None  # None: at the top level
     last_burned_at: str | None = None  # a note that it was burned, not a copy of it
+    kind: DiscKind = "audio"  # for "mp3" the sector counts are 2048-byte data sectors
+    mp3_bitrate: int | None = (
+        None  # what tracks that aren't MP3 are encoded at (mp3 discs)
+    )
 
     @property
     def free_sectors(self) -> int:
@@ -147,6 +173,8 @@ class DiscEntry:
     track: Track
     title_override: str | None = None
     artist_override: str | None = None
+    kind: DiscKind = "audio"  # the disc's, so `sectors` is in the disc's own unit
+    mp3_bitrate: int | None = None
 
     @property
     def title(self) -> str:
@@ -166,7 +194,11 @@ class DiscEntry:
 
     @property
     def sectors(self) -> int:
-        return self.track.length_sectors
+        return self.track.sectors_on(self.kind, self.mp3_bitrate)
+
+    @property
+    def exact(self) -> bool:
+        return self.track.exact_on(self.kind)
 
 
 @dataclass(frozen=True)

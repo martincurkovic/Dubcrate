@@ -150,6 +150,10 @@ A disc is a playlist that goes on a CD. They live in the **Discs** list on the r
 - **Right-click** a disc to open, rename, duplicate, burn or delete it, or a folder to make something inside it, rename it or delete it. Deleting a folder moves what is in it up a level: **no disc is ever deleted with a folder**.
 - Discs and folders are listed A to Z, with folders first.
 
+**Audio CDs and MP3 CDs.** A disc is an **audio CD** (the default) or an **MP3 CD**. An audio CD plays in any CD player and is measured in minutes (80 or 74, see Settings). An MP3 CD is a data disc of MP3 files, for players that read MP3 discs such as the CDJ-1000MK3; it is measured in megabytes (about 703 MB on an 80-minute disc), so it holds hours of music, has no 99-track limit and no gaps setting. Make one with **Disc > New MP3 Disc** (⇧⌘N) or right-click > **New MP3 Disc**, and switch an existing disc with right-click > **Make MP3 CD** / **Make Audio CD** (its tracks stay). Its title and size say **MP3 CD**. Tracks that are already MP3 are copied onto the disc as they are; everything else is encoded at the rate in **Settings > Discs** (320 kbit/s unless you change it). Artist and title edits for the disc are written into the files' tags, and files are named `01 Artist - Title.mp3`, `02 …`, so players that sort by name keep your order.
+
+**When a playlist gets too long.** If adding tracks makes an audio CD longer than it holds (or past 99 tracks), Dubcrate asks whether to **make it an MP3 CD** instead. Say no and it stays an audio CD, marked as too long; it asks once per disc until you restart.
+
 **A burned disc is just a disc.** There is no separate record and nothing is frozen: you can keep editing a disc after you burn it. Dubcrate only remembers *when* it was last burned: hover over the disc to see it, and you'll be reminded if you add a track that is on a disc you burned. To keep a copy of a mix before you change it, right-click it and choose **Duplicate**.
 
 ---
@@ -222,7 +226,7 @@ A disc you burned says when. A test write (a simulated burn) puts nothing on a d
 **From the window**
 
 1. Open the disc, then press **Burn…** under its tracks (or choose **Disc > Burn Disc…**, ⌘B, or right-click the disc in the Discs list and choose **Burn…**).
-2. Put a blank CD-R in the drive. Dubcrate asks the drive what is inside and shows it: the drive's name, whether the disc looks blank, and how much it holds. Press **Check Drive** after changing the disc.
+2. Put a blank CD-R in the drive. Dubcrate asks the drive what is inside and shows it: the drive's name, whether the disc looks blank, and how much it holds. Press **Check Drive** after changing the disc. An MP3 CD is written as a data disc (ISO 9660 with Joliet names), and the burn window says **MP3 CD** at the top.
 3. Check the **Speed**. It starts at your default from **File > Settings… > Burning**; change it here to use another speed for this burn only.
 4. Tick **A blank CD-R is in the drive**. The **Burn** button stays grey until you do, and Return never starts a burn.
 5. Press **Burn**. The log shows each track being prepared and then the burn. The window can't be closed until it finishes.
@@ -258,7 +262,7 @@ The full list of command-line options is in the project's developer notes.
 
 **File > Settings…** (⌘,) has five tabs:
 
-- **Discs:** how **new** discs are planned: **Plan new discs for** 80 or 74 minutes, and **Between tracks**, which is **Gapless** unless you choose 1, 2 or 3 seconds of silence.
+- **Discs:** how **new** discs are planned: **Plan new discs for** 80 or 74 minutes (the same size, as megabytes, for an MP3 CD), **Between tracks**, which is **Gapless** unless you choose 1, 2 or 3 seconds of silence (audio CDs only), and **MP3 CDs encode at**, the rate used for tracks that aren't MP3 already.
 - **Burning:** the **Burn speed** a burn starts with (10x unless you change it). Old players read discs burned slowly more reliably, and 10x to 16x is a good range. Your drive may not offer every speed. You can still pick another speed for a single burn in the burn window.
 - **Audio:** the **Output device** for previews and the **Buffer size**, with a button that plays a short test tone, and the **Beat jump** distance for the arrow keys.
 - **Library:** whether Dubcrate updates your rekordbox library each time it starts (on by default), and whether it checks for a newer version of Dubcrate when it starts (also on by default; see [Updates](#updates-and-what-dubcrate-sends)).
@@ -290,6 +294,7 @@ This is the only time Dubcrate uses the network. It asks `github.com` for the li
 | ⇧⌘O | Import a rekordbox library |
 | ⌘R | Re-import the selected source |
 | ⌘N | New disc |
+| ⇧⌘N | New MP3 disc |
 | ⌘B | Burn the disc |
 | ⇧⌘D | Split the shown tracks across discs |
 | ⌘, | Settings |
@@ -309,6 +314,7 @@ This is the only time Dubcrate uses the network. It asks `github.com` for the li
 - **The Burn button is grey.** Read the red lines in the burn window: the disc may be empty, too long for the disc in the drive, or missing a file. Also tick **A blank CD-R is in the drive**, and press **Check Drive** if you just changed the disc.
 - **A disc is over its size.** Take tracks off, switch to a longer disc size, or split the playlist.
 - **Something went wrong and I want to report it.** **Help > Show Log File** opens the folder with Dubcrate's log (`dubcrate.log`, and `crash.log` if it ever crashed). Attach them to the report. They list file paths and what Dubcrate did, never your audio. Starting Dubcrate with `--verbose` records more detail.
+- **An MP3 CD won't play, or its tracks are in the wrong order.** Not every player reads MP3 discs, and old ones can be fussy about file names and burn speed. Burn a test disc slowly, and tell the project what your player did, so this guide can say what is known.
 - **A track says it is no longer in its source.** It disappeared from the source at the last re-import but is kept because a disc uses it. Take it off the disc before burning.
 
 ---

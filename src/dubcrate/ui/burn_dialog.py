@@ -34,13 +34,22 @@ from dubcrate.build import (
     BuildError,
     BurnPlan,
     disc_problems,
+    format_amount,
     media_problems,
     plan_burn,
     render_plan,
 )
-from dubcrate.burn import Burner, BurnError, BurnOptions, MediaInfo, get_burner
-from dubcrate.cd import SECTORS_PER_SECOND, disc_used_sectors, format_clock, format_msf
+from dubcrate.burn import (
+    Burner,
+    BurnError,
+    BurnOptions,
+    DataDisc,
+    MediaInfo,
+    get_burner,
+)
+from dubcrate.cd import SECTORS_PER_SECOND, format_clock
 from dubcrate.library import Library
+from dubcrate.library.models import DiscKind
 from dubcrate.render import RenderError
 
 from .tasks import TaskError, run_async
@@ -70,7 +79,9 @@ def _backend() -> Burner:
     return get_burner("discrecording")
 
 
-def describe_media(media: MediaInfo | None, planned_sectors: int) -> tuple[str, str]:
+def describe_media(
+    media: MediaInfo | None, planned_sectors: int, kind: DiscKind = "audio"
+) -> tuple[str, str]:
     """(text, level) for the drive line. `level` is "normal", "warning" or "critical"."""
     if media is None:
         return "Looking for the drive…", "normal"
@@ -83,7 +94,7 @@ def describe_media(media: MediaInfo | None, planned_sectors: int) -> tuple[str, 
     elif media.blank:
         parts.append("blank disc")
     if media.free_sectors:
-        parts.append(f"holds {format_msf(media.free_sectors)}")
+        parts.append(f"holds {format_amount(media.free_sectors, kind)}")
         level = "critical" if planned_sectors > media.free_sectors else "normal"
     else:
         parts.append("couldn't read the disc's size, so going by the planned size")
@@ -120,6 +131,7 @@ class BurnDialog(QDialog):
 
         summary = lib.disc(disc_id)
         self._used = summary.used_sectors
+        self._kind = summary.kind
         self._problems = disc_problems(lib, disc_id)
         self._plan: BurnPlan | None = None
         if not self._problems:
@@ -127,16 +139,25 @@ class BurnDialog(QDialog):
 
         title = QLabel(summary.name)
         title.setObjectName("panelTitle")
-        gap = (
-            "gapless"
-            if summary.pregap_sectors == 0
-            else f"{summary.pregap_sectors // SECTORS_PER_SECOND} s between tracks"
-        )
         n = summary.track_count
-        self.disc_label = QLabel(
-            f"{n} track{'s' if n != 1 else ''} · {format_clock(summary.used_sectors)}"
-            f" of {format_clock(summary.capacity_sectors)} · {gap}"
-        )
+        tracks = f"{n} track{'s' if n != 1 else ''}"
+        if summary.kind == "mp3":
+            text = (
+                f"MP3 CD · {tracks} · {format_amount(summary.used_sectors, 'mp3')}"
+                f" of {format_amount(summary.capacity_sectors, 'mp3')}"
+                f" · other formats become {summary.mp3_bitrate} kbit/s MP3"
+            )
+        else:
+            gap = (
+                "gapless"
+                if summary.pregap_sectors == 0
+                else f"{summary.pregap_sectors // SECTORS_PER_SECOND} s between tracks"
+            )
+            text = (
+                f"{tracks} · {format_clock(summary.used_sectors)}"
+                f" of {format_clock(summary.capacity_sectors)} · {gap}"
+            )
+        self.disc_label = QLabel(text)
         self.disc_label.setObjectName("mutedLabel")
 
         self.problems_label = QLabel()
@@ -229,7 +250,7 @@ class BurnDialog(QDialog):
         if self._media_error:
             problems.append(self._media_error)
         if self._media is not None:
-            problems += media_problems(self._used, self._media)
+            problems += media_problems(self._used, self._media, self._kind)
         return problems
 
     def _update(self) -> None:
@@ -263,11 +284,11 @@ class BurnDialog(QDialog):
             )
             self.check_button.setEnabled(False)
         elif self._media is None and not self._media_error:
-            text, level = describe_media(None, self._used)
+            text, level = describe_media(None, self._used, self._kind)
         elif self._media is None:
             text, level = "Couldn't reach the drive.", "critical"
         else:
-            text, level = describe_media(self._media, self._used)
+            text, level = describe_media(self._media, self._used, self._kind)
         self._set_level(self.drive_label, text, level)
 
     def _append(self, text: str) -> None:
@@ -317,7 +338,8 @@ class BurnDialog(QDialog):
         )
         self.log.clear()
         self._append(
-            f"{'Test burn' if simulate else 'Burning'} “{plan.name}” at {speed}x"
+            f"{'Test burn' if simulate else 'Burning'} “{plan.name}”"
+            f"{' (MP3 CD)' if plan.kind == 'mp3' else ''} at {speed}x"
         )
         logger.info(
             "%s of disc %s “%s” at %sx",
@@ -342,13 +364,13 @@ class BurnDialog(QDialog):
             with TemporaryDirectory(prefix="dubcrate-burn-") as tmp:
                 rendered = render_plan(plan, Path(tmp), say)
                 if media is not None:  # the rendered lengths are the exact ones
-                    exact = disc_used_sectors(
-                        (t.sectors for t in rendered.disc.tracks), plan.pregap_sectors
-                    )
-                    problems = media_problems(exact, media)
+                    problems = media_problems(rendered.used_sectors, media, plan.kind)
                     if problems:
                         raise TaskError("; ".join(problems))
-                burner.burn(rendered.disc, options, say)
+                if isinstance(rendered.disc, DataDisc):
+                    burner.burn_data(rendered.disc, options, say)
+                else:
+                    burner.burn(rendered.disc, options, say)
             return rendered.lengths
 
         run_async(

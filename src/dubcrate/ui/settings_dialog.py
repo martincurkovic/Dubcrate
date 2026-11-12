@@ -16,7 +16,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from dubcrate import settings
+from dubcrate import mp3, settings
 from dubcrate.audio import devices
 from dubcrate.audio.decode import DecodedAudio
 from dubcrate.audio.devices import BUFFER_SIZES, SAMPLE_RATE, buffer_msec
@@ -208,6 +208,24 @@ class SettingsDialog(QDialog):
         hint.setWordWrap(True)
         hint.setObjectName("mutedLabel")
         form.addRow(hint)
+
+        self.mp3_combo = QComboBox()
+        for kbps in mp3.BITRATES:
+            self.mp3_combo.addItem(f"{kbps} kbit/s", kbps)
+        self.mp3_combo.setCurrentIndex(
+            max(0, self.mp3_combo.findData(settings.get_mp3_bitrate()))
+        )
+        self.mp3_combo.activated.connect(
+            lambda _i: settings.set_mp3_bitrate(self.mp3_combo.currentData())
+        )
+        form.addRow("MP3 CDs encode at:", self.mp3_combo)
+        mp3_hint = QLabel(
+            "For new MP3 discs: tracks that are not MP3 already are encoded at this rate."
+            " MP3 files go on the disc as they are, never re-encoded."
+        )
+        mp3_hint.setWordWrap(True)
+        mp3_hint.setObjectName("mutedLabel")
+        form.addRow(mp3_hint)
         return page
 
     # -- burning ----------------------------------------------------------

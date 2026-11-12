@@ -13,8 +13,8 @@ from PySide6.QtCore import QEvent, QPointF, QRectF, Qt
 from PySide6.QtGui import QBrush, QColor, QPainter, QPainterPath, QPen
 from PySide6.QtWidgets import QLabel, QSizePolicy, QToolTip, QVBoxLayout, QWidget
 
-from dubcrate.cd import format_clock
 from dubcrate.library.models import DiscEntry, DiscSummary
+from dubcrate.mp3 import format_span
 
 from . import theme
 from .track_colors import fill_track
@@ -38,14 +38,14 @@ def disc_spans(entries: list[DiscEntry], pregap_sectors: int = 0) -> list[Span]:
     for entry in entries:
         if entry.position > 0 and pregap_sectors:
             spans.append(Span(pregap_sectors, "gap", tooltip="Silence between tracks"))
-        note = "" if entry.track.length_exact else "  (estimated)"
+        note = "" if entry.exact else "  (estimated)"
         name = " – ".join(part for part in (entry.artist, entry.title) if part)
         spans.append(
             Span(
                 entry.sectors,
                 "track",
                 entry.position,
-                f"{entry.position + 1}. {name}\n{format_clock(entry.sectors)}{note}",
+                f"{entry.position + 1}. {name}\n{format_span(entry.sectors, entry.kind)}{note}",
             )
         )
     return spans
@@ -239,22 +239,24 @@ class CapacitySummary(QWidget):
         self.bar.set_spans(
             disc_spans(entries, summary.pregap_sectors), summary.capacity_sectors
         )
-        estimated = any(not e.track.length_exact for e in entries)
+        kind = summary.kind
+        estimated = any(not e.exact for e in entries)
         broken = sum(1 for e in entries if e.track.missing or e.track.stale)
         count = f"{summary.track_count} track{'s' if summary.track_count != 1 else ''}"
-        total = f"{'~' if estimated else ''}{format_clock(summary.used_sectors)} of {format_clock(summary.capacity_sectors)}"
+        used = format_span(summary.used_sectors, kind)
+        total = f"{'~' if estimated else ''}{used} of {format_span(summary.capacity_sectors, kind)}"
+        if kind == "mp3":
+            count += "  ·  MP3 CD"
         if summary.over:
-            text = (
-                f"{total}  ·  over by {format_clock(-summary.free_sectors)}  ·  {count}"
-            )
+            text = f"{total}  ·  over by {format_span(-summary.free_sectors, kind)}  ·  {count}"
             level = "critical"
         else:
-            text = f"{total}  ·  {format_clock(summary.free_sectors)} free  ·  {count}"
+            text = f"{total}  ·  {format_span(summary.free_sectors, kind)} free  ·  {count}"
             level = "normal"
         if broken:
             text += f"\n{broken} track{'s are' if broken != 1 else ' is'} missing or no longer in its source"
             level = "critical" if summary.over else "warning"
-        elif summary.track_count > 99:
+        elif kind == "audio" and summary.track_count > 99:
             text += "\nA CD holds at most 99 tracks"
             level = "critical"
         self._set_text(text, level)

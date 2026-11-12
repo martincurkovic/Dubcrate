@@ -66,6 +66,9 @@ class CdrdaoBurner:
     def media_info(self, device: str | None) -> MediaInfo:
         return MediaInfo()  # not read from cdrdao yet: everything unknown
 
+    def burn_data(self, disc, options: BurnOptions, progress: Progress) -> None:
+        raise BurnError("the cdrdao backend can only burn audio CDs, not MP3 CDs")
+
     def burn(self, disc: Disc, options: BurnOptions, progress: Progress) -> None:
         exe = find_cdrdao()
         if not exe:

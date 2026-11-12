@@ -21,10 +21,12 @@ from PySide6.QtWidgets import (
 )
 
 from dubcrate import settings
-from dubcrate.cd import SECTORS_PER_SECOND, format_clock
+from dubcrate.cd import MAX_TRACKS, SECTORS_PER_SECOND
 from dubcrate.library import Library
 from dubcrate.library.lengths import needs_measuring, probe_lengths
+from dubcrate.library.models import DiscKind
 from dubcrate.library.store import LibraryError
+from dubcrate.mp3 import format_span
 
 from .capacity_bar import CapacitySummary
 from .models import DiscModel
@@ -93,6 +95,9 @@ class DiscView(QWidget):
         self._lib = lib
         self._measuring = False
         self._disc_id: int | None = None
+        self._mp3_declined: set[int] = (
+            set()
+        )  # discs where "make it an MP3 CD?" got a no
 
         self.title = QLabel()
         self.title.setObjectName("panelTitle")
@@ -207,8 +212,9 @@ class DiscView(QWidget):
             self.title.setText(summary.name)
             n = summary.track_count
             self.count.setText(
-                f"{n} track{'s' if n != 1 else ''}  ·  {format_clock(summary.used_sectors)}"
-                f" of {format_clock(summary.capacity_sectors)}"
+                f"{'MP3 CD  ·  ' if summary.kind == 'mp3' else ''}"
+                f"{n} track{'s' if n != 1 else ''}  ·  {format_span(summary.used_sectors, summary.kind)}"
+                f" of {format_span(summary.capacity_sectors, summary.kind)}"
             )
             settings.set_last_disc(disc_id)
         else:
@@ -232,23 +238,28 @@ class DiscView(QWidget):
     def _warn(self, title: str, text: str) -> None:
         QMessageBox.warning(self, title, text)
 
-    def _create(self, name: str, folder_id: int | None = None) -> int:
-        """A new disc with the size and gap chosen in Settings."""
+    def _create(
+        self, name: str, folder_id: int | None = None, kind: DiscKind = "audio"
+    ) -> int:
+        """A new disc with the size (and, for audio, the gap) chosen in Settings."""
         return self._lib.create_disc(
             name,
             capacity_sectors=settings.get_disc_minutes() * 60 * SECTORS_PER_SECOND,
             pregap_sectors=settings.get_pregap_seconds() * SECTORS_PER_SECOND,
             folder_id=folder_id,
+            kind=kind,
+            mp3_bitrate=settings.get_mp3_bitrate() if kind == "mp3" else None,
         )
 
-    def new_disc(self, folder_id: int | None = None) -> int:
+    def new_disc(self, folder_id: int | None = None, kind: DiscKind = "audio") -> int:
         """Make a disc (in `folder_id`) with a name that is free, and open it. The window
         then puts its name in the tree up for editing."""
         taken = {d.name for d in self._lib.discs()}
+        base = "MP3 Disc" if kind == "mp3" else "Disc"
         n = len(taken) + 1
-        while f"Disc {n}" in taken:
+        while f"{base} {n}" in taken:
             n += 1
-        disc_id = self._create(f"Disc {n}", folder_id)
+        disc_id = self._create(f"{base} {n}", folder_id, kind)
         self.set_disc(disc_id)
         self.discs_changed.emit()
         self.opened.emit(disc_id)
@@ -460,8 +471,52 @@ class DiscView(QWidget):
             if created:
                 text += " (a new disc)"
             self.message.emit(text)
+            self._offer_mp3(target)
 
         self._measured(track_ids, add)
+
+    def _offer_mp3(self, disc_id: int) -> None:
+        """An audio CD that has just gone over what a CD holds: offer to make it an MP3 CD.
+        Asked once per disc a session, so saying no isn't nagged about."""
+        summary = self._lib.disc(disc_id)
+        too_many = summary.track_count > MAX_TRACKS
+        if summary.kind != "audio" or not (summary.over or too_many):
+            return
+        if disc_id in self._mp3_declined:
+            return
+        why = (
+            f"has {summary.track_count} tracks, and an audio CD holds at most {MAX_TRACKS}"
+            if too_many
+            else f"is {format_span(-summary.free_sectors)} too long for an audio CD"
+        )
+        answer = QMessageBox.question(
+            self,
+            "Make this an MP3 CD?",
+            f"“{summary.name}” {why}.\n\nMake it an MP3 CD instead? An MP3 CD is a data disc of"
+            " MP3 files that holds hours of music, but it only plays in players that read MP3"
+            " discs (the CDJ-1000MK3 does). Files that are already MP3 go on as they are; the"
+            " rest are encoded.",
+        )
+        if answer == QMessageBox.StandardButton.Yes:
+            self.set_disc_kind(disc_id, "mp3")
+        else:
+            self._mp3_declined.add(disc_id)
+
+    def set_disc_kind(self, disc_id: int, kind: DiscKind) -> None:
+        """Make a disc an audio CD or an MP3 CD. Its tracks stay."""
+        self._lib.set_disc_kind(
+            disc_id,
+            kind,
+            settings.get_mp3_bitrate() if kind == "mp3" else None,
+        )
+        self._mp3_declined.discard(disc_id)
+        if disc_id == self._disc_id:
+            self._show_disc()
+        self.discs_changed.emit()
+        name = self._lib.disc(disc_id).name
+        self.message.emit(
+            f"“{name}” is now {'an MP3 CD' if kind == 'mp3' else 'an audio CD'}"
+        )
 
     def split(self, track_ids: list[int], name: str) -> None:
         """Cut `track_ids` (in order) across as many discs as it takes."""

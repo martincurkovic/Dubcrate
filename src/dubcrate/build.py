@@ -4,12 +4,15 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
+from dubcrate import mp3
+from dubcrate.burn.base import DataDisc, DiscTrack, MediaInfo
 from dubcrate.burn.base import Disc as BurnDisc
-from dubcrate.burn.base import DiscTrack, MediaInfo
 from dubcrate.cd import MAX_TRACKS, disc_used_sectors, format_msf
 from dubcrate.library.lengths import measure_tracks
+from dubcrate.library.models import DiscKind
 from dubcrate.library.store import Library
-from dubcrate.render import RenderError, render_track
+from dubcrate.mp3 import format_amount
+from dubcrate.render import RenderError, render_mp3, render_track
 
 Progress = Callable[[str], None]
 
@@ -25,7 +28,7 @@ def disc_problems(lib: Library, disc_id: int) -> list[str]:
     problems: list[str] = []
     if not entries:
         problems.append("the disc is empty")
-    if len(entries) > MAX_TRACKS:
+    if summary.kind == "audio" and len(entries) > MAX_TRACKS:
         problems.append(f"{len(entries)} tracks; a CD holds at most {MAX_TRACKS}")
     for e in entries:
         label = f"#{e.position + 1} {e.artist} - {e.title}".strip()
@@ -35,14 +38,17 @@ def disc_problems(lib: Library, disc_id: int) -> list[str]:
             problems.append(f"{label}: file not found ({e.track.path})")
     if summary.over:
         problems.append(
-            f"over capacity by {format_msf(-summary.free_sectors)}"
-            f" ({format_msf(summary.used_sectors)} of {format_msf(summary.capacity_sectors)})"
+            f"over capacity by {format_amount(-summary.free_sectors, summary.kind)}"
+            f" ({format_amount(summary.used_sectors, summary.kind)}"
+            f" of {format_amount(summary.capacity_sectors, summary.kind)})"
         )
     return problems
 
 
-def media_problems(used_sectors: int, media: MediaInfo) -> list[str]:
-    """Reasons the disc in the drive can't take `used_sectors` of audio.
+def media_problems(
+    used_sectors: int, media: MediaInfo, kind: DiscKind = "audio"
+) -> list[str]:
+    """Reasons the disc in the drive can't take `used_sectors` (of audio, or of MP3 data).
 
     Only what the drive is sure about counts: an unknown (None) or a free
     space of zero is not a reason to refuse, because a drive that can't say
@@ -52,18 +58,20 @@ def media_problems(used_sectors: int, media: MediaInfo) -> list[str]:
         return ["no disc in the drive"]
     free = media.free_sectors
     if free and used_sectors > free:
-        holds, needs = format_msf(free), format_msf(used_sectors)
+        holds, needs = format_amount(free, kind), format_amount(used_sectors, kind)
         return [f"the disc in the drive holds {holds} but this disc needs {needs}"]
     return []
 
 
-def media_notes(media: MediaInfo) -> list[str]:
+def media_notes(media: MediaInfo, kind: DiscKind = "audio") -> list[str]:
     """What to tell the user about the disc in the drive, before burning."""
     notes = []
     if media.blank is False:
         notes.append("the disc in the drive doesn't look blank")
     if media.free_sectors:
-        notes.append(f"the disc in the drive holds {format_msf(media.free_sectors)}")
+        notes.append(
+            f"the disc in the drive holds {format_amount(media.free_sectors, kind)}"
+        )
     return notes
 
 
@@ -93,13 +101,26 @@ class BurnPlan:
     pregap_sectors: int
     capacity_sectors: int
     tracks: tuple[PlanTrack, ...]
+    kind: DiscKind = "audio"
+    mp3_bitrate: int | None = None
 
 
 @dataclass(frozen=True)
 class Rendered:
-    disc: BurnDisc
+    disc: BurnDisc | DataDisc
     pregap_sectors: int
-    lengths: dict[int, int]  # track id -> rendered sectors, to store afterwards
+    lengths: dict[
+        int, int
+    ]  # track id -> rendered CD sectors, to store afterwards (audio only)
+
+    @property
+    def used_sectors(self) -> int:
+        """What the rendered disc really takes, in its own unit (audio or data sectors)."""
+        if isinstance(self.disc, DataDisc):
+            return self.disc.sectors
+        return disc_used_sectors(
+            (t.sectors for t in self.disc.tracks), self.pregap_sectors
+        )
 
 
 def plan_burn(lib: Library, disc_id: int) -> BurnPlan:
@@ -121,6 +142,8 @@ def plan_burn(lib: Library, disc_id: int) -> BurnPlan:
         tracks=tuple(
             PlanTrack(e.track.id, e.track.path, e.title, e.artist) for e in entries
         ),
+        kind=summary.kind,
+        mp3_bitrate=summary.mp3_bitrate,
     )
 
 
@@ -133,6 +156,8 @@ def render_plan(
     capacity once more here.
     """
     say = progress or (lambda _msg: None)
+    if plan.kind == "mp3":
+        return _render_mp3_plan(plan, workdir, say)
     burn_disc = BurnDisc(title=plan.name, performer=plan.performer)
     workdir.mkdir(parents=True, exist_ok=True)
     lengths: dict[int, int] = {}
@@ -155,16 +180,51 @@ def render_plan(
     return Rendered(burn_disc, plan.pregap_sectors, lengths)
 
 
+def _render_mp3_plan(plan: BurnPlan, workdir: Path, say: Progress) -> Rendered:
+    """Stage an MP3 disc: one numbered MP3 per track in a folder named for the disc."""
+    folder = workdir / mp3.volume_name(plan.name)
+    folder.mkdir(parents=True, exist_ok=True)
+    data = DataDisc(title=folder.name, folder=folder)
+    used = 0
+    for number, t in enumerate(plan.tracks, start=1):
+        say(f"preparing {number}/{len(plan.tracks)}: {t.title}")
+        dst = folder / mp3.file_name(number, t.artist, t.title)
+        try:
+            size = render_mp3(
+                Path(t.path),
+                dst,
+                title=t.title,
+                artist=t.artist,
+                album=plan.name,
+                number=number,
+                bitrate=plan.mp3_bitrate or mp3.DEFAULT_BITRATE,
+            )
+        except RenderError as exc:
+            raise BuildError(f"#{number} {t.title}: {exc}") from exc
+        data.files.append(dst)
+        used += mp3.data_sectors(size)
+    data.sectors = used + mp3.FILESYSTEM_OVERHEAD_SECTORS
+    used = data.sectors
+    if used > plan.capacity_sectors:
+        raise BuildError(
+            f"the MP3 files add up to {mp3.format_size(used)}, over the"
+            f" {mp3.format_size(plan.capacity_sectors)} capacity"
+        )
+    return Rendered(data, 0, {})
+
+
 def build_burn_disc(
     lib: Library, disc_id: int, workdir: Path, progress: Progress | None = None
-) -> tuple[BurnDisc, int]:
-    """Render a planned disc to CD-ready WAVs; returns (burn disc, pregap sectors).
+) -> tuple[BurnDisc | DataDisc, int]:
+    """Render a planned disc to CD-ready WAVs (or, for an MP3 disc, a folder of MP3s);
+    returns (the disc to burn, pregap sectors).
 
     Measures lengths first and refuses to render a disc that can't be burned.
     Rendered lengths are saved back to the library. For a worker thread, use
     `plan_burn` here and `render_plan` there instead.
     """
-    measure_tracks(lib, [e.track.id for e in lib.disc_entries(disc_id)])
+    if lib.disc(disc_id).kind == "audio":  # an MP3 disc is sized from file sizes
+        measure_tracks(lib, [e.track.id for e in lib.disc_entries(disc_id)])
     rendered = render_plan(plan_burn(lib, disc_id), workdir, progress)
     for track_id, sectors in rendered.lengths.items():
         lib.set_cd_sectors(track_id, sectors)
