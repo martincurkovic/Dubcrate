@@ -165,6 +165,20 @@ The ID buffer is filled **elsewhere**: these functions only use it. Nothing was 
 calls the template builders by address or by pointer, so they are reached some other way
 (a table of offsets, or code Ghidra hasn't disassembled).
 
+**How far the ID chase got** (**[measured 2026-11-12]**). The 16-byte buffers at `0xCC244BA4`
+(CD) and `0xCC244BB4` (MP3) are filled by `0xAC103F64` and `0xAC103F86`, which only copy 16
+bytes out of two longer-lived RAM records, `0xCC2DE4EC` (CD) and `0xCC30BF74` (MP3), and return
+0 when the record's first `u16` is zero (so that `u16` is a "valid" flag). A reset routine
+(`0xAC10355E`) copies the current record to an "old" slot 16 bytes on, then clears it, which is
+why the firmware has `Old` disc-info types. Nothing found so far *writes* a new ID into those
+records: the writer is reached through code Ghidra has not disassembled (a large block of small
+accessor functions around `0xAC103D00`-`0xAC104400` is only partly recognised). The disc's TOC
+is read by `packetReadTOC` (`0xAC1262A4`) in the standard ATAPI layout (first and last track,
+then 8-byte entries with track number, ADR/control and minute/second/frame), and the debug
+print `0xAC127014` shows the fields; **[inferred]** the ID is derived from the TOC, but that
+is a guess. A "Disc Name" of 8 bytes is also kept (`0xAC0E1C0C`), possibly the first half of
+the ID.
+
 ### What else the program shows
 
 - Tasks: `Card Navi`, `Card Receive`, `Card Sprt`, `Card Capture`, `CDCUEREC`,
@@ -189,6 +203,15 @@ calls the template builders by address or by pointer, so they are reached some o
 6. What `G11.UPD` is.
 
 ## Plan for when the player is available
+
+`spikes/cdj_card_dump.py` is ready for this: `dump FILE.PDJ` finds every known tag (at the
+expected offsets and anywhere else, in case the layout above is wrong), prints the disc ID, the
+non-empty cue and hot cue entries, and tests the checksum guess; `diff A B` shows which chunk
+each changed byte range falls in. It has only been run on a synthetic file, so its output on a
+real card is the first real test of this document. For the disc ID, note each disc's track
+count and track lengths (Dubcrate has them) next to the 16 ID bytes it produces: with a few
+discs, seeing which bytes change with which part of the TOC is likely quicker than more
+disassembly.
 
 1. Format a card in the player (not on the Mac). Copy `PIONEER/` off it as a baseline
    (read-only: mount the card read-only and copy, never edit in place).
