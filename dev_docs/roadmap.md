@@ -17,8 +17,10 @@
    whole system disk; folders read when opened). Its tracks are real library tracks in a hidden
    source, so discs, sorting, search and previews all work unchanged (`Library.sync_directory`,
    `prune_explorer`; schema v9). **Next, as agreed with the owner:**
-   - **Pinned folders**: a list of folders (in Settings) that each get a tab of their own below
-     the Library and Explorer, refreshing whenever the tab is opened (no background watching).
+   - **Pinned folders**: *Built, not yet looked at on a real Mac.* Right-click a folder in the
+     Explorer > Pin Folder gives it a tab below Explorer (Unpin Folder on the tab or the tree);
+     the folder, not recursive, is read again each time its tab is opened (no background watching).
+     Still to do: reorder the tabs (they stay in the order pinned), and many pins need a scrolling tab strip.
      The owner's use: a folder of misc MP3s that isn't in rekordbox.
    - **A tab per app library** (not one merged Library tab), for when a second library exists. Only
      rekordbox is in use today: Engine DJ and Algoriddim djay are backups synced from rekordbox

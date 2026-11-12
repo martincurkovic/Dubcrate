@@ -260,9 +260,14 @@ def run_app(tmp_path, *extra):
     import subprocess
     import sys
 
+    # (macOS keeps QSettings in its preferences, whatever HOME says: send them to the temp folder
+    # so the run never reads the real app's saved tab or pins, or writes to them)
     code = (
         "import sys\n"
-        "from PySide6.QtCore import QTimer\n"
+        "from PySide6.QtCore import QSettings, QTimer\n"
+        "QSettings.setDefaultFormat(QSettings.Format.IniFormat)\n"
+        "QSettings.setPath(QSettings.Format.IniFormat, QSettings.Scope.UserScope,\n"
+        f"                  {str(tmp_path / 'settings')!r})\n"
         "from PySide6.QtWidgets import QApplication\n"
         "import dubcrate.ui.app as app\n"
         "import dubcrate.ui.startup as startup\n"

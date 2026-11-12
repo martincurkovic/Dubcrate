@@ -13,7 +13,12 @@ from dubcrate.render import SourceInfo
 from dubcrate.ui import explorer, main_window
 from dubcrate.ui.explorer import ExplorerTree, explorer_roots, subfolders
 from dubcrate.ui.main_window import MainWindow
-from dubcrate.ui.source_tabs import SourceTabBar, explorer_glyph, library_glyph
+from dubcrate.ui.source_tabs import (
+    SourceTabBar,
+    explorer_glyph,
+    library_glyph,
+    pinned_glyph,
+)
 
 ROWS = QItemSelectionModel.SelectionFlag.Select | QItemSelectionModel.SelectionFlag.Rows
 
@@ -516,3 +521,162 @@ def test_bad_settings_for_the_tab_fall_back_to_the_library(qapp):
     assert settings.get_explorer_path() == "/x"
     settings.set_explorer_path(None)
     assert settings.get_explorer_path() is None
+
+
+# -- pinned folders ------------------------------------------------------------------------
+
+
+def test_a_tab_can_be_removed_and_the_first_is_picked_instead(qapp):
+    bar = SourceTabBar()
+    bar.add_tab("library", "Library", library_glyph)
+    bar.add_tab("explorer", "Explorer", explorer_glyph)
+    bar.add_tab("pin:/x", "x", pinned_glyph)
+    bar.set_current("pin:/x")
+    bar.remove_tab("pin:/x")
+    assert bar.keys() == ["library", "explorer"] and bar.current() == "library"
+    bar.remove_tab("pin:/x")  # (already gone: nothing happens)
+
+
+def test_the_pinned_tab_paints_in_every_look(qapp):
+    from dubcrate.ui import theme
+
+    bar = SourceTabBar()
+    bar.add_tab("library", "Library", library_glyph)
+    bar.add_tab("pin:/x", "x", pinned_glyph)
+    try:
+        for look in ("dark", "light", "system6"):
+            theme.apply_to_app(qapp, look)
+            bar.resize(bar.sizeHint().width(), 300)
+            bar.show()
+            assert not bar.grab().toImage().isNull()
+            bar.hide()
+    finally:
+        theme.apply_to_app(qapp, "dark")
+
+
+def test_the_pinned_list_is_read_back_and_bad_values_are_ignored(qapp):
+    from PySide6.QtCore import QSettings
+
+    assert settings.get_pinned_folders() == []
+    settings.set_pinned_folders(["/a", "/b"])
+    assert settings.get_pinned_folders() == ["/a", "/b"]
+    QSettings().setValue("explorer/pinned", '["/a", 3, "", "/a", "/b"]')
+    assert settings.get_pinned_folders() == ["/a", "/b"]
+    QSettings().setValue("explorer/pinned", "not json")
+    assert settings.get_pinned_folders() == []
+    QSettings().setValue("explorer/pinned", '{"a": 1}')
+    assert settings.get_pinned_folders() == []
+    QSettings().setValue("window/left_tab", "pin:/a")
+    assert settings.get_left_tab() == "pin:/a"
+
+
+def test_pinning_a_folder_adds_a_tab_and_shows_its_files(window, wait_for):
+    win, _lib, music = window
+    win.pin_folder(str(music / "dub"))
+    key = "pin:" + str(music / "dub")
+    assert win.source_tabs.keys() == ["library", "explorer", key]
+    assert win.source_tabs.current() == key
+    assert win.source_pages.currentIndex() == 2
+    assert wait_for(lambda: titles(win) == ["a", "b", "c"]), titles(win)
+    assert win.tracks_title.text() == "dub"
+
+
+def test_pinning_twice_does_not_add_a_second_tab(window):
+    win, _lib, music = window
+    win.pin_folder(str(music / "dub"))
+    win.pin_folder(str(music / "dub"))
+    assert win.source_tabs.keys().count("pin:" + str(music / "dub")) == 1
+    assert win._pins == [str(music / "dub")]
+
+
+def test_a_pinned_tab_reads_its_folder_again_each_time_it_is_opened(window, wait_for):
+    win, _lib, music = window
+    win.pin_folder(str(music / "dub"))
+    assert wait_for(lambda: titles(win) == ["a", "b", "c"]), titles(win)
+    win.source_tabs.set_current("library")
+    (music / "dub" / "d.mp3").write_bytes(b"x" * 10)
+    win.source_tabs.set_current("pin:" + str(music / "dub"))
+    assert wait_for(lambda: titles(win) == ["a", "b", "c", "d"]), titles(win)
+
+
+def test_a_pinned_tab_browses_the_folders_inside_it(window, wait_for):
+    win, _lib, music = window
+    win.pin_folder(str(music))
+    tree = win._pin_trees["pin:" + str(music)]
+    assert tree.current_path() == str(music)
+    tree.select_path(str(music / "house"))
+    assert wait_for(lambda: titles(win) == ["x"]), titles(win)
+    win.source_tabs.set_current("explorer")
+    win.source_tabs.set_current("pin:" + str(music))
+    assert wait_for(lambda: titles(win) == ["x"]), titles(win)  # it kept its own pick
+
+
+def test_unpinning_removes_the_tab_and_goes_back_to_the_library(window):
+    win, _lib, music = window
+    win.pin_folder(str(music / "dub"))
+    win.pin_folder(str(music / "house"))
+    win.unpin_folder(str(music / "house"))
+    assert win.source_tabs.keys() == [
+        "library",
+        "explorer",
+        "pin:" + str(music / "dub"),
+    ]
+    assert win.source_tabs.current() == "library"
+    assert win.source_pages.count() == 3 and win._pins == [str(music / "dub")]
+    assert (music / "house" / "x.mp3").exists()  # (the folder is left alone)
+    win.unpin_folder(str(music / "house"))  # (already gone: nothing happens)
+
+
+def test_the_menu_offers_pin_or_unpin_by_whether_the_folder_is_pinned(window):
+    win, _lib, music = window
+    tree = win.explorer_tree
+    path = str(music / "dub")
+    asked = []
+    tree.pin_requested.connect(asked.append)
+
+    def offered():
+        return [a.text() for a in tree._pin_menu(path).actions()]
+
+    assert offered() == ["Pin Folder"]
+    tree._pin_menu(path).actions()[0].trigger()
+    assert asked == [path]
+    win.pin_folder(path)
+    assert offered() == ["Unpin Folder"]  # (the Explorer's tree is told what is pinned)
+    win.unpin_folder(path)
+    assert offered() == ["Pin Folder"]
+
+
+def test_pins_and_the_pinned_tab_are_remembered(qapp, music, probed, monkeypatch):
+    monkeypatch.setattr(explorer, "explorer_roots", lambda: [("Music", music, False)])
+    gone = music / "gone"
+    settings.set_pinned_folders([str(music / "dub"), str(gone)])
+    settings.set_left_tab("pin:" + str(music / "dub"))
+    lib = Library.open(":memory:")
+    win = MainWindow(lib, persist=True)
+    try:
+        assert win.source_tabs.keys()[2:] == [
+            "pin:" + str(music / "dub"),
+            "pin:" + str(gone),
+        ]  # (a pin whose folder is missing keeps its tab: a drive may be unplugged)
+        assert win.source_tabs.current() == "pin:" + str(music / "dub")
+        win.unpin_folder(str(gone))
+        assert settings.get_pinned_folders() == [str(music / "dub")]
+    finally:
+        win.close()
+        win.deleteLater()
+        lib.close()
+
+
+def test_a_remembered_tab_whose_pin_has_gone_falls_back_to_the_library(
+    qapp, music, probed, monkeypatch
+):
+    monkeypatch.setattr(explorer, "explorer_roots", lambda: [("Music", music, False)])
+    settings.set_left_tab("pin:/nowhere")
+    lib = Library.open(":memory:")
+    win = MainWindow(lib, persist=True)
+    try:
+        assert win.source_tabs.current() == "library"
+    finally:
+        win.close()
+        win.deleteLater()
+        lib.close()

@@ -67,7 +67,7 @@ from .player_strip import PlayerStrip
 from .preview import PreviewController
 from .settings_dialog import SettingsDialog
 from .shortcuts_dialog import ShortcutsDialog
-from .source_tabs import SourceTabBar, explorer_glyph, library_glyph
+from .source_tabs import SourceTabBar, explorer_glyph, library_glyph, pinned_glyph
 from .splitter import Splitter
 from .status_bar import AppStatusBar
 from .tasks import TaskError, run_async
@@ -125,6 +125,8 @@ class MainWindow(QMainWindow):
         self._selection: tuple = ("all",)
         self._library_selection: tuple = ("all",)
         self._explorer_path: str | None = None
+        self._pins: list[str] = []  # the pinned folders, one tab each (`pin:` + path)
+        self._pin_trees: dict[str, ExplorerTree] = {}  # by tab key
         # the folder or disc that is current in the disc tree
         self._disc_pick: tuple | None = None
         self.shortcuts_dialog: ShortcutsDialog | None = None  # kept while it is open
@@ -176,8 +178,13 @@ class MainWindow(QMainWindow):
                 self.explorer_tree.select_path(
                     last_folder
                 )  # (the tab is not showing: just picks)
-            if settings.get_left_tab() == "explorer":
-                self.source_tabs.set_current("explorer")
+            for pinned in settings.get_pinned_folders():
+                self._add_pinned_tab(pinned)
+            self._save_pins()
+            tab = settings.get_left_tab()
+            known_tabs = self.source_tabs.keys()
+            if tab != "library" and tab in known_tabs:
+                self.source_tabs.set_current(tab)
 
     # -- layout -----------------------------------------------------------
 
@@ -186,6 +193,15 @@ class MainWindow(QMainWindow):
         label = QLabel(text)
         label.setObjectName("panelTitle")
         return label
+
+    def _folder_page(self, title: str, tree: ExplorerTree) -> QWidget:
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setSpacing(8)
+        layout.addWidget(self._title(title))
+        layout.addWidget(tree, 1)
+        return page
 
     def _build_panes(self) -> None:
         # sources
@@ -206,16 +222,17 @@ class MainWindow(QMainWindow):
         # the Explorer: folders on this Mac, read when you open them, with nothing imported
         self.explorer_tree = ExplorerTree()
         self.explorer_tree.folder_selected.connect(self._on_explorer_folder)
-        explorer_page = QWidget()
-        explorer_layout = QVBoxLayout(explorer_page)
-        explorer_layout.setContentsMargins(12, 12, 12, 12)
-        explorer_layout.setSpacing(8)
-        explorer_layout.addWidget(self._title("Explorer"))
-        explorer_layout.addWidget(self.explorer_tree, 1)
+        explorer_page = self._folder_page("Explorer", self.explorer_tree)
+        self.explorer_tree.pin_requested.connect(self.pin_folder)
+        self.explorer_tree.unpin_requested.connect(self.unpin_folder)
 
         self.source_pages = QStackedWidget()
         self.source_pages.addWidget(library_page)
         self.source_pages.addWidget(explorer_page)
+        self._left_pages: dict[str, QWidget] = {
+            "library": library_page,
+            "explorer": explorer_page,
+        }
         self.source_tabs = SourceTabBar()
         self.source_tabs.add_tab(
             "library",
@@ -230,6 +247,7 @@ class MainWindow(QMainWindow):
             "Browse folders on this Mac, or a drive, without importing them",
         )
         self.source_tabs.current_changed.connect(self._on_left_tab)
+        self.source_tabs.context_menu_requested.connect(self._on_tab_menu)
         left = QWidget()
         left_layout = QHBoxLayout(left)
         left_layout.setContentsMargins(0, 0, 0, 0)
@@ -765,7 +783,7 @@ class MainWindow(QMainWindow):
     def _on_left_tab(self, key: str) -> None:
         """The Library tab shows the library tree's pick in the track list; the Explorer shows
         the folder picked in its own tree."""
-        self.source_pages.setCurrentIndex(0 if key == "library" else 1)
+        self.source_pages.setCurrentWidget(self._left_pages[key])
         if self._persist:
             settings.set_left_tab(key)
         if key == "library":
@@ -773,7 +791,10 @@ class MainWindow(QMainWindow):
             if current.isValid():
                 self._on_tree_current_changed(current, QModelIndex())
             return
-        path = self._explorer_path or self.explorer_tree.current_path()
+        if key == "explorer":
+            path = self._explorer_path or self.explorer_tree.current_path()
+        else:  # a pinned folder: its folder (or one inside it) is read again each time
+            path = self._pin_trees[key].current_path()
         if path:
             self._show_explorer_folder(path)
             return
@@ -789,6 +810,70 @@ class MainWindow(QMainWindow):
             settings.set_explorer_path(path)
         if self.source_tabs.current() == "explorer":
             self._show_explorer_folder(path)
+
+    # -- pinned folders ---------------------------------------------------
+
+    def pin_folder(self, path: str) -> None:
+        """Give a folder a tab of its own, below the Explorer, and go to it."""
+        path = str(Path(path))
+        if path not in self._pins:
+            self._add_pinned_tab(path)
+            self._save_pins()
+        self.source_tabs.set_current(settings.PIN_PREFIX + path)
+
+    def unpin_folder(self, path: str) -> None:
+        """Take a folder's tab away (the folder itself is not touched)."""
+        key = settings.PIN_PREFIX + str(Path(path))
+        if key not in self._pin_trees:
+            return
+        self._pins.remove(key[len(settings.PIN_PREFIX) :])
+        del self._pin_trees[key]
+        self.source_tabs.remove_tab(key)  # (picks another tab if this one was showing)
+        page = self._left_pages.pop(key)
+        self.source_pages.removeWidget(page)
+        page.deleteLater()
+        self._save_pins()
+
+    def _add_pinned_tab(self, path: str) -> None:
+        key = settings.PIN_PREFIX + path
+        if key in self._pin_trees:
+            return
+        name = Path(path).name or path
+        tree = ExplorerTree(roots=lambda: [(name, Path(path), False)])
+        tree.select_path(path)  # (before it is connected: just picks the folder)
+        tree.expand(tree.currentIndex())
+        tree.folder_selected.connect(lambda p, k=key: self._on_pinned_folder(k, p))
+        tree.pin_requested.connect(self.pin_folder)
+        tree.unpin_requested.connect(self.unpin_folder)
+        page = self._folder_page(name, tree)
+        self.source_pages.addWidget(page)
+        self._left_pages[key] = page
+        self._pin_trees[key] = tree
+        self._pins.append(path)
+        self.source_tabs.add_tab(
+            key, name, pinned_glyph, f"{path}\nRight-click to unpin"
+        )
+
+    def _save_pins(self) -> None:
+        pinned = set(self._pins)
+        self.explorer_tree.set_pinned(pinned)
+        for tree in self._pin_trees.values():
+            tree.set_pinned(pinned)
+        if self._persist:
+            settings.set_pinned_folders(self._pins)
+
+    def _on_pinned_folder(self, key: str, path: str) -> None:
+        if self.source_tabs.current() == key:
+            self._show_explorer_folder(path)
+
+    def _on_tab_menu(self, key: str, where) -> None:
+        if not key.startswith(settings.PIN_PREFIX):
+            return
+        menu = QMenu(self)
+        menu.addAction(
+            "Unpin Folder", lambda: self.unpin_folder(key[len(settings.PIN_PREFIX) :])
+        )
+        menu.exec(where)
 
     def _show_explorer_folder(self, path: str) -> None:
         """Show what is known of a folder at once, and read it again in the background."""

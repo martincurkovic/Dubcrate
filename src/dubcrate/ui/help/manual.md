@@ -121,6 +121,14 @@ The **Explorer** tab (the second tab down the left edge) is for music that isn't
 - If a folder can't be read, the status bar says why. On a Mac, the first time you open Documents, Downloads, Desktop or a drive, macOS may ask whether Dubcrate may read it; if you said no, allow it under **System Settings > Privacy & Security > Files & Folders**.
 - Dubcrate remembers which tab and which folder you were on.
 
+### Pinned folders
+
+For a folder you use all the time (say, MP3s that aren't in rekordbox), **right-click it in the Explorer and choose Pin Folder**. It gets a tab of its own below Explorer, showing that folder and the folders inside it. The folder is read again every time you open its tab, so files you have added since show up.
+
+- To remove a tab, right-click it (or the folder in any tree) and choose **Unpin Folder**. The folder and its files are not touched.
+- A pinned folder on a drive keeps its tab when the drive is unplugged; the status bar says the folder isn't there until you plug it back in.
+- The tab shows only the start of a long folder name; hold the pointer over it for the full path.
+
 ---
 
 ## Listening to tracks

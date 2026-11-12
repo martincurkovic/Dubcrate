@@ -7,7 +7,7 @@ tab is inverted, black with a white glyph.
 
 from collections.abc import Callable
 
-from PySide6.QtCore import QPointF, QRectF, QSize, Qt, Signal
+from PySide6.QtCore import QPoint, QPointF, QRectF, QSize, Qt, Signal
 from PySide6.QtGui import QColor, QFont, QPainter, QPen, QPolygonF
 from PySide6.QtWidgets import QAbstractButton, QButtonGroup, QVBoxLayout, QWidget
 
@@ -48,6 +48,15 @@ def explorer_glyph(p: QPainter, box: QRectF, colour: QColor) -> None:
     p.drawPolygon(
         QPolygonF([QPointF(box.left() + x * u, box.top() + y * u) for x, y in points])
     )
+
+
+def pinned_glyph(p: QPainter, box: QRectF, colour: QColor) -> None:
+    """A folder with a pin: the Explorer's folder, and a dot on its corner."""
+    explorer_glyph(p, box, colour)
+    u = box.width() / 16
+    p.setPen(_pen(colour, 1.5))
+    p.setBrush(colour)
+    p.drawEllipse(QPointF(box.left() + 13 * u, box.top() + 3.5 * u), 2.2 * u, 2.2 * u)
 
 
 class _TabButton(QAbstractButton):
@@ -104,6 +113,9 @@ class SourceTabBar(QWidget):
     """A column of exclusive tabs; `current_changed(key)` says which was picked."""
 
     current_changed = Signal(str)
+    context_menu_requested = Signal(
+        str, QPoint
+    )  # (a tab's key, where, in screen pixels)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -125,8 +137,27 @@ class SourceTabBar(QWidget):
         self._layout.insertWidget(self._layout.count() - 1, button)
         self._buttons[key] = button
         button.toggled.connect(lambda on, k=key: self._picked(k) if on else None)
+        button.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        button.customContextMenuRequested.connect(
+            lambda pos, k=key, b=button: self.context_menu_requested.emit(
+                k, b.mapToGlobal(pos)
+            )
+        )
         if len(self._buttons) == 1:
             button.setChecked(True)
+
+    def remove_tab(self, key: str) -> None:
+        """Take a tab away. If it was the picked one, the first tab is picked instead."""
+        button = self._buttons.pop(key, None)
+        if button is None:
+            return
+        was_current = self._current == key
+        self._group.removeButton(button)
+        self._layout.removeWidget(button)
+        button.hide()
+        button.deleteLater()
+        if was_current and self._buttons:
+            self.set_current(next(iter(self._buttons)))
 
     def keys(self) -> list[str]:
         return list(self._buttons)

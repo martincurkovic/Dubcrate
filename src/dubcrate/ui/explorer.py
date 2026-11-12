@@ -12,9 +12,9 @@ import sys
 from collections.abc import Callable
 from pathlib import Path
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import QPoint, Qt, Signal
 from PySide6.QtGui import QStandardItem, QStandardItemModel
-from PySide6.QtWidgets import QAbstractItemView, QTreeView
+from PySide6.QtWidgets import QAbstractItemView, QMenu, QTreeView
 
 from . import theme
 from .models import _folder_icon, _source_icon
@@ -80,6 +80,10 @@ def subfolders(folder: Path) -> list[Path]:
 
 class ExplorerTree(QTreeView):
     folder_selected = Signal(str)
+    pin_requested = Signal(str)  # right-click > Pin Folder
+    unpin_requested = Signal(
+        str
+    )  # right-click > Unpin Folder (on a folder that is pinned)
 
     def __init__(
         self,
@@ -88,7 +92,10 @@ class ExplorerTree(QTreeView):
     ):
         super().__init__(parent)
         self._roots = roots or explorer_roots
+        self._pinned: set[str] = set()
         self.setHeaderHidden(True)
+        self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.customContextMenuRequested.connect(self._on_context_menu)
         self.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.setUniformRowHeights(True)
         self._model = QStandardItemModel(self)
@@ -136,6 +143,26 @@ class ExplorerTree(QTreeView):
             item.setIcon(_source_icon() if item.data(VOLUME_ROLE) else _folder_icon())
             if item.data(LOADED_ROLE):
                 stack += [item.child(r) for r in range(item.rowCount())]
+
+    # -- pinning ---------------------------------------------------------
+
+    def set_pinned(self, paths: set[str]) -> None:
+        """The folders that are pinned now, so the menu offers Unpin for them."""
+        self._pinned = set(paths)
+
+    def _pin_menu(self, path: str) -> QMenu:
+        menu = QMenu(self)
+        if path in self._pinned:
+            menu.addAction("Unpin Folder", lambda: self.unpin_requested.emit(path))
+        else:
+            menu.addAction("Pin Folder", lambda: self.pin_requested.emit(path))
+        return menu
+
+    def _on_context_menu(self, pos: QPoint) -> None:
+        index = self.indexAt(pos)
+        path = index.data(PATH_ROLE) if index.isValid() else None
+        if path:
+            self._pin_menu(path).exec(self.viewport().mapToGlobal(pos))
 
     # -- the choice ------------------------------------------------------
 

@@ -36,12 +36,39 @@ def set_bytes(key: str, value: QByteArray) -> None:
 
 
 LEFT_TABS = ("library", "explorer")
+PIN_PREFIX = "pin:"  # a pinned folder's tab key is this plus its path
 
 
 def get_left_tab() -> str:
-    """The tab picked down the left of the window last time (the library, unless changed)."""
+    """The tab picked down the left of the window last time (the library, unless changed).
+    A pinned folder's tab is kept (the window drops it if the pin has gone)."""
     value = str(_qs().value("window/left_tab", LEFT_TABS[0]))
-    return value if value in LEFT_TABS else LEFT_TABS[0]
+    if value in LEFT_TABS or value.startswith(PIN_PREFIX):
+        return value
+    return LEFT_TABS[0]
+
+
+def get_pinned_folders() -> list[str]:
+    """The folders pinned as tabs of their own, in the order they were pinned."""
+    import json
+
+    try:
+        paths = json.loads(str(_qs().value("explorer/pinned", "[]") or "[]"))
+    except ValueError:
+        return []
+    if not isinstance(paths, list):
+        return []
+    found: list[str] = []
+    for path in paths:
+        if isinstance(path, str) and path and path not in found:
+            found.append(path)
+    return found
+
+
+def set_pinned_folders(paths: list[str]) -> None:
+    import json
+
+    _qs().setValue("explorer/pinned", json.dumps(paths))
 
 
 def set_left_tab(key: str) -> None:
