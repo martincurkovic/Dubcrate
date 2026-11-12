@@ -173,6 +173,10 @@ was measured, and how.
 
 ### Looking at the window
 
+To see the status bar's "Update available" button without a release (the repository is private, so a
+real check finds nothing): `uv run scripts/preview_update_button.py` (`--theme`, `--version`, `--dialog`,
+`--screenshot PNG`). It tells the real update checker it found a release; nothing is fetched or saved.
+
 The tests can't tell you whether it looks right. Render it offscreen and read the PNG,
 in all three looks (`dark`, `light`, `system6`). Send the settings and the theme's
 generated icons to temp locations, as `tests/conftest.py` does, and use a silent
