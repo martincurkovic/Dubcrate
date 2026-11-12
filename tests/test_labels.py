@@ -6,7 +6,7 @@ import pytest
 
 from dubcrate import labels
 from dubcrate.labels import LabelOptions
-from dubcrate.library.models import DiscEntry, Track
+from dubcrate.library.models import DiscDir, DiscEntry, Track
 
 
 def entry(i, title=None, artist="Artist", bpm=None, key="", **kw):
@@ -97,7 +97,9 @@ def test_a_short_list_is_not_blown_up_and_a_long_one_shrinks():
 
 
 def test_a_list_that_cannot_be_read_is_flagged_not_hidden():
-    [label] = labels.build_labels("N", entries(30), LabelOptions(height_mm=30))
+    [label] = labels.build_labels(
+        "N", entries(30), LabelOptions(height_mm=30, per_disc=1)
+    )
     assert not label.fits
     assert label.font_mm == labels.MIN_FONT_MM  # drawn at the smallest readable size
     [ok] = labels.build_labels("N", entries(10), LabelOptions())
@@ -185,11 +187,14 @@ def test_no_labels_make_no_pages():
 
 def test_options_are_held_inside_their_limits():
     o = LabelOptions(
-        width_mm=1, height_mm=9999, per_disc=0, copies=99, margin_mm=-3, gap_mm=500
+        width_mm=1, height_mm=9999, per_disc=99, copies=99, margin_mm=-3, gap_mm=500
     ).clamped()
     assert o.width_mm == labels.MIN_LABEL_MM
     assert o.height_mm == labels.PAGE_SIZES["A4"][1]
-    assert (o.per_disc, o.copies) == (1, labels.MAX_COPIES)
+    assert (o.per_disc, o.copies) == (labels.MAX_PER_DISC, labels.MAX_COPIES)
+    assert LabelOptions(per_disc=-4, columns=0).clamped().per_disc == 0  # Auto
+    assert LabelOptions(columns=0).clamped().columns == 1
+    assert LabelOptions(columns=9).clamped().columns == labels.MAX_COLUMNS
     assert (o.margin_mm, o.gap_mm) == (0, 20)
 
 
@@ -259,7 +264,9 @@ def test_a_chosen_size_can_be_bigger_than_auto_would_pick():
 
 
 def test_a_chosen_size_that_does_not_fit_is_flagged_and_not_shrunk():
-    [label] = labels.build_labels("N", entries(10), LabelOptions(font_pt=14))
+    [label] = labels.build_labels(
+        "N", entries(10), LabelOptions(font_pt=14, per_disc=1)
+    )
     assert not label.fits
     assert (
         abs(label.font_mm - 14 * labels.MM_PER_PT) < 1e-9
@@ -269,7 +276,7 @@ def test_a_chosen_size_that_does_not_fit_is_flagged_and_not_shrunk():
 
 
 def test_spreading_a_disc_over_more_labels_makes_a_big_font_fit():
-    options = LabelOptions(font_pt=14)
+    options = LabelOptions(font_pt=14, per_disc=1)
     assert not labels.build_labels("N", entries(10), options)[0].fits
     assert all(
         l.fits
@@ -283,3 +290,178 @@ def test_auto_is_zero_and_a_chosen_size_is_held_inside_its_limits():
     assert LabelOptions(font_pt=1).clamped().font_pt == labels.MIN_FONT_PT
     assert LabelOptions(font_pt=99).clamped().font_pt == labels.MAX_FONT_PT
     assert LabelOptions(font_pt=9.5).clamped().font_pt == 9.5
+
+
+# -- Auto: how many labels, how many columns --------------------------------------
+
+
+def lines(label):
+    return [len(column) for column in label.columns]
+
+
+def test_a_short_disc_gets_one_label_in_one_column_on_auto():
+    [label] = labels.build_labels("N", entries(10), LabelOptions())
+    assert lines(label) == [10]
+
+
+def test_auto_adds_labels_until_the_text_is_readable():
+    made = labels.build_labels("N", entries(60), LabelOptions())  # 10 x 5 cm
+    assert len(made) == 4 and all(lines(l) == [15] for l in made)
+    assert all(l.font_mm >= labels.AUTO_MIN_MM and l.fits for l in made)
+    assert made[0].heading == "N  1/4"
+
+
+def test_columns_mean_fewer_labels():
+    made = labels.build_labels("N", entries(60), LabelOptions(columns=2))
+    assert len(made) == 2 and all(lines(l) == [15, 15] for l in made)
+    assert all(l.font_mm >= labels.AUTO_MIN_MM for l in made)
+
+
+def test_a_disc_uses_as_few_columns_as_will_do():
+    [label] = labels.build_labels("N", entries(10), LabelOptions(columns=3))
+    assert lines(label) == [10]  # one column is readable, so no more
+    [label] = labels.build_labels(
+        "N", entries(30), LabelOptions(columns=3, height_mm=50, per_disc=1)
+    )
+    assert len(label.columns) > 1
+
+
+def test_a_fixed_number_of_labels_still_chooses_its_columns():
+    made = labels.build_labels("N", entries(40), LabelOptions(per_disc=2, columns=2))
+    assert len(made) == 2 and all(
+        len(l.columns) == 2 for l in made
+    )  # 20 rows would be too small
+    made = labels.build_labels("N", entries(10), LabelOptions(per_disc=2, columns=2))
+    assert all(len(l.columns) == 1 for l in made)
+
+
+def test_auto_respects_a_chosen_font_size():
+    made = labels.build_labels("N", entries(20), LabelOptions(font_pt=10))
+    assert all(l.fits for l in made)
+    assert all(abs(l.font_mm - 10 * labels.MM_PER_PT) < 1e-9 for l in made)
+    assert len(made) > len(labels.build_labels("N", entries(20), LabelOptions()))
+
+
+def test_when_nothing_is_readable_the_best_effort_is_flagged():
+    made = labels.build_labels("N", entries(400), LabelOptions(height_mm=25))
+    assert len(made) == labels.MAX_PER_DISC and not made[0].fits
+
+
+def test_columns_split_in_order_and_balanced():
+    items = [labels.LabelRow(i, f"T{i}", "") for i in range(7)]
+    cols = labels.split_columns(items, 2)
+    assert [[r.number for r in c] for c in cols] == [[0, 1, 2, 3], [4, 5, 6]]
+    assert len(labels.split_columns(items[:1], 3)) == 1  # no empty columns
+
+
+def test_a_folder_heading_is_not_left_at_the_foot_of_a_column():
+    items = [
+        labels.LabelRow(1, "a", ""),
+        labels.LabelRow(2, "b", ""),
+        labels.FolderRow("F"),
+        labels.LabelRow(1, "c", ""),
+    ]
+    first, second = labels.split_columns(
+        items, 2
+    )  # a cut after the heading would strand it
+    assert isinstance(second[0], labels.FolderRow)
+    assert not isinstance(first[-1], labels.FolderRow)
+
+
+# -- folders on an MP3 disc ----------------------------------------------------------
+
+
+def dirs(*specs):
+    """(id, parent, name) -> DiscDir"""
+    return [DiscDir(i, 1, parent, name) for i, parent, name in specs]
+
+
+def in_dir(n, dir_id, start=0):
+    return [entry(start + i, dir_id=dir_id) for i in range(n)]
+
+
+def flat_lines(made):
+    return [item for l in made for column in l.columns for item in column]
+
+
+def test_folders_are_headings_with_their_tracks_numbered_in_each():
+    es = in_dir(2, None) + in_dir(3, 2, 2) + in_dir(2, 1, 5)
+    folders = dirs((1, None, "Warm up"), (2, None, "Peak"))
+    [label] = labels.build_labels("N", es, LabelOptions(per_disc=1), dirs=folders)
+    shown = [
+        f"[{i.name}]" if isinstance(i, labels.FolderRow) else i.number
+        for i in flat_lines([label])
+    ]
+    # the root first, then folders by name (Peak before Warm up), each restarting at 1
+    assert shown == [1, 2, "[Peak]", 1, 2, 3, "[Warm up]", 1, 2]
+
+
+def test_a_nested_folder_is_named_by_its_path_after_its_parent():
+    es = in_dir(1, 2, 0) + in_dir(1, 1, 1)
+    folders = dirs((1, None, "Sets"), (2, 1, "Friday"))
+    [label] = labels.build_labels("N", es, LabelOptions(per_disc=1), dirs=folders)
+    names = [i.name for i in flat_lines([label]) if isinstance(i, labels.FolderRow)]
+    assert names == ["Sets", "Sets / Friday"]
+
+
+def test_a_folder_with_nothing_directly_in_it_has_no_heading():
+    es = in_dir(2, 2)
+    folders = dirs((1, None, "Outer"), (2, 1, "Inner"))
+    [label] = labels.build_labels("N", es, LabelOptions(per_disc=1), dirs=folders)
+    names = [i.name for i in flat_lines([label]) if isinstance(i, labels.FolderRow)]
+    assert names == ["Outer / Inner"]
+    assert labels.build_labels("N", [], LabelOptions(), dirs=folders) == []
+
+
+def test_a_disc_with_no_folders_is_the_plain_list():
+    es = entries(5)
+    plain = labels.build_labels("N", es, LabelOptions(per_disc=2))
+    assert [[r.number for r in l.rows] for l in plain] == [[1, 2, 3], [4, 5]]
+    assert not any(isinstance(i, labels.FolderRow) for i in flat_lines(plain))
+
+
+def test_folders_that_fit_a_label_are_kept_whole_on_one():
+    es = in_dir(6, 1, 0) + in_dir(6, 2, 6) + in_dir(6, 3, 12)
+    folders = dirs((1, None, "A"), (2, None, "B"), (3, None, "C"))
+    made = labels.build_labels("N", es, LabelOptions(per_disc=3), dirs=folders)
+    assert len(made) == 3
+    for label, name in zip(made, "ABC", strict=True):
+        items = flat_lines([label])
+        assert items[0] == labels.FolderRow(name) and len(items) == 7
+
+
+def test_a_folder_too_long_for_a_label_is_split_and_its_heading_repeated():
+    es = in_dir(10, 1)
+    folders = dirs((1, None, "Big"))
+    made = labels.build_labels("N", es, LabelOptions(per_disc=2), dirs=folders)
+    firsts = [flat_lines([l])[0] for l in made]
+    assert firsts == [labels.FolderRow("Big"), labels.FolderRow("Big (cont.)")]
+    numbers = [i.number for l in made for i in l.rows]
+    assert numbers == list(range(1, 11))  # numbering carries on across the cut
+
+
+def test_no_label_ends_on_a_heading_with_nothing_under_it():
+    es = in_dir(4, 1, 0) + in_dir(3, 2, 4)
+    folders = dirs((1, None, "A"), (2, None, "B"))
+    for parts in (1, 2, 3, 4):
+        for label in labels.build_labels(
+            "N", es, LabelOptions(per_disc=parts), dirs=folders
+        ):
+            for column in label.columns:
+                assert not isinstance(column[-1], labels.FolderRow)
+
+
+def test_folders_and_columns_together_keep_every_track_once_in_order():
+    es = in_dir(25, 1, 0) + in_dir(25, 2, 25) + in_dir(10, None, 50)
+    folders = dirs((1, None, "A"), (2, None, "B"))
+    made = labels.build_labels("N", es, LabelOptions(columns=2), dirs=folders)
+    tracks = [(i.title) for l in made for i in l.rows]
+    assert sorted(tracks) == sorted(f"Track {e.position + 1}" for e in es)
+    assert len(tracks) == 60
+
+
+def test_each_label_of_a_disc_has_the_same_size_text_with_folders_too():
+    es = in_dir(30, 1, 0) + in_dir(5, 2, 30)
+    folders = dirs((1, None, "A"), (2, None, "B"))
+    made = labels.build_labels("N", es, LabelOptions(), dirs=folders)
+    assert len({l.font_mm for l in made}) == 1

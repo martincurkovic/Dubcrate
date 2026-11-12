@@ -55,11 +55,11 @@ def tick(dialog, *disc_ids):
         item.setCheckState(Qt.CheckState.Checked if on else Qt.CheckState.Unchecked)
 
 
-def test_only_audio_discs_are_listed_and_the_picked_one_is_ticked(qapp, lib, discs):
+def test_every_disc_is_listed_and_the_picked_one_is_ticked(qapp, lib, discs):
     one = discs[0]
     dialog = LabelDialog(lib, picked=one)
     names = [dialog.disc_list.item(i).text() for i in range(dialog.disc_list.count())]
-    assert names == ["One  (6)", "Two  (6)", "Empty  (0)"]  # no MP3 disc
+    assert names == ["One  (6)", "Two  (6)", "Empty  (0)", "Data  (2)  MP3"]
     assert [d.id for d in dialog.ticked_discs()] == [one]
 
 
@@ -101,6 +101,7 @@ def test_places_already_used_push_labels_along(qapp, lib, discs):
 def test_a_label_too_small_for_its_tracks_says_so(qapp, lib, discs):
     dialog = LabelDialog(lib)
     tick(dialog, discs[0])
+    dialog.per_disc_spin.setValue(1)
     dialog.height_spin.setValue(20)  # 6 tracks in 2 cm
     assert "too many tracks" in dialog.problems_label.text()
     assert not dialog.problems_label.isHidden()
@@ -314,7 +315,7 @@ def test_the_disc_menu_and_the_disc_list_open_the_window(qapp, lib, discs):
             ]
 
         assert "Print Labels…" in menu_texts(one)
-        assert "Print Labels…" not in menu_texts(mp3)  # an MP3 disc has no labels
+        assert "Print Labels…" in menu_texts(mp3)  # an MP3 disc has labels too
     finally:
         win.close()
         win.deleteLater()
@@ -339,6 +340,7 @@ def test_the_font_starts_on_auto_and_the_summary_says_what_that_came_to(
 def test_a_font_size_too_big_for_the_label_is_flagged(qapp, lib, discs):
     dialog = LabelDialog(lib)
     tick(dialog, discs[0])
+    dialog.per_disc_spin.setValue(1)
     dialog.font_spin.setValue(20)  # six tracks at 20 pt in 5 cm
     assert "at this font size" in dialog.problems_label.text()
     assert "lower the font size" in dialog.problems_label.text()
@@ -360,3 +362,114 @@ def test_the_font_size_is_remembered(qapp, lib, discs):
     dialog.accept()
     assert settings.get_label_options().font_pt == 9.5
     assert LabelDialog(lib).font_spin.value() == 9.5
+
+
+# -- MP3 discs, Auto and columns ------------------------------------------------------
+
+
+@pytest.fixture
+def mp3_disc(lib):
+    """An MP3 disc: 6 tracks on the root, 20 in "Peak", 20 in "Warm up"."""
+    records = [
+        TrackRecord(
+            ext_id=f"x{i}",
+            path=f"/x/{i}.mp3",
+            title=f"Tune {i}",
+            artist="Someone",
+            duration=100,
+            bpm=125,
+            key="8A",
+        )
+        for i in range(46)
+    ]
+    lib.replace_source("folder", "/x", "X", records)
+    ids = [t.id for t in lib.tracks(sort="path") if t.path.startswith("/x/")]
+    disc = lib.create_disc("Trax", kind="mp3")
+    peak = lib.create_disc_dir(disc, "Peak")
+    warm = lib.create_disc_dir(disc, "Warm up")
+    lib.add_to_disc(disc, ids[:6])
+    lib.add_to_disc(disc, ids[6:26], dir_id=peak)
+    lib.add_to_disc(disc, ids[26:46], dir_id=warm)
+    return disc
+
+
+def folder_names(dialog):
+    return [
+        item.name
+        for page in dialog._pages
+        for placed in page
+        for column in placed.label.columns
+        for item in column
+        if isinstance(item, labels.FolderRow)
+    ]
+
+
+def test_an_mp3_disc_prints_with_its_folders_as_headings(qapp, lib, mp3_disc):
+    dialog = LabelDialog(lib, picked=mp3_disc)
+    assert [d.id for d in dialog.ticked_discs()] == [mp3_disc]
+    assert dialog.print_button.isEnabled()
+    names = folder_names(dialog)
+    assert "Peak" in names and "Warm up" in names
+    assert names.index("Peak") < names.index("Warm up")
+
+
+def test_auto_is_the_default_number_of_labels_and_it_grows_with_the_disc(
+    qapp, lib, discs, mp3_disc
+):
+    dialog = LabelDialog(lib)
+    assert dialog.per_disc_spin.value() == 0 and dialog.per_disc_spin.text() == "Auto"
+    tick(dialog, discs[0])
+    assert "1 label on 1 page" in dialog.summary_label.text()  # six tracks
+    tick(dialog, mp3_disc)
+    assert "labels on 1 page" in dialog.summary_label.text()
+    assert "1 label on" not in dialog.summary_label.text()  # 48 lines need several
+
+
+def test_columns_let_a_long_disc_use_fewer_labels(qapp, lib, mp3_disc):
+    dialog = LabelDialog(lib)
+    tick(dialog, mp3_disc)
+
+    def label_count():
+        return sum(len(page) for page in dialog._pages)
+
+    dialog.columns_spin.setValue(1)
+    one_column = label_count()
+    dialog.columns_spin.setValue(2)
+    assert label_count() < one_column
+    assert any(len(p.label.columns) == 2 for page in dialog._pages for p in page)
+
+
+def test_too_many_tracks_suggests_what_to_change(qapp, lib, mp3_disc):
+    dialog = LabelDialog(lib)
+    tick(dialog, mp3_disc)
+    dialog.per_disc_spin.setValue(1)
+    dialog.height_spin.setValue(30)
+    text = dialog.problems_label.text()
+    assert "too many tracks" in text and "allow more columns" in text
+    assert "spread the disc over more labels" in text
+    dialog.columns_spin.setValue(3)
+    assert "allow more columns" not in dialog.problems_label.text()
+
+
+def test_columns_and_auto_are_remembered(qapp, lib, discs):
+    dialog = LabelDialog(lib)
+    dialog.columns_spin.setValue(2)
+    dialog.per_disc_spin.setValue(0)
+    dialog.accept()
+    saved = settings.get_label_options()
+    assert (saved.columns, saved.per_disc) == (2, 0)
+    QSettings().setValue("labels/per_disc", 1)  # a choice made before Auto existed
+    assert LabelDialog(lib).per_disc_spin.value() == 1
+
+
+def test_a_multi_column_page_prints_to_a_pdf(
+    qapp, lib, mp3_disc, tmp_path, monkeypatch
+):
+    dialog = LabelDialog(lib)
+    tick(dialog, mp3_disc)
+    dialog.columns_spin.setValue(3)
+    monkeypatch.setattr(
+        label_dialog, "ask_pdf_path", lambda parent: str(tmp_path / "m.pdf")
+    )
+    dialog.save_pdf()
+    assert (tmp_path / "m.pdf").read_bytes().startswith(b"%PDF")

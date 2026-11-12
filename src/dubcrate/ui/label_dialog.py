@@ -1,4 +1,4 @@
-"""Print index labels: pick audio discs, size the labels, preview the pages, print or save a PDF.
+"""Print index labels: pick discs, size the labels, preview the pages, print or save a PDF.
 
 Several discs go on the same pages (labels are packed one after another, left to right and top
 to bottom) so a sheet of sticker paper isn't wasted on a disc or two. The track text comes from
@@ -73,6 +73,18 @@ def disc_paths(lib: Library) -> dict[int, str]:
     return {d.id: " / ".join([*folder_path(d.folder_id), d.name]) for d in lib.discs()}
 
 
+def _advice(options: labels.LabelOptions) -> str:
+    """What could help a list that is too long, given what is already allowed."""
+    ideas = ["make the label taller"]
+    if options.columns < labels.MAX_COLUMNS:
+        ideas.append("allow more columns")
+    if options.per_disc:
+        ideas.append("spread the disc over more labels (or Auto)")
+    if options.font_pt:
+        ideas.append("lower the font size")
+    return ideas[0] if len(ideas) == 1 else ", ".join(ideas[:-1]) + " or " + ideas[-1]
+
+
 class LabelDialog(QDialog):
     def __init__(self, lib: Library, parent=None, picked: int | None = None):
         super().__init__(parent)
@@ -87,9 +99,8 @@ class LabelDialog(QDialog):
         self.disc_list.setMinimumWidth(240)
         paths = disc_paths(lib)
         for disc in lib.discs():
-            if disc.kind != "audio":
-                continue  # an MP3 CD holds far too many tracks to list on a label
-            item = QListWidgetItem(f"{paths[disc.id]}  ({disc.track_count})")
+            kind = "  MP3" if disc.kind == "mp3" else ""
+            item = QListWidgetItem(f"{paths[disc.id]}  ({disc.track_count}){kind}")
             item.setData(Qt.ItemDataRole.UserRole, disc.id)
             item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
             on = disc.id == picked and disc.track_count > 0
@@ -122,10 +133,19 @@ class LabelDialog(QDialog):
         )
         self._last_font = self.font_spin.value()
         self.per_disc_spin = QSpinBox()
-        self.per_disc_spin.setRange(1, labels.MAX_PER_DISC)
+        self.per_disc_spin.setRange(0, labels.MAX_PER_DISC)
+        self.per_disc_spin.setSpecialValueText("Auto")  # 0
         self.per_disc_spin.setValue(o.per_disc)
         self.per_disc_spin.setToolTip(
             "Spread each disc's track list over this many labels: one disc, several areas to stick them on."
+            " Auto uses the fewest labels that keep the text readable (at least 6 pt, or the size you chose)."
+        )
+        self.columns_spin = QSpinBox()
+        self.columns_spin.setRange(1, labels.MAX_COLUMNS)
+        self.columns_spin.setValue(o.columns)
+        self.columns_spin.setToolTip(
+            "Let a long list run in columns on a label, to need fewer labels. Each row becomes"
+            " Title – Artist, so long names are cut short. A disc uses as few columns as will do."
         )
         self.copies_spin = QSpinBox()
         self.copies_spin.setRange(1, labels.MAX_COPIES)
@@ -154,6 +174,7 @@ class LabelDialog(QDialog):
         form.addRow("Label height (mm)", self.height_spin)
         form.addRow("Font size", self.font_spin)
         form.addRow("Spread each disc over", self.per_disc_spin)
+        form.addRow("Columns (up to)", self.columns_spin)
         form.addRow("Copies of each", self.copies_spin)
         form.addRow("Page margin (mm)", self.margin_spin)
         form.addRow("Gap between labels (mm)", self.gap_spin)
@@ -191,7 +212,7 @@ class LabelDialog(QDialog):
         close_button.clicked.connect(self.accept)
 
         left = QVBoxLayout()
-        left.addWidget(QLabel("Discs (audio CDs)"))
+        left.addWidget(QLabel("Discs"))
         left.addWidget(self.disc_list, 1)
         pick_row = QHBoxLayout()
         pick_row.addWidget(all_button)
@@ -230,7 +251,12 @@ class LabelDialog(QDialog):
         ):
             spin.valueChanged.connect(self.refresh)
         self.font_spin.valueChanged.connect(self._font_changed)
-        for spin in (self.per_disc_spin, self.copies_spin, self.skip_spin):
+        for spin in (
+            self.per_disc_spin,
+            self.columns_spin,
+            self.copies_spin,
+            self.skip_spin,
+        ):
             spin.valueChanged.connect(self.refresh)
         self.page_combo.currentIndexChanged.connect(self._page_size_changed)
         self.bpm_key_check.toggled.connect(self.refresh)
@@ -293,6 +319,7 @@ class LabelDialog(QDialog):
             width_mm=self.width_spin.value(),
             height_mm=self.height_spin.value(),
             per_disc=self.per_disc_spin.value(),
+            columns=self.columns_spin.value(),
             copies=self.copies_spin.value(),
             margin_mm=self.margin_spin.value(),
             gap_mm=self.gap_spin.value(),
@@ -309,14 +336,17 @@ class LabelDialog(QDialog):
         names = disc_paths(self._lib)
         for disc in self.ticked_discs():
             made = labels.build_labels(
-                names[disc.id], self._lib.disc_entries(disc.id), options, notation
+                names[disc.id],
+                self._lib.disc_entries(disc.id),
+                options,
+                notation,
+                self._lib.disc_dirs(disc.id),
             )
             if made and not made[0].fits:
                 problems.append(
-                    f"“{disc.name}” has too many tracks for a label this small"
+                    f"“{disc.name}” has too many tracks for labels this small"
                     + (" at this font size" if options.font_pt else "")
-                    + ": make the label taller, spread the disc over more labels"
-                    + (", or lower the font size." if options.font_pt else ".")
+                    + f": {_advice(options)}."
                 )
             all_labels += made * options.copies
 

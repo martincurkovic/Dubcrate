@@ -25,7 +25,9 @@ from dubcrate.labels import (
     HEADING_ROWS,
     PADDING_MM,
     ROW_SPACING,
+    FolderRow,
     LabelOptions,
+    LabelRow,
     Placed,
     column_widths,
 )
@@ -33,6 +35,10 @@ from dubcrate.labels import (
 INK = QColor(0, 0, 0)
 SOFT_INK = QColor(80, 80, 80)  # artist, BPM and key: there, but the title leads
 OUTLINE_MM = 0.15
+COLUMN_GAP_MM = 3.0  # between a label's columns
+INLINE_TITLE_SHARE = (
+    0.6  # in a one-line row the most the title keeps against a long artist
+)
 
 
 PAGE_IDS = {
@@ -87,6 +93,7 @@ def _draw_label(
 
     text = _font(label.font_mm)
     bold = _font(label.font_mm * 1.1, bold=True)
+    folder_font = _font(label.font_mm, bold=True)
     fm = QFontMetricsF(text, device)
     pad = PADDING_MM * k
     left, right = rect.left() + pad, rect.right() - pad
@@ -97,26 +104,6 @@ def _draw_label(
     def width(strings) -> float:
         return max((fm.horizontalAdvance(s) for s in strings), default=0.0)
 
-    number_w = width(str(row.number) for row in label.rows)
-    bpm_w = max(width(row.bpm for row in label.rows), fm.horizontalAdvance("BPM"))
-    key_w = max(width(row.key for row in label.rows), fm.horizontalAdvance("Key"))
-    bpm_w = bpm_w if label.has_bpm else 0.0
-    key_w = key_w if label.has_key else 0.0
-
-    # columns, left to right: number, title, artist ... bpm, key (these two flush right)
-    right_cols = (key_w + gap if key_w else 0.0) + (bpm_w + gap if bpm_w else 0.0)
-    text_room = right - left - (number_w + gap) - right_cols - gap
-    title_w, artist_w = column_widths(
-        width(row.title for row in label.rows),
-        width(row.artist for row in label.rows),
-        max(text_room, 0.0),
-    )
-    number_x = left
-    title_x = left + number_w + gap
-    artist_x = title_x + title_w + gap
-    key_x = right - key_w
-    bpm_x = key_x - (gap if key_w else 0.0) - bpm_w
-
     def put(
         x: float, y: float, w: float, h: float, s: str, align=Qt.AlignmentFlag.AlignLeft
     ):
@@ -125,6 +112,16 @@ def _draw_label(
             painter.drawText(
                 QRectF(x, y, w, h), align | Qt.AlignmentFlag.AlignVCenter, shown
             )
+
+    right_align = Qt.AlignmentFlag.AlignRight
+    # BPM and key columns are as wide as the label's widest, so columns of a label line up
+    bpm_w = max(width(r.bpm for r in label.rows), fm.horizontalAdvance("BPM"))
+    key_w = max(width(r.key for r in label.rows), fm.horizontalAdvance("Key"))
+    bpm_w = bpm_w if label.has_bpm else 0.0
+    key_w = key_w if label.has_key else 0.0
+    count = len(label.columns)
+    column_gap = COLUMN_GAP_MM * k
+    column_w = (right - left - column_gap * (count - 1)) / count
 
     top = rect.top() + pad
     painter.setPen(INK)
@@ -138,27 +135,88 @@ def _draw_label(
     )
     painter.setFont(text)
     painter.setPen(SOFT_INK)
-    right_align = Qt.AlignmentFlag.AlignRight
-    if bpm_w:
-        put(bpm_x, top, bpm_w, head_h, "BPM", right_align)
-    if key_w:
-        put(key_x, top, key_w, head_h, "Key", right_align)
+    if count == 1:  # (headed columns would run into the next column's)
+        if bpm_w:
+            put(
+                right - key_w - (gap if key_w else 0) - bpm_w,
+                top,
+                bpm_w,
+                head_h,
+                "BPM",
+                right_align,
+            )
+        if key_w:
+            put(right - key_w, top, key_w, head_h, "Key", right_align)
     painter.setPen(QPen(SOFT_INK, OUTLINE_MM * k))
     painter.drawLine(
         int(left), int(top + head_h * 0.95), int(right), int(top + head_h * 0.95)
     )
 
-    y = top + head_h
-    for row in label.rows:
-        painter.setPen(SOFT_INK)
-        put(number_x, y, number_w, row_h, str(row.number), right_align)
-        painter.setPen(INK)
-        put(title_x, y, title_w, row_h, row.title)
-        painter.setPen(SOFT_INK)
-        put(artist_x, y, artist_w, row_h, row.artist)
-        put(bpm_x, y, bpm_w, row_h, row.bpm, right_align)
-        put(key_x, y, key_w, row_h, row.key, right_align)
-        y += row_h
+    for c, items in enumerate(label.columns):
+        x0 = left + c * (column_w + column_gap)
+        tracks = [line for line in items if isinstance(line, LabelRow)]
+        number_w = width(str(row.number) for row in tracks)
+        x1 = x0 + column_w
+        key_x = x1 - key_w
+        bpm_x = key_x - (gap if key_w else 0.0) - bpm_w
+        right_cols = (key_w + gap if key_w else 0.0) + (bpm_w + gap if bpm_w else 0.0)
+        text_x = x0 + number_w + gap
+        text_room = max(x1 - right_cols - gap - text_x, 0.0)
+        if (
+            count == 1
+        ):  # title and artist in columns of their own, lined up down the label
+            title_w, artist_w = column_widths(
+                width(row.title for row in tracks),
+                width(row.artist for row in tracks),
+                text_room,
+            )
+            artist_x = text_x + title_w + gap
+
+        y = top + head_h
+        for line in items:
+            if isinstance(line, FolderRow):
+                painter.setFont(folder_font)
+                painter.setPen(INK)
+                shown = QFontMetricsF(folder_font, device).elidedText(
+                    line.name, Qt.TextElideMode.ElideRight, column_w
+                )
+                painter.drawText(
+                    QRectF(x0, y, column_w, row_h),
+                    Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
+                    shown,
+                )
+                painter.setPen(QPen(SOFT_INK, OUTLINE_MM * k * 0.6))
+                painter.drawLine(
+                    int(x0), int(y + row_h * 0.95), int(x1), int(y + row_h * 0.95)
+                )
+                painter.setFont(text)
+                y += row_h
+                continue
+            painter.setPen(SOFT_INK)
+            put(x0, y, number_w, row_h, str(line.number), right_align)
+            painter.setPen(INK)
+            if count == 1:
+                put(text_x, y, title_w, row_h, line.title)
+                painter.setPen(SOFT_INK)
+                put(artist_x, y, artist_w, row_h, line.artist)
+            else:  # "Title – Artist", each as long as it needs, the longer one trimmed
+                dash = fm.horizontalAdvance(" – ") if line.artist else 0.0
+                title_w, artist_w = column_widths(
+                    fm.horizontalAdvance(line.title),
+                    fm.horizontalAdvance(line.artist),
+                    max(text_room - dash, 0.0),
+                    INLINE_TITLE_SHARE,
+                )
+                put(text_x, y, title_w, row_h, line.title)
+                painter.setPen(SOFT_INK)
+                if line.artist:
+                    put(
+                        text_x + title_w, y, dash + artist_w, row_h, " – " + line.artist
+                    )
+            painter.setPen(SOFT_INK)
+            put(bpm_x, y, bpm_w, row_h, line.bpm, right_align)
+            put(key_x, y, key_w, row_h, line.key, right_align)
+            y += row_h
     painter.restore()
 
 

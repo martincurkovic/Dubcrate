@@ -18,7 +18,8 @@
    is the pure part (splitting a disc over N labels, text size, packing labels from several
    discs onto pages of A3/A4/A5/A6/Letter/Legal, skipping used places), `ui/label_paint.py` draws
    a page for the preview, a printer or a PDF, and `ui/label_dialog.py` is the window (Disc >
-   Print Labels…, ⌘P). Audio discs only. Still to do: a real print on A4 and Letter sticker
+   Print Labels…, ⌘P). Audio and MP3 discs (MP3 folders as headings, up to three columns, Auto number of
+   labels). Still to do: a real print on A4 and Letter sticker
    paper (does the print panel keep the paper we asked for? how much of the edge is
    unprintable?), check the built app bundles QtPrintSupport (`scripts/build_macos.sh` and its
    smoke test), a way to print straight after a burn, and per-label fonts or a layout with

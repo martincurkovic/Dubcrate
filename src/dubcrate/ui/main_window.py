@@ -451,7 +451,7 @@ class MainWindow(QMainWindow):
             "&Print Labels…", lambda: self.print_labels(), QKeySequence("Ctrl+P")
         )
         self.act_print_labels.setToolTip(
-            "Print the track lists of audio discs on sticker paper (A4, Letter, ...), as labels for the case."
+            "Print the track lists of discs on sticker paper (A4, Letter, ...), as labels for the case."
         )
         disc_menu.addSeparator()
         self.act_add_selected = disc_menu.addAction(
@@ -930,8 +930,7 @@ class MainWindow(QMainWindow):
                 )
             menu.addSeparator()
             menu.addAction("Burn…", lambda: self._open_and_burn(disc_id))
-            if self._lib.disc(disc_id).kind == "audio":
-                menu.addAction("Print Labels…", lambda: self.print_labels(disc_id))
+            menu.addAction("Print Labels…", lambda: self.print_labels(disc_id))
             menu.addSeparator()
             menu.addAction("Delete…", lambda: self.disc_view.delete_disc(disc_id))
         elif kind == "disc_dir":

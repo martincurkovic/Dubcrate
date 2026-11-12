@@ -143,6 +143,7 @@ def get_label_options() -> labels.LabelOptions:
         width_mm=number("width_mm", default.width_mm),
         height_mm=number("height_mm", default.height_mm),
         per_disc=int(number("per_disc", default.per_disc)),
+        columns=int(number("columns", default.columns)),
         copies=int(number("copies", default.copies)),
         margin_mm=number("margin_mm", default.margin_mm),
         gap_mm=number("gap_mm", default.gap_mm),

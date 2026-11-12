@@ -265,3 +265,23 @@ def test_the_help_menu_items_the_guide_names_exist(qapp):
         assert f"**Help > {item}**" in MANUAL or item == "User Guide" or item == "About Dubcrate", item  # fmt: skip
     for phrase in ("## Updates, and what Dubcrate sends", "Skip This Version", "Remind Me Later", "View Release…"):  # fmt: skip
         assert phrase in MANUAL, phrase
+
+
+def test_the_guide_describes_the_label_window_as_it_is():
+    from dubcrate.ui.label_dialog import LabelDialog
+
+    for phrase in (
+        "## Printing labels",
+        "Print Labels…",
+        "**Spread each disc over**",
+        "**Columns (up to)**",
+        "**Font size**",
+        "**Copies of each**",
+        "**Places already used**",
+        "**Folders on an MP3 disc**",
+        "(cont.)",
+    ):
+        assert phrase in MANUAL, phrase
+    assert "audio CDs and MP3 CDs" in MANUAL
+    assert "Audio CDs only" not in MANUAL and "Only **audio CDs**" not in MANUAL
+    assert LabelDialog  # (the window the section is about)

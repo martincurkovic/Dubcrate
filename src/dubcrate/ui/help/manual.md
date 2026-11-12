@@ -272,7 +272,7 @@ The full list of command-line options is in the project's developer notes.
 
 ## Printing labels
 
-Old players have no screen for a track list, so Dubcrate can print one for the case: **index labels** with each disc's track list, on sticker paper in your ordinary printer. Choose **Disc > Print Labels…** (⌘P), or right-click an audio disc in the Discs list and choose **Print Labels…**. Only **audio CDs** get labels: an MP3 CD holds far too many tracks to list.
+Old players have no screen for a track list, so Dubcrate can print one for the case: **index labels** with each disc's track list, on sticker paper in your ordinary printer. Choose **Disc > Print Labels…** (⌘P), or right-click a disc in the Discs list and choose **Print Labels…**. It works for audio CDs and MP3 CDs.
 
 > **Printing has been checked by saving PDFs, not yet on a real printer.** Try **Save PDF…** and look at it first, or print on plain paper and hold it against a sticker sheet.
 
@@ -280,15 +280,18 @@ Old players have no screen for a track list, so Dubcrate can print one for the c
 2. Choose the **Paper**: A3, A4, A5, A6, US Letter or US Legal.
 3. Type the size of one label: **Label width** and **Label height**, in millimetres. 100 × 50 is a good start for a case.
 4. **Font size** is **Auto** (the text as large as fits, up to a limit, so a short list isn't blown up) unless you choose a size in points. The line under the settings says what Auto came to, which is a good place to start.
-5. **Spread each disc over** says how many labels one disc's list is divided between, for a case with several areas to stick on. A 20-track disc spread over 2 labels puts tracks 1 to 10 on the first and 11 to 20 on the second, each headed with the disc's name and *1/2*, *2/2*.
-6. **Copies of each** prints every disc's labels again for each copy you burned: burn a disc twice and set 2.
-7. **Page margin** keeps clear of the edge your printer can't print to (10 mm suits most), and **Gap between labels** leaves room to cut.
-8. **Places already used** skips that many label places at the start of the first page, so a sheet you have already cut labels from can be used again.
-9. Press **Print…**, or **Save PDF…** to get a file.
+5. **Spread each disc over** says how many labels one disc's list is divided between, for a case with several areas to stick on. **Auto** (the default) uses the fewest labels that keep the text readable, at least 6 pt, or the size you chose: a short disc gets one label and a 60-track MP3 CD gets several. Each label is headed with the disc's name and *1/2*, *2/2*.
+6. **Columns (up to)** lets a long list run in columns on a label, so fewer labels are needed. Each row then reads *Title – Artist* on one line, so long names are cut short with “…”, and the BPM and key columns are smaller. A disc uses as few columns as will do, so a short disc stays in one column even when you allow three. On a 10 × 5 cm label, 60 tracks need about four labels in one column, or two labels in two columns.
+7. **Copies of each** prints every disc's labels again for each copy you burned: burn a disc twice and set 2.
+8. **Page margin** keeps clear of the edge your printer can't print to (10 mm suits most), and **Gap between labels** leaves room to cut.
+9. **Places already used** skips that many label places at the start of the first page, so a sheet you have already cut labels from can be used again.
+10. Press **Print…**, or **Save PDF…** to get a file.
 
-What is on a label: for each track, its **number**, **title** and **artist**, and, if **Show BPM and key** is ticked, the track's **BPM** (rounded to a whole number) and **key**. They come from your rekordbox library, so a track from a plain folder has neither and those columns stay empty. The key is written the way **Settings > Appearance > Key notation** says. The title and artist are the ones written on the CD, including any edits you made for this disc.
+What is on a label: for each track, its **number**, **title** and **artist**, and, if **Show BPM and key** is ticked, the track's **BPM** (rounded to a whole number) and **key**. They come from your rekordbox library, so a track from a plain folder has neither and those columns stay empty. The key is written the way **Settings > Appearance > Key notation** says. The title and artist are the ones written on the CD, including any edits you made for this disc. For a crowded MP3 disc you may prefer to untick **Show BPM and key**, which gives the titles more room.
 
-The labels of every ticked disc are laid out one after another, left to right and top to bottom, so **several discs share a page** and little sticker paper is wasted. The preview shows each page, with **◀** and **▶** to turn them. If a list is too long for the label's height (at a size you chose, or too small to read on Auto), a red line says which disc, and you can make the label taller, spread the disc over more labels or, with a chosen size, lower it. A label that doesn't fit the paper with those margins can't be printed. **Draw a thin outline to cut along** draws a hairline round each label, which you can turn off if you cut exactly.
+**Folders on an MP3 disc** are headings in the list. The tracks on the disc's root come first, then each folder in alphabetical order, as a player lists them, and a folder inside another is named by its path (*Sets / Friday*). Numbers start again at 1 in every folder, as the files on the disc are numbered. A folder is kept together on one label where that is readable; one too long for a label is cut, and the next label picks it up under the same heading with *(cont.)*. A disc with no folders is just a numbered list.
+
+The labels of every ticked disc are laid out one after another, left to right and top to bottom, so **several discs share a page** and little sticker paper is wasted. The preview shows each page, with **◀** and **▶** to turn them. If a list is too long for the label's height (at a size you chose, or too small to read on Auto), a red line says which disc and suggests what to change: a taller label, more columns, more labels, or a lower font size. A label that doesn't fit the paper with those margins can't be printed. **Draw a thin outline to cut along** draws a hairline round each label, which you can turn off if you cut exactly.
 
 Your choices are remembered for next time, except **Places already used**.
 
