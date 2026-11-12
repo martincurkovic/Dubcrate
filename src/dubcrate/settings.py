@@ -130,6 +130,7 @@ def get_label_options() -> labels.LabelOptions:
     """The index label settings last used (see `dubcrate.labels`), each kept inside its limits."""
     default = labels.LabelOptions()
     qs = _qs()
+    both = qs.value("labels/show_bpm_key")  # one box for both, before they were split
 
     def number(key: str, fallback: float) -> float:
         try:
@@ -147,7 +148,9 @@ def get_label_options() -> labels.LabelOptions:
         copies=int(number("copies", default.copies)),
         margin_mm=number("margin_mm", default.margin_mm),
         gap_mm=number("gap_mm", default.gap_mm),
-        show_bpm_key=_as_bool(qs.value("labels/show_bpm_key"), default.show_bpm_key),
+        show_bpm=_as_bool(qs.value("labels/show_bpm", both), default.show_bpm),
+        show_key=_as_bool(qs.value("labels/show_key", both), default.show_key),
+        show_duration=_as_bool(qs.value("labels/show_duration"), default.show_duration),
         outline=_as_bool(qs.value("labels/outline"), default.outline),
     ).clamped()
 
@@ -156,6 +159,7 @@ def set_label_options(options: labels.LabelOptions) -> None:
     qs = _qs()
     for key, value in vars(options.clamped()).items():
         qs.setValue(f"labels/{key}", value)
+    qs.remove("labels/show_bpm_key")
 
 
 WAVE_STYLES = ("bands", "rgb", "blue")

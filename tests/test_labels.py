@@ -9,7 +9,7 @@ from dubcrate.labels import LabelOptions
 from dubcrate.library.models import DiscDir, DiscEntry, Track
 
 
-def entry(i, title=None, artist="Artist", bpm=None, key="", **kw):
+def entry(i, title=None, artist="Artist", bpm=None, key="", duration=0.0, **kw):
     track = Track(
         id=i,
         source_id=1,
@@ -19,6 +19,7 @@ def entry(i, title=None, artist="Artist", bpm=None, key="", **kw):
         artist=artist,
         bpm=bpm,
         key=key,
+        duration=duration,
     )
     return DiscEntry(position=i, track=track, **kw)
 
@@ -77,10 +78,16 @@ def test_bpm_is_rounded_and_the_key_follows_the_notation():
     assert camelot.has_bpm and camelot.has_key
 
 
-def test_bpm_and_key_can_be_left_off():
+def test_bpm_and_key_can_each_be_left_off():
     es = [entry(0, bpm=120, key="8A")]
-    [label] = labels.build_labels("N", es, LabelOptions(show_bpm_key=False))
-    assert not label.has_bpm and not label.has_key
+    [neither] = labels.build_labels(
+        "N", es, LabelOptions(show_bpm=False, show_key=False)
+    )
+    assert not neither.has_bpm and not neither.has_key
+    [key_only] = labels.build_labels("N", es, LabelOptions(show_bpm=False))
+    assert not key_only.has_bpm and key_only.rows[0].key == "8A"
+    [bpm_only] = labels.build_labels("N", es, LabelOptions(show_key=False))
+    assert bpm_only.rows[0].bpm == "120" and not bpm_only.has_key
 
 
 def test_no_bpm_is_not_zero():
@@ -452,3 +459,43 @@ def test_each_label_of_a_disc_has_the_same_size_text_with_folders_too():
     folders = dirs((1, None, "A"), (2, None, "B"))
     made = labels.build_labels("N", es, LabelOptions(), dirs=folders)
     assert len({l.font_mm for l in made}) == 1
+
+
+# -- duration -------------------------------------------------------------------------
+
+
+def test_a_duration_is_minutes_and_whole_seconds_rounded_down():
+    assert labels.clock_text(272.9) == "4:32"
+    assert labels.clock_text(59.99) == "0:59"
+    assert labels.clock_text(3725) == "62:05"  # minutes keep counting past an hour
+    assert labels.clock_text(0) == "" and labels.clock_text(None) == ""
+
+
+def test_duration_is_off_until_asked_for():
+    es = [entry(0, duration=200)]
+    [plain] = labels.build_labels("N", es, LabelOptions())
+    assert not plain.has_length and plain.rows[0].length == ""
+    [timed] = labels.build_labels("N", es, LabelOptions(show_duration=True))
+    assert timed.has_length and timed.rows[0].length == "3:20"
+
+
+def test_a_track_with_no_length_shows_none():
+    es = [entry(0, duration=125), entry(1, duration=0)]
+    [label] = labels.build_labels("N", es, LabelOptions(show_duration=True))
+    assert [r.length for r in label.rows] == ["2:05", ""]
+
+
+def test_the_side_columns_are_the_ones_with_something_in_them_in_a_fixed_order():
+    es = [entry(0, bpm=120, key="8A", duration=100)]
+    [all_three] = labels.build_labels("N", es, LabelOptions(show_duration=True))
+    assert all_three.side_columns == (
+        ("BPM", "bpm"),
+        ("Key", "key"),
+        ("Time", "length"),
+    )
+    [time_only] = labels.build_labels(
+        "N", es, LabelOptions(show_bpm=False, show_key=False, show_duration=True)
+    )
+    assert time_only.side_columns == (("Time", "length"),)
+    [none] = labels.build_labels("N", es, LabelOptions(show_bpm=False, show_key=False))
+    assert none.side_columns == ()

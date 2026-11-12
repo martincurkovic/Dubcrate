@@ -131,12 +131,13 @@ def test_the_choices_are_remembered(qapp, lib, discs):
     dialog = LabelDialog(lib)
     dialog.width_spin.setValue(90)
     dialog.per_disc_spin.setValue(3)
-    dialog.bpm_key_check.setChecked(False)
+    dialog.bpm_check.setChecked(False)
     dialog.accept()
     saved = settings.get_label_options()
-    assert (saved.width_mm, saved.per_disc, saved.show_bpm_key) == (90, 3, False)
+    assert (saved.width_mm, saved.per_disc) == (90, 3)
+    assert (saved.show_bpm, saved.show_key) == (False, True)
     again = LabelDialog(lib)
-    assert again.width_spin.value() == 90 and not again.bpm_key_check.isChecked()
+    assert again.width_spin.value() == 90 and not again.bpm_check.isChecked()
 
 
 def test_nonsense_in_the_settings_file_falls_back(qapp):
@@ -499,7 +500,9 @@ def test_the_messages_have_room_set_aside_so_nothing_moves_when_they_come(
     controls = (
         dialog.width_spin,
         dialog.copies_spin,
-        dialog.bpm_key_check,
+        dialog.bpm_check,
+        dialog.key_check,
+        dialog.duration_check,
         dialog.outline_check,
         dialog.summary_label,
         dialog.problems_label,
@@ -727,3 +730,67 @@ def test_other_native_gestures_are_left_alone(shown):
     before = shown.preview.zoom()
     QApplication.sendEvent(shown.preview.viewport(), event)
     assert shown.preview.zoom() == before
+
+
+def test_bpm_and_key_are_separate_boxes_that_each_change_the_labels(qapp, lib, discs):
+    dialog = LabelDialog(lib)
+    tick(dialog, discs[0])
+
+    def shown():
+        rows = [r for page in dialog._pages for p in page for r in p.label.rows]
+        return any(r.bpm for r in rows), any(r.key for r in rows)
+
+    assert shown() == (True, True)
+    dialog.bpm_check.setChecked(False)
+    assert shown() == (False, True)
+    dialog.key_check.setChecked(False)
+    assert shown() == (False, False)
+    dialog.bpm_check.setChecked(True)
+    assert shown() == (True, False)
+
+
+def test_a_choice_saved_with_the_old_single_box_applies_to_both_new_ones(qapp, lib):
+    QSettings().setValue("labels/show_bpm_key", False)
+    options = settings.get_label_options()
+    assert (options.show_bpm, options.show_key) == (False, False)
+    dialog = LabelDialog(lib)
+    assert not dialog.bpm_check.isChecked() and not dialog.key_check.isChecked()
+    dialog.key_check.setChecked(True)
+    dialog.accept()  # saving writes the two new keys and drops the old one
+    assert not QSettings().contains("labels/show_bpm_key")
+    assert (
+        settings.get_label_options().show_bpm,
+        settings.get_label_options().show_key,
+    ) == (False, True)
+
+
+def test_duration_is_its_own_box_off_to_begin_with_and_remembered(qapp, lib, discs):
+    dialog = LabelDialog(lib)
+    assert not dialog.duration_check.isChecked() and dialog.bpm_check.isChecked()
+    tick(dialog, discs[0])
+
+    def lengths():
+        return {r.length for page in dialog._pages for p in page for r in p.label.rows}
+
+    assert lengths() == {""}
+    dialog.duration_check.setChecked(True)
+    assert lengths() == {"3:20"}  # the fixture's tracks are 200 s long
+    dialog.accept()
+    assert settings.get_label_options().show_duration is True
+    assert LabelDialog(lib).duration_check.isChecked()
+
+
+def test_all_three_side_columns_print_in_one_and_in_several_columns(
+    qapp, lib, mp3_disc, tmp_path, monkeypatch
+):
+    dialog = LabelDialog(lib)
+    tick(dialog, mp3_disc)
+    dialog.duration_check.setChecked(True)
+    for columns in (1, 3):
+        dialog.columns_combo.setCurrentIndex(dialog.columns_combo.findData(columns))
+        target = tmp_path / f"c{columns}.pdf"
+        monkeypatch.setattr(
+            label_dialog, "ask_pdf_path", lambda parent, t=target: str(t)
+        )
+        dialog.save_pdf()
+        assert target.read_bytes().startswith(b"%PDF")

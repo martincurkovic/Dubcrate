@@ -114,11 +114,29 @@ def _draw_label(
             )
 
     right_align = Qt.AlignmentFlag.AlignRight
-    # BPM and key columns are as wide as the label's widest, so columns of a label line up
-    bpm_w = max(width(r.bpm for r in label.rows), fm.horizontalAdvance("BPM"))
-    key_w = max(width(r.key for r in label.rows), fm.horizontalAdvance("Key"))
-    bpm_w = bpm_w if label.has_bpm else 0.0
-    key_w = key_w if label.has_key else 0.0
+    # the optional columns at the right (BPM, key, time) are as wide as the label's widest, so
+    # the columns of a label line up
+    side = [
+        (
+            head,
+            attr,
+            max(
+                width(getattr(r, attr) for r in label.rows), fm.horizontalAdvance(head)
+            ),
+        )
+        for head, attr in label.side_columns
+    ]
+    side_total = sum(w + gap for _head, _attr, w in side)
+
+    def side_places(edge: float) -> list[tuple[str, str, float, float]]:
+        """(heading, attribute, left edge, width) of the optional columns ending at `edge`."""
+        places, x = [], edge
+        for head, attr, w in reversed(side):
+            x -= w
+            places.append((head, attr, x, w))
+            x -= gap
+        return places[::-1]
+
     count = len(label.columns)
     column_gap = COLUMN_GAP_MM * k
     column_w = (right - left - column_gap * (count - 1)) / count
@@ -136,17 +154,8 @@ def _draw_label(
     painter.setFont(text)
     painter.setPen(SOFT_INK)
     if count == 1:  # (headed columns would run into the next column's)
-        if bpm_w:
-            put(
-                right - key_w - (gap if key_w else 0) - bpm_w,
-                top,
-                bpm_w,
-                head_h,
-                "BPM",
-                right_align,
-            )
-        if key_w:
-            put(right - key_w, top, key_w, head_h, "Key", right_align)
+        for head, _attr, x, w in side_places(right):
+            put(x, top, w, head_h, head, right_align)
     painter.setPen(QPen(SOFT_INK, OUTLINE_MM * k))
     painter.drawLine(
         int(left), int(top + head_h * 0.95), int(right), int(top + head_h * 0.95)
@@ -157,11 +166,9 @@ def _draw_label(
         tracks = [line for line in items if isinstance(line, LabelRow)]
         number_w = width(str(row.number) for row in tracks)
         x1 = x0 + column_w
-        key_x = x1 - key_w
-        bpm_x = key_x - (gap if key_w else 0.0) - bpm_w
-        right_cols = (key_w + gap if key_w else 0.0) + (bpm_w + gap if bpm_w else 0.0)
+        places = side_places(x1)
         text_x = x0 + number_w + gap
-        text_room = max(x1 - right_cols - gap - text_x, 0.0)
+        text_room = max(x1 - side_total - gap - text_x, 0.0)
         if (
             count == 1
         ):  # title and artist in columns of their own, lined up down the label
@@ -214,8 +221,8 @@ def _draw_label(
                         text_x + title_w, y, dash + artist_w, row_h, " – " + line.artist
                     )
             painter.setPen(SOFT_INK)
-            put(bpm_x, y, bpm_w, row_h, line.bpm, right_align)
-            put(key_x, y, key_w, row_h, line.key, right_align)
+            for _head, attr, x, w in places:
+                put(x, y, w, row_h, getattr(line, attr), right_align)
             y += row_h
     painter.restore()
 

@@ -65,7 +65,9 @@ class LabelOptions:
     )
     margin_mm: float = 10.0  # unprintable edge of the page
     gap_mm: float = 2.0  # between labels, to cut along
-    show_bpm_key: bool = True
+    show_bpm: bool = True
+    show_key: bool = True
+    show_duration: bool = False  # the track's length, M:SS
     outline: bool = True  # a thin line round each label, to cut along
 
     @property
@@ -105,6 +107,7 @@ class LabelRow:
     artist: str
     bpm: str = ""  # whole beats per minute, "" when unknown
     key: str = ""  # in the notation chosen in Settings, "" when unknown
+    length: str = ""  # the track's own length as M:SS, "" when unknown
 
 
 @dataclass(frozen=True)
@@ -115,6 +118,8 @@ class FolderRow:
 
 
 Item = LabelRow | FolderRow
+
+SIDE_COLUMNS = (("BPM", "bpm"), ("Key", "key"), ("Time", "length"))
 
 
 @dataclass(frozen=True)
@@ -144,6 +149,20 @@ class Label:
     def has_key(self) -> bool:
         return any(row.key for row in self.rows)
 
+    @property
+    def has_length(self) -> bool:
+        return any(row.length for row in self.rows)
+
+    @property
+    def side_columns(self) -> tuple[tuple[str, str], ...]:
+        """The optional columns this label shows at its right edge, left to right, as (heading,
+        `LabelRow` attribute): those with something in them on this label."""
+        return tuple(
+            (heading, attr)
+            for heading, attr in SIDE_COLUMNS
+            if any(getattr(row, attr) for row in self.rows)
+        )
+
 
 @dataclass(frozen=True)
 class Placed:
@@ -152,6 +171,15 @@ class Placed:
     x_mm: float
     y_mm: float
     label: Label
+
+
+def clock_text(seconds: float | None) -> str:
+    """A track's length as M:SS, whole seconds rounded down as the library's Time column does,
+    "" when there is none."""
+    if not seconds or seconds <= 0:
+        return ""
+    whole = int(seconds)
+    return f"{whole // 60}:{whole % 60:02d}"
 
 
 def bpm_text(bpm: float | None) -> str:
@@ -208,9 +236,10 @@ def _blocks(
                 number=number,
                 title=entry.title,
                 artist=entry.artist,
-                bpm=bpm_text(entry.track.bpm) if options.show_bpm_key else "",
-                key=keys.display(entry.track.key, notation)
-                if options.show_bpm_key
+                bpm=bpm_text(entry.track.bpm) if options.show_bpm else "",
+                key=keys.display(entry.track.key, notation) if options.show_key else "",
+                length=clock_text(entry.track.duration)
+                if options.show_duration
                 else "",
             )
         )

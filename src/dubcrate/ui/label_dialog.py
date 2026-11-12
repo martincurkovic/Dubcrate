@@ -158,10 +158,20 @@ class LabelDialog(QDialog):
         )
         self.margin_spin = self._mm_spin(o.margin_mm, 0, 30)
         self.gap_spin = self._mm_spin(o.gap_mm, 0, 20)
-        self.bpm_key_check = QCheckBox("Show BPM and key")
-        self.bpm_key_check.setChecked(o.show_bpm_key)
-        self.bpm_key_check.setToolTip(
-            "Only tracks that have them (from rekordbox) show a value. The key is written in the notation chosen in Settings."
+        self.bpm_check = QCheckBox("Show BPM")
+        self.bpm_check.setChecked(o.show_bpm)
+        self.bpm_check.setToolTip(
+            "The tempo rounded to a whole number, from rekordbox: a track without one shows nothing."
+        )
+        self.key_check = QCheckBox("Show key")
+        self.key_check.setChecked(o.show_key)
+        self.key_check.setToolTip(
+            "The musical key from rekordbox, written in the notation chosen in Settings: a track without one shows nothing."
+        )
+        self.duration_check = QCheckBox("Show duration")
+        self.duration_check.setChecked(o.show_duration)
+        self.duration_check.setToolTip(
+            "The length of each track as minutes:seconds, the same as the Time column in the track list."
         )
         self.outline_check = QCheckBox("Draw a thin outline to cut along")
         self.outline_check.setChecked(o.outline)
@@ -176,7 +186,9 @@ class LabelDialog(QDialog):
         form.addRow("Copies of each", self.copies_spin)
         form.addRow("Page margin (mm)", self.margin_spin)
         form.addRow("Gap between labels (mm)", self.gap_spin)
-        form.addRow(self.bpm_key_check)
+        form.addRow(self.bpm_check)
+        form.addRow(self.key_check)
+        form.addRow(self.duration_check)
         form.addRow(self.outline_check)
 
         # Always there, with room for their longest likely text, so a message appearing or going
@@ -262,7 +274,9 @@ class LabelDialog(QDialog):
             spin.valueChanged.connect(self.refresh)
         self.columns_combo.currentIndexChanged.connect(self.refresh)
         self.page_combo.currentIndexChanged.connect(self._page_size_changed)
-        self.bpm_key_check.toggled.connect(self.refresh)
+        self.bpm_check.toggled.connect(self.refresh)
+        self.key_check.toggled.connect(self.refresh)
+        self.duration_check.toggled.connect(self.refresh)
         self.outline_check.toggled.connect(self.refresh)
         self.disc_list.itemChanged.connect(self.refresh)
         self.refresh()
@@ -336,7 +350,9 @@ class LabelDialog(QDialog):
             copies=self.copies_spin.value(),
             margin_mm=self.margin_spin.value(),
             gap_mm=self.gap_spin.value(),
-            show_bpm_key=self.bpm_key_check.isChecked(),
+            show_bpm=self.bpm_check.isChecked(),
+            show_key=self.key_check.isChecked(),
+            show_duration=self.duration_check.isChecked(),
             outline=self.outline_check.isChecked(),
         ).clamped()
 
