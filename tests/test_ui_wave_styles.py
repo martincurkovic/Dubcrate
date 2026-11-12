@@ -241,3 +241,36 @@ def test_the_view_menu_switches_the_look_and_follows_settings(qapp):
         win.close()
         win.deleteLater()
         lib.close()
+
+
+@pytest.mark.parametrize("style", ["bands", "rgb", "blue"])
+@pytest.mark.parametrize("preference", ["dark", "light"])
+def test_the_detail_view_has_a_faint_line_through_the_middle_even_in_silence(
+    qapp, style, preference
+):
+    use(preference, style)
+    detail = DetailView()
+    detail.resize(300, detail.HEIGHT)
+    detail.set_track(wave([[0.0, 0.0, 0.0]] * 600))
+    detail.set_position(2.0)
+    detail.show()
+    image = detail.grab().toImage()
+    background = wave_style.color("wave_bg")
+    middle = detail.height() // 2
+    assert pixel(image, 20, middle) != background  # the line
+    assert pixel(image, 20, middle) != wave_style.color("wave_text")  # but faint
+    assert pixel(image, 20, middle - 10) == background
+    assert pixel(image, 20, middle + 10) == background
+    detail.close()
+
+
+def test_system6_has_no_faint_line(qapp):
+    use("system6", "bands")
+    detail = DetailView()
+    detail.resize(300, detail.HEIGHT)
+    detail.set_track(wave([[0.0, 0.0, 0.0]] * 600))
+    detail.set_position(2.0)
+    detail.show()
+    image = detail.grab().toImage()
+    assert pixel(image, 20, detail.height() // 2) == wave_style.color("wave_bg")
+    detail.close()

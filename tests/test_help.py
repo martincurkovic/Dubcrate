@@ -65,6 +65,7 @@ def test_menu_items_the_guide_names_exist(window):
         "Settings…",
         "Split Shown Tracks Across Discs…",
         "Burn Disc…",
+        "Print Labels…",
         "User Guide",
     ):
         assert item in labels, item
@@ -92,6 +93,7 @@ def test_the_shortcuts_the_guide_lists_are_the_real_ones(window):
     assert shortcuts["Split Shown Tracks Across Discs…"] == "Ctrl+Shift+D"
     assert shortcuts["Settings…"] == "Ctrl+,"
     assert shortcuts["Burn Disc…"] == "Ctrl+B"
+    assert shortcuts["Print Labels…"] == "Ctrl+P"
     assert shortcuts["Find Tracks"] == "Ctrl+F"
     for keys in (
         "⌘O",
@@ -105,6 +107,7 @@ def test_the_shortcuts_the_guide_lists_are_the_real_ones(window):
         "⇧⌘D",
         "⌘,",
         "⌘B",
+        "⌘P",
         "⌘F",
     ):
         assert keys in MANUAL, keys

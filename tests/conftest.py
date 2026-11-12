@@ -150,3 +150,16 @@ def _no_real_burner(monkeypatch):
         raise AssertionError("a test tried to use the real burner; pass burner_factory")
 
     monkeypatch.setattr("dubcrate.ui.burn_dialog._backend", refuse)
+
+
+@pytest.fixture(autouse=True)
+def _no_real_printer(monkeypatch):
+    """No test may open the system's print panel or a file chooser: patch what the label window asks."""
+
+    def refuse(*_a, **_k):
+        raise AssertionError(
+            "a test opened the print panel or a file chooser; patch label_dialog.ask_printer / ask_pdf_path"
+        )
+
+    monkeypatch.setattr("dubcrate.ui.label_dialog.ask_printer", refuse)
+    monkeypatch.setattr("dubcrate.ui.label_dialog.ask_pdf_path", refuse)

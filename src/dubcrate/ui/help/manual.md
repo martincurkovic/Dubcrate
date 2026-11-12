@@ -17,6 +17,7 @@ Dubcrate helps you put music from your rekordbox library (or any folder) onto au
 - [Planning a disc](#planning-a-disc)
 - [Checking tracks you already used](#checking-tracks-you-already-used)
 - [Burning a disc](#burning-a-disc)
+- [Printing labels](#printing-labels)
 - [Settings](#settings)
 - [Updates, and what Dubcrate sends](#updates-and-what-dubcrate-sends)
 - [Keyboard shortcuts](#keyboard-shortcuts)
@@ -269,6 +270,30 @@ The full list of command-line options is in the project's developer notes.
 
 ---
 
+## Printing labels
+
+Old players have no screen for a track list, so Dubcrate can print one for the case: **index labels** with each disc's track list, on sticker paper in your ordinary printer. Choose **Disc > Print Labels…** (⌘P), or right-click an audio disc in the Discs list and choose **Print Labels…**. Only **audio CDs** get labels: an MP3 CD holds far too many tracks to list.
+
+> **Printing has been checked by saving PDFs, not yet on a real printer.** Try **Save PDF…** and look at it first, or print on plain paper and hold it against a sticker sheet.
+
+1. **Tick the discs** to print, on the left. The disc you opened is ticked already. **All** and **None** tick or clear the list.
+2. Choose the **Paper**: A3, A4, A5, A6, US Letter or US Legal.
+3. Type the size of one label: **Label width** and **Label height**, in millimetres. 100 × 50 is a good start for a case.
+4. **Font size** is **Auto** (the text as large as fits, up to a limit, so a short list isn't blown up) unless you choose a size in points. The line under the settings says what Auto came to, which is a good place to start.
+5. **Spread each disc over** says how many labels one disc's list is divided between, for a case with several areas to stick on. A 20-track disc spread over 2 labels puts tracks 1 to 10 on the first and 11 to 20 on the second, each headed with the disc's name and *1/2*, *2/2*.
+6. **Copies of each** prints every disc's labels again for each copy you burned: burn a disc twice and set 2.
+7. **Page margin** keeps clear of the edge your printer can't print to (10 mm suits most), and **Gap between labels** leaves room to cut.
+8. **Places already used** skips that many label places at the start of the first page, so a sheet you have already cut labels from can be used again.
+9. Press **Print…**, or **Save PDF…** to get a file.
+
+What is on a label: for each track, its **number**, **title** and **artist**, and, if **Show BPM and key** is ticked, the track's **BPM** (rounded to a whole number) and **key**. They come from your rekordbox library, so a track from a plain folder has neither and those columns stay empty. The key is written the way **Settings > Appearance > Key notation** says. The title and artist are the ones written on the CD, including any edits you made for this disc.
+
+The labels of every ticked disc are laid out one after another, left to right and top to bottom, so **several discs share a page** and little sticker paper is wasted. The preview shows each page, with **◀** and **▶** to turn them. If a list is too long for the label's height (at a size you chose, or too small to read on Auto), a red line says which disc, and you can make the label taller, spread the disc over more labels or, with a chosen size, lower it. A label that doesn't fit the paper with those margins can't be printed. **Draw a thin outline to cut along** draws a hairline round each label, which you can turn off if you cut exactly.
+
+Your choices are remembered for next time, except **Places already used**.
+
+---
+
 ## Settings
 
 **File > Settings…** (⌘,) has five tabs:
@@ -313,6 +338,7 @@ This is the only time Dubcrate uses the network. It asks `github.com` for the li
 | ⌘N | New disc |
 | ⇧⌘N | New MP3 disc |
 | ⌘B | Burn the disc |
+| ⌘P | Print labels |
 | ⇧⌘D | Split the shown tracks across discs |
 | ⌘, | Settings |
 | ⌘F | Find tracks: go to the search box (**View > Find Tracks**) |

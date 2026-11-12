@@ -14,6 +14,15 @@
 3. **The Explorer** in the left tree: a live folder browser next to the Library (no
    import needed).
 4. **Printable track list** for the disc sleeve, since old CDJs have no screen for it.
+   *Built, not yet tried on a printer* (checked with PDFs and the offscreen preview). `labels.py`
+   is the pure part (splitting a disc over N labels, text size, packing labels from several
+   discs onto pages of A3/A4/A5/A6/Letter/Legal, skipping used places), `ui/label_paint.py` draws
+   a page for the preview, a printer or a PDF, and `ui/label_dialog.py` is the window (Disc >
+   Print Labels…, ⌘P). Audio discs only. Still to do: a real print on A4 and Letter sticker
+   paper (does the print panel keep the paper we asked for? how much of the edge is
+   unprintable?), check the built app bundles QtPrintSupport (`scripts/build_macos.sh` and its
+   smoke test), a way to print straight after a burn, and per-label fonts or a layout with
+   the album or year if wanted.
 
 5. **Help menu.** *Done:* *Help > User Guide* opens `ui/help_dialog.py`, which renders
    `ui/help/manual.md` (find in page, working contents links, callout boxes, images that

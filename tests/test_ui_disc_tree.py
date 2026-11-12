@@ -559,6 +559,7 @@ def test_a_discs_menu_opens_renames_duplicates_burns_and_deletes(window):
         "Duplicate",
         "Make MP3 CD",
         "Burn…",
+        "Print Labels…",
         "Delete…",
     ]
 

@@ -45,6 +45,7 @@ from .burn_dialog import BurnDialog, BurnerFactory
 from .disc_tree import COLUMN_WIDTH, DiscTree
 from .disc_view import DiscView
 from .help_dialog import show_help_dialog
+from .label_dialog import LabelDialog
 from .models import (
     NAME_ROLE,
     PREVIEW_COLUMN,
@@ -446,6 +447,12 @@ class MainWindow(QMainWindow):
         self.act_burn = disc_menu.addAction(
             "&Burn Disc…", self.burn_current_disc, QKeySequence("Ctrl+B")
         )
+        self.act_print_labels = disc_menu.addAction(
+            "&Print Labels…", lambda: self.print_labels(), QKeySequence("Ctrl+P")
+        )
+        self.act_print_labels.setToolTip(
+            "Print the track lists of audio discs on sticker paper (A4, Letter, ...), as labels for the case."
+        )
         disc_menu.addSeparator()
         self.act_add_selected = disc_menu.addAction(
             "&Add Selected Tracks", self.add_selected_to_disc
@@ -604,6 +611,13 @@ class MainWindow(QMainWindow):
         self.burn_dialog.burned.connect(self._on_burned)
         self.burn_dialog.finished.connect(lambda _r: self.disc_view.reload())
         self.burn_dialog.open()
+
+    def print_labels(self, disc_id: int | None = None) -> None:
+        """Open the label printing window with a disc ticked: the one given, else the open one."""
+        if disc_id is None:
+            disc_id = self.disc_view.current_disc_id()
+        self.label_dialog = LabelDialog(self._lib, self, picked=disc_id)
+        self.label_dialog.open()
 
     def _on_burned(self, disc_id: int) -> None:
         self.refresh_discs()  # the disc's tooltip now says when it was burned
@@ -916,6 +930,8 @@ class MainWindow(QMainWindow):
                 )
             menu.addSeparator()
             menu.addAction("Burn…", lambda: self._open_and_burn(disc_id))
+            if self._lib.disc(disc_id).kind == "audio":
+                menu.addAction("Print Labels…", lambda: self.print_labels(disc_id))
             menu.addSeparator()
             menu.addAction("Delete…", lambda: self.disc_view.delete_disc(disc_id))
         elif kind == "disc_dir":

@@ -2,7 +2,7 @@
 
 from PySide6.QtCore import QByteArray, QSettings
 
-from dubcrate import keys, mp3
+from dubcrate import keys, labels, mp3
 
 THEME_SYSTEM = "system"
 THEME_LIGHT = "light"
@@ -118,6 +118,43 @@ def get_burn_speed() -> int:
 
 def set_burn_speed(speed: int) -> None:
     _qs().setValue("burn/speed", int(speed))
+
+
+def _as_bool(value: object, default: bool) -> bool:
+    if isinstance(value, str):  # an ini file keeps a bool as text
+        return value.strip().lower() not in ("false", "0", "no", "off")
+    return bool(value) if value is not None else default
+
+
+def get_label_options() -> labels.LabelOptions:
+    """The index label settings last used (see `dubcrate.labels`), each kept inside its limits."""
+    default = labels.LabelOptions()
+    qs = _qs()
+
+    def number(key: str, fallback: float) -> float:
+        try:
+            return float(qs.value(f"labels/{key}", fallback))
+        except (TypeError, ValueError):
+            return fallback
+
+    return labels.LabelOptions(
+        page=str(qs.value("labels/page", default.page)),
+        font_pt=number("font_pt", default.font_pt),
+        width_mm=number("width_mm", default.width_mm),
+        height_mm=number("height_mm", default.height_mm),
+        per_disc=int(number("per_disc", default.per_disc)),
+        copies=int(number("copies", default.copies)),
+        margin_mm=number("margin_mm", default.margin_mm),
+        gap_mm=number("gap_mm", default.gap_mm),
+        show_bpm_key=_as_bool(qs.value("labels/show_bpm_key"), default.show_bpm_key),
+        outline=_as_bool(qs.value("labels/outline"), default.outline),
+    ).clamped()
+
+
+def set_label_options(options: labels.LabelOptions) -> None:
+    qs = _qs()
+    for key, value in vars(options.clamped()).items():
+        qs.setValue(f"labels/{key}", value)
 
 
 WAVE_STYLES = ("bands", "rgb", "blue")

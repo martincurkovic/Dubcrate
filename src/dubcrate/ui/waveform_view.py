@@ -315,12 +315,24 @@ class DetailView(QWidget):
             return
         centre, middle = w / 2, h / 2
         per_second = w / self._window
+        self._paint_zero_line(p, w, middle)
         if current_style() == STYLE_BANDS:
             self._paint_bands(p, w, centre, middle, per_second)
         else:
             self._paint_columns(p, w, h, centre, per_second)
         self._paint_beats(p, w, h, centre, per_second)
         p.fillRect(QRectF(centre - 1, 0, 2, h), color("wave_playhead"))
+
+    def _paint_zero_line(self, p: QPainter, width: int, middle: float) -> None:
+        """A faint line along the waveform's centre (silence), under the waveform, so the gaps before,
+        after and inside a track are not bare. Not in System 6, which has no faint."""
+        if is_mono():
+            return
+        line = color("wave_text")
+        line.setAlpha(55)
+        p.setPen(QPen(line, 1))
+        y = math.floor(middle) + 0.5  # on a pixel row, so it stays one crisp line
+        p.drawLine(QPointF(0, y), QPointF(width, y))
 
     def _paint_columns(
         self, p: QPainter, width: int, height: int, centre: float, per_second: float
