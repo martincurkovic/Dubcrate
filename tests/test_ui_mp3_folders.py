@@ -15,6 +15,7 @@ from dubcrate.ui.models import (
     TRACK_MIME,
     find_selection,
 )
+from dubcrate.ui.overlaps import OverlapChoice
 
 YES, NO = QMessageBox.StandardButton.Yes, QMessageBox.StandardButton.No
 
@@ -175,7 +176,9 @@ def test_a_deleted_folder_that_was_open_falls_back_to_its_parent(mp3, monkeypatc
 
 
 def test_adding_tracks_puts_them_in_the_folder_being_shown(mp3, monkeypatch):
-    ask(monkeypatch, YES)  # (some of these tracks are on the disc already: add anyway)
+    monkeypatch.setattr(
+        "dubcrate.ui.disc_view.ask_overlap", lambda *a, **k: OverlapChoice.ADD_ALL
+    )  # (some of these tracks are on the disc already: add anyway)
     win, lib, disc, house, _ = mp3
     win.disc_tree.setCurrentIndex(index(win, ("disc_dir", disc, house)))
     win.disc_view.add_tracks(ids(lib)[5:6])
@@ -185,7 +188,9 @@ def test_adding_tracks_puts_them_in_the_folder_being_shown(mp3, monkeypatch):
 
 
 def test_dropping_library_tracks_on_a_folder_or_on_the_disc(mp3, monkeypatch):
-    ask(monkeypatch, YES)  # (some of these tracks are on the disc already: add anyway)
+    monkeypatch.setattr(
+        "dubcrate.ui.disc_view.ask_overlap", lambda *a, **k: OverlapChoice.ADD_ALL
+    )  # (some of these tracks are on the disc already: add anyway)
     win, lib, disc, house, deep = mp3
     model = win.disc_tree.model()
     t = ids(lib)

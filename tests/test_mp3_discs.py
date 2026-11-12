@@ -23,6 +23,7 @@ from dubcrate.library.store import DiscError
 from dubcrate.render import RenderError, probe, render_mp3
 from dubcrate.ui.burn_dialog import BurnDialog
 from dubcrate.ui.main_window import MainWindow
+from dubcrate.ui.overlaps import OverlapChoice
 
 needs_ffmpeg = pytest.mark.skipif(
     not (shutil.which("ffmpeg") and shutil.which("ffprobe")),
@@ -642,11 +643,14 @@ def test_nothing_is_asked_while_the_disc_fits_or_when_it_is_already_mp3(
 ):
     win, lib = window
     asked = ask_with(monkeypatch, QMessageBox.StandardButton.Yes)
+    monkeypatch.setattr(
+        "dubcrate.ui.disc_view.ask_overlap", lambda *a, **k: OverlapChoice.ADD_ALL
+    )  # (the same tracks go on two discs: add them anyway)
     fits = lib.create_disc("Fits")
     win.disc_view.add_tracks(track_ids(lib), disc_id=fits)
     big = lib.create_disc("Already", capacity_sectors=500, kind="mp3")
     win.disc_view.add_tracks(track_ids(lib), disc_id=big)
-    # (the "already used" question on the second add is the existing overlap check)
+    # (the second add meets the already-used box, which is not this question)
     assert [t for t, _text in asked if t == "Make this an MP3 CD?"] == []
 
 

@@ -29,7 +29,9 @@ def test_names_each_disc_a_track_is_on_and_when_one_was_burned():
         "A - T1: already on this disc; on “Other”, “Friday” (burned 2026-11-01)" in text
     )
     assert "T2" not in text
-    assert text.endswith("Add anyway?")
+    assert text.endswith(
+        "Add them anyway, or skip the duplicates?"
+    )  # (one is new: skip is offered)
 
 
 def test_a_disc_that_was_never_burned_has_no_burned_note():
@@ -52,3 +54,51 @@ def test_long_lists_are_cut_off():
     text = overlap_message([track(i) for i in range(n)], usage, 1)
     assert text is not None
     assert "…and 3 more" in text
+
+
+def test_when_every_track_is_used_there_is_nothing_to_skip_to():
+    usage = {
+        1: TrackUsage((DiscRef(2, "Other"),)),
+        2: TrackUsage((DiscRef(2, "Other"),)),
+    }
+    text = overlap_message([track(1), track(2)], usage, 1)
+    assert text is not None and text.endswith("Add anyway?") and "skip" not in text
+
+
+def test_the_box_offers_add_anyway_skip_duplicates_and_cancel(qapp, monkeypatch):
+    from PySide6.QtWidgets import QMessageBox
+
+    from dubcrate.ui.overlaps import OverlapChoice, ask_overlap
+
+    seen = {}
+
+    def answer(label):
+        def fake_exec(box):
+            seen["buttons"] = [b.text() for b in box.buttons()]
+            seen["default"] = box.defaultButton().text()
+            seen["escape"] = box.escapeButton().text()
+            if label is not None:
+                next(b for b in box.buttons() if b.text() == label).click()
+            return 0
+
+        monkeypatch.setattr(QMessageBox, "exec", fake_exec)
+
+    answer("Skip Duplicates")
+    assert ask_overlap(None, "text", can_skip=True) is OverlapChoice.SKIP
+    assert set(seen["buttons"]) == {
+        "Add Anyway",
+        "Skip Duplicates",
+        "Cancel",
+    }  # (the platform orders them)
+    assert (
+        seen["default"] == "Add Anyway" and seen["escape"] == "Cancel"
+    )  # Return is what it was
+    answer("Add Anyway")
+    assert ask_overlap(None, "text", can_skip=True) is OverlapChoice.ADD_ALL
+    answer("Cancel")
+    assert ask_overlap(None, "text", can_skip=True) is OverlapChoice.CANCEL
+    answer(None)  # closed with Escape or the window's close button: nothing is added
+    assert ask_overlap(None, "text", can_skip=True) is OverlapChoice.CANCEL
+    answer("Add Anyway")  # nothing new in the list: no Skip button to offer
+    ask_overlap(None, "text", can_skip=False)
+    assert set(seen["buttons"]) == {"Add Anyway", "Cancel"}

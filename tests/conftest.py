@@ -134,6 +134,13 @@ def _no_modal_question(monkeypatch):
 
     monkeypatch.setattr(QMessageBox, "question", staticmethod(refuse))
 
+    def refuse_overlap(*_a, **_k):
+        raise AssertionError(
+            "a test opened the already-used box; patch disc_view.ask_overlap"
+        )
+
+    monkeypatch.setattr("dubcrate.ui.disc_view.ask_overlap", refuse_overlap)
+
 
 @pytest.fixture(autouse=True)
 def _no_real_burner(monkeypatch):

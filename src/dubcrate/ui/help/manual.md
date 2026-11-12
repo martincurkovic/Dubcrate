@@ -222,9 +222,9 @@ When you add a track that is **already on this disc or on another disc**, Dubcra
 >
 > • Artist - Title: already on this disc; on "Friday night" (burned 2026-11-01)
 >
-> Add anyway?
+> Add them anyway, or skip the duplicates?
 
-Choose **Yes** to add everything, or **No** to cancel and add nothing. It names each place the track is used, and lists the first eight tracks if there are more.
+Choose **Add Anyway** to add everything, **Skip Duplicates** to add only the tracks that aren't used anywhere yet, or **Cancel** to add nothing. Return chooses **Add Anyway**. **Skip Duplicates** is left out when every track is already used, since there would be nothing to add. A track counts as a duplicate if it is on this disc or on any other disc, and the status bar tells you how many were skipped. The notice names each place a track is used, and lists the first eight tracks if there are more.
 
 A disc you burned says when. A test write (a simulated burn) puts nothing on a disc, so it doesn't count as a burn.
 

@@ -34,7 +34,7 @@ from dubcrate.mp3 import format_span
 from . import theme
 from .capacity_bar import CapacitySummary
 from .models import DiscModel
-from .overlaps import overlap_message
+from .overlaps import OverlapChoice, ask_overlap, overlap_message
 from .tasks import run_async
 from .track_table import transport_action
 
@@ -545,17 +545,23 @@ class DiscView(QWidget):
             on_progress=self.progress.emit,
         )
 
-    def _confirm_overlaps(self, disc_id: int | None, track_ids: list[int]) -> bool:
-        """Tell the user which tracks are already on a disc; False if they back out."""
-        text = overlap_message(
-            self._lib.tracks_by_ids(track_ids),
-            self._lib.track_usage(track_ids),
-            disc_id,
-        )
+    def _resolve_overlaps(
+        self, disc_id: int | None, track_ids: list[int]
+    ) -> list[int] | None:
+        """Tell the user which tracks are already on a disc (this one, another, one that was
+        burned) and ask what to do. Returns the tracks to add: all of them, only the ones not
+        used yet, or None if they back out."""
+        usage = self._lib.track_usage(track_ids)
+        text = overlap_message(self._lib.tracks_by_ids(track_ids), usage, disc_id)
         if text is None:
-            return True
-        answer = QMessageBox.question(self, "Already used", text)
-        return answer == QMessageBox.StandardButton.Yes
+            return track_ids
+        fresh = [t for t in track_ids if t not in usage]
+        choice = ask_overlap(self, text, can_skip=bool(fresh))
+        if choice is OverlapChoice.ADD_ALL:
+            return track_ids
+        if choice is OverlapChoice.SKIP:
+            return fresh
+        return None
 
     def add_tracks(
         self,
@@ -578,8 +584,10 @@ class DiscView(QWidget):
 
         def add() -> None:
             target = self._disc_id if disc_id is None else disc_id
-            if not self._confirm_overlaps(target, track_ids):
+            wanted = self._resolve_overlaps(target, track_ids)
+            if wanted is None:
                 return
+            skipped = len(track_ids) - len(wanted)
             created = target is None
             if target is None:
                 target = self._create("Disc 1")
@@ -592,7 +600,7 @@ class DiscView(QWidget):
             try:
                 result = self._lib.add_to_disc(
                     target,
-                    track_ids,
+                    wanted,
                     position=position,
                     fit=fit,
                     strict=strict,
@@ -608,6 +616,8 @@ class DiscView(QWidget):
             text = f"Added {n} track{'s' if n != 1 else ''} to “{name}”"
             if result.rejected:
                 text += f"; {len(result.rejected)} didn't fit"
+            if skipped:
+                text += f"; skipped {skipped} already used"
             if created:
                 text += " (a new disc)"
             self.message.emit(text)

@@ -18,6 +18,7 @@ from dubcrate.ui import main_window, theme
 from dubcrate.ui.disc_view import DiscView
 from dubcrate.ui.main_window import MainWindow
 from dubcrate.ui.models import DISC_ROWS_MIME, TRACK_COLUMNS, TRACK_MIME, find_selection
+from dubcrate.ui.overlaps import OverlapChoice
 
 needs_ffmpeg = pytest.mark.skipif(
     not (shutil.which("ffmpeg") and shutil.which("ffprobe")),
@@ -625,24 +626,29 @@ def test_the_app_starts_and_quits(tmp_path):
 # -- already-used warning -----------------------------------------------------
 
 
-def ask_overlap(monkeypatch, answer):
+def ask_overlap(monkeypatch, choice):
+    """Answers the already-used box with `choice` (an OverlapChoice) and records what it said:
+    [(text, can_skip)]."""
     asked = []
 
-    def question(_parent, title, text, *a, **k):
-        asked.append(text)
-        return answer
+    def box(_parent, text, can_skip):
+        asked.append((text, can_skip))
+        return choice
 
-    monkeypatch.setattr(QMessageBox, "question", staticmethod(question))
+    monkeypatch.setattr("dubcrate.ui.disc_view.ask_overlap", box)
     return asked
+
+
+ADD_ALL, SKIP, CANCEL = OverlapChoice.ADD_ALL, OverlapChoice.SKIP, OverlapChoice.CANCEL
 
 
 def test_adding_a_track_already_on_the_disc_asks_first(window, monkeypatch):
     win, lib = window
     ids = [t.id for t in lib.tracks(sort="title")]
     win.disc_view.add_tracks(ids[:2])
-    asked = ask_overlap(monkeypatch, NO)
+    asked = ask_overlap(monkeypatch, CANCEL)
     win.disc_view.add_tracks(ids[1:3])
-    assert len(asked) == 1 and "already on this disc" in asked[0]
+    assert len(asked) == 1 and "already on this disc" in asked[0][0]
     assert disc_titles(win) == ["Song 0", "Song 1"]  # declined: nothing added
 
 
@@ -650,9 +656,70 @@ def test_agreeing_adds_them_anyway(window, monkeypatch):
     win, lib = window
     ids = [t.id for t in lib.tracks(sort="title")]
     win.disc_view.add_tracks(ids[:1])
-    ask_overlap(monkeypatch, YES)
+    ask_overlap(monkeypatch, ADD_ALL)
     win.disc_view.add_tracks(ids[:1])
     assert disc_titles(win) == ["Song 0", "Song 0"]
+
+
+def test_skip_duplicates_adds_only_the_tracks_not_used_yet(window, monkeypatch):
+    win, lib = window
+    ids = [t.id for t in lib.tracks(sort="title")]
+    win.disc_view.add_tracks(ids[:2])  # Song 0 and Song 1
+    asked = ask_overlap(monkeypatch, SKIP)
+    win.disc_view.add_tracks(ids[1:4])  # Song 1 is a duplicate; Songs 2 and 3 are new
+    assert asked[0][1] is True  # there was something new to skip to
+    assert disc_titles(win) == ["Song 0", "Song 1", "Song 2", "Song 3"]
+    assert "Added 2 tracks" in win.statusBar().currentMessage()
+    assert "skipped 1 already used" in win.statusBar().currentMessage()
+
+
+def test_skip_duplicates_also_skips_tracks_that_are_on_another_disc(
+    window, monkeypatch
+):
+    win, lib = window
+    ids = [t.id for t in lib.tracks(sort="title")]
+    other = lib.create_disc("Other")
+    lib.add_to_disc(other, ids[:2])
+    mine = lib.create_disc("Mine")
+    win.disc_view.set_disc(mine)
+    asked = ask_overlap(monkeypatch, SKIP)
+    win.disc_view.add_tracks(ids[:4])
+    assert "on “Other”" in asked[0][0]
+    assert disc_titles(win) == ["Song 2", "Song 3"]
+    assert [e.title for e in lib.disc_entries(other)] == [
+        "Song 0",
+        "Song 1",
+    ]  # that one untouched
+
+
+def test_when_every_track_is_a_duplicate_skip_is_not_offered(window, monkeypatch):
+    win, lib = window
+    ids = [t.id for t in lib.tracks(sort="title")]
+    win.disc_view.add_tracks(ids[:2])
+    asked = ask_overlap(monkeypatch, ADD_ALL)
+    win.disc_view.add_tracks(ids[:2])
+    assert asked[0][1] is False
+    assert disc_titles(win) == ["Song 0", "Song 1", "Song 0", "Song 1"]
+
+
+def test_skipping_keeps_the_drop_position_and_the_open_folder(window, monkeypatch):
+    win, lib = window
+    ids = [t.id for t in lib.tracks(sort="title")]
+    win.disc_view.add_tracks(ids[:3])  # 0 1 2
+    ask_overlap(monkeypatch, SKIP)
+    win.disc_view.add_tracks(
+        ids[2:5], position=1
+    )  # 2 is a duplicate; 3 and 4 go in at row 1
+    assert disc_titles(win) == ["Song 0", "Song 3", "Song 4", "Song 1", "Song 2"]
+
+
+def test_a_track_twice_in_one_selection_counts_as_used_if_it_is(window, monkeypatch):
+    win, lib = window
+    ids = [t.id for t in lib.tracks(sort="title")]
+    win.disc_view.add_tracks(ids[:1])
+    ask_overlap(monkeypatch, SKIP)
+    win.disc_view.add_tracks([ids[0], ids[0], ids[1]])  # Song 0 is on the disc already
+    assert disc_titles(win) == ["Song 0", "Song 1"]
 
 
 def test_a_track_on_a_burned_disc_is_flagged_on_a_new_one_with_when_it_was_burned(
@@ -665,16 +732,18 @@ def test_a_track_on_a_burned_disc_is_flagged_on_a_new_one_with_when_it_was_burne
     lib.mark_burned(old, when="2026-11-01T20:00:00+00:00")
     new = lib.create_disc("Saturday")
     win.disc_view.set_disc(new)
-    asked = ask_overlap(monkeypatch, YES)
+    asked = ask_overlap(monkeypatch, ADD_ALL)
     win.disc_view.add_tracks(ids[:2])
     assert len(asked) == 1
-    assert "on “Friday” (burned 2026-11-01)" in asked[0] and "Song 1" not in asked[0]
+    assert (
+        "on “Friday” (burned 2026-11-01)" in asked[0][0] and "Song 1" not in asked[0][0]
+    )
 
 
 def test_fresh_tracks_are_added_without_asking(window, monkeypatch):
     win, lib = window
     ids = [t.id for t in lib.tracks(sort="title")]
-    asked = ask_overlap(monkeypatch, NO)
+    asked = ask_overlap(monkeypatch, CANCEL)
     win.disc_view.add_tracks(ids[:2])
     assert asked == []
     assert disc_titles(win) == ["Song 0", "Song 1"]
