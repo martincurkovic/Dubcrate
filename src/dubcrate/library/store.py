@@ -61,6 +61,13 @@ class _Slot:
     dir_id: int | None = None  # the folder on an MP3 disc; None: the root
 
 
+# The Explorer tab's tracks live in a hidden source of their own: it is not listed with the
+# sources and its tracks are not in "All Tracks", but its tracks are library tracks like any
+# other, so a disc can hold them (`Library.sync_directory`, `prune_explorer`).
+EXPLORER_PATH = "explorer:"
+EXPLORER_NAME = "Explorer"
+
+
 class LibraryError(RuntimeError):
     pass
 
@@ -254,9 +261,13 @@ CREATE INDEX disc_dir_disc ON disc_dir(disc_id);
 ALTER TABLE disc_track ADD COLUMN dir_id INTEGER REFERENCES disc_dir(id) ON DELETE SET NULL
 """
 
+_SCHEMA_V9 = """
+ALTER TABLE source ADD COLUMN hidden INTEGER NOT NULL DEFAULT 0
+"""
+
 _MIGRATIONS = (
     _SCHEMA_V1, _SCHEMA_V2, _SCHEMA_V3, _SCHEMA_V4, _SCHEMA_V5, _migrate_to_v6,
-    _SCHEMA_V7, _SCHEMA_V8,
+    _SCHEMA_V7, _SCHEMA_V8, _SCHEMA_V9,
 )  # fmt: skip
 SCHEMA_VERSION = len(_MIGRATIONS)
 
@@ -352,9 +363,10 @@ class Library:
     # -- sources ---------------------------------------------------------
 
     def sources(self) -> list[Source]:
+        """The imported sources (not the Explorer's hidden one)."""
         rows = self._conn.execute(
             "SELECT s.*, (SELECT COUNT(*) FROM track WHERE source_id = s.id AND stale = 0) AS n"
-            " FROM source s ORDER BY s.name COLLATE NOCASE, s.id"
+            " FROM source s WHERE s.hidden = 0 ORDER BY s.name COLLATE NOCASE, s.id"
         )
         return [
             Source(r["id"], r["kind"], r["path"], r["name"], r["imported_at"], r["n"])
@@ -418,52 +430,18 @@ class Library:
             }
             ids: dict[str, int] = {}
             added = updated = 0
-            columns = ", ".join(_TRACK_FIELDS)
-            placeholders = ", ".join("?" for _ in _TRACK_FIELDS)
-            assignments = ", ".join(f"{f} = ?" for f in _TRACK_FIELDS)
             for rec in tracks:
-                values = [getattr(rec, f) for f in _TRACK_FIELDS]
-                missing = int(not os.path.exists(rec.path))
-                if rec.ext_id in existing:
-                    track_id = existing[rec.ext_id]
-                    # A changed file size means the measured CD length is out of date.
-                    self._conn.execute(
-                        "UPDATE track SET cd_sectors = CASE WHEN file_size IS ?"
-                        f" THEN cd_sectors END, {assignments}, missing = ?, stale = 0"
-                        " WHERE id = ?",
-                        [rec.file_size, *values, missing, track_id],
-                    )
-                    updated += rec.ext_id not in ids
-                else:
-                    track_id = self._conn.execute(
-                        f"INSERT INTO track (source_id, ext_id, missing, {columns})"
-                        f" VALUES (?, ?, ?, {placeholders})",
-                        [source_id, rec.ext_id, missing, *values],
-                    ).lastrowid
-                    assert track_id is not None
-                    existing[rec.ext_id] = track_id
+                track_id, is_new = self._write_track(source_id, rec, existing)
+                if is_new:
                     added += 1
+                elif rec.ext_id not in ids:
+                    updated += 1
                 ids[rec.ext_id] = track_id
 
             # Tracks that left the source are deleted, unless a disc uses them:
             # those are kept (marked stale) so no disc silently loses a track.
             gone = [i for ext, i in existing.items() if ext not in ids]
-            on_discs = {
-                r[0]
-                for r in self._conn.execute(
-                    "SELECT DISTINCT dt.track_id FROM disc_track dt"
-                    " JOIN track t ON t.id = dt.track_id WHERE t.source_id = ?",
-                    (source_id,),
-                )
-            }
-            kept = [i for i in gone if i in on_discs]
-            dropped = [i for i in gone if i not in on_discs]
-            self._conn.executemany(
-                "UPDATE track SET stale = 1 WHERE id = ?", [(i,) for i in kept]
-            )
-            self._conn.executemany(
-                "DELETE FROM track WHERE id = ?", [(i,) for i in dropped]
-            )
+            kept, dropped = self._drop_gone(source_id, gone)
             notes = list(notes)
             if kept:
                 notes.append(
@@ -474,6 +452,150 @@ class Library:
         return ImportSummary(
             source_id, added, updated, len(dropped), node_count, tuple(notes)
         )
+
+    def _write_track(
+        self, source_id: int, rec: TrackRecord, existing: dict[str, int]
+    ) -> tuple[int, bool]:
+        """Add `rec` to the source, or update its row: matched on `ext_id` through `existing`
+        (which grows), so a track keeps its id. Returns (id, whether it is new)."""
+        values = [getattr(rec, f) for f in _TRACK_FIELDS]
+        missing = int(not os.path.exists(rec.path))
+        if rec.ext_id in existing:
+            track_id = existing[rec.ext_id]
+            assignments = ", ".join(f"{f} = ?" for f in _TRACK_FIELDS)
+            # A changed file size means the measured CD length is out of date.
+            self._conn.execute(
+                "UPDATE track SET cd_sectors = CASE WHEN file_size IS ?"
+                f" THEN cd_sectors END, {assignments}, missing = ?, stale = 0"
+                " WHERE id = ?",
+                [rec.file_size, *values, missing, track_id],
+            )
+            return track_id, False
+        columns = ", ".join(_TRACK_FIELDS)
+        placeholders = ", ".join("?" for _ in _TRACK_FIELDS)
+        track_id = self._conn.execute(
+            f"INSERT INTO track (source_id, ext_id, missing, {columns})"
+            f" VALUES (?, ?, ?, {placeholders})",
+            [source_id, rec.ext_id, missing, *values],
+        ).lastrowid
+        assert track_id is not None
+        existing[rec.ext_id] = track_id
+        return track_id, True
+
+    def _drop_gone(
+        self, source_id: int, gone: list[int]
+    ) -> tuple[list[int], list[int]]:
+        """Delete the tracks that left a source, except those a disc uses: they are kept and
+        marked stale. Returns (kept, dropped) track ids."""
+        on_discs = {
+            r[0]
+            for r in self._conn.execute(
+                "SELECT DISTINCT dt.track_id FROM disc_track dt"
+                " JOIN track t ON t.id = dt.track_id WHERE t.source_id = ?",
+                (source_id,),
+            )
+        }
+        kept = [i for i in gone if i in on_discs]
+        dropped = [i for i in gone if i not in on_discs]
+        self._conn.executemany(
+            "UPDATE track SET stale = 1 WHERE id = ?", [(i,) for i in kept]
+        )
+        self._conn.executemany(
+            "DELETE FROM track WHERE id = ?", [(i,) for i in dropped]
+        )
+        return kept, dropped
+
+    # -- the Explorer's folders ------------------------------------------
+
+    def _explorer_source(self) -> int:
+        row = self._conn.execute(
+            "SELECT id FROM source WHERE kind = 'folder' AND path = ?", (EXPLORER_PATH,)
+        ).fetchone()
+        if row:
+            return row["id"]
+        source_id = self._conn.execute(
+            "INSERT INTO source (kind, path, name, imported_at, hidden)"
+            " VALUES ('folder', ?, ?, ?, 1)",
+            (
+                EXPLORER_PATH,
+                EXPLORER_NAME,
+                datetime.now(UTC).isoformat(timespec="seconds"),
+            ),
+        ).lastrowid
+        assert source_id is not None
+        return source_id
+
+    def explorer_node(self, directory: str) -> int | None:
+        """The node (the list of tracks) the Explorer has for `directory`, if it has read it."""
+        row = self._conn.execute(
+            "SELECT n.id FROM node n JOIN source s ON s.id = n.source_id"
+            " WHERE s.path = ? AND n.ext_id = ?",
+            (EXPLORER_PATH, directory),
+        ).fetchone()
+        return row["id"] if row else None
+
+    def sync_directory(self, directory: str, tracks: Iterable[TrackRecord]) -> int:
+        """Store what the Explorer found directly inside `directory` and return its node id.
+
+        Only this folder is touched. As with `replace_source`, a track keeps its id when it is
+        read again (matched on its path), and one that has left the folder is deleted unless a
+        disc uses it, in which case it is kept and marked stale.
+        """
+        with self._conn:
+            source_id = self._explorer_source()
+            node_id = self.explorer_node(directory)
+            if node_id is None:
+                node_id = self._conn.execute(
+                    "INSERT INTO node (source_id, ext_id, parent_id, name, is_folder, position)"
+                    " VALUES (?, ?, NULL, ?, 0, 0)",
+                    (source_id, directory, os.path.basename(directory) or directory),
+                ).lastrowid
+                assert node_id is not None
+            before = {
+                r[0]
+                for r in self._conn.execute(
+                    "SELECT track_id FROM node_track WHERE node_id = ?", (node_id,)
+                )
+            }
+            existing = {
+                r["ext_id"]: r["id"]
+                for r in self._conn.execute(
+                    "SELECT ext_id, id FROM track WHERE source_id = ?", (source_id,)
+                )
+            }
+            members: list[int] = []
+            for rec in tracks:
+                track_id, _is_new = self._write_track(source_id, rec, existing)
+                if track_id not in members:
+                    members.append(track_id)
+            self._drop_gone(source_id, [i for i in before if i not in members])
+            self._conn.execute("DELETE FROM node_track WHERE node_id = ?", (node_id,))
+            self._conn.executemany(
+                "INSERT INTO node_track (node_id, track_id, position) VALUES (?, ?, ?)",
+                [(node_id, tid, pos) for pos, tid in enumerate(members)],
+            )
+        return node_id
+
+    def prune_explorer(self) -> int:
+        """Forget what the Explorer has read, except the tracks that are on discs. Returns how
+        many tracks went. (What was read is only a cache: opening a folder reads it again.)"""
+        with self._conn:
+            row = self._conn.execute(
+                "SELECT id FROM source WHERE path = ? AND hidden = 1", (EXPLORER_PATH,)
+            ).fetchone()
+            if row is None:
+                return 0
+            dropped = self._conn.execute(
+                "DELETE FROM track WHERE source_id = ?"
+                " AND id NOT IN (SELECT track_id FROM disc_track)",
+                (row["id"],),
+            ).rowcount
+            self._conn.execute(
+                "DELETE FROM node WHERE source_id = ?"
+                " AND id NOT IN (SELECT node_id FROM node_track)",
+                (row["id"],),
+            )
+        return dropped
 
     def _replace_nodes(
         self, source_id: int, nodes: list[NodeRecord], track_ids: dict[str, int]
@@ -556,6 +678,10 @@ class Library:
         if source_id is not None:
             where.append("t.source_id = ?")
             params.append(source_id)
+        elif (
+            node_id is None
+        ):  # "All Tracks": the Explorer's tracks are not part of the library
+            where.append("t.source_id NOT IN (SELECT id FROM source WHERE hidden = 1)")
         for term in (search or "").split():
             like = f"%{_like_escape(term)}%"
             where.append(

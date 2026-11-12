@@ -286,3 +286,19 @@ def test_the_guide_describes_the_label_window_as_it_is():
     assert "audio CDs and MP3 CDs" in MANUAL
     assert "Audio CDs only" not in MANUAL and "Only **audio CDs**" not in MANUAL
     assert LabelDialog  # (the window the section is about)
+
+
+def test_the_guide_describes_the_explorer_tab(window):
+    for phrase in (
+        "## The Explorer",
+        "**Explorer** tab",
+        "**Library**",
+        "never offers the computer's whole system disk",
+        "not part of your Library",
+        "Files & Folders",
+    ):
+        assert phrase in MANUAL, phrase
+    assert "(#the-explorer)" in MANUAL
+    assert window.source_tabs.keys() == ["library", "explorer"]
+    labels = [b.text() for b in window.source_tabs._buttons.values()]
+    assert labels == ["Library", "Explorer"]

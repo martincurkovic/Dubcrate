@@ -102,6 +102,7 @@ def _run(args: argparse.Namespace, qt_args: list[str]) -> int:
     dialog_log.install()
 
     with Library.open(args.library) as lib:
+        lib.prune_explorer()  # what the Explorer read last time is only a cache (discs keep theirs)
         imported = maybe_refresh(lib, splash.set_status, skip=args.no_import)
         splash.set_status("Loading Dubcrate…")
         window = MainWindow(lib, persist=True, update_check=True)

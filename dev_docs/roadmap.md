@@ -11,8 +11,27 @@
 2. **Read a finished burn back.** With the burner attached, read the disc in the drive and
    check it against the disc it was burned from (the old idea of a burn record became
    "a disc just remembers when it was burned").
-3. **The Explorer** in the left tree: a live folder browser next to the Library (no
-   import needed).
+3. **The Explorer** in the left tree. *Built (step 1), not yet looked at by the owner on a real Mac.*
+   The left pane is a vertical tab strip (`ui/source_tabs.py`) over a stacked page: **Library**
+   (as before) and **Explorer** (`ui/explorer.py`: Music, home and plugged-in drives, never the
+   whole system disk; folders read when opened). Its tracks are real library tracks in a hidden
+   source, so discs, sorting, search and previews all work unchanged (`Library.sync_directory`,
+   `prune_explorer`; schema v9). **Next, as agreed with the owner:**
+   - **Pinned folders**: a list of folders (in Settings) that each get a tab of their own below
+     the Library and Explorer, refreshing whenever the tab is opened (no background watching).
+     The owner's use: a folder of misc MP3s that isn't in rekordbox.
+   - **A tab per app library** (not one merged Library tab), for when a second library exists. Only
+     rekordbox is in use today: Engine DJ and Algoriddim djay are backups synced from rekordbox
+     (the master) through Lexicon, so there is nothing to read from them. **Mixxx** (the owner uses
+     it on Linux, not on this Mac) is the one wanted: its database is plain SQLite; check a real
+     `mixxxdb.sqlite` before writing the reader, and give the readers a small common interface
+     (tracks, folders, optional analysis).
+   - **No analysis**: BPM and key are only read from tags (blank when there are none), because the
+     CDJ-1000 can't use them on a disc. Waveforms are computed from the audio when there is no
+     rekordbox analysis.
+   - Maybe: borrow rekordbox's BPM, key and waveform for an Explorer file that is also in the
+     imported rekordbox library (match on path), and spot a song that is on a disc under two
+     source rows.
 4. **Printable track list** for the disc sleeve, since old CDJs have no screen for it.
    *Built, not yet tried on a printer* (checked with PDFs and the offscreen preview). `labels.py`
    is the pure part (splitting a disc over N labels, text size, packing labels from several

@@ -140,3 +140,55 @@ def scan_folder(
     by_dir = {d: [f for f in fs if f in readable] for d, fs in by_dir.items()}
     scan.nodes = _build_nodes(root, {d: fs for d, fs in by_dir.items() if fs})
     return scan
+
+
+@dataclass
+class DirectoryScan:
+    directory: Path
+    tracks: list[TrackRecord] = field(default_factory=list)
+    errors: list[tuple[str, str]] = field(default_factory=list)  # (path, reason)
+
+
+def scan_directory(
+    directory: Path,
+    known: dict[str, TrackRecord] | None = None,
+    workers: int = 8,
+) -> DirectoryScan:
+    """Probe the audio files directly inside `directory` (not its subfolders), name-sorted.
+
+    `known` is what was read from this folder before, by path: a file whose size is the same
+    keeps what was read (the tags are not read again), so opening a folder a second time is
+    quick. Unreadable files land in `errors`. Raises `NotADirectoryError` / `PermissionError`
+    for a folder that is gone or not allowed.
+    """
+    known = known or {}
+    files = sorted(
+        (
+            Path(e.path)
+            for e in os.scandir(directory)
+            if _is_audio(e.name) and e.is_file()
+        ),
+        key=lambda p: p.name.casefold(),
+    )
+    scan = DirectoryScan(directory)
+
+    def read(path: Path) -> tuple[Path, TrackRecord | str]:
+        try:
+            size = path.stat().st_size
+        except OSError:
+            size = None
+        old = known.get(str(path))
+        if old is not None and size is not None and old.file_size == size:
+            return path, old
+        try:
+            return path, _record(path, probe(path))
+        except (RenderError, OSError, ValueError) as exc:
+            return path, str(exc)
+
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        for path, result in pool.map(read, files):
+            if isinstance(result, str):
+                scan.errors.append((str(path), result))
+            else:
+                scan.tracks.append(result)
+    return scan

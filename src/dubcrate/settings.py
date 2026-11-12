@@ -35,6 +35,32 @@ def set_bytes(key: str, value: QByteArray) -> None:
     _qs().setValue(key, value)
 
 
+LEFT_TABS = ("library", "explorer")
+
+
+def get_left_tab() -> str:
+    """The tab picked down the left of the window last time (the library, unless changed)."""
+    value = str(_qs().value("window/left_tab", LEFT_TABS[0]))
+    return value if value in LEFT_TABS else LEFT_TABS[0]
+
+
+def set_left_tab(key: str) -> None:
+    _qs().setValue("window/left_tab", key)
+
+
+def get_explorer_path() -> str | None:
+    """The folder picked in the Explorer last time, if there was one."""
+    value = _qs().value("explorer/last_folder", None)
+    return str(value) if value else None
+
+
+def set_explorer_path(path: str | None) -> None:
+    if path:
+        _qs().setValue("explorer/last_folder", path)
+    else:
+        _qs().remove("explorer/last_folder")
+
+
 def get_last_disc() -> int | None:
     value = _qs().value("last_disc", None)
     try:

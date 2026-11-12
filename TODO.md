@@ -7,10 +7,11 @@
 - [ ] Windows burn support
 - [ ] Linux build script
 - [ ] Windows build script and installer
-- [ ] Support for adding other folder locations in track browser
-  - [ ] Think about how waveform analysis might look tho
+- [x] Support for adding other folder locations in track browser
+  - [x] Think about how waveform analysis might look tho
 - [ ] Homebrew packaging once public
 - [ ] Screenshot staging
 - [ ] Clean up user facing docs (readme, user guide)
 - [ ] SD card waveform, hotcue, memory cue, loop point reverse engineering
 - [ ] SD card sync metadata tab
+- [ ] Clean up unnecessary options in settings and add cm/in units (maybe in print dialog too)

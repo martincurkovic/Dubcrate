@@ -2,6 +2,7 @@
 you picked, or the disc you opened; your discs (burn playlists, in folders) on the right."""
 
 import logging
+import os
 from pathlib import Path
 
 from PySide6.QtCore import QEvent, QModelIndex, Qt, QTimer, QUrl
@@ -30,7 +31,12 @@ from dubcrate import logsetup, settings
 from dubcrate.analysis import read_preview, share_root
 from dubcrate.audio.player import AudioPlayer
 from dubcrate.library import Library
-from dubcrate.library.folder import FolderScan, scan_folder
+from dubcrate.library.folder import (
+    DirectoryScan,
+    FolderScan,
+    scan_directory,
+    scan_folder,
+)
 from dubcrate.library.models import DiscKind
 from dubcrate.library.rekordbox import (
     RekordboxLibrary,
@@ -44,6 +50,7 @@ from .about_dialog import AboutDialog, NoticesDialog
 from .burn_dialog import BurnDialog, BurnerFactory
 from .disc_tree import COLUMN_WIDTH, DiscTree
 from .disc_view import DiscView
+from .explorer import ExplorerTree
 from .help_dialog import show_help_dialog
 from .label_dialog import LabelDialog
 from .models import (
@@ -60,9 +67,10 @@ from .player_strip import PlayerStrip
 from .preview import PreviewController
 from .settings_dialog import SettingsDialog
 from .shortcuts_dialog import ShortcutsDialog
+from .source_tabs import SourceTabBar, explorer_glyph, library_glyph
 from .splitter import Splitter
 from .status_bar import AppStatusBar
-from .tasks import run_async
+from .tasks import TaskError, run_async
 from .track_table import (
     ROW_HEIGHT,
     PreviewDelegate,
@@ -111,8 +119,12 @@ class MainWindow(QMainWindow):
         self.updates = UpdateChecker(self)
         self._player = player
         self._persist = persist
-        # the library item the middle's track list shows (a disc has its own view)
+        # what the middle's track list shows (a disc has its own view): an item of the library
+        # tree, or ("explorer", folder). The library tree keeps its own pick for when its tab is
+        # showing again.
         self._selection: tuple = ("all",)
+        self._library_selection: tuple = ("all",)
+        self._explorer_path: str | None = None
         # the folder or disc that is current in the disc tree
         self._disc_pick: tuple | None = None
         self.shortcuts_dialog: ShortcutsDialog | None = None  # kept while it is open
@@ -159,6 +171,13 @@ class MainWindow(QMainWindow):
             state = settings.get_bytes("window/splitter3")
             if state:
                 self.splitter.restoreState(state)
+            last_folder = settings.get_explorer_path()
+            if last_folder and os.path.isdir(last_folder):
+                self.explorer_tree.select_path(
+                    last_folder
+                )  # (the tab is not showing: just picks)
+            if settings.get_left_tab() == "explorer":
+                self.source_tabs.set_current("explorer")
 
     # -- layout -----------------------------------------------------------
 
@@ -177,12 +196,46 @@ class MainWindow(QMainWindow):
         self.tree.setAlternatingRowColors(False)
         # (a click on the item that is already current changes nothing for Qt, so it needs this)
         self.tree.clicked.connect(self._on_tree_clicked)
+        library_page = QWidget()
+        library_layout = QVBoxLayout(library_page)
+        library_layout.setContentsMargins(12, 12, 12, 12)
+        library_layout.setSpacing(8)
+        library_layout.addWidget(self._title("Library"))
+        library_layout.addWidget(self.tree, 1)
+
+        # the Explorer: folders on this Mac, read when you open them, with nothing imported
+        self.explorer_tree = ExplorerTree()
+        self.explorer_tree.folder_selected.connect(self._on_explorer_folder)
+        explorer_page = QWidget()
+        explorer_layout = QVBoxLayout(explorer_page)
+        explorer_layout.setContentsMargins(12, 12, 12, 12)
+        explorer_layout.setSpacing(8)
+        explorer_layout.addWidget(self._title("Explorer"))
+        explorer_layout.addWidget(self.explorer_tree, 1)
+
+        self.source_pages = QStackedWidget()
+        self.source_pages.addWidget(library_page)
+        self.source_pages.addWidget(explorer_page)
+        self.source_tabs = SourceTabBar()
+        self.source_tabs.add_tab(
+            "library",
+            "Library",
+            library_glyph,
+            "Your imported libraries and folders",
+        )
+        self.source_tabs.add_tab(
+            "explorer",
+            "Explorer",
+            explorer_glyph,
+            "Browse folders on this Mac, or a drive, without importing them",
+        )
+        self.source_tabs.current_changed.connect(self._on_left_tab)
         left = QWidget()
-        left_layout = QVBoxLayout(left)
-        left_layout.setContentsMargins(12, 12, 12, 12)
-        left_layout.setSpacing(8)
-        left_layout.addWidget(self._title("Library"))
-        left_layout.addWidget(self.tree, 1)
+        left_layout = QHBoxLayout(left)
+        left_layout.setContentsMargins(0, 0, 0, 0)
+        left_layout.setSpacing(0)
+        left_layout.addWidget(self.source_tabs)
+        left_layout.addWidget(self.source_pages, 1)
 
         # tracks
         self.tracks_title = self._title("All Tracks")
@@ -357,7 +410,7 @@ class MainWindow(QMainWindow):
         self.splitter.setStretchFactor(0, 0)
         self.splitter.setStretchFactor(1, 1)
         self.splitter.setStretchFactor(2, 0)
-        self.splitter.setSizes([230, 800, 330])
+        self.splitter.setSizes([300, 760, 330])
         body = QWidget()
         body_layout = QVBoxLayout(body)
         body_layout.setContentsMargins(0, 0, 0, 0)
@@ -641,7 +694,7 @@ class MainWindow(QMainWindow):
 
         With `reload` False (a theme change) nothing is reloaded unless what was selected is gone.
         """
-        target = select or self._selection
+        target = select or self._library_selection
         expanded = self._expanded_keys(self.tree)
         model = build_source_model(self._lib)
         self.tree.setModel(model)
@@ -691,6 +744,9 @@ class MainWindow(QMainWindow):
         selection = current.data(SELECTION_ROLE) if current.isValid() else None
         if selection is None:
             return
+        self._library_selection = selection
+        if self.source_tabs.current() != "library":
+            return  # (the Explorer is showing: this is picked again when its tab is left)
         self._selection = selection
         self.center.setCurrentIndex(0)  # a library item shows its tracks
         self.tracks_title.setText(current.data(NAME_ROLE))
@@ -703,6 +759,90 @@ class MainWindow(QMainWindow):
         selection = index.siblingAtColumn(0).data(SELECTION_ROLE)
         if selection is not None and selection == self._selection:
             self.center.setCurrentIndex(0)
+
+    # -- the left tabs ----------------------------------------------------
+
+    def _on_left_tab(self, key: str) -> None:
+        """The Library tab shows the library tree's pick in the track list; the Explorer shows
+        the folder picked in its own tree."""
+        self.source_pages.setCurrentIndex(0 if key == "library" else 1)
+        if self._persist:
+            settings.set_left_tab(key)
+        if key == "library":
+            current = self.tree.currentIndex()
+            if current.isValid():
+                self._on_tree_current_changed(current, QModelIndex())
+            return
+        path = self._explorer_path or self.explorer_tree.current_path()
+        if path:
+            self._show_explorer_folder(path)
+            return
+        self._selection = ("explorer", "")
+        self.center.setCurrentIndex(0)
+        self.tracks_title.setText("Explorer")
+        self.refresh_tracks()
+        self.tracks_count.setText("Pick a folder on the left")
+
+    def _on_explorer_folder(self, path: str) -> None:
+        self._explorer_path = path
+        if self._persist:
+            settings.set_explorer_path(path)
+        if self.source_tabs.current() == "explorer":
+            self._show_explorer_folder(path)
+
+    def _show_explorer_folder(self, path: str) -> None:
+        """Show what is known of a folder at once, and read it again in the background."""
+        self._selection = ("explorer", path)
+        self.center.setCurrentIndex(0)
+        self.tracks_title.setText(Path(path).name or path)
+        self.refresh_tracks()
+        self._scan_explorer_folder(path)
+
+    def _scan_explorer_folder(self, path: str) -> None:
+        node = self._lib.explorer_node(path)
+        known = (
+            {t.path: t for t in self._lib.tracks(node_id=node)}
+            if node is not None
+            else {}
+        )  # (the worker must not touch the library)
+        name = Path(path).name or path
+        self.statusBar().showMessage(f"Reading {name}…")
+
+        def work() -> DirectoryScan:
+            try:
+                return scan_directory(Path(path), known)
+            except PermissionError:
+                raise TaskError(
+                    f"Dubcrate isn't allowed to read “{name}”. On a Mac, allow it under "
+                    "System Settings > Privacy & Security > Files & Folders."
+                ) from None
+            except (FileNotFoundError, NotADirectoryError):
+                raise TaskError(f"“{name}” is no longer there.") from None
+            except OSError as exc:
+                raise TaskError(
+                    f"Couldn't read “{name}”: {exc.strerror or exc}"
+                ) from None
+
+        run_async(
+            work,
+            lambda scan: self._explorer_scanned(path, scan),
+            self._explorer_failed,
+        )
+
+    def _explorer_scanned(self, path: str, scan: DirectoryScan) -> None:
+        self._lib.sync_directory(path, scan.tracks)
+        if scan.errors:
+            self.statusBar().showMessage(
+                f"Couldn't read {len(scan.errors)} file(s) in {Path(path).name or path}",
+                10000,
+            )
+        else:
+            self.statusBar().clearMessage()
+        if self._selection == ("explorer", path):
+            self.refresh_tracks()
+
+    def _explorer_failed(self, message: str) -> None:
+        self.statusBar().showMessage(message, 15000)
 
     # -- the discs (right pane) -------------------------------------------
 
@@ -1139,7 +1279,9 @@ class MainWindow(QMainWindow):
             if force != QMessageBox.StandardButton.Yes:
                 return
             self._lib.remove_source(source.id, force=True)
-        self._selection = ("all",)
+        self._library_selection = ("all",)
+        if self.source_tabs.current() == "library":
+            self._selection = ("all",)
         self.refresh_sources()
         self.disc_view.reload()
         self.refresh_discs()
@@ -1149,16 +1291,24 @@ class MainWindow(QMainWindow):
     def refresh_tracks(self) -> None:
         key, descending = self._sort
         filters: dict = {}
+        explorer_node = None
         if self._selection[0] == "source":
             filters["source_id"] = self._selection[1]
         elif self._selection[0] == "node":
             filters["node_id"] = self._selection[1]
-        tracks = self._lib.tracks(
-            search=self.search.text() or None,
-            sort=key,
-            descending=descending,
-            **filters,
-        )
+        elif self._selection[0] == "explorer":
+            explorer_node = self._lib.explorer_node(self._selection[1])
+            if explorer_node is not None:
+                filters["node_id"] = explorer_node
+        if self._selection[0] == "explorer" and explorer_node is None:
+            tracks = []  # (a folder that has not been read yet, or none picked)
+        else:
+            tracks = self._lib.tracks(
+                search=self.search.text() or None,
+                sort=key,
+                descending=descending,
+                **filters,
+            )
         self.track_model.set_tracks(tracks)
         total = sum(t.duration for t in tracks)
         count = f"{len(tracks):,} track{'s' if len(tracks) != 1 else ''}"

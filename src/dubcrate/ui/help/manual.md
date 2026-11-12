@@ -12,6 +12,7 @@ Dubcrate helps you put music from your rekordbox library (or any folder) onto au
 - [The main window](#the-main-window)
 - [Importing your music](#importing-your-music)
 - [Browsing and searching](#browsing-and-searching)
+- [The Explorer](#the-explorer)
 - [Listening to tracks](#listening-to-tracks)
 - [Your discs](#your-discs)
 - [Planning a disc](#planning-a-disc)
@@ -40,7 +41,7 @@ You need **ffmpeg** installed: Dubcrate uses it to read tracks and to prepare th
 
 ## The main window
 
-- **Library** (left): everything you have imported, with its playlists and folders beneath it. Click one to see its tracks.
+- **Library and Explorer** (left): two tabs down the left edge. **Library** is everything you have imported, with its playlists and folders beneath it; click one to see its tracks. **Explorer** browses the folders on your Mac or a drive without importing anything: see [The Explorer](#the-explorer).
 - **Tracks** (middle): the tracks of whatever is selected on the left, with a search box above, and the buttons **Add to Disc** and **Fit All to Disc** below. When you open a disc, the middle shows that disc instead.
 - **Player** (across the top): play and pause, previous and next, the title, time, key and BPM of the track you are previewing, a **cog** that opens Settings, a small **volume knob** (drag it up or down, hold Shift to go slowly, double-click to reset it), and two waveforms.
 - **Discs** (right): your burn playlists, filed in folders. See [Your discs](#your-discs).
@@ -105,6 +106,20 @@ Click any of these headings to sort by it. rekordbox's own fields (Rating, My Ta
 - The dot at the start of a row shows where the track is: a filled **●** if it is on the disc you have open, an outline **○** if it is on another disc, and nothing if it is on no disc yet.
 
 Tracks whose file can't be found are greyed out in the list, and shown in red on the disc. The file has moved, or the drive it lives on isn't connected. Reconnect it and re-import the source.
+
+---
+
+## The Explorer
+
+The **Explorer** tab (the second tab down the left edge) is for music that isn't in a library you have imported: a folder of downloads, or a USB stick. There is nothing to import. Open the folders on the left and click one, and the audio files directly inside it appear in the track list, ready to preview, sort, search and add to a disc, exactly like the tracks of the Library.
+
+- The tree starts at your **Music** folder and your **home folder**, and lists any **drives** plugged in (a USB stick or an external disk). It never offers the computer's whole system disk. Folders are read only when you open them.
+- Dubcrate reads the tags of the files in a folder when you click it. A folder you have visited shows at once and is then checked again for files that came or went; a file that hasn't changed isn't read again.
+- Only the **files directly inside** the folder you picked show, not those in its sub-folders: open the sub-folder to see them.
+- Tags are just read, never worked out. A file with no BPM or key tag has them blank: Dubcrate doesn't analyse tracks (the CDJ-1000 can't use that data on a disc anyway), and the waveform you see when you preview is drawn from the audio itself.
+- **The Explorer's tracks are not part of your Library**: they don't appear in **All Tracks** or in a search of it. A track you add to a disc, though, is kept on that disc. Everything else the Explorer read is forgotten when Dubcrate next starts, and read again when you open the folder.
+- If a folder can't be read, the status bar says why. On a Mac, the first time you open Documents, Downloads, Desktop or a drive, macOS may ask whether Dubcrate may read it; if you said no, allow it under **System Settings > Privacy & Security > Files & Folders**.
+- Dubcrate remembers which tab and which folder you were on.
 
 ---
 
