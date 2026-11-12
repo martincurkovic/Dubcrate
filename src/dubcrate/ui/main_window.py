@@ -196,6 +196,7 @@ class MainWindow(QMainWindow):
         self.search.textChanged.connect(lambda _text: self._search_timer.start())
 
         self.player_strip = PlayerStrip()
+        self.player_strip.settings_requested.connect(self.open_settings)
         self.preview = PreviewController(
             self._lib, self.player_strip, self._player, parent=self
         )
@@ -238,6 +239,7 @@ class MainWindow(QMainWindow):
         )
         self.track_table.verticalHeader().setDefaultSectionSize(ROW_HEIGHT + 4)
         self.track_table.add_requested.connect(self.add_selected_to_disc)
+        self.track_table.load_requested.connect(self.load_highlighted_track)
         self.track_table.play_pause_requested.connect(self.preview.toggle)
         self.track_table.beat_jump_requested.connect(self.preview.beat_jump)
         self.track_table.verticalScrollBar().valueChanged.connect(
@@ -289,6 +291,9 @@ class MainWindow(QMainWindow):
         self.disc_view = DiscView(self._lib)
         self.disc_view.changed.connect(self._sync_disc_markers)
         self.disc_view.discs_changed.connect(self.refresh_discs)
+        self.disc_view.discs_changed.connect(
+            self._sync_disc_markers
+        )  # (other discs too)
         self.disc_view.opened.connect(self.open_disc)
         self.disc_view.navigate_requested.connect(self._navigate_to)
         self.disc_view.message.connect(
@@ -438,9 +443,16 @@ class MainWindow(QMainWindow):
             "&Burn Disc…", self.burn_current_disc, QKeySequence("Ctrl+B")
         )
         disc_menu.addSeparator()
-        disc_menu.addAction(
-            "&Add Selected Tracks", self.add_selected_to_disc, QKeySequence("Ctrl+D")
+        self.act_add_selected = disc_menu.addAction(
+            "&Add Selected Tracks", self.add_selected_to_disc
         )
+        self.act_add_selected.setShortcuts(
+            [
+                QKeySequence("Ctrl+Return"),
+                QKeySequence("Ctrl+Enter"),  # (the keypad's)
+                QKeySequence("Ctrl+D"),
+            ]
+        )  # (Return on its own loads the highlighted track into the player)
         disc_menu.addAction("&Fit All Shown Tracks", self.fit_all_to_disc)
         disc_menu.addAction(
             "&Split Shown Tracks Across Discs…",
@@ -1160,6 +1172,20 @@ class MainWindow(QMainWindow):
         )
         self.fit_button.setEnabled(self.track_model.rowCount() > 0)
 
+    def load_highlighted_track(self) -> None:
+        """Return in the track list: load the highlighted track into the player, as a
+        double-click does (the one with the focus, if several are selected)."""
+        table = self.track_table
+        current = table.currentIndex()
+        selected = {i.row() for i in table.selectionModel().selectedRows()}
+        row = (
+            current.row()
+            if current.isValid() and current.row() in selected
+            else min(selected, default=None)
+        )
+        if row is not None:
+            self.preview.load(self.track_model.track_at(row))
+
     def _on_track_double_clicked(self, index: QModelIndex) -> None:
         self.preview.load(self.track_model.track_at(index.row()))
 
@@ -1340,9 +1366,13 @@ class MainWindow(QMainWindow):
             self.disc_view.split([t.id for t in tracks], name.strip())
 
     def _sync_disc_markers(self) -> None:
-        """Mark the tracks that are on the open disc, and say which disc adds go to."""
-        self.track_model.set_on_disc(self.disc_view.current_track_ids())
+        """Mark the tracks on the open disc (●) and on any other disc (○), and say which disc
+        adds go to."""
         disc_id = self.disc_view.current_disc_id()
+        self.track_model.set_on_disc(
+            self.disc_view.current_track_ids(),
+            self._lib.tracks_on_discs(exclude=disc_id),
+        )
         if disc_id is None:
             self.target_label.setText("No disc open: adding starts a new one")
         else:

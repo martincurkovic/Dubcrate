@@ -347,3 +347,18 @@ def test_reorder_rejects_bad_positions(lib):
         lib.reorder_disc(disc_id, [5], 0)
     with pytest.raises(DiscError):
         lib.reorder_disc(disc_id, [], 0)
+
+
+def test_tracks_on_discs_lists_every_track_that_is_on_a_disc_but_the_excluded_one(lib):
+    ids = [t.id for t in lib.tracks(sort="title")]
+    a, b = lib.create_disc("A"), lib.create_disc("B")
+    lib.add_to_disc(a, ids[:2])
+    lib.add_to_disc(b, ids[1:3])
+    assert lib.tracks_on_discs() == set(ids[:3])
+    assert lib.tracks_on_discs(exclude=a) == set(ids[1:3])  # on B
+    assert lib.tracks_on_discs(exclude=b) == set(ids[:2])  # on A
+    lib.delete_disc(b)
+    assert lib.tracks_on_discs() == set(ids[:2])
+    assert lib.tracks_on_discs(exclude=99) == set(
+        ids[:2]
+    )  # (a disc that isn't there excludes nothing)

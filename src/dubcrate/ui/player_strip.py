@@ -6,7 +6,6 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QSizePolicy,
-    QSlider,
     QStyle,
     QToolButton,
     QVBoxLayout,
@@ -18,6 +17,8 @@ from dubcrate.library.models import Track
 from dubcrate.waveform import Waveform
 
 from . import key_style
+from .gear_button import GearButton
+from .knob import Knob
 from .waveform_view import DetailView, OverviewView
 
 IDLE_HINT = "Double-click a track to preview it"
@@ -37,6 +38,7 @@ class PlayerStrip(QWidget):
     scratch_moved = Signal(float)  # seconds
     scratch_ended = Signal()
     volume_changed = Signal(float)
+    settings_requested = Signal()  # the cog was pressed
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -96,10 +98,16 @@ class PlayerStrip(QWidget):
         key_style.notifier.changed.connect(self._show_key)
         self.bpm.setMinimumWidth(52)
 
-        self.volume = QSlider(Qt.Orientation.Horizontal)
+        self.settings_button = GearButton()
+        self.settings_button.setToolTip("Settings (⌘,)")
+        self.settings_button.clicked.connect(self.settings_requested)
+
+        self.volume = Knob()
         self.volume.setRange(0, 100)
-        self.volume.setFixedWidth(90)
-        self.volume.setToolTip("Preview volume")
+        self.volume.setDefaultValue(80)  # a double-click goes back to this
+        self.volume.setToolTip(
+            "Preview volume: drag up or down (hold Shift to go slowly), double-click to reset"
+        )
         self.volume.valueChanged.connect(lambda v: self.volume_changed.emit(v / 100))
 
         header = QHBoxLayout()
@@ -109,8 +117,11 @@ class PlayerStrip(QWidget):
         header.addSpacing(8)
         header.addLayout(names, 1)
         header.addSpacing(8)
-        for w in (self.elapsed, self.remaining, self.key, self.bpm, self.volume):
+        for w in (self.elapsed, self.remaining, self.key, self.bpm):
             header.addWidget(w)
+        header.addSpacing(4)
+        header.addWidget(self.settings_button)  # the cog, left of the volume knob
+        header.addWidget(self.volume)
 
         self.overview = OverviewView()
         self.overview.seek_requested.connect(self.seek_requested)

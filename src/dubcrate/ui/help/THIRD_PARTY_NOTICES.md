@@ -38,7 +38,7 @@ The **Macintosh System 6** theme uses **ChiKareGo2** by Giles Booth, a recreatio
 
 ## Shared code and design
 
-The theme, the colour palettes, the icons and a few widgets are shared with the author's other apps: AKAISDS, JV Studio and akaiutil-GUI.
+The theme, the colour palettes, the icons and a few widgets (the volume knob among them, from AKAISDS) are shared with the author's other apps: AKAISDS, JV Studio and akaiutil-GUI.
 
 ## rekordbox's analysis files
 

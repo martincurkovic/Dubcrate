@@ -332,7 +332,11 @@ def test_the_window_lists_the_menu_ones_then_the_keys_that_are_not_in_a_menu(win
         or "File" in groups
     )
     assert ("Playing", "Play or pause (anywhere except a text box)", "Space") in shown
-    assert ("Track lists", "Add the selected tracks to the disc", "Return") in shown
+    assert (
+        "Track lists",
+        "Load the highlighted track into the player",
+        "Return",
+    ) in shown
     assert len(shown) == len(menu_shortcuts(win)) + len(EXTRA_SHORTCUTS)
     dialog.deleteLater()
 

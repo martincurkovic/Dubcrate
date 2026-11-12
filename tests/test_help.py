@@ -88,7 +88,7 @@ def test_the_shortcuts_the_guide_lists_are_the_real_ones(window):
     assert shortcuts["Rename"] == "Ctrl+R"
     assert shortcuts["Keyboard Shortcuts"] == "Ctrl+/"
     assert shortcuts["New Disc"] == "Ctrl+N"
-    assert shortcuts["Add Selected Tracks"] == "Ctrl+D"
+    assert shortcuts["Add Selected Tracks"] == "Ctrl+Return"  # (⌘D works too)
     assert shortcuts["Split Shown Tracks Across Discs…"] == "Ctrl+Shift+D"
     assert shortcuts["Settings…"] == "Ctrl+,"
     assert shortcuts["Burn Disc…"] == "Ctrl+B"

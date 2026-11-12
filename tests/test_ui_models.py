@@ -583,3 +583,18 @@ def test_the_capacity_bars_tooltips_use_the_text_on_the_cd(qapp):
     assert "Edited Name" in tips[1] and "Title 1" not in tips[1]
     assert "Title 0" in tips[0]
     lib.close()
+
+
+def test_the_marker_column_has_a_filled_dot_an_outline_and_nothing(qapp):
+    lib = make_lib()
+    model = TrackTableModel()
+    tracks = lib.tracks(sort="title")
+    model.set_tracks(tracks)
+    model.set_on_disc({tracks[0].id}, {tracks[1].id})
+    assert [model.data(model.index(r, 0)) for r in range(4)] == ["●", "○", "", ""]
+    # on the open disc and on another one too: the open disc wins
+    model.set_on_disc({tracks[0].id}, {tracks[0].id, tracks[2].id})
+    assert [model.data(model.index(r, 0)) for r in range(4)] == ["●", "", "○", ""]
+    model.set_on_disc(set())  # (the old call still works: no other discs)
+    assert [model.data(model.index(r, 0)) for r in range(4)] == ["", "", "", ""]
+    lib.close()

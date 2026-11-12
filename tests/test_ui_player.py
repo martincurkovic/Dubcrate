@@ -311,16 +311,23 @@ def test_the_detail_view_draws_in_every_theme_and_says_why_when_empty(qapp, pref
 # -- the track list's preview column --------------------------------------------------------------
 
 
-def test_return_and_space_have_their_own_meaning_in_the_track_table(qapp):
+def test_return_space_and_command_return_have_their_own_meaning_in_the_track_table(
+    qapp,
+):
     table = TrackTable()
     seen = []
+    table.load_requested.connect(lambda: seen.append("load"))
     table.add_requested.connect(lambda: seen.append("add"))
     table.play_pause_requested.connect(lambda: seen.append("play"))
     QTest.keyClick(table, Qt.Key.Key_Return)
-    QTest.keyClick(table, Qt.Key.Key_Enter)
+    QTest.keyClick(table, Qt.Key.Key_Enter)  # (the keypad's)
+    QTest.keyClick(
+        table, Qt.Key.Key_Return, Qt.KeyboardModifier.ControlModifier
+    )  # ⌘ on a Mac
+    QTest.keyClick(table, Qt.Key.Key_Enter, Qt.KeyboardModifier.ControlModifier)
     QTest.keyClick(table, Qt.Key.Key_Space)
     QTest.keyClick(table, Qt.Key.Key_A)
-    assert seen == ["add", "add", "play"]
+    assert seen == ["load", "load", "add", "add", "play"]
 
 
 def test_a_preview_strip_is_drawn_to_size_and_scaled_up_when_quiet(qapp):

@@ -1327,6 +1327,15 @@ class Library:
             )
         return copy
 
+    def tracks_on_discs(self, exclude: int | None = None) -> set[int]:
+        """The ids of every track that is on at least one disc, leaving out `exclude` (a disc's
+        id): "on some other disc" when that is the open one."""
+        rows = self._conn.execute(
+            "SELECT DISTINCT track_id FROM disc_track WHERE disc_id IS NOT ?",
+            (exclude,),
+        )
+        return {r["track_id"] for r in rows}
+
     def track_usage(self, track_ids: Iterable[int]) -> dict[int, TrackUsage]:
         """The discs each track is already on; tracks on none are left out."""
         ids = list(dict.fromkeys(track_ids))

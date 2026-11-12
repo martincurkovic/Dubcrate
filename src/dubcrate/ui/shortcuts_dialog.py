@@ -26,7 +26,7 @@ EXTRA_SHORTCUTS: tuple[tuple[str, str, str], ...] = (
     ("Playing", "Beat jump forward", "→"),
     ("Playing", "Preview a track", "Double-click it"),
     ("Playing", "Scratch", "Drag the zoomed waveform"),
-    ("Track lists", "Add the selected tracks to the disc", "Return"),
+    ("Track lists", "Load the highlighted track into the player", "Return"),
     ("Track lists", "Take the selected tracks off the disc", "Delete"),
     ("Track lists", "Edit the artist or title written on the CD", "Double-click it"),
     ("Discs", "Rename a disc or folder in place", "Double-click its name"),

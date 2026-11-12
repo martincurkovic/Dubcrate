@@ -75,13 +75,17 @@ def transport_key_is_taken(widget: QWidget | None, action: str) -> bool:
 class TrackTable(QTableView):
     """Return adds the selection to the disc; Space plays or pauses the preview."""
 
-    add_requested = Signal()
+    add_requested = Signal()  # ⌘Return: add the selected tracks to the disc
+    load_requested = Signal()  # Return: load the highlighted track into the player
     play_pause_requested = Signal()
     beat_jump_requested = Signal(int)  # -1 back, 1 forward
 
     def keyPressEvent(self, event) -> None:
         if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
-            self.add_requested.emit()
+            if event.modifiers() & Qt.KeyboardModifier.ControlModifier:
+                self.add_requested.emit()  # (⌘ on a Mac)
+            else:
+                self.load_requested.emit()
             return
         action = transport_action(event)
         if action == "play_pause":

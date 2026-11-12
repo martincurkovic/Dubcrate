@@ -12,9 +12,10 @@
 - [x] MP3 folder support
 - [ ] Support for adding other folder locations in track browser
   - [ ] Think about how waveform analysis might look tho
-- [ ] Keyboard shortcuts window
+- [x] Keyboard shortcuts window
 - [ ] Homebrew packaging once public
 - [x] Logging
-- [ ] Change volume slider to knob, add settings cog wheel to left of volume knob
+- [x] Change volume slider to knob, add settings cog wheel to left of volume knob
 - [ ] Screenshot staging
 - [ ] Clean up user facing docs (readme, user guide)
+- [ ] Printing index labels (incl multiple label printing support for saving on A4 paper)

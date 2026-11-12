@@ -179,11 +179,53 @@ def test_adding_selected_tracks_creates_a_disc_and_marks_them(window):
     assert "Added 2 tracks" in win.statusBar().currentMessage()
 
 
-def test_return_adds_the_selected_tracks_to_the_disc(window):
+def test_command_return_adds_the_selected_tracks_to_the_disc(window):
     win, _ = window
     select_rows(win.track_table, [1, 3])
-    QTest.keyClick(win.track_table, Qt.Key.Key_Return)
+    QTest.keyClick(
+        win.track_table, Qt.Key.Key_Return, Qt.KeyboardModifier.ControlModifier
+    )
     assert disc_titles(win) == ["Song 1", "Song 3"]
+
+
+def test_the_add_menu_item_has_command_return_and_command_d(window):
+    win, _ = window
+    keys = [s.toString() for s in win.act_add_selected.shortcuts()]
+    assert keys == ["Ctrl+Return", "Ctrl+Enter", "Ctrl+D"]
+
+
+def test_return_loads_the_highlighted_track_into_the_player_and_adds_nothing(
+    window, monkeypatch
+):
+    win, _ = window
+    loaded = []
+    monkeypatch.setattr(
+        win.preview, "load", lambda track, **k: loaded.append((track.title, k))
+    )
+    select_rows(win.track_table, [2])
+    QTest.keyClick(win.track_table, Qt.Key.Key_Return)
+    assert loaded == [("Song 2", {})]  # as a double-click does: loaded, and it plays
+    assert disc_titles(win) == []  # nothing was added to a disc
+
+
+def test_return_with_several_selected_loads_the_one_with_the_focus(window, monkeypatch):
+    win, _ = window
+    loaded = []
+    monkeypatch.setattr(
+        win.preview, "load", lambda track, **k: loaded.append(track.title)
+    )
+    select_rows(win.track_table, [1, 3, 4])
+    selection = win.track_table.selectionModel()
+    selection.setCurrentIndex(  # the focus moves to row 3 without changing what is selected
+        win.track_table.model().index(3, 1), selection.SelectionFlag.NoUpdate
+    )
+    QTest.keyClick(win.track_table, Qt.Key.Key_Return)
+    assert loaded == ["Song 3"]
+    win.track_table.clearSelection()
+    QTest.keyClick(
+        win.track_table, Qt.Key.Key_Return
+    )  # nothing highlighted: nothing happens
+    assert loaded == ["Song 3"]
 
 
 def test_fit_all_stops_when_the_disc_is_full(window):
@@ -1008,3 +1050,67 @@ def test_help_menu_opens_the_log_folder(window, monkeypatch, tmp_path):
     win.act_show_log.trigger()
     assert (tmp_path / "logs").is_dir()  # made, so there is something to open
     assert [u.toLocalFile() for u in opened] == [str(tmp_path / "logs")]
+
+
+def dots(win):
+    model = win.track_model
+    return [model.data(model.index(r, 0)) for r in range(model.rowCount())]
+
+
+def test_dots_say_open_disc_other_disc_or_no_disc(window):
+    win, lib = window
+    ids = [t.id for t in lib.tracks(sort="title")]  # the table is in this order
+    first, second = lib.create_disc("First"), lib.create_disc("Second")
+    lib.add_to_disc(first, ids[:2])
+    lib.add_to_disc(second, ids[1:4])
+    win.refresh_discs()
+    win.open_disc(first)
+    assert dots(win) == [
+        "●",
+        "●",
+        "○",
+        "○",
+        "",
+        "",
+    ]  # on the open one; only on the other; on none
+    win.open_disc(second)
+    assert dots(win) == [
+        "○",
+        "●",
+        "●",
+        "●",
+        "",
+        "",
+    ]  # (track 1 is on both: the open one wins)
+
+
+def test_dots_follow_changes_to_the_open_disc_and_to_other_discs(window):
+    win, lib = window
+    ids = [t.id for t in lib.tracks(sort="title")]
+    first, second = lib.create_disc("First"), lib.create_disc("Second")
+    win.refresh_discs()
+    win.open_disc(first)
+    assert dots(win) == [""] * 6
+    win.disc_view.add_tracks(
+        ids[:1], disc_id=second
+    )  # added to a disc that is not open
+    assert dots(win) == ["○", "", "", "", "", ""]
+    win.disc_view.add_tracks(ids[2:3])  # to the open one
+    assert dots(win) == ["○", "", "●", "", "", ""]
+    win.disc_view.delete_disc(
+        second, ask=False
+    )  # the other disc goes: its outline with it
+    assert dots(win) == ["", "", "●", "", "", ""]
+    lib.remove_from_disc(first, [0])
+    win.disc_view.reload()
+    assert dots(win) == [""] * 6
+
+
+def test_with_no_disc_open_every_track_on_a_disc_is_an_outline(window):
+    win, lib = window
+    ids = [t.id for t in lib.tracks(sort="title")]
+    disc = lib.create_disc("Only")
+    lib.add_to_disc(disc, ids[:2])
+    win.disc_view.set_disc(None)
+    win._sync_disc_markers()
+    assert dots(win) == ["○", "○", "", "", "", ""]

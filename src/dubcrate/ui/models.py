@@ -161,7 +161,8 @@ class TrackTableModel(QAbstractTableModel):
     def __init__(self, parent: QObject | None = None):
         super().__init__(parent)
         self._tracks: list[Track] = []
-        self._on_disc: set[int] = set()
+        self._on_disc: set[int] = set()  # on the open disc: a filled dot
+        self._on_other: set[int] = set()  # on another disc only: an outline
         self._previews: dict[int, Waveform] = {}
         self._rows: dict[int, int] = {}
         key_style.notifier.changed.connect(self._keys_changed)
@@ -195,8 +196,13 @@ class TrackTableModel(QAbstractTableModel):
     def has_preview(self, track_id: int) -> bool:
         return track_id in self._previews
 
-    def set_on_disc(self, track_ids: set[int]) -> None:
+    def set_on_disc(
+        self, track_ids: set[int], on_other: set[int] = frozenset()
+    ) -> None:
+        """Mark the tracks on the open disc (●) and those on some other disc (○). A track on
+        both is marked as on the open one."""
         self._on_disc = track_ids
+        self._on_other = set(on_other) - set(track_ids)
         if self._tracks:
             self.dataChanged.emit(
                 self.index(0, 0), self.index(len(self._tracks) - 1, 0)
@@ -229,7 +235,9 @@ class TrackTableModel(QAbstractTableModel):
         column = index.column()
         if role == Qt.ItemDataRole.DisplayRole:
             if column == 0:
-                return "●" if track.id in self._on_disc else ""
+                if track.id in self._on_disc:
+                    return "●"
+                return "○" if track.id in self._on_other else ""
             return _track_cell(track, column)
         if role == Qt.ItemDataRole.TextAlignmentRole:
             return _RIGHT if TRACK_COLUMNS[column].right else _LEFT

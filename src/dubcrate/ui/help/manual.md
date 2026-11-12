@@ -29,7 +29,7 @@ Dubcrate helps you put music from your rekordbox library (or any folder) onto au
 
 1. **Import your music.** Choose **File > Import Folder…** for a folder of music, or **File > Import rekordbox Library…** for your rekordbox library.
 2. **Find some tracks.** Pick a playlist or folder on the left, or search.
-3. **Build a disc.** Press **New Disc** on the right and type a name over the one it suggests, then drag tracks onto it, or select them and press **Return**.
+3. **Build a disc.** Press **New Disc** on the right and type a name over the one it suggests, then drag tracks onto it, or select them and press **⌘Return**.
 4. **Watch the bar.** It shows how full the disc is and turns red if the disc is too long.
 5. **Burn it.** Open the disc by clicking it, press **Burn…**, check the drive, tick that a blank CD-R is inside, and burn.
 
@@ -41,7 +41,7 @@ You need **ffmpeg** installed: Dubcrate uses it to read tracks and to prepare th
 
 - **Library** (left): everything you have imported, with its playlists and folders beneath it. Click one to see its tracks.
 - **Tracks** (middle): the tracks of whatever is selected on the left, with a search box above, and the buttons **Add to Disc** and **Fit All to Disc** below. When you open a disc, the middle shows that disc instead.
-- **Player** (across the top): play and pause, previous and next, the title, time, key and BPM of the track you are previewing, a volume control, and two waveforms.
+- **Player** (across the top): play and pause, previous and next, the title, time, key and BPM of the track you are previewing, a **cog** that opens Settings, a small **volume knob** (drag it up or down, hold Shift to go slowly, double-click to reset it), and two waveforms.
 - **Discs** (right): your burn playlists, filed in folders. See [Your discs](#your-discs).
 
 **View > Theme** switches between System, Light, Dark and Macintosh System 6 (black and white, with a bitmap-style font).
@@ -83,7 +83,7 @@ Supported music: MP3, WAV, FLAC, AIFF, AAC/M4A, Ogg, Opus and WMA.
 - Type in the **search box** to filter by title, artist, album or genre. Press **⌘F** from anywhere in the main window to jump to it.
 - Click a **column heading** to sort by it, and click again to reverse.
 - The marker, the Preview waveform and the short number and date columns have a **fixed width**, so they stay the same size when the window changes. The text columns can be resized by dragging the edge of their heading.
-- **Drag a column heading** left or right to reorder the columns. The ● marker column stays first, and your layout is remembered.
+- **Drag a column heading** left or right to reorder the columns. The dot column stays first, and your layout is remembered.
 - **Right-click a column heading** to show or hide columns, or choose **Reset Columns** to go back to the default layout and columns.
 
 Only the essentials show at first: Title, Artist, BPM, Key, Time, the Preview waveform and Genre. Everything else is under **More Columns** in that menu, off until you switch it on:
@@ -101,7 +101,7 @@ Only the essentials show at first: Title, Artist, BPM, Key, Time, the Preview wa
 | Path | Where the file is |
 
 Click any of these headings to sort by it. rekordbox's own fields (Rating, My Tags, Label, Remixer, Composer, Plays, Date Added) are read when you import, so **re-import your rekordbox library once** (⇧⌘R) after updating Dubcrate to fill in the ones that are new. Music imported from a folder has none of rekordbox's fields.
-- A **●** at the start of a row shows that the track is already on the disc you are planning.
+- The dot at the start of a row shows where the track is: a filled **●** if it is on the disc you have open, an outline **○** if it is on another disc, and nothing if it is on no disc yet.
 
 Tracks whose file can't be found are greyed out in the list, and shown in red on the disc. The file has moved, or the drive it lives on isn't connected. Reconnect it and re-import the source.
 
@@ -141,7 +141,7 @@ Choose where previews play, and test it, in [Settings](#settings).
 A disc is a playlist that goes on a CD. They live in the **Discs** list on the right, just as your rekordbox playlists live in the Library on the left, and they can be filed in folders.
 
 - **Open a disc** by clicking it. Its tracks appear in the middle, ready to arrange and edit. Opening a disc also makes it the one that tracks are **added to**: its name is in bold, and under the track list it says **Adding to “…”**.
-- **Add tracks** by selecting them and pressing **Return**, **⌘D** or **Add to Disc** (they go to the open disc), or by **dragging** them from the track list onto any disc in the Discs list. Dragging onto a disc that isn't open adds to that one and leaves the open disc as it is.
+- **Add tracks** by selecting them and pressing **⌘Return**, **⌘D** or **Add to Disc** (they go to the open disc), or by **dragging** them from the track list onto any disc in the Discs list. Dragging onto a disc that isn't open adds to that one and leaves the open disc as it is.
 - **New Disc** and **New Folder** (under the list) make them. The new disc or folder appears in the list at once with its name ready to type over: type a name and press **Return**, or press **Esc** to keep the suggested one. A new disc goes in the folder you have picked, or beside the disc you have picked.
 - **Rename** a disc or folder by **double-clicking** its name, or by picking it and pressing **⌘R** (or right-click > **Rename**), then type and press **Return**. An empty name is ignored.
 - **Delete** a disc or folder by picking it and pressing **⌘⌫** (or **Disc > Delete…**, or right-click > **Delete**). If it is empty it goes at once; if it has tracks or things in it, Dubcrate asks first, and **Yes** is the answer Return gives. Nothing you delete here touches the tracks in your library or your music files: a disc only lists tracks. **Take care with folders: deleting a folder deletes what is in it**, meaning the discs and folders inside it, at any depth. The question says how many.
@@ -157,7 +157,7 @@ A disc is a playlist that goes on a CD. They live in the **Discs** list on the r
 
 - **Make a folder** with the little **folder button** that appears beside the **+** when you pick an MP3 disc or one of its folders: it makes a folder *inside* the one you picked. The **+** on a folder makes one *beside* it, at the same level (on the disc itself, the + still makes another disc). Right-click > **New Folder on Disc** or **New Folder Inside** does the same as the folder button. Name it in place, as for a disc.
 - **Move around** by clicking a folder in the Discs list, or by clicking a step in the path above the tracks (for example **Super Cool Trax 001 / some stuff / more stuff**): every step but the last is a link, and the disc's name takes you back to its root.
-- **Add tracks to a folder** by opening it and adding as usual (Return, **Add to Disc**), or by dragging tracks from the track list onto the folder in the Discs list.
+- **Add tracks to a folder** by opening it and adding as usual (⌘Return, **Add to Disc**), or by dragging tracks from the track list onto the folder in the Discs list.
 - **Move tracks between folders** by dragging them from the middle onto a folder (or onto the disc, for its root), or by right-clicking them > **Move to Folder**.
 - **Delete a folder** with ⌘⌫, or right-click > **Delete Folder from Disc…**. Its tracks come off the disc and its folders go too, at any depth, after a question that says how many (nothing at all is asked if it is empty). The tracks stay in your library.
 - **Folders have limits**, which are the CDJs': at most **999 files in a folder**, **99 folders** on a disc (the disc's root counts as one) and **8 levels** (the root counts as the first). Dubcrate stops you at each. Files are numbered from 1 again in every folder (`01 Artist - Title.mp3`).
@@ -175,7 +175,7 @@ The disc you open is shown in the middle: its tracks as they will be written on 
 
 **Adding tracks**
 
-- Drag tracks from the track list onto the disc, **or** select them and press **Return**, **⌘D** or **Add to Disc**.
+- Drag tracks from the track list onto the disc, **or** select them and press **⌘Return**, **⌘D** or **Add to Disc**.
 - **Fit All to Disc** adds every track shown, in order, until the disc is full.
 - **Disc > Split Shown Tracks Across Discs…** (⇧⌘D) cuts a long list into as many discs as it takes, keeping the order.
 - If you add tracks and no disc is open yet, one is created for you.
@@ -299,7 +299,8 @@ This is the only time Dubcrate uses the network. It asks `github.com` for the li
 | --- | --- |
 | Double-click a track | Preview it |
 | Space | Play or pause (anywhere except a text box) |
-| Return, or ⌘D | Add the selected tracks to the disc |
+| Return | Load the highlighted track into the player and play it |
+| ⌘Return, or ⌘D | Add the selected tracks to the disc (to the folder shown, on an MP3 disc) |
 | ← / → | Beat jump back / forward (anywhere except a text box, a slider or a folder list) |
 | Drag the zoomed waveform | Scratch |
 | Delete | Take the selected tracks off the disc |
