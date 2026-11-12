@@ -50,7 +50,7 @@ the repo; follow whatever it reports.
   - `disc_tree.py` (`DiscTree`: the right-hand tree, with rekordbox's + on the picked row in its own last column; it only emits `new_disc_requested`, the window creates the disc). Discs and folders are named in place, never in a dialog: a new one is created with a free default name and `MainWindow.edit_in_tree` opens its editor; `DiscTreeModel.setData` only emits `renamed`, and the window applies it on a deferred call (rebuilding the tree inside the editor's own commit crashes Qt).
   - `source_tabs.py` (`SourceTabBar`: the painted vertical tab strip down the left of the window, Library and Explorer, from the palette, System 6 inverted; `current()` is right inside a `current_changed` listener) and `explorer.py` (`ExplorerTree`: Music, home and `mounted_volumes()` (macOS `/Volumes` minus the boot-disk link; Linux/Windows NOT handled) as roots, folders only, each read when expanded; `folder_selected(path)`). **The Explorer's tracks are real library tracks in a hidden source** (`source.hidden`, schema v9; `store.EXPLORER_PATH`): `Library.sync_directory(dir, tracks)` upserts one folder (ids stable, matched on path; a track that left is dropped unless a disc uses it, then marked stale), `explorer_node(dir)` finds its list, `prune_explorer()` (called by `app.py` at start-up) forgets what no disc uses. `sources()` and "All Tracks" (`_track_query` without a source or node) leave the hidden source out. `folder.scan_directory(dir, known)` reads only the files directly inside a folder and skips probing a file whose size is unchanged. In `MainWindow` the middle list's pick is `_selection`: a library-tree item, or `("explorer", folder)`; the library tree keeps its own pick in `_library_selection` (`_on_tree_current_changed` only applies it while the Library tab shows), and the folder is shown at once from what is stored, then re-read on a worker and re-synced on the GUI thread (`_explorer_scanned`). Two files that are the same song in rekordbox and in the Explorer are different tracks (the "already used" check is by track id, so it does not see them as one).
   - `main_window.py` (three panes: the library tree on the left; in the middle a `QStackedWidget` of the track list and the open disc; the disc tree, with folders, on the right), `disc_view.py` (the open disc, and all disc/folder management; the open disc is also the *target* that tracks are added to), `capacity_bar.py` (adapted from akaiutil-GUI's usage bar), `models.py` (track/disc/library-tree and disc-tree models; `DiscTreeModel` does the drag and drop), `tasks.py` (`run_async`).
-  - `src/dubcrate/settings.py`: QSettings (theme, window layout, last disc, default disc size and gap).
+  - `src/dubcrate/settings.py`: QSettings (theme, window layout, last disc, default disc size and gap, key notation, waveform look, burn speed, beat jump, update-check switches, the label window's options (`get_label_options`, `labels/*`), and the left tab and last Explorer folder).
 - `src/dubcrate/updates.py`: the update check (GitHub Releases, no Qt, `urlopen` injectable). `ui/update_check.py` (`UpdateChecker`: runs it on a worker and applies the policy: you asked = say everything, start-up = only news, once a day, skipped versions stay quiet), `ui/update_dialog.py`, `ui/about_dialog.py` (About, and the third-party notices from `ui/help/THIRD_PARTY_NOTICES.md`), `ui/version.py` (the version and the icon: a built app reads `dubcrate/_build_version.py`, which the build script writes from the git tag and does not track).
 - `src/main.py`, `src/dubcrate/ui/smoke_test.py`: the entry that `pyside6-deploy` compiles, and `dubcrate-gui --smoke-test=FILE`, which CI runs against every built app (it never touches your settings, library, rekordbox or a drive).
 - `scripts/` (`build_macos.sh`, `make_icons.sh`, `dmg_settings.py`), `assets/dmg/`, `.github/workflows/` (`test.yml`: lint and tests on every push; `build.yml`: on a `v*.*.*` tag, tests, then the Apple Silicon and Intel builds, then a draft release), `BUILDING.md`: packaging, modelled on AKAISDS and JV Studio. `tests/test_build_files.py` checks that the script, the DMG layout and the workflows agree.
@@ -139,15 +139,50 @@ branches in one named helper each (as `rekordbox.default_master_db` does), never
 
 ### Where things stand
 
+*Last updated at the end of the session that built the label printer and the Explorer.*
+
 Built: library import (folders and rekordbox), disc planning (fit, split, reorder,
-exact capacity), the `dubcrate` command-line tool, the burn path (CLI only), and the
-PySide6 window with the preview player and waveforms. Burning through DiscRecording
-is proven on the owner's hardware (a disc burned and played on a CDJ-1000MK3, CD-TEXT
-shown); the gapless fix, the `cdrdao` backend and non-zero gaps are not. **Next:** a
-hardware check of the burn window, and the Explorer: `dev_docs/roadmap.md`
-has the list, the decisions already made, the known rough edges and what is
-unverified. `dev_docs/rekordbox-analysis.md`, `audio.md` and `burning.md` hold what
-was measured, and how.
+exact capacity), audio **and MP3 discs** (MP3 folders included), the `dubcrate` command-line
+tool, the burn path (CLI, and the burn window), the PySide6 window with the preview player,
+waveforms and scratching, an update check, a built `.dmg` (Nuitka), and since the last handover:
+
+- **Index label printing** (`labels.py`, `ui/label_dialog.py`, `label_paint.py`, `label_preview.py`):
+  A3 to A6, Letter, Legal; spread over N labels (Auto), up to three columns, MP3 folders as
+  headings, optional BPM / key / duration columns, font size, copies, a zoomable sharp preview
+  (box, Ctrl+wheel, trackpad pinch, drag), print or PDF. *Disc > Print Labels…* (⌘P).
+- **Drag-to-change spin boxes** everywhere (`ui/spinbox_drag.py`, ported from AKAISDS).
+- A faint **zero line** in the zoomed waveform.
+- **The left side is two tabs, Library and Explorer** (`ui/source_tabs.py`, `ui/explorer.py`; schema
+  v9). The Explorer browses folders and drives without importing; its tracks live in a hidden source.
+
+Burning through DiscRecording is proven on the owner's hardware (a disc burned and played on a
+CDJ-1000MK3, CD-TEXT shown); the burn *window*, the gapless fix, the `cdrdao` backend, non-zero gaps,
+MP3 discs and **everything below are not proven on hardware or a real display**.
+
+**Not tried by hand (tests and offscreen renders only):** printing on a real printer or paper (and
+whether the Mac print panel keeps the paper size we ask for), trackpad pinch and the feel of
+dragging spin boxes, the Explorer on a real Mac (permission prompts for Documents / Downloads / drives,
+a slow or unplugged drive), and whether the built app bundles QtPrintSupport (`scripts/build_macos.sh`).
+
+**Next, in the owner's order** (details and the reasons in `dev_docs/roadmap.md`, item 3):
+1. **Pinned folders**: folders the user pins become their own tabs below Library and Explorer,
+   refreshed whenever the tab is opened (no watching). The owner's use is a folder of misc MP3s that
+   are not in rekordbox. Build it on the Explorer's machinery (a pinned folder is the Explorer rooted
+   there, and shares `sync_directory`); the tab list is in `settings`, and `SourceTabBar` needs a
+   `remove_tab` and a way to reorder.
+2. **A tab per app library** (not one merged Library tab), when a second library exists. Only
+   rekordbox is used (Engine DJ and Algoriddim djay are backups synced from it with Lexicon, so there
+   is nothing to read from them). **Mixxx** is wanted, but the owner uses it on Linux, not on this Mac:
+   wait for a real `mixxxdb.sqlite` to check against before writing a reader.
+3. Hardware checks of the burn window and an MP3 disc, and the "not tried" list above.
+4. The owner's `TODO.md` has more (it is theirs: do not tidy it), including cm/in units in the settings
+   and the print dialog.
+
+**Decisions to keep:** no BPM / key / waveform *analysis* of files (the CDJ-1000 can't use that data;
+tags are only read, blank when missing; the waveform is drawn from the audio at preview time); the
+Explorer never offers the whole system disk; discs reference library track ids, so anything that can go
+on a disc must be a library track (hence the hidden Explorer source). `dev_docs/rekordbox-analysis.md`,
+`audio.md` and `burning.md` hold what was measured, and how.
 
 ### Shell and tooling gotchas (macOS)
 
@@ -159,6 +194,14 @@ was measured, and how.
   folder: running it from a sibling repo silently used that repo's environment.
 - `ruff format` re-wraps long lines, so an exact-string edit written from memory can
   miss. Read the region first; a script that asserts each match fails loudly.
+- Do not leave a helper script whose name matches a standard-library module (`wave.py`, `json.py`)
+  in the folder you run scripts from: Python imports it instead of the real one (a stray `wave.py`
+  that built a `QApplication` once broke every later script). Keep scratch scripts in the scratch
+  folder with distinctive names.
+- The window tests that read a folder (`tests/test_ui_explorer.py`) stand in for `ffprobe` by patching
+  `dubcrate.library.folder.probe`, and for the length measuring by patching
+  `dubcrate.ui.disc_view.probe_lengths`; copy that when a test needs files but not ffmpeg. A test that
+  winds a library back to an older schema must undo every later migration too (`tests/test_mp3_discs.py`).
 - Imports of PySide6 at module level mean a plain `python -c` needs
   `QT_QPA_PLATFORM=offscreen` to avoid opening a window.
 

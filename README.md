@@ -78,9 +78,11 @@ If you would rather not trust a download, [BUILDING.md](BUILDING.md) builds it f
 1. **Import your music.** *File ▸ Import rekordbox Library…* reads your rekordbox
    library (it only reads a temporary copy, so rekordbox is never changed), or
    *File ▸ Import Folder…* reads a folder of music. Imported sources appear on the
-   left, with their playlists and folders beneath them. A rekordbox library you have
+   left (the *Library* tab), with their playlists and folders beneath them. A rekordbox library you have
    imported is brought up to date by itself each time Dubcrate starts (while a splash
-   screen shows); switch that off in *Settings ▸ Library*.
+   screen shows); switch that off in *Settings ▸ Library*. The *Explorer* tab beside it
+   browses the folders on your Mac, or a plugged-in drive, without importing anything:
+   click a folder and its audio files appear, ready to preview and add to a disc.
 2. **Browse and listen.** Pick a playlist, search by title, artist, album or genre,
    and sort by clicking a column heading. Double-click a track to preview it.
    Right-click the column headings to show or hide columns: only the essentials show at
@@ -99,6 +101,12 @@ If you would rather not trust a download, [BUILDING.md](BUILDING.md) builds it f
    loaded. The burn speed starts at your default from *Settings* and can be changed
    for one burn. A burned disc is just a disc: it stays editable, remembers when it was
    burned, and *Duplicate* (right-click) keeps a copy of a mix before you change it.
+6. **Print a label for the case.** *Disc ▸ Print Labels…* (⌘P) lays out the track list of
+   one or several discs, audio or MP3 (with an MP3 disc's folders), on sticker paper:
+   choose the paper (A3 to A6, Letter, Legal), the label size, how many labels to spread a
+   long list over, columns, font size, and whether to show BPM, key and duration. Several
+   discs share a page so little paper is wasted. Preview it (zoom, pinch on a trackpad),
+   then print it or save a PDF. Number boxes in the app can be dragged up and down like a knob.
 
 ### Keyboard shortcuts
 
@@ -114,6 +122,7 @@ If you would rather not trust a download, [BUILDING.md](BUILDING.md) builds it f
 | Search for a track | ⌘F |
 | New disc | ⌘N |
 | Burn the disc | ⌘B |
+| Print labels | ⌘P |
 | Split the shown tracks across discs | ⇧⌘D |
 | Settings | ⌘, |
 
@@ -161,8 +170,8 @@ for (80 minutes) and the gap between tracks (gapless), and the burn speed (10x).
 
 ## What's coming
 
-A folder browser alongside your libraries, a printable track list for the disc sleeve,
-and Windows and Linux support.
+Folders you can pin as tabs of their own, other DJ libraries (Mixxx first), and Windows
+and Linux support.
 
 ## License
 

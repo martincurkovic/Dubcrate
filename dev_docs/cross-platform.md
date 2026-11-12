@@ -44,6 +44,7 @@ until a person with that OS and an optical drive has checked it.
 | Rendering and probing | `ffmpeg` / `ffprobe` found on `PATH` |
 | App data, log folder | `platformdirs` (`library/paths.py`, `logsetup.py`); the theme's icon cache has `darwin` / `win32` / other branches |
 | rekordbox library location | `library/rekordbox.py: default_master_db` has macOS and Windows paths, and returns `None` on Linux (rekordbox doesn't exist there; a copied `master.db` can still be picked by hand) |
+| Label printing | `QPrinter` / `QPdfWriter` and a painter (`ui/label_paint.py`), so portable in principle; **[not tried]** off macOS, and not tried on a real printer anywhere (PDF output is tested) |
 | Shortcuts | written as `Ctrl+...`; Qt shows ⌘ on a Mac. The shortcuts window uses native text |
 | Burner interface | `burn/base.py` `Burner` protocol, built so a backend can be added without touching callers |
 
@@ -58,6 +59,7 @@ until a person with that OS and an optical drive has checked it.
 | `scripts/build_macos.sh`, `scripts/dmg_settings.py`, `assets/dmg/`, `BUILDING.md` | Packaging is a macOS app and a DMG | One build per OS (Phase 5) |
 | `.github/workflows/test.yml` | Runs on `macos-15` only, and says so in a comment | Matrix (Phase 1) |
 | `.github/workflows/build.yml` | macOS arm and Intel builds; the release job is the only Linux one | Add per-OS builds (Phase 5) |
+| `ui/explorer.py: mounted_volumes()` | Finds drives in macOS's `/Volumes` (dropping the boot-disk link); returns none elsewhere, so the Explorer shows only Music and home | Linux (`/media`, `/run/media`, `/mnt`) and Windows (drive letters) **[not tried]** |
 | `ui/smoke_test.py` | Has a `darwin` check (DiscRecording, built-app specifics) | Per-OS smoke test |
 | `ui/help/manual.md`, `README.md`, `CONTRIBUTING.md` | Mention Homebrew, `~/Library/Application Support/Dubcrate/`, macOS-only burning | Say what each OS needs, per OS |
 | `tests/test_app_bundle.py`, `tests/test_build_files.py` | Check the macOS build files | Skip off macOS (Phase 1) |

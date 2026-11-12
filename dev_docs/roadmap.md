@@ -33,16 +33,17 @@
      imported rekordbox library (match on path), and spot a song that is on a disc under two
      source rows.
 4. **Printable track list** for the disc sleeve, since old CDJs have no screen for it.
-   *Built, not yet tried on a printer* (checked with PDFs and the offscreen preview). `labels.py`
-   is the pure part (splitting a disc over N labels, text size, packing labels from several
-   discs onto pages of A3/A4/A5/A6/Letter/Legal), `ui/label_paint.py` draws
-   a page for the preview, a printer or a PDF, and `ui/label_dialog.py` is the window, with `ui/label_preview.py` (a zoomable page preview that draws only what shows, at the screen's real pixels) (Disc >
-   Print Labels…, ⌘P). Audio and MP3 discs (MP3 folders as headings, up to three columns, Auto number of
-   labels). Still to do: a real print on A4 and Letter sticker
-   paper (does the print panel keep the paper we asked for? how much of the edge is
-   unprintable?), check the built app bundles QtPrintSupport (`scripts/build_macos.sh` and its
-   smoke test), a way to print straight after a burn, and per-label fonts or a layout with
-   the album or year if wanted.
+   *Built, not yet tried on a printer* (checked with PDFs and offscreen renders). `labels.py`
+   is the pure part (splitting a disc over N labels or Auto, columns, folders of an MP3 disc,
+   text size, optional BPM / key / duration columns, packing labels from several discs onto pages
+   of A3/A4/A5/A6/Letter/Legal), `ui/label_paint.py` draws a page for the preview, a printer or a
+   PDF, `ui/label_preview.py` is the zoomable preview (draws only what shows, at the screen's real
+   pixels), and `ui/label_dialog.py` is the window (Disc > Print Labels…, ⌘P). Still to do: a real
+   print on A4 and Letter sticker paper (does the print panel keep the paper we asked for? how much
+   of the edge is unprintable?), check the built app bundles QtPrintSupport (`scripts/build_macos.sh`
+   and its smoke test), cm / inch units for the sizes (the owner's TODO), a way to print straight
+   after a burn, and the album or year on a label if wanted. Auto picks the fewest labels that keep
+   the text at 6 pt or more (`AUTO_MIN_MM`); long titles are cut with "…", never wrapped.
 
 5. **Help menu.** *Done:* *Help > User Guide* opens `ui/help_dialog.py`, which renders
    `ui/help/manual.md` (find in page, working contents links, callout boxes, images that
@@ -142,7 +143,33 @@
   picked in the Discs list, or a library item already picked on the left, needed a click elsewhere
   and back).
 
+- **Labels.** One label option set is remembered (`labels/*` in QSettings); per-disc spread is Auto by
+  default (an older saved number is kept). Text is the disc's own title and artist (`DiscEntry`), never
+  the library track's. BPM, key and duration each have a box; duration is `Track.duration` as M:SS (the
+  library's Time column), off by default. An MP3 disc's folders are headings, numbered per folder like the
+  burned file names; the search order is fewest labels, then fewest columns, then folders kept whole.
+  "Places already used" (skipping spots on a part-used sheet) was built and then removed at the owner's
+  request.
+- **The Explorer and the left tabs.** The left pane is a vertical tab strip over pages: **Library** (the
+  imported sources, unchanged) and **Explorer**. Tracks the Explorer reads are stored as library tracks in
+  a hidden source (`source.hidden`, schema v9), synced one folder at a time (`sync_directory`) and
+  pruned at start-up except those on discs: this keeps discs, sorting, search and previews unchanged
+  and ids stable. Each app's library gets its **own tab** (owner's choice, over one merged Library tab)
+  when a second one is added; pinned folders get tabs too, refreshed when opened. No file analysis:
+  BPM and key are tags only.
+- **Drag-to-change number boxes** everywhere, via one application-level event filter
+  (`ui/spinbox_drag.py`); remove its line in `ui/app.py` to undo.
+
 ## Known rough edges
+- The Explorer re-reads a folder (ffprobe per new or changed file) on the first visit of each
+  session, because what it read is forgotten at start-up (`prune_explorer`). A cache across sessions,
+  keyed by path, size and modified time, would fix that. It shows only the files directly inside a
+  folder (not recursive), does not watch folders, and a drive plugged in while the app is open needs
+  the tree reloaded (`ExplorerTree.reload_roots`, not wired to anything yet).
+- The same song in rekordbox and in an Explorer folder is two track rows, so "already used" can't
+  see they are one (it works on track ids).
+- AKAISDS's `wheel_guard` (a control answers the wheel only after a click) was not ported with the
+  drag-to-change spin boxes, so scrolling over a spin box in a scrolling page can still change it.
 
 - Imports and measuring can't be cancelled, and there is no per-file progress detail.
 - A folder scan runs at about 120 files a second (ffprobe per file), so 50,000 files
@@ -158,6 +185,17 @@
   [burning.md](burning.md)).
 
 ## Unverified
+
+- **Label printing on real hardware**: only PDFs and offscreen renders so far. Not checked: a real
+  printer on A4 or Letter sticker paper, whether the Mac print panel overrides the page size, the
+  printable edge, and how the small text prints. The zoomable preview's **trackpad pinch** (a native
+  `ZoomNativeGesture` on the viewport) was tested only with synthetic events, as was drag-to-pan and
+  Ctrl+wheel. The look of the labels on screen was checked in the light and dark themes, not System 6.
+- **Drag-to-change spin boxes** (ported from AKAISDS): only simulated mouse events; the feel with a
+  trackpad is unknown (the tunables are at the top of `ui/spinbox_drag.py`).
+- **The Explorer on a real Mac**: macOS permission prompts for Documents, Downloads, Desktop and
+  external drives, a slow or unplugged drive, and large folders (it probes with 8 workers). Tests use a
+  stand-in for `ffprobe` and temporary folders; the three themes were rendered offscreen.
 
 - The built app (`scripts/build_macos.sh`). Checked on the owner's Apple Silicon Mac: it builds in about
   two minutes with a warm cache, its `--smoke-test` passes (styles, font, guide, notices, DiscRecording and

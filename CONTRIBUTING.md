@@ -35,6 +35,7 @@ uv run ruff check . && uv run ruff format .
 ```
 src/dubcrate/
   cd.py render.py planning.py build.py   Red Book maths, audio rendering, disc packing, disc -> burnable
+  labels.py                              index labels for the case: layout and pagination (no Qt)
   burn/                                  burn backends (discrecording, cdrdao)
   library/                               SQLite store, folder and rekordbox importers, length measuring
   audio/                                 devices, decoding, the preview player
@@ -55,6 +56,8 @@ dev_docs/                                command-line reference, burning and har
 - **Rekordbox is only ever read.** Never write to its database or analysis files.
 - **The SQLite library belongs to the GUI thread.** Worker threads compute and
   return results; the GUI thread stores them.
+- **Discs reference library track ids.** Anything that can go on a disc must be a library track:
+  that is why the Explorer's tracks live in a hidden source rather than a separate list.
 - **Tests never open a sound card.** `tests/conftest.py` swaps in a fake device.
 - Look at the window in all three looks (dark, light, system6) after changing it.
 
