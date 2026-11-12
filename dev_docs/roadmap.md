@@ -59,8 +59,8 @@
 
 5. **Help menu.** *Done:* *Help > User Guide* opens `ui/help_dialog.py`, which renders
    `ui/help/manual.md` (find in page, working contents links, callout boxes, images that
-   fit the window). Still to do: take screenshots for the guide
-   (`![...](screenshots/x.png)`; the tests check any image paths exist), and look at the
+   fit the window), and screenshots (`scripts/make_screenshots.py`, from a made-up
+   collection, offscreen; re-run it after UI changes). Still to do: look at the
    window on a real display. The guide's "Burning a disc" section must be kept in step
    with the burn window.
 
@@ -270,7 +270,7 @@
 - [x] Continuous integration: `.github/workflows/test.yml` (lint and tests on macOS, every
       push) and `build.yml` (tag: tests, builds, smoke tests, draft release). Unproven
       until the first run on GitHub (the repository is private).
-- [ ] README: screenshots, real download and install steps, and a re-check that every
+- [ ] README: real download and install steps (screenshots are in), and a re-check that every
       claim in it is something that has been tried.
 - [ ] Re-read the README's trademark wording and the "not affiliated" notice.
 - [x] A third-party notices file, shown from About and the Help menu

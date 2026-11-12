@@ -16,6 +16,13 @@ stick. Dubcrate lets you pick tracks from your rekordbox library (or any folder 
 music), plan CDs that fit exactly, preview them with waveforms, and burn audio CDs
 whose track titles show on the player's display.
 
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="src/dubcrate/ui/help/screenshots/main-window-dark.png">
+    <img alt="Dubcrate with a rekordbox playlist open: waveforms and phrases on top, the Library on the left, the track list in the middle and the discs on the right" src="src/dubcrate/ui/help/screenshots/main-window-light.png" width="860">
+  </picture>
+</p>
+
 > **Status: early development, not released yet.** You can already import, preview
 > and plan discs in the app. The app's Burn window is new and has not been tried on a
 > real drive yet; burning from a command line is the route that has been proven (see
@@ -42,6 +49,21 @@ whose track titles show on the player's display.
   track name and time), and you can edit the artist and track name for a disc without
   changing rekordbox or your files.
 - **Keeps its own playlists.** Your discs live in Dubcrate and never touch rekordbox.
+
+<table>
+  <tr>
+    <td align="center"><img alt="An audio disc open: its tracks as they will be written, and the capacity bar showing how full it is" src="src/dubcrate/ui/help/screenshots/disc-open.png" width="420"><br><sub>A disc and its capacity bar</sub></td>
+    <td align="center"><img alt="An MP3 CD with folders, listed under the disc on the right" src="src/dubcrate/ui/help/screenshots/mp3-disc.png" width="420"><br><sub>MP3 CDs, with folders</sub></td>
+  </tr>
+  <tr>
+    <td align="center"><img alt="The Explorer tab browsing a folder of music, with a pinned folder's tab below it" src="src/dubcrate/ui/help/screenshots/explorer.png" width="420"><br><sub>Explorer and pinned folders</sub></td>
+    <td align="center"><img alt="The label window: two discs' track lists laid out on one sheet of paper" src="src/dubcrate/ui/help/screenshots/labels.png" width="420"><br><sub>Index labels for the case</sub></td>
+  </tr>
+  <tr>
+    <td align="center"><img alt="The burn window: the drive, the burn speed and the blank CD-R confirmation" src="src/dubcrate/ui/help/screenshots/burn.png" width="420"><br><sub>The burn window</sub></td>
+    <td align="center"><img alt="The Dubcrate window in the Macintosh System 6 theme: black and white with a bitmap-style font" src="src/dubcrate/ui/help/screenshots/main-window-system6.png" width="420"><br><sub>Macintosh System 6 theme</sub></td>
+  </tr>
+</table>
 
 ## What you need
 
@@ -108,27 +130,9 @@ If you would rather not trust a download, [BUILDING.md](BUILDING.md) builds it f
    discs share a page so little paper is wasted. Preview it (zoom, pinch on a trackpad),
    then print it or save a PDF. Number boxes in the app can be dragged up and down like a knob.
 
-### Keyboard shortcuts
-
-| | |
-| --- | --- |
-| Preview a track | Double-click |
-| Play / pause | Space |
-| Add the selected tracks to the disc | Return, or ⌘D |
-| Beat jump back / forward (track list) | ← / → |
-| Take the selected tracks off the disc | Delete |
-| Import a folder / a rekordbox library | ⌘O / ⇧⌘O |
-| Re-import the selected source | ⌘R |
-| Search for a track | ⌘F |
-| New disc | ⌘N |
-| Burn the disc | ⌘B |
-| Print labels | ⌘P |
-| Split the shown tracks across discs | ⇧⌘D |
-| Settings | ⌘, |
-
 In the overview, click to jump to a place in the track. In the zoomed waveform, the
 mouse wheel zooms in and out, and dragging it scratches the track as on a CDJ's jog
-wheel.
+wheel. The keyboard shortcuts, and everything else in the app, are in *Help ▸ User Guide*.
 
 ### Settings
 

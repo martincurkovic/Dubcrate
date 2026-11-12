@@ -41,12 +41,18 @@ You need **ffmpeg** installed: Dubcrate uses it to read tracks and to prepare th
 
 ## The main window
 
+![The main window, dark theme](screenshots/main-window-dark.png "The main window")
+
 - **Library and Explorer** (left): two tabs down the left edge. **Library** is everything you have imported, with its playlists and folders beneath it; click one to see its tracks. **Explorer** browses the folders on your Mac or a drive without importing anything: see [The Explorer](#the-explorer).
 - **Tracks** (middle): the tracks of whatever is selected on the left, with a search box above, and the buttons **Add to Disc** and **Fit All to Disc** below. When you open a disc, the middle shows that disc instead.
 - **Player** (across the top): play and pause, previous and next, the title, time, key and BPM of the track you are previewing, a **cog** that opens Settings, a small **volume knob** (drag it up or down, hold Shift to go slowly, double-click to reset it), and two waveforms.
 - **Discs** (right): your burn playlists, filed in folders. See [Your discs](#your-discs).
 
 **View > Theme** switches between System, Light, Dark and Macintosh System 6 (black and white, with a bitmap-style font).
+
+![The main window, light theme](screenshots/main-window-light.png "The light theme")
+
+![The main window, Macintosh System 6 theme](screenshots/main-window-system6.png "The Macintosh System 6 theme")
 
 **Help > User Guide** opens this guide in its own window, which can stay open beside the app. Press **⌘F** in it to search the page, and click the links in the contents to jump to a section. **Help > Check for Updates…** looks for a newer version ([Updates](#updates-and-what-dubcrate-sends)), **Help > Third-Party Notices…** lists the licences of what Dubcrate includes, and **Help > About Dubcrate** shows the version.
 
@@ -113,6 +119,8 @@ Tracks whose file can't be found are greyed out in the list, and shown in red on
 
 The **Explorer** tab (the second tab down the left edge) is for music that isn't in a library you have imported: a folder of downloads, or a USB stick. There is nothing to import. Open the folders on the left and click one, and the audio files directly inside it appear in the track list, ready to preview, sort, search and add to a disc, exactly like the tracks of the Library.
 
+![The Explorer tab: a folder of music, with a pinned folder's tab below it](screenshots/explorer.png "The Explorer, with a pinned folder")
+
 - The tree starts at your **Music** folder and your **home folder**, and lists any **drives** plugged in (a USB stick or an external disk). It never offers the computer's whole system disk. Folders are read only when you open them.
 - Dubcrate reads the tags of the files in a folder when you click it. A folder you have visited shows at once and is then checked again for files that came or went; a file that hasn't changed isn't read again.
 - Only the **files directly inside** the folder you picked show, not those in its sub-folders: open the sub-folder to see them.
@@ -168,6 +176,8 @@ Choose where previews play, and test it, in [Settings](#settings).
 
 A disc is a playlist that goes on a CD. They live in the **Discs** list on the right, just as your rekordbox playlists live in the Library on the left, and they can be filed in folders.
 
+![A disc open in the middle, with its capacity bar under the tracks](screenshots/disc-open.png "An open disc and its capacity bar")
+
 - **Open a disc** by clicking it. Its tracks appear in the middle, ready to arrange and edit. Opening a disc also makes it the one that tracks are **added to**: its name is in bold, and under the track list it says **Adding to “…”**.
 - **Add tracks** by selecting them and pressing **⌘Return**, **⌘D** or **Add to Disc** (they go to the open disc), or by **dragging** them from the track list onto any disc in the Discs list. Dragging onto a disc that isn't open adds to that one and leaves the open disc as it is.
 - **New Disc** and **New Folder** (under the list) make them. The new disc or folder appears in the list at once with its name ready to type over: type a name and press **Return**, or press **Esc** to keep the suggested one. A new disc goes in the folder you have picked, or beside the disc you have picked.
@@ -182,6 +192,8 @@ A disc is a playlist that goes on a CD. They live in the **Discs** list on the r
 **Audio CDs and MP3 CDs.** A disc is an **audio CD** (the default) or an **MP3 CD**. An audio CD plays in any CD player and is measured in minutes (80 or 74, see Settings). An MP3 CD is a data disc of MP3 files, for players that read MP3 discs such as the CDJ-1000MK3; it is measured in megabytes (about 703 MB on an 80-minute disc), so it holds hours of music, has no 99-track limit and no gaps setting. Make one with **Disc > New MP3 Disc** (⇧⌘N) or right-click > **New MP3 Disc**, and switch an existing disc with right-click > **Make MP3 CD** / **Make Audio CD** (its tracks stay). Its title and size say **MP3 CD**, and in the Discs list an MP3 disc has its own icon (a page of files with a disc) and says **MP3** before its track count. Files on an MP3 disc are always **constant bitrate** (CBR), because variable-bitrate (VBR) files are slow to load on a CDJ: lossless files (FLAC, WAV, AIFF) are encoded at **320 kbit/s**; an MP3 that is already constant bitrate is copied as it is; a VBR MP3 is encoded to constant bitrate; and a lossy file below 320 keeps its own rate (a 245 kbit/s file becomes 256), since encoding it higher would only make it bigger. **Settings > Discs** can lower the top rate for new discs. Artist and title edits for the disc are written into the files' tags, and files are named `01 Artist - Title.mp3`, `02 …`, so players that sort by name keep your order.
 
 **Folders on an MP3 CD.** An MP3 disc can hold folders, like a folder on a USB stick, and its folders are listed under it in the Discs list (open the little arrow beside it). Click a folder to see and edit its tracks in the middle; click the disc itself to see the tracks in its root. The bar under the tracks always shows the whole disc.
+
+![An MP3 disc with a folder open: the folders are listed under the disc on the right](screenshots/mp3-disc.png "An MP3 CD and its folders")
 
 - **Make a folder** with the little **folder button** that appears beside the **+** when you pick an MP3 disc or one of its folders: it makes a folder *inside* the one you picked. The **+** on a folder makes one *beside* it, at the same level (on the disc itself, the + still makes another disc). Right-click > **New Folder on Disc** or **New Folder Inside** does the same as the folder button. Name it in place, as for a disc.
 - **Move around** by clicking a folder in the Discs list, or by clicking a step in the path above the tracks (for example **Super Cool Trax 001 / some stuff / more stuff**): every step but the last is a link, and the disc's name takes you back to its root.
@@ -264,6 +276,8 @@ A disc you burned says when. A test write (a simulated burn) puts nothing on a d
 
 > **A real burn uses up a blank CD-R.** Use a blank **CD-R**, not a CD-RW, which old players read badly.
 
+![The burn window: the drive, speed and the blank CD-R confirmation](screenshots/burn.png "The burn window")
+
 **From the window**
 
 1. Open the disc, then press **Burn…** under its tracks (or choose **Disc > Burn Disc…**, ⌘B, or right-click the disc in the Discs list and choose **Burn…**).
@@ -305,6 +319,8 @@ Old players have no screen for a track list, so Dubcrate can print one for the c
 
 > **Printing has been checked by saving PDFs, not yet on a real printer.** Try **Save PDF…** and look at it first, or print on plain paper and hold it against a sticker sheet.
 
+![The label window: two discs on one sheet, with the settings on the left](screenshots/labels.png "The label window")
+
 1. **Tick the discs** to print, on the left. The disc you opened is ticked already. **All** and **None** tick or clear the list.
 2. Choose the **Paper**: A3, A4, A5, A6, US Letter or US Legal.
 3. Type the size of one label: **Label width** and **Label height**, in millimetres. 100 × 50 is a good start for a case.
@@ -328,6 +344,8 @@ Your choices are remembered for next time.
 ## Settings
 
 **File > Settings…** (⌘,) has five tabs:
+
+![The Settings window, on the Audio tab](screenshots/settings.png "Settings")
 
 - **Discs:** how **new** discs are planned: **Plan new discs for** 80 or 74 minutes (the same size, as megabytes, for an MP3 CD), **Between tracks**, which is **Gapless** unless you choose 1, 2 or 3 seconds of silence (audio CDs only), and **MP3 CDs: highest rate**, the top constant bitrate for new MP3 discs (320 kbit/s unless you lower it).
 - **Burning:** the **Burn speed** a burn starts with (10x unless you change it). Old players read discs burned slowly more reliably, and 10x to 16x is a good range. Your drive may not offer every speed. You can still pick another speed for a single burn in the burn window.
