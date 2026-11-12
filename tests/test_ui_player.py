@@ -117,11 +117,15 @@ def test_a_loaded_track_enables_play_and_the_clock_follows_the_position(qapp):
 
 def test_the_play_button_shows_pause_while_playing(qapp):
     strip = PlayerStrip()
-    paused = strip.play_button.icon().cacheKey()
+    strip.show()
+    shown = strip.play_button.grab().toImage()
+    assert not strip.play_button.playing
     strip.set_playing(True)
-    assert strip.play_button.icon().cacheKey() != paused
+    assert strip.play_button.playing
+    assert strip.play_button.grab().toImage() != shown  # it draws pause now, not play
     strip.set_playing(False)
-    assert strip.play_button.icon().cacheKey() == paused
+    assert not strip.play_button.playing
+    assert strip.play_button.grab().toImage() == shown
 
 
 def test_the_controls_emit_their_signals(qapp):

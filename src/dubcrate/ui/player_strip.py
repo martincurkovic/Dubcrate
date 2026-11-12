@@ -2,12 +2,9 @@
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
-    QApplication,
     QHBoxLayout,
     QLabel,
     QSizePolicy,
-    QStyle,
-    QToolButton,
     QVBoxLayout,
     QWidget,
 )
@@ -19,6 +16,7 @@ from dubcrate.waveform import Waveform
 from . import key_style
 from .gear_button import GearButton
 from .knob import Knob
+from .transport_button import TransportButton
 from .waveform_view import DetailView, OverviewView
 
 IDLE_HINT = "Double-click a track to preview it"
@@ -43,26 +41,12 @@ class PlayerStrip(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._duration = 0.0
-        style = QApplication.style()
-
-        def button(icon: QStyle.StandardPixmap, tip: str) -> QToolButton:
-            b = QToolButton()
-            b.setIcon(style.standardIcon(icon))
-            b.setToolTip(tip)
-            b.setAutoRaise(False)
-            return b
-
-        self._play_icon = style.standardIcon(QStyle.StandardPixmap.SP_MediaPlay)
-        self._pause_icon = style.standardIcon(QStyle.StandardPixmap.SP_MediaPause)
-        self.prev_button = button(
-            QStyle.StandardPixmap.SP_MediaSkipBackward, "Previous track"
-        )
-        self.play_button = button(
-            QStyle.StandardPixmap.SP_MediaPlay, "Play / pause (Space)"
-        )
-        self.next_button = button(
-            QStyle.StandardPixmap.SP_MediaSkipForward, "Next track"
-        )
+        self.prev_button = TransportButton("previous")
+        self.prev_button.setToolTip("Previous track")
+        self.play_button = TransportButton("play")
+        self.play_button.setToolTip("Play / pause (Space)")
+        self.next_button = TransportButton("next")
+        self.next_button.setToolTip("Next track")
         self.prev_button.clicked.connect(self.previous_requested)
         self.play_button.clicked.connect(self.play_toggled)
         self.next_button.clicked.connect(self.next_requested)
@@ -112,16 +96,21 @@ class PlayerStrip(QWidget):
 
         header = QHBoxLayout()
         header.setSpacing(6)
+        centred = (
+            Qt.AlignmentFlag.AlignVCenter
+        )  # (buttons of different heights share a middle line)
         for b in (self.prev_button, self.play_button, self.next_button):
-            header.addWidget(b)
+            header.addWidget(b, 0, centred)
         header.addSpacing(8)
         header.addLayout(names, 1)
         header.addSpacing(8)
         for w in (self.elapsed, self.remaining, self.key, self.bpm):
-            header.addWidget(w)
+            header.addWidget(w, 0, centred)
         header.addSpacing(4)
-        header.addWidget(self.settings_button)  # the cog, left of the volume knob
-        header.addWidget(self.volume)
+        header.addWidget(
+            self.settings_button, 0, centred
+        )  # the cog, left of the volume knob
+        header.addWidget(self.volume, 0, centred)
 
         self.overview = OverviewView()
         self.overview.seek_requested.connect(self.seek_requested)
@@ -210,4 +199,4 @@ class PlayerStrip(QWidget):
         self.scratch_moved.emit(seconds)
 
     def set_playing(self, playing: bool) -> None:
-        self.play_button.setIcon(self._pause_icon if playing else self._play_icon)
+        self.play_button.set_playing(playing)

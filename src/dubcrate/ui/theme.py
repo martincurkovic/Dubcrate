@@ -53,6 +53,13 @@ DARK_PALETTE = {
     "text_on_accent": "#ffffff",
     "warning": "#d9a94a",
     "critical": "#d9544a",
+    # the status bar's small "Update available" button: blue in the colour themes (not the
+    # accent, which is violet in the light one), a plain outline in System 6
+    "update_bg": "#2f6fd0",
+    "update_bg_hover": "#3d80e6",
+    "update_text": "#ffffff",
+    "update_text_hover": "#ffffff",
+    "update_border": "#2f6fd0",
     # alternating-row tint for tables/trees. Deliberately close to bg_panel
     # rather than bg_input/bg_selected - a stripe should read as a faint
     # banding cue, not as an editable field or a selection highlight.
@@ -116,6 +123,13 @@ LIGHT_PALETTE = {
     "text_on_accent": "#ffffff",
     "warning": "#f57927",
     "critical": "#d54439",
+    # the status bar's small "Update available" button: blue in the colour themes (not the
+    # accent, which is violet in the light one), a plain outline in System 6
+    "update_bg": "#2563eb",
+    "update_bg_hover": "#1d4fd1",
+    "update_text": "#ffffff",
+    "update_text_hover": "#ffffff",
+    "update_border": "#2563eb",
     # same reasoning as DARK_PALETTE's bg_zebra - close to this theme's own
     # bg_panel ("#ffffff"), just a faint step down rather than a strong tint
     "bg_zebra": "#f6f3fb",
@@ -170,6 +184,13 @@ SYSTEM6_PALETTE = {
     "text_on_accent": "#ffffff",
     "warning": "#d65a00",
     "critical": "#dd0907",
+    # the status bar's small "Update available" button: blue in the colour themes (not the
+    # accent, which is violet in the light one), a plain outline in System 6
+    "update_bg": "#ffffff",
+    "update_bg_hover": "#000000",
+    "update_text": "#000000",
+    "update_text_hover": "#ffffff",
+    "update_border": "#000000",
     "bg_zebra": "#f0f0f0",
     # eight dark greys for what is still coloured by position (the loop markers on the sample waveform); the volumes themselves are hatched
     "volume_color_1": "#000000",

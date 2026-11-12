@@ -60,6 +60,7 @@ from .preview import PreviewController
 from .settings_dialog import SettingsDialog
 from .shortcuts_dialog import ShortcutsDialog
 from .splitter import Splitter
+from .status_bar import AppStatusBar
 from .tasks import run_async
 from .track_table import (
     ROW_HEIGHT,
@@ -366,6 +367,9 @@ class MainWindow(QMainWindow):
         self._update_track_buttons()
 
     def _build_status_bar(self) -> None:
+        self.setStatusBar(AppStatusBar(self))  # (version, update button, then messages)
+        self.statusBar().update_clicked.connect(lambda: self.updates.show_available())
+        self.updates.on_available = self.statusBar().set_update
         self.busy_bar = QProgressBar()
         self.busy_bar.setMaximumWidth(180)
         self.busy_bar.setTextVisible(False)

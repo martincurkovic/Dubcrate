@@ -50,6 +50,11 @@ class UpdateChecker:
         self._running = False
         self._closed = False
         self.dialog: UpdateAvailableDialog | None = None  # kept alive while it is shown
+        # the newest release found (None: up to date, or not checked yet), and who to tell when
+        # that changes: the status bar's "Update available" button. It stays after "Skip This
+        # Version" and "Remind Me Later", which only quiet the pop-up.
+        self.available: UpdateInfo | None = None
+        self.on_available: Callable[[UpdateInfo | None], None] | None = None
 
     @property
     def running(self) -> bool:
@@ -94,8 +99,17 @@ class UpdateChecker:
 
         run_async(_check, answered, failed)
 
+    def show_available(self, parent: QWidget | None = None) -> None:
+        """Open the notice for the update that was found (the button in the status bar)."""
+        if self.available is not None and not self._closed:
+            self.dialog = UpdateAvailableDialog(self.available, parent or self._parent)
+            self.dialog.show()
+
     def _show(self, info: UpdateInfo | None, manual: bool, over: QWidget) -> None:
         settings.set_last_update_check(time.time())
+        self.available = info
+        if self.on_available is not None:
+            self.on_available(info)
         log.info(
             "update check: %s",
             f"{info.version} is available" if info else "up to date",

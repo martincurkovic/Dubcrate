@@ -737,3 +737,25 @@ QLabel#emptyState {
 /* ============================================================
    Dubcrate additions
    ============================================================ */
+
+/* the status bar's small "Update available" button */
+QPushButton#updateButton {
+    background-color: ${update_bg};
+    color: ${update_text};
+    border: 1px solid ${update_border};
+    border-radius: 9px;
+    padding: 0px 10px;
+    min-height: 18px;
+    max-height: 18px;
+    font-size: 11px;
+}
+QPushButton#updateButton:hover {
+    background-color: ${update_bg_hover};
+    color: ${update_text_hover};
+}
+QPushButton#updateButton:pressed {
+    background-color: ${update_bg_hover};
+}
+QLabel#versionLabel {
+    color: ${text_disabled};
+}

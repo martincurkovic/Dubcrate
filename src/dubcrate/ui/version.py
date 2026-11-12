@@ -1,5 +1,6 @@
 """What the app says about itself: its version (splash screen, About) and its icon."""
 
+import re
 from importlib import metadata
 from pathlib import Path
 
@@ -19,6 +20,17 @@ def app_version() -> str:
         return metadata.version("dubcrate")
     except metadata.PackageNotFoundError:
         return "development"
+
+
+def version_text() -> str:
+    """The app's name and version as the status bar shows it: "Dubcrate v0.1.0", or
+    "Dubcrate development" for a build that has no release number."""
+    version = app_version()
+    return (
+        f"Dubcrate v{version}"
+        if re.fullmatch(r"\d+(\.\d+)*", version)
+        else f"Dubcrate {version}"
+    )
 
 
 def icon_path() -> Path | None:

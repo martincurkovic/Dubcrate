@@ -283,7 +283,7 @@ The full list of command-line options is in the project's developer notes.
 
 ## Updates, and what Dubcrate sends
 
-Dubcrate checks for a newer version when it starts, at most once a day, and tells you only if there is one: a notice with the release notes and a **View Release…** button that opens the download page. **Skip This Version** silences the notice for that version, and **Remind Me Later** leaves it for tomorrow. Nothing is downloaded or installed by Dubcrate itself; you download the new `.dmg` yourself.
+Dubcrate checks for a newer version when it starts, at most once a day, and tells you only if there is one: a notice with the release notes and a **View Release…** button that opens the download page. **Skip This Version** silences the notice for that version, and **Remind Me Later** leaves it for tomorrow. Either way, a small blue **Update available** button appears next to the version (**Dubcrate v0.1.0**) at the bottom left of the window for as long as a newer version exists: click it to read what's new. Nothing is downloaded or installed by Dubcrate itself; you download the new `.dmg` yourself.
 
 **Help > Check for Updates…** (or the button in **About**) checks straight away and tells you the result, even "you're up to date". Turn off the check at startup under **File > Settings… > Library > Check for a new version when Dubcrate starts**.
 
