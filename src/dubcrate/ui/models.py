@@ -346,8 +346,10 @@ class DiscModel(QAbstractTableModel):
                         index.row() + 1
                     )  # its place in what is shown (a folder, or the disc)
                 case 1:
+                    # the track's playing time, whatever the disc: on an MP3 disc `entry.sectors`
+                    # is a file size in data sectors, not a length
                     return ("" if track.length_exact else "~") + format_clock(
-                        entry.sectors
+                        track.length_sectors
                     )
                 case 2:
                     return entry.artist  # what is written on the CD, not the library's

@@ -128,6 +128,20 @@ def test_disc_list_shows_position_time_and_artist(qapp):
     lib.close()
 
 
+def test_the_time_of_a_track_on_an_mp3_disc_is_its_length_not_its_size(qapp):
+    lib = make_lib()
+    disc_id = lib.create_disc("USB", kind="mp3")
+    track = lib.tracks(sort="title")[0]
+    lib.set_cd_sectors(track.id, 75 * 245)  # 4:05 of audio
+    lib.add_to_disc(disc_id, [track.id])
+    model = DiscModel()
+    model.set_entries(lib.disc_entries(disc_id))
+    assert model.entry_at(0).kind == "mp3"
+    assert model.entry_at(0).sectors != 75 * 245  # (the disc's own unit: data sectors)
+    assert model.data(model.index(0, 1)) == "4:05"
+    lib.close()
+
+
 def test_a_drop_from_the_track_table_asks_for_the_tracks_to_be_added_there(qapp):
     lib = make_lib()
     model = disc_model(lib)
