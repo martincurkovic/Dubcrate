@@ -81,9 +81,10 @@ def subfolders(folder: Path) -> list[Path]:
 class ExplorerTree(QTreeView):
     folder_selected = Signal(str)
     pin_requested = Signal(str)  # right-click > Pin Folder
-    unpin_requested = Signal(
+    unpin_requested = Signal(str)  # right-click > Unpin (a folder that is pinned)
+    refresh_requested = Signal(
         str
-    )  # right-click > Unpin Folder (on a folder that is pinned)
+    )  # right-click > Refresh: the folder was listed again
 
     def __init__(
         self,
@@ -131,6 +132,49 @@ class ExplorerTree(QTreeView):
             item.appendRow(self._item(sub.name, sub))
         item.setData(True, LOADED_ROLE)
 
+    def _sync_children(
+        self,
+        parent: QStandardItem | None,
+        entries: list[tuple[str, Path, bool]],
+    ) -> None:
+        """Make the rows under `parent` (None: the top level) match `entries`, in order, taking
+        away the ones that are gone and adding the new ones. A row that stays is not touched, so
+        it keeps its place, what is open under it and whether it is picked."""
+        container = parent if parent is not None else self._model.invisibleRootItem()
+        wanted = {str(path) for _name, path, _volume in entries}
+        for row in reversed(range(container.rowCount())):
+            if container.child(row).data(PATH_ROLE) not in wanted:
+                container.removeRow(row)
+        for position, (name, path, volume) in enumerate(entries):
+            have = (
+                container.child(position) if position < container.rowCount() else None
+            )
+            if have is None or have.data(PATH_ROLE) != str(path):
+                container.insertRow(position, [self._item(name, path, volume)])
+
+    def refresh_roots(self) -> None:
+        """List the drives again (one plugged in since, or taken out) without losing what is
+        open or picked."""
+        self._sync_children(None, self._roots())
+
+    def refresh_folder(self, path: str) -> None:
+        """List a folder's subfolders again (a loaded one: an unopened one reads when opened)."""
+        item = self._item_for(path)
+        if item is not None and item.data(LOADED_ROLE):
+            self._sync_children(
+                item, [(p.name, p, False) for p in subfolders(Path(path))]
+            )
+
+    def _item_for(self, path: str) -> QStandardItem | None:
+        stack = [self._model.item(r) for r in range(self._model.rowCount())]
+        while stack:
+            item = stack.pop()
+            if item.data(PATH_ROLE) == path:
+                return item
+            if item.data(LOADED_ROLE):
+                stack += [item.child(r) for r in range(item.rowCount())]
+        return None
+
     def _on_expanded(self, index) -> None:
         item = self._model.itemFromIndex(index)
         if item is not None:
@@ -156,7 +200,12 @@ class ExplorerTree(QTreeView):
             menu.addAction("Unpin Folder", lambda: self.unpin_requested.emit(path))
         else:
             menu.addAction("Pin Folder", lambda: self.pin_requested.emit(path))
+        menu.addAction("Refresh", lambda: self._refresh(path))
         return menu
+
+    def _refresh(self, path: str) -> None:
+        self.refresh_folder(path)
+        self.refresh_requested.emit(path)
 
     def _on_context_menu(self, pos: QPoint) -> None:
         index = self.indexAt(pos)

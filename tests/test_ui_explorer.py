@@ -5,7 +5,7 @@ import sys
 from pathlib import Path
 
 import pytest
-from PySide6.QtCore import QItemSelectionModel
+from PySide6.QtCore import QItemSelectionModel, Qt
 
 from dubcrate import settings
 from dubcrate.library import Library, folder
@@ -570,21 +570,38 @@ def test_the_pinned_list_is_read_back_and_bad_values_are_ignored(qapp):
     assert settings.get_left_tab() == "pin:/a"
 
 
-def test_pinning_a_folder_adds_a_tab_and_shows_its_files(window, wait_for):
+def test_pinning_a_folder_adds_a_tab_and_leaves_you_where_you_are(window, wait_for):
     win, _lib, music = window
     win.pin_folder(str(music / "dub"))
     key = "pin:" + str(music / "dub")
     assert win.source_tabs.keys() == ["library", "explorer", key]
-    assert win.source_tabs.current() == key
+    assert win.source_tabs.current() == "library"  # (it did not jump to the new tab)
+    assert win.source_pages.currentIndex() == 0
+    assert "Pinned" in win.statusBar().currentMessage()
+    win.source_tabs.set_current(key)  # (opening it shows the folder)
     assert win.source_pages.currentIndex() == 2
     assert wait_for(lambda: titles(win) == ["a", "b", "c"]), titles(win)
     assert win.tracks_title.text() == "dub"
+
+
+def test_pinning_from_the_explorer_stays_in_the_explorer(window, wait_for):
+    win, _lib, music = window
+    win.source_tabs.set_current("explorer")
+    open_folder(win, wait_for, music / "dub", ["a", "b", "c"])
+    win.explorer_tree._pin_menu(str(music / "dub")).actions()[0].trigger()
+    assert win.source_tabs.current() == "explorer"
+    assert titles(win) == ["a", "b", "c"] and win._selection == (
+        "explorer",
+        str(music / "dub"),
+    )
 
 
 def test_pinning_twice_does_not_add_a_second_tab(window):
     win, _lib, music = window
     win.pin_folder(str(music / "dub"))
     win.pin_folder(str(music / "dub"))
+    assert "already pinned" in win.statusBar().currentMessage()
+    assert win.source_tabs.current() == "library"
     assert win.source_tabs.keys().count("pin:" + str(music / "dub")) == 1
     assert win._pins == [str(music / "dub")]
 
@@ -592,6 +609,7 @@ def test_pinning_twice_does_not_add_a_second_tab(window):
 def test_a_pinned_tab_reads_its_folder_again_each_time_it_is_opened(window, wait_for):
     win, _lib, music = window
     win.pin_folder(str(music / "dub"))
+    win.source_tabs.set_current("pin:" + str(music / "dub"))
     assert wait_for(lambda: titles(win) == ["a", "b", "c"]), titles(win)
     win.source_tabs.set_current("library")
     (music / "dub" / "d.mp3").write_bytes(b"x" * 10)
@@ -602,6 +620,7 @@ def test_a_pinned_tab_reads_its_folder_again_each_time_it_is_opened(window, wait
 def test_a_pinned_tab_browses_the_folders_inside_it(window, wait_for):
     win, _lib, music = window
     win.pin_folder(str(music))
+    win.source_tabs.set_current("pin:" + str(music))
     tree = win._pin_trees["pin:" + str(music)]
     assert tree.current_path() == str(music)
     tree.select_path(str(music / "house"))
@@ -637,13 +656,13 @@ def test_the_menu_offers_pin_or_unpin_by_whether_the_folder_is_pinned(window):
     def offered():
         return [a.text() for a in tree._pin_menu(path).actions()]
 
-    assert offered() == ["Pin Folder"]
+    assert offered() == ["Pin Folder", "Refresh"]
     tree._pin_menu(path).actions()[0].trigger()
     assert asked == [path]
     win.pin_folder(path)
-    assert offered() == ["Unpin Folder"]  # (the Explorer's tree is told what is pinned)
+    assert offered() == ["Unpin Folder", "Refresh"]  # (the tree is told what is pinned)
     win.unpin_folder(path)
-    assert offered() == ["Pin Folder"]
+    assert offered() == ["Pin Folder", "Refresh"]
 
 
 def test_pins_and_the_pinned_tab_are_remembered(qapp, music, probed, monkeypatch):
@@ -680,3 +699,281 @@ def test_a_remembered_tab_whose_pin_has_gone_falls_back_to_the_library(
         win.close()
         win.deleteLater()
         lib.close()
+
+
+# -- refreshing, reordering, scrolling ------------------------------------------------------
+
+
+def root_names(tree):
+    return [tree._model.item(r).text() for r in range(tree._model.rowCount())]
+
+
+def test_refreshing_the_drives_adds_and_removes_rows_and_keeps_the_rest(tmp_path):
+    from PySide6.QtWidgets import QApplication
+
+    QApplication.instance() or QApplication([])
+    home, stick = tmp_path / "home", tmp_path / "stick"
+    for d in (home / "sub", stick):
+        d.mkdir(parents=True)
+    roots = [("home", home, False)]
+    tree = ExplorerTree(roots=lambda: list(roots))
+    tree.select_path(str(home / "sub"))
+    assert root_names(tree) == ["home"]
+    roots.append(("stick", stick, True))
+    tree.refresh_roots()
+    assert root_names(tree) == ["home", "stick"]
+    assert tree.current_path() == str(home / "sub")  # (what was open and picked stays)
+    roots.pop(0)
+    roots.insert(0, ("aaa", tmp_path / "aaa", True))
+    tree.refresh_roots()
+    assert root_names(tree) == ["aaa", "stick"]  # (in order: new at the top, old gone)
+    roots.pop(0)
+    tree.refresh_roots()
+    assert root_names(tree) == ["stick"]
+    tree.refresh_roots()  # (nothing changed: nothing happens)
+    assert root_names(tree) == ["stick"]
+
+
+def test_refreshing_a_folder_lists_its_subfolders_again(tmp_path):
+    from PySide6.QtWidgets import QApplication
+
+    QApplication.instance() or QApplication([])
+    (tmp_path / "a").mkdir()
+    (tmp_path / "b").mkdir()
+    tree = ExplorerTree(roots=lambda: [("t", tmp_path, False)])
+    tree.select_path(str(tmp_path / "b"))
+    (tmp_path / "ab").mkdir()
+    (tmp_path / "a").rmdir()
+    tree.refresh_folder(str(tmp_path))
+    root = tree._model.item(0)
+    assert [root.child(r).text() for r in range(root.rowCount())] == ["ab", "b"]
+    assert tree.current_path() == str(tmp_path / "b")  # (the pick survives)
+    tree.refresh_folder(str(tmp_path / "nowhere"))  # (not in the tree: nothing happens)
+
+
+def test_opening_the_explorer_tab_looks_for_drives_again(window):
+    win, _lib, music = window
+    drives = [("Music", music, False)]
+    win.explorer_tree._roots = lambda: list(drives)
+    drives.append(("Stick", music / "dub", True))
+    win.source_tabs.set_current("explorer")
+    assert root_names(win.explorer_tree) == ["Music", "Stick"]
+
+
+def test_refresh_on_the_showing_folder_reads_its_files_again(window, wait_for):
+    win, _lib, music = window
+    win.source_tabs.set_current("explorer")
+    open_folder(win, wait_for, music / "dub", ["a", "b", "c"])
+    (music / "dub" / "d.mp3").write_bytes(b"x" * 10)
+    win.explorer_tree._pin_menu(str(music / "dub")).actions()[-1].trigger()
+    assert wait_for(lambda: titles(win) == ["a", "b", "c", "d"]), titles(win)
+
+
+def pins(win, music, *names):
+    for name in names:
+        win.pin_folder(str(music / name))
+    return [Path(p).name for p in win._pins]
+
+
+def tab_names(win):
+    keys = win.source_tabs.keys()
+    return [Path(k[4:]).name for k in keys if k.startswith("pin:")]
+
+
+def test_a_tab_moves_up_and_down_as_far_as_there_is_room(qapp):
+    bar = SourceTabBar()
+    for key in ("library", "explorer", "pin:/a", "pin:/b", "pin:/c"):
+        bar.add_tab(key, key, pinned_glyph, movable=key.startswith("pin:"))
+    bar.move_tab("pin:/c", -1)
+    assert bar.keys() == ["library", "explorer", "pin:/a", "pin:/c", "pin:/b"]
+    bar.move_tab("pin:/b", 5)  # (already last)
+    bar.move_tab("pin:/a", 9)
+    assert bar.keys()[-1] == "pin:/a"
+    bar.move_tab("nope", 1)
+    order = [bar._layout.itemAt(i).widget().key for i in range(bar._layout.count() - 1)]
+    assert order == bar.keys()  # (the buttons really are in that order on screen)
+
+
+def test_pinned_tabs_move_and_the_order_is_remembered(window):
+    win, _lib, music = window
+    win._persist = True
+    assert pins(win, music, "dub", "house", "empty") == ["dub", "house", "empty"]
+    win.move_pin(str(music / "empty"), -2)
+    assert [Path(p).name for p in win._pins] == ["empty", "dub", "house"]
+    assert tab_names(win) == ["empty", "dub", "house"]
+    assert [Path(p).name for p in settings.get_pinned_folders()] == [
+        "empty", "dub", "house"
+    ]  # fmt: skip
+    win.move_pin(str(music / "empty"), -1)  # (at the top: nothing happens)
+    assert tab_names(win) == ["empty", "dub", "house"]
+    assert win.source_tabs.keys()[:2] == [
+        "library",
+        "explorer",
+    ]  # (pins stay below these)
+
+
+def test_the_tab_menu_offers_moves_that_make_sense_and_unpin(window):
+    win, _lib, music = window
+    pins(win, music, "dub", "house", "empty")
+
+    def menu(name):
+        m = win._tab_menu("pin:" + str(music / name))
+        return [(a.text(), a.isEnabled()) for a in m.actions() if a.text()]
+
+    assert menu("dub") == [
+        ("Move Up", False),
+        ("Move Down", True),
+        ("Unpin Folder", True),
+    ]
+    assert menu("house")[:2] == [("Move Up", True), ("Move Down", True)]
+    assert menu("empty")[:2] == [("Move Up", True), ("Move Down", False)]
+    assert win._tab_menu("library") is None
+
+
+def test_many_tabs_scroll_instead_of_stretching_the_window(qapp):
+    bar = SourceTabBar()
+    bar.add_tab("library", "Library", library_glyph)
+    for i in range(30):
+        bar.add_tab(f"pin:/{i}", f"f{i}", pinned_glyph)
+    bar.resize(bar.width(), 300)
+    bar.show()
+    qapp.processEvents()
+    assert bar.minimumSizeHint().height() < 300  # (it does not force the window taller)
+    scroll = bar._area.verticalScrollBar()
+    assert scroll.maximum() > 0 and scroll.value() == 0
+    bar.set_current("pin:/29")  # (picking a tab brings it into view)
+    qapp.processEvents()
+    assert scroll.value() > 0
+    visible = bar._area.viewport().rect()
+    button = bar._buttons["pin:/29"]
+    assert visible.contains(button.mapTo(bar._area.viewport(), button.rect().center()))
+    bar.set_current("library")
+    qapp.processEvents()
+    assert scroll.value() == 0
+    for look in ("dark", "light", "system6"):  # (the chevrons paint in every look)
+        from dubcrate.ui import theme
+
+        theme.apply_to_app(qapp, look)
+        assert not bar.grab().toImage().isNull()
+    theme.apply_to_app(qapp, "dark")
+    bar.hide()
+
+
+def test_a_few_tabs_need_no_scrolling(qapp):
+    bar = SourceTabBar()
+    bar.add_tab("library", "Library", library_glyph)
+    bar.add_tab("explorer", "Explorer", explorer_glyph)
+    bar.resize(bar.width(), 400)
+    bar.show()
+    qapp.processEvents()
+    assert bar._area.verticalScrollBar().maximum() == 0
+    bar.hide()
+
+
+# -- dragging a tab ------------------------------------------------------------------------
+
+
+def drag_bar(qapp, count=4):
+    bar = SourceTabBar()
+    bar.add_tab("library", "Library", library_glyph)
+    bar.add_tab("explorer", "Explorer", explorer_glyph)
+    for i in range(count):
+        bar.add_tab(f"pin:/{i}", f"f{i}", pinned_glyph, movable=True)
+    bar.resize(bar.width(), 600)
+    bar.show()
+    qapp.processEvents()
+    return bar
+
+
+def drag(bar, key, to_key, *, below=False):
+    """Press on one tab, move the pointer to another's middle (or just below it), let go."""
+    from PySide6.QtCore import QPoint
+    from PySide6.QtTest import QTest
+
+    button, target = bar._buttons[key], bar._buttons[to_key]
+    start = button.rect().center()
+    goal = button.mapFromGlobal(
+        target.mapToGlobal(
+            QPoint(target.width() // 2, target.height() - 2 if below else 4)
+        )
+    )
+    QTest.mousePress(
+        button, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, start
+    )
+    QTest.mouseMove(button, start + QPoint(0, 12))  # (past the drag distance)
+    QTest.mouseMove(button, goal)
+    QTest.mouseRelease(
+        button, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, goal
+    )
+
+
+def test_a_pinned_tab_can_be_dragged_to_another_place(qapp):
+    bar = drag_bar(qapp)
+    told = []
+    bar.tabs_reordered.connect(lambda: told.append(bar.keys()))
+    drag(bar, "pin:/3", "pin:/0")
+    expected = ["library", "explorer", "pin:/3", "pin:/0", "pin:/1", "pin:/2"]
+    assert bar.keys() == expected and told == [expected]
+    drag(bar, "pin:/3", "pin:/2", below=True)
+    assert bar.keys()[-1] == "pin:/3"
+    bar.hide()
+
+
+def test_dragging_does_not_pick_the_tab_but_a_click_does(qapp):
+    from PySide6.QtTest import QTest
+
+    bar = drag_bar(qapp)
+    picked = []
+    bar.current_changed.connect(picked.append)
+    drag(bar, "pin:/2", "pin:/0")
+    assert picked == [] and bar.current() == "library"
+    QTest.mouseClick(bar._buttons["pin:/1"], Qt.MouseButton.LeftButton)
+    assert picked == ["pin:/1"]
+    bar.hide()
+
+
+def test_library_and_explorer_stay_first_and_second(qapp):
+    bar = drag_bar(qapp)
+    drag(bar, "pin:/1", "library")  # (dragged right up over the Library tab)
+    assert bar.keys()[:2] == ["library", "explorer"]
+    assert bar.keys()[2] == "pin:/1"  # (it stops at the top of the pins)
+    drag(bar, "library", "pin:/3")  # (a tab that is not movable cannot be picked up)
+    assert bar.keys()[:2] == ["library", "explorer"]
+    bar.move_tab("explorer", 3)
+    bar.move_tab("pin:/0", -9)
+    assert bar.keys()[:3] == ["library", "explorer", "pin:/0"]
+    bar.hide()
+
+
+def test_a_drag_in_the_window_reorders_the_pins_and_saves_them(window):
+    win, _lib, music = window
+    win._persist = True
+    pins(win, music, "dub", "house", "empty")
+    win.source_tabs.set_current("library")
+    win.show()
+    drag(win.source_tabs, "pin:" + str(music / "empty"), "pin:" + str(music / "dub"))
+    assert tab_names(win) == ["empty", "dub", "house"]
+    assert [Path(p).name for p in win._pins] == ["empty", "dub", "house"]
+    assert [Path(p).name for p in settings.get_pinned_folders()] == [
+        "empty", "dub", "house"
+    ]  # fmt: skip
+    assert win.source_tabs.current() == "library"  # (dragging did not change the tab)
+
+
+def test_a_tab_picked_as_soon_as_it_is_added_is_scrolled_into_view(qapp):
+    bar = SourceTabBar()
+    bar.add_tab("library", "Library", library_glyph)
+    for i in range(12):
+        bar.add_tab(f"pin:/{i}", f"f{i}", pinned_glyph, movable=True)
+    bar.resize(bar.width(), 300)
+    bar.show()
+    qapp.processEvents()
+    bar.add_tab("pin:/new", "new", pinned_glyph, movable=True)
+    bar.set_current(
+        "pin:/new"
+    )  # (as `pin_folder` does, with no event loop turn between)
+    qapp.processEvents()
+    button = bar._buttons["pin:/new"]
+    viewport = bar._area.viewport()
+    assert viewport.rect().contains(button.mapTo(viewport, button.rect().center()))
+    bar.hide()

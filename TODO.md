@@ -15,3 +15,5 @@
 - [ ] SD card waveform, hotcue, memory cue, loop point reverse engineering
 - [ ] SD card sync metadata tab
 - [ ] Clean up unnecessary options in settings and add cm/in units (maybe in print dialog too)
+- [ ] Make burn playlist folder structure appear in the print label window
+- [ ] Reduce spacing in label printer labels around artist and track name, allowing more chars to fit

@@ -18,9 +18,13 @@
    source, so discs, sorting, search and previews all work unchanged (`Library.sync_directory`,
    `prune_explorer`; schema v9). **Next, as agreed with the owner:**
    - **Pinned folders**: *Built, not yet looked at on a real Mac.* Right-click a folder in the
-     Explorer > Pin Folder gives it a tab below Explorer (Unpin Folder on the tab or the tree);
+     Explorer > Pin Folder gives it a tab below Explorer without leaving the current screen (Unpin Folder on the tab or the tree);
      the folder, not recursive, is read again each time its tab is opened (no background watching).
-     Still to do: reorder the tabs (they stay in the order pinned), and many pins need a scrolling tab strip.
+     Tabs reorder by dragging (only pinned ones; Library and Explorer stay first and second) or by
+     Move Up / Move Down in the tab's menu, and the strip scrolls (wheel, no scroll bar, edge chevrons,
+     the picked tab scrolled into view) when there are more pins than fit. Explorer: opening the tab lists
+     the drives again, and right-click > Refresh lists a folder again. Not tried on a real Mac or a
+     trackpad: the feel of dragging a tab and of the scrolling.
      The owner's use: a folder of misc MP3s that isn't in rekordbox.
    - **A tab per app library** (not one merged Library tab), for when a second library exists. Only
      rekordbox is in use today: Engine DJ and Algoriddim djay are backups synced from rekordbox

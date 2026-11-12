@@ -225,6 +225,7 @@ class MainWindow(QMainWindow):
         explorer_page = self._folder_page("Explorer", self.explorer_tree)
         self.explorer_tree.pin_requested.connect(self.pin_folder)
         self.explorer_tree.unpin_requested.connect(self.unpin_folder)
+        self.explorer_tree.refresh_requested.connect(self._on_refresh_folder)
 
         self.source_pages = QStackedWidget()
         self.source_pages.addWidget(library_page)
@@ -248,6 +249,7 @@ class MainWindow(QMainWindow):
         )
         self.source_tabs.current_changed.connect(self._on_left_tab)
         self.source_tabs.context_menu_requested.connect(self._on_tab_menu)
+        self.source_tabs.tabs_reordered.connect(self._on_tabs_dragged)
         left = QWidget()
         left_layout = QHBoxLayout(left)
         left_layout.setContentsMargins(0, 0, 0, 0)
@@ -792,6 +794,7 @@ class MainWindow(QMainWindow):
                 self._on_tree_current_changed(current, QModelIndex())
             return
         if key == "explorer":
+            self.explorer_tree.refresh_roots()  # (a drive may have been plugged in since)
             path = self._explorer_path or self.explorer_tree.current_path()
         else:  # a pinned folder: its folder (or one inside it) is read again each time
             path = self._pin_trees[key].current_path()
@@ -814,12 +817,15 @@ class MainWindow(QMainWindow):
     # -- pinned folders ---------------------------------------------------
 
     def pin_folder(self, path: str) -> None:
-        """Give a folder a tab of its own, below the Explorer, and go to it."""
+        """Give a folder a tab of its own, below the Explorer. The window stays where it is."""
         path = str(Path(path))
-        if path not in self._pins:
-            self._add_pinned_tab(path)
-            self._save_pins()
-        self.source_tabs.set_current(settings.PIN_PREFIX + path)
+        name = Path(path).name or path
+        if path in self._pins:
+            self.statusBar().showMessage(f"“{name}” is already pinned", 4000)
+            return
+        self._add_pinned_tab(path)
+        self._save_pins()
+        self.statusBar().showMessage(f"Pinned “{name}”", 4000)
 
     def unpin_folder(self, path: str) -> None:
         """Take a folder's tab away (the folder itself is not touched)."""
@@ -845,13 +851,18 @@ class MainWindow(QMainWindow):
         tree.folder_selected.connect(lambda p, k=key: self._on_pinned_folder(k, p))
         tree.pin_requested.connect(self.pin_folder)
         tree.unpin_requested.connect(self.unpin_folder)
+        tree.refresh_requested.connect(self._on_refresh_folder)
         page = self._folder_page(name, tree)
         self.source_pages.addWidget(page)
         self._left_pages[key] = page
         self._pin_trees[key] = tree
         self._pins.append(path)
         self.source_tabs.add_tab(
-            key, name, pinned_glyph, f"{path}\nRight-click to unpin"
+            key,
+            name,
+            pinned_glyph,
+            f"{path}\nDrag to reorder, right-click to unpin",
+            movable=True,
         )
 
     def _save_pins(self) -> None:
@@ -862,18 +873,53 @@ class MainWindow(QMainWindow):
         if self._persist:
             settings.set_pinned_folders(self._pins)
 
+    def _on_refresh_folder(self, path: str) -> None:
+        """Refresh on the folder that is showing reads its files again too."""
+        if self._selection == ("explorer", path):
+            self._show_explorer_folder(path)
+
     def _on_pinned_folder(self, key: str, path: str) -> None:
         if self.source_tabs.current() == key:
             self._show_explorer_folder(path)
 
-    def _on_tab_menu(self, key: str, where) -> None:
-        if not key.startswith(settings.PIN_PREFIX):
+    def move_pin(self, path: str, offset: int) -> None:
+        """Move a pinned folder's tab up (negative) or down; pins stay below Library and Explorer."""
+        path = str(Path(path))
+        if path not in self._pins:
             return
+        old = self._pins.index(path)
+        new = max(0, min(len(self._pins) - 1, old + offset))
+        if new == old:
+            return
+        self._pins.insert(new, self._pins.pop(old))
+        self.source_tabs.move_tab(settings.PIN_PREFIX + path, new - old)
+        self._save_pins()
+
+    def _on_tabs_dragged(self) -> None:
+        """A pinned tab was dragged to a new place: keep the pins in the strip's order."""
+        prefix = settings.PIN_PREFIX
+        order = self.source_tabs.keys()
+        self._pins = [k[len(prefix) :] for k in order if k in self._pin_trees]
+        self._save_pins()
+
+    def _tab_menu(self, key: str) -> QMenu | None:
+        if not key.startswith(settings.PIN_PREFIX):
+            return None
+        path = key[len(settings.PIN_PREFIX) :]
+        place = self._pins.index(path)
         menu = QMenu(self)
-        menu.addAction(
-            "Unpin Folder", lambda: self.unpin_folder(key[len(settings.PIN_PREFIX) :])
+        menu.addAction("Move Up", lambda: self.move_pin(path, -1)).setEnabled(place > 0)
+        menu.addAction("Move Down", lambda: self.move_pin(path, 1)).setEnabled(
+            place < len(self._pins) - 1
         )
-        menu.exec(where)
+        menu.addSeparator()
+        menu.addAction("Unpin Folder", lambda: self.unpin_folder(path))
+        return menu
+
+    def _on_tab_menu(self, key: str, where) -> None:
+        menu = self._tab_menu(key)
+        if menu is not None:
+            menu.exec(where)
 
     def _show_explorer_folder(self, path: str) -> None:
         """Show what is known of a folder at once, and read it again in the background."""

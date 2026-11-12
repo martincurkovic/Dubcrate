@@ -120,12 +120,15 @@ The **Explorer** tab (the second tab down the left edge) is for music that isn't
 - **A file that is also in rekordbox** (the same path) uses rekordbox's data: its BPM and key show in the list (rekordbox's win over the tags; the tags fill in what rekordbox leaves blank), and previewing it shows rekordbox's waveform, beat grid, cues and phrases. A file elsewhere, or a copy, is just a file. Rekordbox's data is read when you open the folder, so re-import rekordbox, then open the folder again, to pick up a change.
 - **The Explorer's tracks are not part of your Library**: they don't appear in **All Tracks** or in a search of it. A track you add to a disc, though, is kept on that disc. Everything else the Explorer read is forgotten when Dubcrate next starts, and read again when you open the folder.
 - If a folder can't be read, the status bar says why. On a Mac, the first time you open Documents, Downloads, Desktop or a drive, macOS may ask whether Dubcrate may read it; if you said no, allow it under **System Settings > Privacy & Security > Files & Folders**.
+- A drive you plug in while Dubcrate is open appears when you next open the Explorer tab. Right-click any folder and choose **Refresh** to list its sub-folders again (and, if it is the folder showing, to read its files again).
 - Dubcrate remembers which tab and which folder you were on.
 
 ### Pinned folders
 
-For a folder you use all the time (say, MP3s that aren't in rekordbox), **right-click it in the Explorer and choose Pin Folder**. It gets a tab of its own below Explorer, showing that folder and the folders inside it. The folder is read again every time you open its tab, so files you have added since show up.
+For a folder you use all the time (say, MP3s that aren't in rekordbox), **right-click it in the Explorer and choose Pin Folder**. It gets a tab of its own below Explorer, showing that folder and the folders inside it. Dubcrate stays on the screen you were on and says in the status bar that the folder is pinned; click the new tab when you want it. The folder is read again every time you open its tab, so files you have added since show up.
 
+- **Drag a pinned tab up or down** to put your pins in the order you like (or right-click it and choose **Move Up** or **Move Down**). Library and Explorer always stay first and second. The order is remembered.
+- With more pins than fit, the tab strip **scrolls** (mouse wheel or trackpad); a small arrow at the top or bottom shows there are more tabs beyond that edge, and the tab you pick is always scrolled into view.
 - To remove a tab, right-click it (or the folder in any tree) and choose **Unpin Folder**. The folder and its files are not touched.
 - A pinned folder on a drive keeps its tab when the drive is unplugged; the status bar says the folder isn't there until you plug it back in.
 - The tab shows only the start of a long folder name; hold the pointer over it for the full path.
