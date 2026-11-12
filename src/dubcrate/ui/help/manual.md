@@ -364,6 +364,7 @@ This is the only time Dubcrate uses the network. It asks `github.com` for the li
 
 ## Good to know
 
+- **Number boxes work like knobs.** Press on one and drag up or down to change it (hold Shift for fine steps), or click it once to select the whole number and type a new one (Return applies). The little arrows and the arrow keys still work.
 - **Titles use CD-TEXT**, which handles Western European characters. Other characters are simplified, or become a question mark, on the disc.
 - **The disc holds only audio and titles.** Cue points, beat grids and rekordbox analysis can't go on an audio CD.
 - **Everything is converted to CD quality** when burned, so a high-resolution file becomes 16-bit, 44.1 kHz.
