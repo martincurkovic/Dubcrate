@@ -183,39 +183,52 @@ def test_removing_and_text_edits_use_the_discs_own_positions(lib, disc):
 # -- deleting, converting, copying ---------------------------------------------
 
 
-def test_deleting_a_folder_moves_what_is_in_it_up(lib, disc):
+def test_deleting_a_folder_takes_its_tracks_and_folders_off_the_disc_at_any_depth(
+    lib, disc
+):
     a = lib.create_disc_dir(disc, "A")
     b = lib.create_disc_dir(disc, "B", parent_id=a)
     c = lib.create_disc_dir(disc, "C", parent_id=b)
-    lib.add_to_disc(disc, ids(lib)[:2], dir_id=b)
-    lib.add_to_disc(disc, ids(lib)[2:3], dir_id=c)
+    other = lib.create_disc_dir(disc, "Other")
+    t = ids(lib)
+    lib.add_to_disc(disc, t[:1], dir_id=a)
+    lib.add_to_disc(disc, t[1:3], dir_id=b)
+    lib.add_to_disc(disc, t[3:4], dir_id=c)
+    lib.add_to_disc(disc, t[4:5], dir_id=other)
+    lib.add_to_disc(disc, t[5:6])  # the root
+    assert lib.disc_dir_contents(disc, b) == (
+        3,
+        1,
+    )  # B's two and C's one, and the folder C
     lib.delete_disc_dir(disc, b)
-    assert [(d.name, d.parent_id) for d in lib.disc_dirs(disc)] == [
-        ("A", None),
-        ("C", a),
-    ]
-    assert titles(lib, disc, a) == ["Song 0", "Song 1"] and titles(lib, disc, c) == [
-        "Song 2"
-    ]
-    lib.delete_disc_dir(disc, a)  # to the root
-    assert (
-        titles(lib, disc) == ["Song 0", "Song 1"]
-        and lib.disc_dirs(disc)[0].parent_id is None
-    )
+    assert [(d.name, d.parent_id) for d in lib.disc_dirs(disc)] == [("A", None), ("Other", None)]  # fmt: skip
+    assert titles(lib, disc, a) == ["Song 0"] and titles(lib, disc, other) == ["Song 4"]
+    assert titles(lib, disc) == ["Song 5"]
+    assert [e.position for e in lib.disc_entries(disc)] == [
+        0,
+        1,
+        2,
+    ]  # the places close up
+    assert lib.count_tracks() == 6  # the library is untouched
 
 
-def test_deleting_a_folder_that_would_clash_or_overfill_is_refused(lib, disc):
-    lib.create_disc_dir(disc, "X")
+def test_deleting_a_top_folder_leaves_the_rest_and_an_empty_one_just_goes(lib, disc):
     top = lib.create_disc_dir(disc, "Top")
-    lib.create_disc_dir(disc, "X", parent_id=top)  # would meet the root's "X"
-    with pytest.raises(DiscError, match="clash"):
-        lib.delete_disc_dir(disc, top)
-    big = lib.create_disc_dir(disc, "Big")
-    one = ids(lib)[:1]
-    lib.add_to_disc(disc, one * 999, dir_id=big)
-    lib.add_to_disc(disc, one)
-    with pytest.raises(DiscError, match="at most 999"):
-        lib.delete_disc_dir(disc, big)
+    empty = lib.create_disc_dir(disc, "Empty")
+    lib.create_disc_dir(disc, "Inside", parent_id=top)
+    lib.add_to_disc(disc, ids(lib)[:2])
+    assert lib.disc_dir_contents(disc, empty) == (0, 0)
+    lib.delete_disc_dir(disc, empty)
+    lib.delete_disc_dir(disc, top)
+    assert lib.disc_dirs(disc) == [] and titles(lib, disc) == ["Song 0", "Song 1"]
+
+
+def test_a_folder_of_another_disc_cannot_be_deleted_from_this_one(lib, disc):
+    other = lib.create_disc("Other", kind="mp3")
+    folder = lib.create_disc_dir(other, "F")
+    with pytest.raises(DiscError, match="no folder"):
+        lib.delete_disc_dir(disc, folder)
+    assert len(lib.disc_dirs(other)) == 1
 
 
 def test_a_disc_with_folders_becomes_audio_in_the_order_a_player_lists_them(lib, disc):

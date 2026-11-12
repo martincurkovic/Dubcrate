@@ -39,6 +39,11 @@ from .tasks import run_async
 from .track_table import transport_action
 
 
+def _things(n: int, noun: str) -> str:
+    """ "1 disc", "3 discs", "no folders": for the question before a delete."""
+    return f"{n} {noun}{'s' if n != 1 else ''}" if n else f"no {noun}s"
+
+
 class DiscTable(QTableView):
     """The disc's track list: reorder by dragging, remove with Delete, edit the CD text."""
 
@@ -71,7 +76,9 @@ class DiscTable(QTableView):
         super().dropEvent(event)
 
     def keyPressEvent(self, event) -> None:
-        if event.key() in (Qt.Key.Key_Delete, Qt.Key.Key_Backspace):
+        if event.key() in (Qt.Key.Key_Delete, Qt.Key.Key_Backspace) and not (
+            event.modifiers() & Qt.KeyboardModifier.ControlModifier
+        ):  # (with ⌘ it is the shortcut that deletes the disc, not the tracks)
             self.remove_requested.emit()
             return
         action = transport_action(event)
@@ -356,20 +363,49 @@ class DiscView(QWidget):
             self._show_disc()
         self.discs_changed.emit()
 
-    def delete_disc(self, disc_id: int | None = None) -> None:
+    def delete_disc(self, disc_id: int | None = None, ask: bool = True) -> None:
         disc_id = self._disc_id if disc_id is None else disc_id
         if disc_id is None:
             return
         name = self._lib.disc(disc_id).name
-        answer = QMessageBox.question(
-            self,
-            "Delete Disc",
-            f'Delete "{name}"?\nThe tracks stay in your library; only this disc is removed.',
-        )
-        if answer == QMessageBox.StandardButton.Yes:
-            self._lib.delete_disc(disc_id)
-            self.reload()
-            self.discs_changed.emit()
+        if ask:
+            answer = QMessageBox.question(
+                self,
+                "Delete Disc",
+                f'Delete "{name}"?\nThe tracks stay in your library; only this disc is removed.',
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.Yes,
+            )
+            if answer != QMessageBox.StandardButton.Yes:
+                return
+        self._lib.delete_disc(disc_id)
+        self.reload()
+        self.discs_changed.emit()
+
+    def is_empty(self, selection: tuple) -> bool:
+        """Whether a row of the Discs list holds nothing: a disc with no tracks and no folders, a
+        folder with no discs or folders in it, a folder on an MP3 disc with no tracks or folders."""
+        kind = selection[0]
+        if kind == "disc":
+            return not self._lib.disc(selection[1]).track_count and not self._lib.disc_dirs(selection[1])  # fmt: skip
+        if kind == "disc_folder":
+            return not any(d.folder_id == selection[1] for d in self._lib.discs()) and not any(f.parent_id == selection[1] for f in self._lib.disc_folders())  # fmt: skip
+        if kind == "disc_dir":
+            disc_id, dir_id = selection[1], selection[2]
+            return not self._lib.dir_file_counts(disc_id).get(dir_id) and not any(d.parent_id == dir_id for d in self._lib.disc_dirs(disc_id))  # fmt: skip
+        return False
+
+    def delete_item(self, selection: tuple) -> None:
+        """Delete a disc, a folder of discs, or a folder on an MP3 disc: straight away if it is
+        empty, else after asking (Yes is the default answer, so Return confirms)."""
+        ask = not self.is_empty(selection)
+        match selection[0]:
+            case "disc":
+                self.delete_disc(selection[1], ask=ask)
+            case "disc_folder":
+                self.delete_folder(selection[1], ask=ask)
+            case "disc_dir":
+                self.delete_dir(selection[1], selection[2], ask=ask)
 
     def duplicate_disc(self, disc_id: int | None = None) -> int | None:
         """Make a copy of a disc (to re-burn, or to change), and open it."""
@@ -400,17 +436,26 @@ class DiscView(QWidget):
             self._lib.rename_disc_folder(folder_id, name)
             self.discs_changed.emit()
 
-    def delete_folder(self, folder_id: int) -> None:
+    def delete_folder(self, folder_id: int, ask: bool = True) -> None:
+        """Delete a folder of discs and everything in it: its discs, and its folders at any depth.
+        The tracks on those discs stay in the library."""
         name = next(f for f in self._lib.disc_folders() if f.id == folder_id).name
-        answer = QMessageBox.question(
-            self,
-            "Delete Folder",
-            f'Delete the folder "{name}"?\n'
-            "The discs and folders in it move up a level. No disc is deleted.",
-        )
-        if answer == QMessageBox.StandardButton.Yes:
-            self._lib.delete_disc_folder(folder_id)
-            self.discs_changed.emit()
+        discs, folders = self._lib.disc_folder_contents(folder_id)
+        if ask:
+            answer = QMessageBox.question(
+                self,
+                "Delete Folder",
+                f'Delete the folder "{name}"?\n'
+                f"This also deletes {_things(discs, 'disc')} and {_things(folders, 'folder')} in it."
+                "\nThe tracks stay in your library.",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.Yes,
+            )
+            if answer != QMessageBox.StandardButton.Yes:
+                return
+        self._lib.delete_disc_folder(folder_id)
+        self.reload()  # (the open disc may have been in it)
+        self.discs_changed.emit()
 
     def move_items(self, items: list[tuple], folder_id: int | None) -> None:
         """File discs and folders (as dragged in the tree) into a folder, or the top level."""
@@ -655,24 +700,33 @@ class DiscView(QWidget):
         self.reload()
         self.discs_changed.emit()
 
-    def delete_dir(self, disc_id: int, dir_id: int) -> None:
+    def delete_dir(self, disc_id: int, dir_id: int, ask: bool = True) -> None:
+        """Delete a folder of an MP3 disc and everything in it: its tracks come off the disc,
+        and its folders go, at any depth. The tracks stay in the library."""
         gone = next(d for d in self._lib.disc_dirs(disc_id) if d.id == dir_id)
-        name = gone.name
-        answer = QMessageBox.question(
-            self,
-            "Delete Folder",
-            f'Delete the folder "{name}" from the disc?\n'
-            "Its tracks and folders move up a level. No track leaves the disc.",
-        )
-        if answer != QMessageBox.StandardButton.Yes:
-            return
+        tracks, folders = self._lib.disc_dir_contents(disc_id, dir_id)
+        if ask:
+            answer = QMessageBox.question(
+                self,
+                "Delete Folder",
+                f'Delete the folder "{gone.name}" from the disc?\n'
+                f"This also takes {_things(tracks, 'track')} off the disc, and"
+                f" deletes {_things(folders, 'folder')} in it.\nThe tracks stay in your library.",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.Yes,
+            )
+            if answer != QMessageBox.StandardButton.Yes:
+                return
+        within = self._lib.disc_dir_subtree(disc_id, dir_id)
         try:
             self._lib.delete_disc_dir(disc_id, dir_id)
         except LibraryError as exc:
             self._warn("Can't delete the folder", str(exc))
             return
-        if disc_id == self._disc_id and self._dir_id == dir_id:
-            self._dir_id = gone.parent_id  # what was shown moves up with it
+        if disc_id == self._disc_id and self._dir_id in within:
+            self._dir_id = (
+                gone.parent_id
+            )  # what was shown goes with it: back up to where it was
         self.reload()
         self.discs_changed.emit()
 

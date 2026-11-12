@@ -615,7 +615,7 @@ def test_the_menu_actions_do_what_they_say(window, monkeypatch):
     assert {d.name for d in lib.discs()} == {"Renamed (copy)"}
 
 
-def test_folder_menu_rename_and_delete_keep_the_discs(window, monkeypatch):
+def test_folder_menu_rename_and_delete_takes_the_discs_in_it_too(window, monkeypatch):
     win, lib = window
     folder = lib.create_disc_folder("Old")
     disc = lib.create_disc("D", folder_id=folder)
@@ -631,9 +631,9 @@ def test_folder_menu_rename_and_delete_keep_the_discs(window, monkeypatch):
     assert lib.disc_folders()[0].name == "New Name"
     monkeypatch.setattr(QMessageBox, "question", staticmethod(lambda *a, **k: YES))
     actions["Delete Folder…"].trigger()
-    assert (
-        lib.disc_folders() == [] and lib.disc(disc).folder_id is None
-    )  # the disc survives
+    assert lib.disc_folders() == [] and disc not in {
+        d.id for d in lib.discs()
+    }  # (and its disc)
 
 
 # -- dragging -----------------------------------------------------------------------

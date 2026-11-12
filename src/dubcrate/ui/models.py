@@ -28,7 +28,7 @@ from dubcrate.library.models import DiscEntry, Track
 from dubcrate.mp3 import format_span
 from dubcrate.waveform import Waveform
 
-from . import mono_icons, theme
+from . import key_style, mono_icons, theme
 from .track_colors import swatch_icon
 
 PREVIEW_ROLE = (
@@ -72,7 +72,7 @@ TRACK_COLUMNS = (
     TrackColumn("Title", "title", width=230),
     TrackColumn("Artist", "artist", width=130),
     TrackColumn("BPM", "bpm", right=True, width=50, fixed=True),
-    TrackColumn("Key", "key", width=40, fixed=True),
+    TrackColumn("Key", "key", width=62, fixed=True),
     TrackColumn("Time", "duration", right=True, width=46, fixed=True),
     # the whole-track waveform, drawn by PreviewDelegate
     TrackColumn("Preview", None, width=120, fixed=True),
@@ -117,7 +117,9 @@ def _track_cell(track: Track, column: int) -> str:
         case "BPM":
             return f"{track.bpm:.1f}" if track.bpm else ""
         case "Key":
-            return track.key
+            return key_style.display(
+                track.key
+            )  # (Camelot or musical, as Settings says)
         case "Time":
             return _clock(track.duration)
         case "Genre":
@@ -162,6 +164,15 @@ class TrackTableModel(QAbstractTableModel):
         self._on_disc: set[int] = set()
         self._previews: dict[int, Waveform] = {}
         self._rows: dict[int, int] = {}
+        key_style.notifier.changed.connect(self._keys_changed)
+
+    def _keys_changed(self) -> None:
+        """The key notation was changed in Settings: redraw the Key column."""
+        if self._tracks:
+            column = next(i for i, c in enumerate(TRACK_COLUMNS) if c.title == "Key")
+            self.dataChanged.emit(
+                self.index(0, column), self.index(len(self._tracks) - 1, column)
+            )
 
     def set_tracks(self, tracks: list[Track]) -> None:
         self.beginResetModel()

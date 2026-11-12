@@ -16,13 +16,13 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from dubcrate import mp3, settings
+from dubcrate import keys, mp3, settings
 from dubcrate.audio import devices
 from dubcrate.audio.decode import DecodedAudio
 from dubcrate.audio.devices import BUFFER_SIZES, SAMPLE_RATE, buffer_msec
 from dubcrate.audio.player import AudioPlayer
 
-from . import theme, wave_style
+from . import key_style, theme, wave_style
 
 TONE_SECONDS = 0.8
 TONE_LEVEL = 0.25  # a test tone should never startle anyone
@@ -310,6 +310,21 @@ class SettingsDialog(QDialog):
             lambda _i: self.theme_chosen.emit(self.theme_combo.currentData())
         )
         form.addRow("Theme:", self.theme_combo)
+
+        self.key_combo = QComboBox()
+        self.key_combo.addItem("Camelot (8A)", keys.CAMELOT)
+        self.key_combo.addItem("Musical (A min)", keys.MUSICAL)
+        self.key_combo.setCurrentIndex(
+            max(0, self.key_combo.findData(settings.get_key_notation()))
+        )
+        self.key_combo.setToolTip(
+            "How keys are written in the track list and the player. Only what is shown changes:"
+            " your library, rekordbox and the files keep what they have."
+        )
+        self.key_combo.activated.connect(
+            lambda _i: key_style.set_notation(self.key_combo.currentData())
+        )
+        form.addRow("Key notation:", self.key_combo)
 
         self.wave_style_combo = QComboBox()
         for label, value in wave_style.WAVE_STYLE_LABELS:

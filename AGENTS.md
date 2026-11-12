@@ -84,7 +84,7 @@ the repo; follow whatever it reports.
 - Every track must be a whole number of sectors (588 samples) before it reaches a
   burner. `render_track` guarantees this; keep it that way.
 - CD-TEXT is required, not optional. Text goes through `cdtext_clean` first.
-- A disc is a playlist, like any other: there are **no burn records or frozen snapshots**. A burn only sets `disc.last_burned_at`, a note; a burned disc is as editable as any. Discs live in `disc_folder`s (deleting one moves its contents up a level, never deletes a disc).
+- A disc is a playlist, like any other: there are **no burn records or frozen snapshots**. A burn only sets `disc.last_burned_at`, a note; a burned disc is as editable as any. Discs live in `disc_folder`s. Deleting a `disc_folder`, or a folder on an MP3 disc (`disc_dir`), **deletes what is in it** (discs and folders; tracks come off the disc), at any depth; the interface asks first unless it is empty. Deleting never touches a library track or a music file.
 - What is written on a CD for a track is `DiscEntry.title` / `.artist`: the disc's own edit if any, else the library track's. Edits are stored on the `disc_track` row (they travel with it through add, remove and reorder: the store moves `_Slot`s, never bare track ids) and must never be written to `track`, rekordbox or an audio file. Burning, burn records and problem messages use the entry's text, not `entry.track.title`.
 
 ## Conventions

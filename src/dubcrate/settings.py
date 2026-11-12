@@ -2,7 +2,7 @@
 
 from PySide6.QtCore import QByteArray, QSettings
 
-from dubcrate import mp3
+from dubcrate import keys, mp3
 
 THEME_SYSTEM = "system"
 THEME_LIGHT = "light"
@@ -91,6 +91,16 @@ def get_mp3_bitrate() -> int:
 
 def set_mp3_bitrate(kbps: int) -> None:
     _qs().setValue("discs/mp3_bitrate", int(kbps))
+
+
+def get_key_notation() -> str:
+    """How keys are shown: "camelot" (8A, the default) or "musical" (A min)."""
+    value = str(_qs().value("display/key_notation", keys.CAMELOT))
+    return value if value in keys.NOTATIONS else keys.CAMELOT
+
+
+def set_key_notation(notation: str) -> None:
+    _qs().setValue("display/key_notation", notation)
 
 
 BURN_SPEEDS = (4, 8, 10, 12, 16, 20, 24, 32, 48)

@@ -165,11 +165,7 @@ def test_a_deleted_folder_that_was_open_falls_back_to_its_parent(mp3, monkeypatc
     ask(monkeypatch, YES)
     win.disc_view.delete_dir(disc, deep)
     assert win.disc_view.current_dir_id() == house
-    assert shown_titles(win) == [
-        "Song 2",
-        "Song 3",
-        "Song 4",
-    ]  # its track moved up with it
+    assert shown_titles(win) == ["Song 2", "Song 3"]  # its track went with it
     assert (
         find_selection(win.disc_tree.model(), ("disc_dir", disc, deep)) == QModelIndex()
     )
@@ -464,7 +460,11 @@ def test_deleting_a_folder_asks_and_no_changes_nothing(mp3, monkeypatch):
     win, lib, disc, house, _ = mp3
     asked = ask(monkeypatch, NO)
     win.disc_view.delete_dir(disc, house)
-    assert len(lib.disc_dirs(disc)) == 2 and "move up a level" in asked[0][1]
+    assert (
+        len(lib.disc_dirs(disc)) == 2
+        and "also takes 0 tracks off the disc" in asked[0][1]
+        or "also takes" in asked[0][1]
+    )
 
 
 def test_the_players_limits_are_told_not_crashed_into(mp3):

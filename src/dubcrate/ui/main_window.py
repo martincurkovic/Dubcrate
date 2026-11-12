@@ -58,6 +58,7 @@ from .models import (
 from .player_strip import PlayerStrip
 from .preview import PreviewController
 from .settings_dialog import SettingsDialog
+from .shortcuts_dialog import ShortcutsDialog
 from .splitter import Splitter
 from .tasks import run_async
 from .track_table import (
@@ -112,6 +113,7 @@ class MainWindow(QMainWindow):
         self._selection: tuple = ("all",)
         # the folder or disc that is current in the disc tree
         self._disc_pick: tuple | None = None
+        self.shortcuts_dialog: ShortcutsDialog | None = None  # kept while it is open
         self._sort: tuple[str | None, bool] = (None, False)
         self._busy = False
         self._theme_actions: dict[str, QAction] = {}
@@ -379,7 +381,9 @@ class MainWindow(QMainWindow):
         )
         file_menu.addSeparator()
         self.act_reimport = file_menu.addAction(
-            "Re-import Selected &Source", self.reimport_selected, QKeySequence("Ctrl+R")
+            "Re-import Selected &Source",
+            self.reimport_selected,
+            QKeySequence("Ctrl+Shift+R"),
         )
         self.act_remove_source = file_menu.addAction(
             "&Remove Selected Source…", self.remove_selected_source
@@ -414,9 +418,21 @@ class MainWindow(QMainWindow):
             "Make a disc for an MP3 CD: a data disc of MP3 files, sized in megabytes, for players that read MP3 discs."
         )
         disc_menu.addAction("New &Folder", lambda: self.new_disc_folder())
-        disc_menu.addAction("&Rename Disc", self._rename_open_disc)
+        self.act_rename = disc_menu.addAction(
+            "&Rename", self.rename_picked, QKeySequence("Ctrl+R")
+        )
+        self.act_rename.setToolTip(
+            "Rename the disc or folder picked in the Discs list."
+        )
         disc_menu.addAction("D&uplicate Disc", lambda: self.disc_view.duplicate_disc())
-        disc_menu.addAction("&Delete Disc…", lambda: self.disc_view.delete_disc())
+        self.act_delete = disc_menu.addAction("&Delete…", self.delete_picked)
+        self.act_delete.setShortcuts(
+            [QKeySequence("Ctrl+Backspace"), QKeySequence("Ctrl+Delete")]
+        )  # (⌘⌫ on a Mac; Backspace is the key called Delete there)
+        self.act_delete.setToolTip(
+            "Delete the disc or folder picked in the Discs list: at once if it is empty,"
+            " else after asking."
+        )
         disc_menu.addSeparator()
         self.act_burn = disc_menu.addAction(
             "&Burn Disc…", self.burn_current_disc, QKeySequence("Ctrl+B")
@@ -467,6 +483,9 @@ class MainWindow(QMainWindow):
         self.act_help = help_menu.addAction(
             "&User Guide", self.show_help, QKeySequence.StandardKey.HelpContents
         )
+        self.act_shortcuts = help_menu.addAction(
+            "&Keyboard Shortcuts", self.show_shortcuts, QKeySequence("Ctrl+/")
+        )
         help_menu.addSeparator()
         about = help_menu.addAction("&About Dubcrate", self.show_about)
         about.setMenuRole(QAction.MenuRole.AboutRole)
@@ -514,6 +533,16 @@ class MainWindow(QMainWindow):
 
     def show_help(self) -> None:
         show_help_dialog(self)
+
+    def show_shortcuts(self) -> None:
+        """The list of shortcuts, in a window that stays open beside your work. Built each time,
+        from the menus as they are now."""
+        if self.shortcuts_dialog is not None:
+            self.shortcuts_dialog.close()
+        self.shortcuts_dialog = ShortcutsDialog(self)
+        self.shortcuts_dialog.setWindowModality(Qt.WindowModality.NonModal)
+        self.shortcuts_dialog.show()
+        self.shortcuts_dialog.raise_()
 
     def show_about(self) -> None:
         AboutDialog(self, self.updates, icon_path()).exec()
@@ -812,10 +841,26 @@ class MainWindow(QMainWindow):
         self.disc_tree.scrollTo(index)
         self.disc_tree.edit(index)
 
-    def _rename_open_disc(self) -> None:
-        disc_id = self.disc_view.current_disc_id()
-        if disc_id is not None:
-            self.edit_in_tree(("disc", disc_id))
+    def picked_disc_item(self) -> tuple | None:
+        """What is picked in the Discs list, ("disc", id) | ("disc_folder", id) | ("disc_dir",
+        disc id, folder id); with nothing picked, the open disc."""
+        index = self.disc_tree.currentIndex()
+        selection = (
+            index.siblingAtColumn(0).data(SELECTION_ROLE) if index.isValid() else None
+        )
+        if selection is None and self.disc_view.current_disc_id() is not None:
+            selection = ("disc", self.disc_view.current_disc_id())
+        return selection
+
+    def rename_picked(self) -> None:
+        selection = self.picked_disc_item()
+        if selection is not None:
+            self.edit_in_tree(selection)
+
+    def delete_picked(self) -> None:
+        selection = self.picked_disc_item()
+        if selection is not None:
+            self.disc_view.delete_item(selection)
 
     def _on_tree_renamed(self, selection: tuple, name: str) -> None:
         # Apply it once the editor has finished: rebuilding the tree inside its own

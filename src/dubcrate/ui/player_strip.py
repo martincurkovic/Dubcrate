@@ -17,6 +17,7 @@ from dubcrate.analysis import Analysis
 from dubcrate.library.models import Track
 from dubcrate.waveform import Waveform
 
+from . import key_style
 from .waveform_view import DetailView, OverviewView
 
 IDLE_HINT = "Double-click a track to preview it"
@@ -90,7 +91,9 @@ class PlayerStrip(QWidget):
             )
         self.elapsed.setMinimumWidth(40)
         self.remaining.setMinimumWidth(48)
-        self.key.setMinimumWidth(34)
+        self.key.setMinimumWidth(56)
+        self._key = ""  # as the source wrote it; shown in the notation Settings says
+        key_style.notifier.changed.connect(self._show_key)
         self.bpm.setMinimumWidth(52)
 
         self.volume = QSlider(Qt.Orientation.Horizontal)
@@ -131,11 +134,15 @@ class PlayerStrip(QWidget):
         self.volume.setValue(round(volume * 100))
         self.volume.blockSignals(False)
 
+    def _show_key(self) -> None:
+        self.key.setText(key_style.display(self._key))
+
     def clear(self) -> None:
         self._duration = 0.0
         self.title.setText(IDLE_HINT)
         self.artist.setText("")
-        self.key.setText("")
+        self._key = ""
+        self._show_key()
         self.bpm.setText("")
         self.overview.clear()
         self.detail.clear()
@@ -148,7 +155,8 @@ class PlayerStrip(QWidget):
         self._duration = track.duration
         self.title.setText(track.title)
         self.artist.setText(track.artist)
-        self.key.setText(track.key)
+        self._key = track.key
+        self._show_key()
         self.bpm.setText(f"{track.bpm:.2f}" if track.bpm else "")
         self.overview.clear()
         self.detail.clear("Loading…")

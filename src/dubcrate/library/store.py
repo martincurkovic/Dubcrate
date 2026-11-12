@@ -15,7 +15,7 @@ from pathlib import Path
 from types import TracebackType
 from typing import Self
 
-from dubcrate import mp3
+from dubcrate import keys, mp3
 from dubcrate.cd import DISC_80_SECTORS, MAX_TRACKS, disc_used_sectors
 from dubcrate.library.models import (
     AddResult,
@@ -272,7 +272,7 @@ _SORTS = {
     "album": "t.album COLLATE NOCASE",
     "genre": "t.genre COLLATE NOCASE",
     "bpm": "t.bpm",
-    "key": "t.key COLLATE NOCASE",
+    "key": "key_order(t.key), t.key COLLATE NOCASE",
     "duration": "t.duration",
     "year": "t.year",
     "rating": "t.rating",
@@ -311,6 +311,7 @@ class Library:
             Path(target).parent.mkdir(parents=True, exist_ok=True)
         conn = sqlite3.connect(str(target))
         conn.execute("PRAGMA foreign_keys = ON")
+        conn.create_function("key_order", 1, keys.sort_value, deterministic=True)
         if str(target) != ":memory:":
             conn.execute("PRAGMA journal_mode = WAL")
         library = cls(conn)
@@ -877,39 +878,34 @@ class Library:
             )
             self._touch_disc(disc_id)
 
-    def delete_disc_dir(self, disc_id: int, dir_id: int) -> None:
-        """Delete a folder. Its tracks and folders move up a level; no track leaves the disc."""
-        row = self._dir_row(disc_id, dir_id)
-        parent = row["parent_id"]
-        slots = self._slots(disc_id)
-        inside = sum(1 for s in slots if s.dir_id == dir_id)
-        beside = sum(1 for s in slots if s.dir_id == parent)
-        if inside + beside > mp3.MAX_FILES_PER_FOLDER:
-            raise DiscError(
-                f"moving its tracks up would put {inside + beside} files in one folder;"
-                f" a folder holds at most {mp3.MAX_FILES_PER_FOLDER}"
-            )
+    def disc_dir_subtree(self, disc_id: int, dir_id: int) -> set[int]:
+        """A folder of an MP3 disc and every folder inside it, as ids."""
+        self._dir_row(disc_id, dir_id)
         dirs = self.disc_dirs(disc_id)
-        taken = {
-            mp3.dir_name(d.name).casefold()
-            for d in dirs
-            if d.parent_id == parent and d.id != dir_id
-        }
-        for child in (d for d in dirs if d.parent_id == dir_id):
-            if mp3.dir_name(child.name).casefold() in taken:
-                raise DiscError(
-                    f"moving “{child.name}” up would clash with a folder of the same name; rename one first"
-                )
+        found = {dir_id}
+        grew = True
+        while grew:
+            more = {d.id for d in dirs if d.parent_id in found} - found
+            found |= more
+            grew = bool(more)
+        return found
+
+    def disc_dir_contents(self, disc_id: int, dir_id: int) -> tuple[int, int]:
+        """(tracks, folders) inside a folder of an MP3 disc, at any depth: what deleting it takes."""
+        subtree = self.disc_dir_subtree(disc_id, dir_id)
+        tracks = sum(1 for s in self._slots(disc_id) if s.dir_id in subtree)
+        return tracks, len(subtree) - 1
+
+    def delete_disc_dir(self, disc_id: int, dir_id: int) -> None:
+        """Delete a folder of an MP3 disc with everything in it: its tracks come off the disc
+        and so do its folders, at any depth. The tracks stay in the library."""
+        subtree = self.disc_dir_subtree(disc_id, dir_id)
+        keep = [s for s in self._slots(disc_id) if s.dir_id not in subtree]
         with self._conn:
+            self._write_disc_slots(disc_id, keep)
             self._conn.execute(
-                "UPDATE disc_track SET dir_id = ? WHERE disc_id = ? AND dir_id = ?",
-                (parent, disc_id, dir_id),
-            )
-            self._conn.execute(
-                "UPDATE disc_dir SET parent_id = ? WHERE parent_id = ?",
-                (parent, dir_id),
-            )
-            self._conn.execute("DELETE FROM disc_dir WHERE id = ?", (dir_id,))
+                "DELETE FROM disc_dir WHERE id = ?", (dir_id,)
+            )  # (its folders go too)
             self._touch_disc(disc_id)
 
     def move_to_dir(
@@ -1255,20 +1251,34 @@ class Library:
                 (parent_id, folder_id),
             )
 
+    def disc_folder_subtree(self, folder_id: int) -> tuple[set[int], list[int]]:
+        """(the folder and every folder inside it, the discs filed in any of them), as ids."""
+        self._folder_row(folder_id)
+        folders = self.disc_folders()
+        found = {folder_id}
+        grew = True
+        while grew:
+            more = {f.id for f in folders if f.parent_id in found} - found
+            found |= more
+            grew = bool(more)
+        return found, [d.id for d in self.discs() if d.folder_id in found]
+
+    def disc_folder_contents(self, folder_id: int) -> tuple[int, int]:
+        """(discs, folders) inside a folder, at any depth: what deleting it takes with it."""
+        folders, discs = self.disc_folder_subtree(folder_id)
+        return len(discs), len(folders) - 1
+
     def delete_disc_folder(self, folder_id: int) -> None:
-        """Delete a folder. What was in it (discs and folders) moves up a level: this
-        never deletes a disc."""
-        row = self._folder_row(folder_id)
-        parent = row["parent_id"]
+        """Delete a folder with everything in it: its discs and its folders, at any depth.
+        The tracks on those discs stay in the library (a disc only lists tracks)."""
+        _folders, discs = self.disc_folder_subtree(folder_id)
         with self._conn:
-            self._conn.execute(
-                "UPDATE disc SET folder_id = ? WHERE folder_id = ?", (parent, folder_id)
+            self._conn.executemany(
+                "DELETE FROM disc WHERE id = ?", [(d,) for d in discs]
             )
             self._conn.execute(
-                "UPDATE disc_folder SET parent_id = ? WHERE parent_id = ?",
-                (parent, folder_id),
-            )
-            self._conn.execute("DELETE FROM disc_folder WHERE id = ?", (folder_id,))
+                "DELETE FROM disc_folder WHERE id = ?", (folder_id,)
+            )  # (its folders go too)
 
     def move_disc(self, disc_id: int, folder_id: int | None) -> None:
         """Put a disc in a folder (or at the top level with None)."""

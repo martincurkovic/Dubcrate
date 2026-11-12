@@ -84,14 +84,29 @@ def test_the_shortcuts_the_guide_lists_are_the_real_ones(window):
     }
     assert shortcuts["Import Folder…"] == "Ctrl+O"
     assert shortcuts["Import rekordbox Library…"] == "Ctrl+Shift+O"
-    assert shortcuts["Re-import Selected Source"] == "Ctrl+R"
+    assert shortcuts["Re-import Selected Source"] == "Ctrl+Shift+R"
+    assert shortcuts["Rename"] == "Ctrl+R"
+    assert shortcuts["Keyboard Shortcuts"] == "Ctrl+/"
     assert shortcuts["New Disc"] == "Ctrl+N"
     assert shortcuts["Add Selected Tracks"] == "Ctrl+D"
     assert shortcuts["Split Shown Tracks Across Discs…"] == "Ctrl+Shift+D"
     assert shortcuts["Settings…"] == "Ctrl+,"
     assert shortcuts["Burn Disc…"] == "Ctrl+B"
     assert shortcuts["Find Tracks"] == "Ctrl+F"
-    for keys in ("⌘O", "⇧⌘O", "⌘R", "⌘N", "⌘D", "⇧⌘D", "⌘,", "⌘B", "⌘F"):
+    for keys in (
+        "⌘O",
+        "⇧⌘O",
+        "⌘R",
+        "⇧⌘R",
+        "⌘⌫",
+        "⌘/",
+        "⌘N",
+        "⌘D",
+        "⇧⌘D",
+        "⌘,",
+        "⌘B",
+        "⌘F",
+    ):
         assert keys in MANUAL, keys
 
 
@@ -113,7 +128,7 @@ def test_the_right_hand_pane_the_guide_describes_is_the_real_one(window):
         "## Your discs",
         "**Discs** (right)",
         "Adding to",
-        "no disc is ever deleted with a folder",
+        "deleting a folder deletes what is in it",
         "**double-clicking** its name",
         "The + button",
         "ready to type over",

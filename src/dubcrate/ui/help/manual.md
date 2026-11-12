@@ -56,13 +56,13 @@ You need **ffmpeg** installed: Dubcrate uses it to read tracks and to prepare th
 | --- | --- |
 | **File > Import Folder…** (⌘O) | Read a folder of music. Each sub-folder becomes something you can browse. |
 | **File > Import rekordbox Library…** (⇧⌘O) | Read your rekordbox library, with its folders and playlists in their running order. |
-| **File > Re-import Selected Source** (⌘R) | Bring the selected source up to date after you added or moved music. |
+| **File > Re-import Selected Source** (⇧⌘R) | Bring the selected source up to date after you added or moved music. |
 | **File > Remove Selected Source…** | Forget a source. Your music files are not touched. |
 
 **Dubcrate keeps your rekordbox library up to date by itself.** Each time it starts, a splash screen shows while it re-reads a rekordbox library you have already imported, so tracks you added in rekordbox are there when the window opens. Afterwards the status bar says what changed (for example, "Brought in 12 new tracks from rekordbox"). Things to know:
 
 - It only updates a library you imported yourself, and it never imports one on its own.
-- Folders are **not** re-scanned at startup, because that takes too long. Use **File > Re-import Selected Source** (⌘R) for those, or for a rekordbox update while Dubcrate is already open.
+- Folders are **not** re-scanned at startup, because that takes too long. Use **File > Re-import Selected Source** (⇧⌘R) for those, or for a rekordbox update while Dubcrate is already open.
 - If rekordbox's library is missing, locked or unreadable, Dubcrate skips it and tells you in the status bar. If rekordbox reports no tracks at all, Dubcrate doesn't believe it and keeps your library as it was.
 - A track you deleted in rekordbox is removed here too, unless it is on one of your discs: that one is kept and marked, so no disc ever silently loses a track.
 - Turn this off under **File > Settings… > Library**, or start with `dubcrate-gui --no-import`.
@@ -100,7 +100,7 @@ Only the essentials show at first: Title, Artist, BPM, Key, Time, the Preview wa
 | Bitrate, Sample Rate, Format | The audio file's details |
 | Path | Where the file is |
 
-Click any of these headings to sort by it. rekordbox's own fields (Rating, My Tags, Label, Remixer, Composer, Plays, Date Added) are read when you import, so **re-import your rekordbox library once** (⌘R) after updating Dubcrate to fill in the ones that are new. Music imported from a folder has none of rekordbox's fields.
+Click any of these headings to sort by it. rekordbox's own fields (Rating, My Tags, Label, Remixer, Composer, Plays, Date Added) are read when you import, so **re-import your rekordbox library once** (⇧⌘R) after updating Dubcrate to fill in the ones that are new. Music imported from a folder has none of rekordbox's fields.
 - A **●** at the start of a row shows that the track is already on the disc you are planning.
 
 Tracks whose file can't be found are greyed out in the list, and shown in red on the disc. The file has moved, or the drive it lives on isn't connected. Reconnect it and re-import the source.
@@ -143,11 +143,12 @@ A disc is a playlist that goes on a CD. They live in the **Discs** list on the r
 - **Open a disc** by clicking it. Its tracks appear in the middle, ready to arrange and edit. Opening a disc also makes it the one that tracks are **added to**: its name is in bold, and under the track list it says **Adding to “…”**.
 - **Add tracks** by selecting them and pressing **Return**, **⌘D** or **Add to Disc** (they go to the open disc), or by **dragging** them from the track list onto any disc in the Discs list. Dragging onto a disc that isn't open adds to that one and leaves the open disc as it is.
 - **New Disc** and **New Folder** (under the list) make them. The new disc or folder appears in the list at once with its name ready to type over: type a name and press **Return**, or press **Esc** to keep the suggested one. A new disc goes in the folder you have picked, or beside the disc you have picked.
-- **Rename** a disc or folder by **double-clicking** its name (or right-click > **Rename**), then type and press **Return**. An empty name is ignored.
+- **Rename** a disc or folder by **double-clicking** its name, or by picking it and pressing **⌘R** (or right-click > **Rename**), then type and press **Return**. An empty name is ignored.
+- **Delete** a disc or folder by picking it and pressing **⌘⌫** (or **Disc > Delete…**, or right-click > **Delete**). If it is empty it goes at once; if it has tracks or things in it, Dubcrate asks first, and **Yes** is the answer Return gives. Nothing you delete here touches the tracks in your library or your music files: a disc only lists tracks. **Take care with folders: deleting a folder deletes what is in it**, meaning the discs and folders inside it, at any depth. The question says how many.
 - **The + button** does the same in one click, as in rekordbox. Click a row and a **+** appears at its right-hand end: on a folder it makes a disc inside the folder, and on a disc it makes another disc beside it, in the same folder. The new disc's name is ready to type over.
 - **A disc that is too long** is marked with an orange **\*** before its track count. Hover over it to see how far over it is. It can still be saved, but it can't be burned until it fits.
 - **Drag a disc or folder** into a folder to file it, or onto empty space to move it to the top level. Folders can hold folders.
-- **Right-click** a disc to open, rename, duplicate, burn or delete it, or a folder to make something inside it, rename it or delete it. Deleting a folder moves what is in it up a level: **no disc is ever deleted with a folder**.
+- **Right-click** a disc to open, rename, duplicate, burn or delete it, or a folder to make something inside it, rename it or delete it. Deleting a folder deletes the discs and folders in it too.
 - Discs and folders are listed A to Z, with folders first.
 
 **Audio CDs and MP3 CDs.** A disc is an **audio CD** (the default) or an **MP3 CD**. An audio CD plays in any CD player and is measured in minutes (80 or 74, see Settings). An MP3 CD is a data disc of MP3 files, for players that read MP3 discs such as the CDJ-1000MK3; it is measured in megabytes (about 703 MB on an 80-minute disc), so it holds hours of music, has no 99-track limit and no gaps setting. Make one with **Disc > New MP3 Disc** (⇧⌘N) or right-click > **New MP3 Disc**, and switch an existing disc with right-click > **Make MP3 CD** / **Make Audio CD** (its tracks stay). Its title and size say **MP3 CD**, and in the Discs list an MP3 disc has its own icon (a page of files with a disc) and says **MP3** before its track count. Files on an MP3 disc are always **constant bitrate** (CBR), because variable-bitrate (VBR) files are slow to load on a CDJ: lossless files (FLAC, WAV, AIFF) are encoded at **320 kbit/s**; an MP3 that is already constant bitrate is copied as it is; a VBR MP3 is encoded to constant bitrate; and a lossy file below 320 keeps its own rate (a 245 kbit/s file becomes 256), since encoding it higher would only make it bigger. **Settings > Discs** can lower the top rate for new discs. Artist and title edits for the disc are written into the files' tags, and files are named `01 Artist - Title.mp3`, `02 …`, so players that sort by name keep your order.
@@ -158,7 +159,7 @@ A disc is a playlist that goes on a CD. They live in the **Discs** list on the r
 - **Move around** by clicking a folder in the Discs list, or by clicking a step in the path above the tracks (for example **Super Cool Trax 001 / some stuff / more stuff**): every step but the last is a link, and the disc's name takes you back to its root.
 - **Add tracks to a folder** by opening it and adding as usual (Return, **Add to Disc**), or by dragging tracks from the track list onto the folder in the Discs list.
 - **Move tracks between folders** by dragging them from the middle onto a folder (or onto the disc, for its root), or by right-clicking them > **Move to Folder**.
-- **Delete a folder** with right-click > **Delete Folder from Disc…**. Its tracks and folders move up a level: nothing leaves the disc.
+- **Delete a folder** with ⌘⌫, or right-click > **Delete Folder from Disc…**. Its tracks come off the disc and its folders go too, at any depth, after a question that says how many (nothing at all is asked if it is empty). The tracks stay in your library.
 - **Folders have limits**, which are the CDJs': at most **999 files in a folder**, **99 folders** on a disc (the disc's root counts as one) and **8 levels** (the root counts as the first). Dubcrate stops you at each. Files are numbered from 1 again in every folder (`01 Artist - Title.mp3`).
 - Making an MP3 disc an **audio CD** removes its folders, after asking, and lists its tracks folder by folder.
 
@@ -276,7 +277,7 @@ The full list of command-line options is in the project's developer notes.
 - **Burning:** the **Burn speed** a burn starts with (10x unless you change it). Old players read discs burned slowly more reliably, and 10x to 16x is a good range. Your drive may not offer every speed. You can still pick another speed for a single burn in the burn window.
 - **Audio:** the **Output device** for previews and the **Buffer size**, with a button that plays a short test tone, and the **Beat jump** distance for the arrow keys.
 - **Library:** whether Dubcrate updates your rekordbox library each time it starts (on by default), and whether it checks for a newer version of Dubcrate when it starts (also on by default; see [Updates](#updates-and-what-dubcrate-sends)).
-- **Appearance:** the **Theme** (the same choice as **View > Theme**), the **Waveform style** (the same as **View > Waveform**), and the **Waveform background**.
+- **Appearance:** the **Theme** (the same choice as **View > Theme**), the **Waveform style** (the same as **View > Waveform**), the **Waveform background**, and the **Key notation**: **Camelot** (8A) or **Musical** (A min). Only what is shown changes; your library, rekordbox and the files keep what they have.
 
 ---
 
@@ -292,6 +293,8 @@ This is the only time Dubcrate uses the network. It asks `github.com` for the li
 
 ## Keyboard shortcuts
 
+**Help > Keyboard Shortcuts** (⌘/) opens the full list in a window you can search and keep open; it is made from the menus, so it is always right. The main ones:
+
 | Shortcut | Does |
 | --- | --- |
 | Double-click a track | Preview it |
@@ -302,7 +305,10 @@ This is the only time Dubcrate uses the network. It asks `github.com` for the li
 | Delete | Take the selected tracks off the disc |
 | ⌘O | Import a folder |
 | ⇧⌘O | Import a rekordbox library |
-| ⌘R | Re-import the selected source |
+| ⌘R | Rename the picked disc or folder |
+| ⇧⌘R | Re-import the selected source |
+| ⌘⌫ | Delete the picked disc or folder |
+| ⌘/ | Show this list of shortcuts |
 | ⌘N | New disc |
 | ⇧⌘N | New MP3 disc |
 | ⌘B | Burn the disc |
@@ -318,9 +324,9 @@ This is the only time Dubcrate uses the network. It asks `github.com` for the li
 - **A preview crackles.** Raise the buffer size in **Settings** (try 2048 frames).
 - **No sound, or the wrong output.** Choose the output device in **Settings** and press the test tone button.
 - **"ffmpeg not found".** Install it (`brew install ffmpeg`) and restart Dubcrate.
-- **New tracks from rekordbox aren't showing.** Dubcrate updates rekordbox when it starts, and only if **Settings > Library** is on. To update while it is open, select the rekordbox source and press ⌘R. If the status bar said it couldn't update, it says why.
+- **New tracks from rekordbox aren't showing.** Dubcrate updates rekordbox when it starts, and only if **Settings > Library** is on. To update while it is open, select the rekordbox source and press ⇧⌘R. If the status bar said it couldn't update, it says why.
 - **Dubcrate can't find my rekordbox library.** Choose **Choose File…** when importing and pick `master.db`.
-- **A track is greyed out, or its file is missing.** Reconnect the drive or put the file back, then re-import the source (⌘R).
+- **A track is greyed out, or its file is missing.** Reconnect the drive or put the file back, then re-import the source (⇧⌘R).
 - **The Burn button is grey.** Read the red lines in the burn window: the disc may be empty, too long for the disc in the drive, or missing a file. Also tick **A blank CD-R is in the drive**, and press **Check Drive** if you just changed the disc.
 - **A disc is over its size.** Take tracks off, switch to a longer disc size, or split the playlist.
 - **Something went wrong and I want to report it.** **Help > Show Log File** opens the folder with Dubcrate's log (`dubcrate.log`, and `crash.log` if it ever crashed). Attach them to the report. They list file paths and what Dubcrate did, never your audio. Starting Dubcrate with `--verbose` records more detail.

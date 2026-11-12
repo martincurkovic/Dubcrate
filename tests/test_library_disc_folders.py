@@ -80,23 +80,41 @@ def test_a_folder_can_move_into_another_but_never_into_itself_or_its_own_child(l
     assert {f.id: f.parent_id for f in lib.disc_folders()}[b] is None
 
 
-def test_deleting_a_folder_moves_what_is_in_it_up_a_level_and_deletes_no_disc(lib):
+def test_deleting_a_folder_deletes_its_discs_and_folders_at_any_depth(lib):
     outer = lib.create_disc_folder("Outer")
     inner = lib.create_disc_folder("Inner", parent_id=outer)
-    deep = lib.create_disc("Deep", folder_id=inner)
-    mid = lib.create_disc_folder("Mid", parent_id=inner)
+    deep = lib.create_disc_folder("Deep", parent_id=inner)
+    in_inner = lib.create_disc("In inner", folder_id=inner)
+    in_deep = lib.create_disc("In deep", folder_id=deep)
+    beside = lib.create_disc("Beside", folder_id=outer)
+    top = lib.create_disc("Top level")
+    assert lib.disc_folder_contents(inner) == (
+        2,
+        1,
+    )  # two discs, one folder, at any depth
     lib.delete_disc_folder(inner)
-    assert inner not in {f.id for f in lib.disc_folders()}
-    assert lib.disc(deep).folder_id == outer  # up to the parent, not lost
-    assert {f.id: f.parent_id for f in lib.disc_folders()}[mid] == outer
-    assert lib.disc(deep).track_count == 0 and deep in {d.id for d in lib.discs()}
+    assert {f.id for f in lib.disc_folders()} == {outer}
+    assert {d.id for d in lib.discs()} == {
+        beside,
+        top,
+    }  # what was beside it, or above, stays
+    assert in_inner not in {d.id for d in lib.discs()} and in_deep not in {d.id for d in lib.discs()}  # fmt: skip
 
 
-def test_deleting_a_top_level_folder_sends_its_discs_to_the_top_level(lib):
+def test_deleting_a_disc_folder_never_touches_the_library_tracks(lib):
     folder = lib.create_disc_folder("F")
     disc = lib.create_disc("D", folder_id=folder)
+    before = lib.count_tracks()
+    lib.add_to_disc(disc, [t.id for t in lib.tracks()][:1]) if before else None
     lib.delete_disc_folder(folder)
-    assert lib.disc(disc).folder_id is None
+    assert lib.discs() == [] and lib.count_tracks() == before
+
+
+def test_an_empty_folders_contents_are_nothing(lib):
+    folder = lib.create_disc_folder("F")
+    assert lib.disc_folder_contents(folder) == (0, 0)
+    lib.delete_disc_folder(folder)
+    assert lib.disc_folders() == []
 
 
 def test_unknown_folders_and_discs_are_clear_errors(lib):
