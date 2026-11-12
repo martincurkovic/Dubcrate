@@ -116,6 +116,14 @@ the repo; follow whatever it reports.
   missing). Run `scripts/build_macos.sh` and its smoke test after adding a dependency:
   a module Nuitka can't see only shows up in the built app.
 
+## Cross-platform
+
+Dubcrate runs on macOS only. **Read `dev_docs/cross-platform.md` before touching burners, tool
+lookup (`extend_tool_path`), app or log paths, packaging or CI**: it records what is portable, the
+decision to use `cdrdao` for audio discs on Linux and Windows, and the phased plan. Keep platform
+branches in one named helper each (as `rekordbox.default_master_db` does), never scattered
+`sys.platform` tests, and tag anything you could not run on that OS as not tried.
+
 ## Hardware notes
 
 - Test rig: macOS, LiteOn eSAU108 USB burner, a pair of CDJ-1000MK3s.

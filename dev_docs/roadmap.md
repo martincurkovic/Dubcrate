@@ -35,7 +35,8 @@
   real test shows about the CDJ.
 - Rekordbox XML export as an import path with no SQLCipher dependency (a fallback if
   `pyrekordbox` ever lags behind a rekordbox update).
-- Windows and Linux burn backends behind the existing `Burner` interface.
+- Windows and Linux burn backends behind the existing `Burner` interface: the plan, the
+  decision to use `cdrdao`, and what is unverified are in [cross-platform.md](cross-platform.md).
 - Music/iTunes as a source (decided to skip for now; it needs an exported library XML
   and can't give us files for streamed or protected tracks).
 
