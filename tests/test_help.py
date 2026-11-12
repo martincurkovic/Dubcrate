@@ -277,7 +277,8 @@ def test_the_guide_describes_the_label_window_as_it_is():
         "**Columns (up to)**",
         "**Font size**",
         "**Copies of each**",
-        "**Places already used**",
+        "**Zoom**",
+        "**pinching**",
         "**Folders on an MP3 disc**",
         "(cont.)",
     ):

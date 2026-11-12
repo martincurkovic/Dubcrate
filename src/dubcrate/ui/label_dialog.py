@@ -13,7 +13,7 @@ import logging
 from pathlib import Path
 
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QPdfWriter, QPixmap
+from PySide6.QtGui import QFontMetrics, QPdfWriter
 from PySide6.QtPrintSupport import QPrintDialog, QPrinter
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -28,7 +28,6 @@ from PySide6.QtWidgets import (
     QListWidgetItem,
     QMessageBox,
     QPushButton,
-    QSizePolicy,
     QSpinBox,
     QVBoxLayout,
     QWidget,
@@ -38,6 +37,7 @@ from dubcrate import labels, settings
 from dubcrate.library import Library
 from dubcrate.library.models import DiscSummary
 from dubcrate.ui import label_paint
+from dubcrate.ui.label_preview import FIT, ZOOM_STEPS, PagePreview
 
 logger = logging.getLogger(__name__)
 
@@ -140,10 +140,13 @@ class LabelDialog(QDialog):
             "Spread each disc's track list over this many labels: one disc, several areas to stick them on."
             " Auto uses the fewest labels that keep the text readable (at least 6 pt, or the size you chose)."
         )
-        self.columns_spin = QSpinBox()
-        self.columns_spin.setRange(1, labels.MAX_COLUMNS)
-        self.columns_spin.setValue(o.columns)
-        self.columns_spin.setToolTip(
+        self.columns_combo = QComboBox()
+        for n in range(1, labels.MAX_COLUMNS + 1):
+            self.columns_combo.addItem(str(n), n)
+        self.columns_combo.setCurrentIndex(
+            max(self.columns_combo.findData(o.columns), 0)
+        )
+        self.columns_combo.setToolTip(
             "Let a long list run in columns on a label, to need fewer labels. Each row becomes"
             " Title – Artist, so long names are cut short. A disc uses as few columns as will do."
         )
@@ -155,11 +158,6 @@ class LabelDialog(QDialog):
         )
         self.margin_spin = self._mm_spin(o.margin_mm, 0, 30)
         self.gap_spin = self._mm_spin(o.gap_mm, 0, 20)
-        self.skip_spin = QSpinBox()
-        self.skip_spin.setRange(0, 200)
-        self.skip_spin.setToolTip(
-            "Leave this many places empty at the start of the first page, for a sheet you have already cut labels from."
-        )
         self.bpm_key_check = QCheckBox("Show BPM and key")
         self.bpm_key_check.setChecked(o.show_bpm_key)
         self.bpm_key_check.setToolTip(
@@ -174,29 +172,30 @@ class LabelDialog(QDialog):
         form.addRow("Label height (mm)", self.height_spin)
         form.addRow("Font size", self.font_spin)
         form.addRow("Spread each disc over", self.per_disc_spin)
-        form.addRow("Columns (up to)", self.columns_spin)
+        form.addRow("Columns (up to)", self.columns_combo)
         form.addRow("Copies of each", self.copies_spin)
         form.addRow("Page margin (mm)", self.margin_spin)
         form.addRow("Gap between labels (mm)", self.gap_spin)
-        form.addRow("Places already used", self.skip_spin)
         form.addRow(self.bpm_key_check)
         form.addRow(self.outline_check)
 
-        self.summary_label = QLabel()
-        self.summary_label.setObjectName("usageLabel")
-        self.summary_label.setWordWrap(True)
-        self.problems_label = QLabel()
-        self.problems_label.setObjectName("usageLabel")
+        # Always there, with room for their longest likely text, so a message appearing or going
+        # never moves the controls above it while you edit.
+        self.summary_label = self._message_label(lines=2)
+        self.problems_label = self._message_label(lines=4)
         self.problems_label.setProperty("level", "critical")
-        self.problems_label.setWordWrap(True)
 
-        self.preview = QLabel()
-        self.preview.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.preview.setMinimumSize(280, 400)
-        # sized by the window, not by the picture in it: the page is redrawn to fit (resizeEvent)
-        self.preview.setSizePolicy(
-            QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Ignored
+        self.preview = PagePreview()
+        self.zoom_combo = QComboBox()
+        self.zoom_combo.addItem("Fit page", FIT)
+        for step in ZOOM_STEPS:
+            self.zoom_combo.addItem(f"{step * 100:.0f}%", step)
+        self._zoom_choices = self.zoom_combo.count()  # (a pinch can add one more)
+        self.zoom_combo.setToolTip(
+            "Zoom the preview (pinch on a trackpad, or Ctrl and the mouse wheel, do too). Drag the page to move it when zoomed in."
         )
+        self.zoom_combo.currentIndexChanged.connect(self._zoom_box_changed)
+        self.preview.zoom_changed.connect(self._zoom_to)
         self.prev_button = QPushButton("◀")
         self.next_button = QPushButton("▶")
         self.page_label = QLabel()
@@ -225,10 +224,15 @@ class LabelDialog(QDialog):
 
         nav = QHBoxLayout()
         nav.addStretch(1)
+        nav.addSpacing(
+            self.zoom_combo.sizeHint().width() + 40
+        )  # (keeps the page buttons centred)
         nav.addWidget(self.prev_button)
         nav.addWidget(self.page_label)
         nav.addWidget(self.next_button)
         nav.addStretch(1)
+        nav.addWidget(QLabel("Zoom"))
+        nav.addWidget(self.zoom_combo)
         buttons = QHBoxLayout()
         buttons.addStretch(1)
         buttons.addWidget(self.pdf_button)
@@ -253,16 +257,25 @@ class LabelDialog(QDialog):
         self.font_spin.valueChanged.connect(self._font_changed)
         for spin in (
             self.per_disc_spin,
-            self.columns_spin,
             self.copies_spin,
-            self.skip_spin,
         ):
             spin.valueChanged.connect(self.refresh)
+        self.columns_combo.currentIndexChanged.connect(self.refresh)
         self.page_combo.currentIndexChanged.connect(self._page_size_changed)
         self.bpm_key_check.toggled.connect(self.refresh)
         self.outline_check.toggled.connect(self.refresh)
         self.disc_list.itemChanged.connect(self.refresh)
         self.refresh()
+
+    @staticmethod
+    def _message_label(lines: int) -> QLabel:
+        """A wrapping note that keeps `lines` lines of height whether or not it has any text."""
+        label = QLabel()
+        label.setObjectName("usageLabel")
+        label.setWordWrap(True)
+        label.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
+        label.setMinimumHeight(QFontMetrics(label.font()).lineSpacing() * lines + 4)
+        return label
 
     @staticmethod
     def _mm_spin(value: float, low: float, high: float) -> QDoubleSpinBox:
@@ -319,7 +332,7 @@ class LabelDialog(QDialog):
             width_mm=self.width_spin.value(),
             height_mm=self.height_spin.value(),
             per_disc=self.per_disc_spin.value(),
-            columns=self.columns_spin.value(),
+            columns=self.columns_combo.currentData(),
             copies=self.copies_spin.value(),
             margin_mm=self.margin_spin.value(),
             gap_mm=self.gap_spin.value(),
@@ -351,9 +364,7 @@ class LabelDialog(QDialog):
             all_labels += made * options.copies
 
         sheet = labels.sheet_for(options)
-        self._pages = (
-            labels.paginate(all_labels, sheet, self.skip_spin.value()) if sheet else []
-        )
+        self._pages = labels.paginate(all_labels, sheet) if sheet else []
         if sheet is None:
             problems.append(
                 "A label that size does not fit on the paper with those margins."
@@ -373,8 +384,12 @@ class LabelDialog(QDialog):
                 smallest = min(label.font_mm for label in all_labels)
                 summary += f" Text is {smallest / labels.MM_PER_PT:.1f} pt."
         self.summary_label.setText(summary)
-        self.problems_label.setText("\n".join(problems))
-        self.problems_label.setVisible(bool(problems))
+        shown = problems[:1] + (
+            [f"…and {len(problems) - 1} more discs like it."]
+            if len(problems) > 1
+            else []
+        )  # one at a time keeps it inside the space set aside
+        self.problems_label.setText("\n".join(shown))
         can_print = bool(self._pages)
         self.print_button.setEnabled(can_print)
         self.pdf_button.setEnabled(can_print)
@@ -389,20 +404,36 @@ class LabelDialog(QDialog):
         self._draw_preview()
 
     def _draw_preview(self) -> None:
-        """The current page (a blank one when there is nothing to print), as big as the pane allows."""
+        """The current page (a blank one when there is nothing to print)."""
         page = self._pages[self._page] if self._pages else []
-        room = self.preview.size()
-        options = self.options()
-        page_w, page_h = options.page_mm
-        dpi = min(
-            (room.width() - 4) * 25.4 / page_w, (room.height() - 4) * 25.4 / page_h
-        )
-        image = label_paint.page_image(page, options, max(int(dpi), 20))
-        self.preview.setPixmap(QPixmap.fromImage(image))
+        self.preview.set_page(page, self.options())
 
-    def resizeEvent(self, event) -> None:
-        super().resizeEvent(event)
-        self._draw_preview()
+    def _zoom_box_changed(self, _index: int) -> None:
+        """A choice in the zoom box: zoom the preview, and drop the line a pinch made."""
+        box = self.zoom_combo
+        self.preview.set_zoom(box.currentData())
+        if box.currentIndex() < self._zoom_choices and box.count() > self._zoom_choices:
+            box.blockSignals(True)
+            box.removeItem(self._zoom_choices)
+            box.blockSignals(False)
+
+    def _zoom_to(self, zoom: float) -> None:
+        """The preview was zoomed by Ctrl + wheel or a pinch: show it in the zoom box too. A zoom
+        that is not one of the choices gets a line of its own at the end ("137%")."""
+        box = self.zoom_combo
+        box.blockSignals(True)
+        index = box.findData(zoom)
+        if index >= 0 and index < self._zoom_choices:
+            if box.count() > self._zoom_choices:
+                box.removeItem(self._zoom_choices)
+        else:
+            if box.count() == self._zoom_choices:
+                box.addItem("", zoom)
+            box.setItemText(self._zoom_choices, f"{zoom * 100:.0f}%")
+            box.setItemData(self._zoom_choices, zoom)
+            index = self._zoom_choices
+        box.setCurrentIndex(index)
+        box.blockSignals(False)
 
     # -- output -----------------------------------------------------------
 

@@ -424,13 +424,11 @@ def sheet_for(options: LabelOptions) -> Sheet | None:
     return Sheet(o, columns, rows) if columns >= 1 and rows >= 1 else None
 
 
-def paginate(labels: list[Label], sheet: Sheet, skip: int = 0) -> list[list[Placed]]:
-    """`labels` laid out across pages, left to right and top to bottom. `skip` leaves the first
-    slots of the first page empty, for a sheet that has had some labels cut from it already."""
-    skip = max(0, min(skip, sheet.per_page - 1))
+def paginate(labels: list[Label], sheet: Sheet) -> list[list[Placed]]:
+    """`labels` laid out across pages, left to right and top to bottom."""
     pages: list[list[Placed]] = []
     for i, label in enumerate(labels):
-        page, slot = divmod(skip + i, sheet.per_page)
+        page, slot = divmod(i, sheet.per_page)
         if page == len(pages):
             pages.append([])
         pages[page].append(Placed(*sheet.position(slot), label))

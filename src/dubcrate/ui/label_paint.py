@@ -6,7 +6,7 @@ reads the theme: labels are black on white whatever the window looks like, in th
 font (the System 6 theme's pixel font would print badly).
 """
 
-from PySide6.QtCore import QMarginsF, QRectF, Qt
+from PySide6.QtCore import QMarginsF, QRect, QRectF, Qt
 from PySide6.QtGui import (
     QColor,
     QFont,
@@ -237,22 +237,27 @@ def write_pages(
     return True
 
 
-def page_image(page: list[Placed], options: LabelOptions, dpi: int = 110) -> QImage:
-    """One page as a picture, for the preview."""
+def page_image(
+    page: list[Placed],
+    options: LabelOptions,
+    dpi: int = 110,
+    region: QRect | None = None,
+) -> QImage:
+    """A page as a picture at `dpi` device pixels per inch, for the preview: all of it, or just
+    `region` (a rectangle of the page in those pixels, so a zoomed preview draws only what shows)."""
     page_w, page_h = options.page_mm
-    image = QImage(
-        round(page_w * dpi / 25.4),
-        round(page_h * dpi / 25.4),
-        QImage.Format.Format_RGB32,
-    )
+    whole = QRect(0, 0, round(page_w * dpi / 25.4), round(page_h * dpi / 25.4))
+    region = whole if region is None else region
+    image = QImage(region.size(), QImage.Format.Format_RGB32)
     image.setDotsPerMeterX(round(dpi / 0.0254))
     image.setDotsPerMeterY(round(dpi / 0.0254))
     image.fill(Qt.GlobalColor.white)
     painter = QPainter(image)
     painter.setRenderHint(QPainter.RenderHint.Antialiasing)
     painter.setRenderHint(QPainter.RenderHint.TextAntialiasing)
+    painter.translate(-region.x(), -region.y())
     draw_page(painter, image, page, options)
-    painter.setPen(QColor(160, 160, 160))  # the page's edge, as paper on a white window
-    painter.drawRect(image.rect().adjusted(0, 0, -1, -1))
+    painter.setPen(QColor(160, 160, 160))  # the page's edge, as paper on a window
+    painter.drawRect(whole.adjusted(0, 0, -1, -1))
     painter.end()
     return image

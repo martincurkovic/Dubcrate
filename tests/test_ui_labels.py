@@ -2,12 +2,14 @@
 
 import pytest
 from PySide6.QtCore import QSettings, Qt
-from PySide6.QtGui import QPdfWriter, QPixmap
+from PySide6.QtGui import QPdfWriter
+from PySide6.QtWidgets import QApplication
 
 from dubcrate import labels, settings
 from dubcrate.library import Library, TrackRecord
 from dubcrate.ui import label_dialog, label_paint
 from dubcrate.ui.label_dialog import LabelDialog
+from dubcrate.ui.label_preview import MIN_ZOOM, ZOOM_STEPS
 from dubcrate.ui.main_window import MainWindow
 from dubcrate.ui.models import SELECTION_ROLE
 
@@ -90,23 +92,14 @@ def test_several_discs_share_pages(qapp, lib, discs):
     assert dialog.page_label.text() == "Page 2 of 2"
 
 
-def test_places_already_used_push_labels_along(qapp, lib, discs):
-    dialog = LabelDialog(lib)
-    tick(dialog, discs[0])
-    dialog.skip_spin.setValue(4)  # one place left on the first page
-    dialog.per_disc_spin.setValue(2)
-    assert "2 labels on 2 pages" in dialog.summary_label.text()
-
-
 def test_a_label_too_small_for_its_tracks_says_so(qapp, lib, discs):
     dialog = LabelDialog(lib)
     tick(dialog, discs[0])
     dialog.per_disc_spin.setValue(1)
     dialog.height_spin.setValue(20)  # 6 tracks in 2 cm
     assert "too many tracks" in dialog.problems_label.text()
-    assert not dialog.problems_label.isHidden()
     dialog.height_spin.setValue(50)
-    assert dialog.problems_label.isHidden()
+    assert dialog.problems_label.text() == ""
 
 
 def test_a_label_wider_than_the_page_cannot_be_printed(qapp, lib, discs):
@@ -117,14 +110,20 @@ def test_a_label_wider_than_the_page_cannot_be_printed(qapp, lib, discs):
     assert not dialog.print_button.isEnabled()
 
 
-def test_the_preview_is_a_page_of_pixels(qapp, lib, discs):
+def aspect(preview):
+    size = preview.content_size()
+    return size.width() / size.height()
+
+
+def test_the_preview_is_a_whole_page_that_fits_the_pane(qapp, lib, discs):
     dialog = LabelDialog(lib)
     dialog.resize(900, 700)
     dialog.show()
     tick(dialog, discs[0])
-    pixmap = dialog.preview.pixmap()
-    assert isinstance(pixmap, QPixmap) and not pixmap.isNull()
-    assert abs(pixmap.width() / pixmap.height() - 210 / 297) < 0.01
+    assert abs(aspect(dialog.preview) - 210 / 297) < 0.01
+    view, page = dialog.preview.viewport().size(), dialog.preview.content_size()
+    assert page.width() <= view.width() and page.height() <= view.height()
+    assert dialog.preview.horizontalScrollBar().maximum() == 0  # all of it shows
     dialog.close()
 
 
@@ -224,16 +223,9 @@ def test_choosing_other_paper_changes_the_pages_and_the_preview(qapp, lib, discs
         dialog.page_combo.findData("A5")
     )  # three to a page
     assert "4 labels on 2 pages" in dialog.summary_label.text()
-    pixmap = dialog.preview.pixmap()
-    assert abs(pixmap.width() / pixmap.height() - 148 / 210) < 0.01
+    assert abs(aspect(dialog.preview) - 148 / 210) < 0.01
     dialog.page_combo.setCurrentIndex(dialog.page_combo.findData("Letter"))
-    assert (
-        abs(
-            dialog.preview.pixmap().width() / dialog.preview.pixmap().height()
-            - 215.9 / 279.4
-        )
-        < 0.01
-    )
+    assert abs(aspect(dialog.preview) - 215.9 / 279.4) < 0.01
     dialog.close()
 
 
@@ -345,7 +337,7 @@ def test_a_font_size_too_big_for_the_label_is_flagged(qapp, lib, discs):
     assert "at this font size" in dialog.problems_label.text()
     assert "lower the font size" in dialog.problems_label.text()
     dialog.per_disc_spin.setValue(3)  # two tracks a label
-    assert dialog.problems_label.isHidden()
+    assert dialog.problems_label.text() == ""
 
 
 def test_the_font_spin_skips_sizes_too_small_to_choose(qapp, lib, discs):
@@ -432,9 +424,9 @@ def test_columns_let_a_long_disc_use_fewer_labels(qapp, lib, mp3_disc):
     def label_count():
         return sum(len(page) for page in dialog._pages)
 
-    dialog.columns_spin.setValue(1)
+    dialog.columns_combo.setCurrentIndex(0)
     one_column = label_count()
-    dialog.columns_spin.setValue(2)
+    dialog.columns_combo.setCurrentIndex(1)
     assert label_count() < one_column
     assert any(len(p.label.columns) == 2 for page in dialog._pages for p in page)
 
@@ -447,13 +439,13 @@ def test_too_many_tracks_suggests_what_to_change(qapp, lib, mp3_disc):
     text = dialog.problems_label.text()
     assert "too many tracks" in text and "allow more columns" in text
     assert "spread the disc over more labels" in text
-    dialog.columns_spin.setValue(3)
+    dialog.columns_combo.setCurrentIndex(2)
     assert "allow more columns" not in dialog.problems_label.text()
 
 
 def test_columns_and_auto_are_remembered(qapp, lib, discs):
     dialog = LabelDialog(lib)
-    dialog.columns_spin.setValue(2)
+    dialog.columns_combo.setCurrentIndex(1)
     dialog.per_disc_spin.setValue(0)
     dialog.accept()
     saved = settings.get_label_options()
@@ -467,9 +459,271 @@ def test_a_multi_column_page_prints_to_a_pdf(
 ):
     dialog = LabelDialog(lib)
     tick(dialog, mp3_disc)
-    dialog.columns_spin.setValue(3)
+    dialog.columns_combo.setCurrentIndex(2)
     monkeypatch.setattr(
         label_dialog, "ask_pdf_path", lambda parent: str(tmp_path / "m.pdf")
     )
     dialog.save_pdf()
     assert (tmp_path / "m.pdf").read_bytes().startswith(b"%PDF")
+
+
+# -- the other controls ------------------------------------------------------------------
+
+
+def test_columns_is_a_box_of_one_to_three_and_places_used_is_gone(qapp, lib, discs):
+    dialog = LabelDialog(lib)
+    combo = dialog.columns_combo
+    assert [combo.itemData(i) for i in range(combo.count())] == [1, 2, 3]
+    assert combo.currentData() == 1
+    assert not hasattr(dialog, "skip_spin")
+    combo.setCurrentIndex(combo.findData(3))
+    assert dialog.options().columns == 3
+
+
+def test_a_stored_number_of_columns_is_shown(qapp, lib, discs):
+    QSettings().setValue("labels/columns", 2)
+    assert LabelDialog(lib).columns_combo.currentData() == 2
+
+
+def test_the_messages_have_room_set_aside_so_nothing_moves_when_they_come(
+    qapp, lib, discs
+):
+    dialog = LabelDialog(lib)
+    dialog.resize(1000, 760)
+    dialog.show()
+    tick(dialog, discs[0])
+    dialog.per_disc_spin.setValue(1)
+    dialog.height_spin.setValue(50)
+    qapp.processEvents()
+    assert dialog.problems_label.text() == ""
+    controls = (
+        dialog.width_spin,
+        dialog.copies_spin,
+        dialog.bpm_key_check,
+        dialog.outline_check,
+        dialog.summary_label,
+        dialog.problems_label,
+        dialog.disc_list,
+    )
+    before = [w.geometry() for w in controls]
+    dialog.height_spin.setValue(20)  # a warning appears (see the test above)
+    qapp.processEvents()
+    assert dialog.problems_label.text() != ""
+    assert [w.geometry() for w in controls] == before
+    dialog.height_spin.setValue(50)
+    qapp.processEvents()
+    assert [w.geometry() for w in controls] == before
+    dialog.close()
+
+
+def test_the_messages_never_outgrow_their_space(qapp, lib, discs):
+    dialog = LabelDialog(lib)
+    dialog.show()
+    tick(dialog, discs[0], discs[1])
+    dialog.per_disc_spin.setValue(1)
+    dialog.height_spin.setValue(20)  # both discs too long
+    text = dialog.problems_label.text()
+    assert text.count("too many tracks") == 1 and "and 1 more" in text
+    dialog.close()
+
+
+# -- the preview's zoom ---------------------------------------------------------------------
+
+
+@pytest.fixture
+def shown(qapp, lib, discs):
+    dialog = LabelDialog(lib, picked=discs[0])
+    dialog.resize(1000, 760)
+    dialog.show()
+    qapp.processEvents()
+    yield dialog
+    dialog.close()
+
+
+def test_the_zoom_box_offers_fit_and_real_sizes(shown):
+    combo = shown.zoom_combo
+    assert combo.itemText(0) == "Fit page" and combo.currentData() == 0.0
+    assert [combo.itemText(i) for i in range(1, combo.count())] == [
+        "100%",
+        "150%",
+        "200%",
+        "300%",
+        "400%",
+    ]
+
+
+def test_zooming_in_makes_the_page_bigger_and_scrollable(shown):
+    preview = shown.preview
+    fitted = preview.content_size()
+    shown.zoom_combo.setCurrentIndex(shown.zoom_combo.findData(2.0))
+    zoomed = preview.content_size()
+    assert zoomed.width() > fitted.width() and zoomed.height() > fitted.height()
+    assert preview.zoom() == 2.0
+    assert preview.horizontalScrollBar().maximum() > 0
+    assert preview.verticalScrollBar().maximum() > 0
+    shown.zoom_combo.setCurrentIndex(0)
+    assert preview.horizontalScrollBar().maximum() == 0
+
+
+def test_a_hundred_percent_is_the_page_at_about_real_size(shown):
+    shown.zoom_combo.setCurrentIndex(shown.zoom_combo.findData(1.0))
+    ratio = shown.preview.devicePixelRatioF()
+    size = shown.preview.content_size()
+    # A4 is 8.27 x 11.69 inches; at 96 dpi that is 794 x 1123 logical pixels
+    assert abs(size.width() - 794) <= 2 and abs(size.height() - 1123) <= 2
+    assert ratio >= 1
+
+
+def test_the_preview_draws_at_the_screens_real_pixels_not_a_scaled_picture(shown):
+    preview = shown.preview
+    assert preview._device_dpi() == round(
+        96 * preview.zoom() * preview.devicePixelRatioF()
+    )
+
+
+def test_drawing_part_of_a_page_matches_the_same_part_of_the_whole(qapp, lib, discs):
+    from PySide6.QtCore import QRect
+
+    from dubcrate.ui import label_paint
+
+    options = labels.LabelOptions()
+    made = labels.build_labels("One", lib.disc_entries(discs[0]), options)
+    pages = labels.paginate(made, labels.sheet_for(options))
+    whole = label_paint.page_image(pages[0], options, 200)
+    region = QRect(120, 150, 400, 300)
+    part = label_paint.page_image(pages[0], options, 200, region)
+    assert part.size() == region.size()
+    assert part == whole.copy(region)  # same pixels: zoomed drawing is the same drawing
+
+
+def test_ctrl_wheel_zooms_and_a_plain_wheel_scrolls(shown):
+    from PySide6.QtCore import QPoint, QPointF
+    from PySide6.QtGui import QWheelEvent
+
+    def wheel(delta, modifiers):
+        event = QWheelEvent(
+            QPointF(50, 50), QPointF(50, 50), QPoint(0, 0), QPoint(0, delta),
+            Qt.MouseButton.NoButton, modifiers, Qt.ScrollPhase.NoScrollPhase, False,
+        )  # fmt: skip
+        shown.preview.wheelEvent(event)
+
+    ctrl = Qt.KeyboardModifier.ControlModifier
+    wheel(120, ctrl)
+    assert shown.zoom_combo.currentData() == 1.0  # up from Fit: the first step
+    wheel(120, ctrl)
+    assert shown.zoom_combo.currentData() == 1.5
+    wheel(-120, ctrl)
+    wheel(-120, ctrl)
+    assert shown.zoom_combo.currentData() == 0.0  # back to Fit
+    shown.zoom_combo.setCurrentIndex(shown.zoom_combo.findData(2.0))
+    bar = shown.preview.verticalScrollBar()
+    wheel(-120, Qt.KeyboardModifier.NoModifier)
+    assert bar.value() > 0 and shown.zoom_combo.currentData() == 2.0
+
+
+def test_dragging_a_zoomed_page_pans_it(shown):
+    from PySide6.QtCore import QEvent, QPointF
+    from PySide6.QtGui import QMouseEvent
+
+    shown.zoom_combo.setCurrentIndex(shown.zoom_combo.findData(2.0))
+    preview, bar = shown.preview, shown.preview.verticalScrollBar()
+    bar.setValue(300)
+
+    def mouse(kind, y, buttons):
+        QApplication.sendEvent(
+            preview.viewport(),
+            QMouseEvent(kind, QPointF(50, y), QPointF(50, y), Qt.MouseButton.LeftButton, buttons, Qt.KeyboardModifier.NoModifier),
+        )  # fmt: skip
+
+    left = Qt.MouseButton.LeftButton
+    mouse(QEvent.Type.MouseButtonPress, 200, left)
+    mouse(QEvent.Type.MouseMove, 150, left)  # the hand moves up, the page follows it
+    assert bar.value() == 350
+    mouse(QEvent.Type.MouseButtonRelease, 150, Qt.MouseButton.NoButton)
+    mouse(QEvent.Type.MouseMove, 100, Qt.MouseButton.NoButton)
+    assert bar.value() == 350  # no longer dragging
+
+
+def pinch(preview, value, at=(200, 200)):
+    """A trackpad pinch: Qt hands the viewport a native zoom gesture whose value is the change."""
+    from PySide6.QtCore import QPointF
+    from PySide6.QtGui import QNativeGestureEvent, QPointingDevice
+
+    point = QPointF(*at)
+    event = QNativeGestureEvent(
+        Qt.NativeGestureType.ZoomNativeGesture,
+        QPointingDevice.primaryPointingDevice(),
+        2,
+        point,
+        point,
+        point,
+        value,
+        QPointF(0, 0),
+    )
+    QApplication.sendEvent(preview.viewport(), event)
+
+
+def test_a_pinch_zooms_smoothly_and_the_zoom_box_follows(shown):
+    preview, box = shown.preview, shown.zoom_combo
+    fitted = preview.zoom()
+    pinch(preview, 0.5)
+    assert abs(preview.zoom() - fitted * 1.5) < 1e-9  # not one of the fixed steps
+    assert box.currentText() == f"{fitted * 1.5 * 100:.0f}%"  # a line of its own
+    assert box.count() == len(ZOOM_STEPS) + 2
+    pinch(preview, 0.1)
+    assert box.count() == len(ZOOM_STEPS) + 2  # the same line, updated
+    assert box.currentData() == preview.zoom()
+
+
+def test_a_pinch_stops_at_the_ends_of_the_zoom_range(shown):
+    preview = shown.preview
+    for _ in range(40):
+        pinch(preview, 0.5)
+    assert preview.zoom() == ZOOM_STEPS[-1]
+    for _ in range(80):
+        pinch(preview, -0.5)
+    assert preview.zoom() == MIN_ZOOM
+
+
+def test_a_pinch_zooms_about_the_fingers_and_not_the_pages_centre(shown):
+    preview = shown.preview
+    shown.zoom_combo.setCurrentIndex(shown.zoom_combo.findData(2.0))
+    preview.horizontalScrollBar().setValue(100)
+    preview.verticalScrollBar().setValue(200)
+    at = (150, 250)
+    before = preview.content_size()
+    fx = (150 + 100) / before.width()  # the page position under the fingers
+    fy = (250 + 200) / before.height()
+    pinch(preview, 0.5, at)
+    after = preview.content_size()
+    assert after.width() > before.width()
+    assert (
+        abs((150 + preview.horizontalScrollBar().value()) / after.width() - fx) < 0.01
+    )
+    assert abs((250 + preview.verticalScrollBar().value()) / after.height() - fy) < 0.01
+
+
+def test_choosing_from_the_zoom_box_after_a_pinch_drops_the_odd_line(shown):
+    box = shown.zoom_combo
+    pinch(shown.preview, 0.3)
+    assert box.count() == len(ZOOM_STEPS) + 2
+    box.setCurrentIndex(box.findData(1.5))
+    assert box.count() == len(ZOOM_STEPS) + 1
+    assert shown.preview.zoom() == 1.5
+    pinch(shown.preview, 0.0)  # a pinch that lands on a step shows that step
+    assert box.currentData() == 1.5 and box.count() == len(ZOOM_STEPS) + 1
+
+
+def test_other_native_gestures_are_left_alone(shown):
+    from PySide6.QtCore import QPointF
+    from PySide6.QtGui import QNativeGestureEvent, QPointingDevice
+
+    point = QPointF(100, 100)
+    event = QNativeGestureEvent(
+        Qt.NativeGestureType.RotateNativeGesture,
+        QPointingDevice.primaryPointingDevice(),
+        2, point, point, point, 15.0, QPointF(0, 0),
+    )  # fmt: skip
+    before = shown.preview.zoom()
+    QApplication.sendEvent(shown.preview.viewport(), event)
+    assert shown.preview.zoom() == before

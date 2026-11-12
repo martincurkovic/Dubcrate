@@ -164,19 +164,6 @@ def test_labels_from_several_discs_share_pages():
     ]  # fmt: skip
 
 
-def test_skipping_places_leaves_the_first_ones_of_the_first_page_empty():
-    sheet = labels.sheet_for(LabelOptions(width_mm=100, height_mm=50))
-    pages = labels.paginate(make_labels(1) * 3, sheet, skip=3)
-    assert [len(p) for p in pages] == [2, 1]
-    assert pages[0][0].y_mm == sheet.position(3)[1]
-
-
-def test_skipping_more_than_a_page_is_held_to_the_last_place():
-    sheet = labels.sheet_for(LabelOptions(width_mm=100, height_mm=50))
-    [page] = labels.paginate(make_labels(1), sheet, skip=99)
-    assert page[0].y_mm == sheet.position(sheet.per_page - 1)[1]
-
-
 def test_no_labels_make_no_pages():
     sheet = labels.sheet_for(LabelOptions())
     assert labels.paginate([], sheet) == []
