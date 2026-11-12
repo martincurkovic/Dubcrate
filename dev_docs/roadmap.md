@@ -64,6 +64,48 @@
    window on a real display. The guide's "Burning a disc" section must be kept in step
    with the burn window.
 
+6. **ffmpeg and ffprobe: check at start-up, bundle them, show where they are.** *Planned (owner's
+   decisions, 2026-11-12), not started.* Today the app never checks: it only finds Homebrew's copy on
+   `PATH` (`extend_tool_path` in `ui/app.py`), and when they are missing a folder import reports every
+   file as unreadable and a preview or burn fails with "not found". Dubcrate needs `ffprobe` for tags and
+   lengths of folder music, and `ffmpeg` to render discs, to preview formats miniaudio can't read, and to
+   encode MP3 discs. (A rekordbox import needs neither.) Three steps, in this order:
+
+   1. **Check at start-up, behind the splash.** One Qt-free lookup (say `find_tool(name)`, returning the
+      path and where it came from, or `None`) used by everything that runs the tools, so the app, the
+      check, the log and the smoke test agree. `ui/app.py` runs the check while the splash shows
+      (`splash.set_status("Checking tools…")`, next to `maybe_refresh`). If something is missing, show one
+      plain-language dialog once the window is up, not an exception: what the tools do, which of the two
+      is missing, a copyable `brew install ffmpeg` and a link to ffmpeg.org, and a way to carry on (the
+      library, rekordbox import and preview of MP3/WAV/FLAC still work without them; burning and folder
+      import don't). No download: see Decisions. The errors from a tool that goes missing later (Burn,
+      Import, Explorer) become expected errors with the same plain words (`TaskError`), not raw
+      `RenderError` text. Also log the paths found in `logsetup.log_startup`.
+   2. **Bundle LGPL builds of both, per architecture** (Apple Silicon and Intel), for the first release.
+      The older note in "Before making the repository public" says *decode-only*; that predates MP3 CDs,
+      which re-encode a file that isn't constant bitrate (`render.render_mp3`), so the build needs the
+      LAME MP3 encoder (LGPL) as well as decoders for MP3, WAV, FLAC, AIFF, AAC/M4A, Ogg, Opus and WMA, and
+      the sample-rate conversion and dither `render_track` uses. Built in CI **without** `--enable-gpl` or
+      `--enable-nonfree` (Homebrew's is GPL and can't be copied in), shipped with its licence text, its
+      build configuration (`ffmpeg -buildconf`) and a source offer, with an entry in
+      `ui/help/THIRD_PARTY_NOTICES.md`. Run as subprocesses, never linked. `find_tool` looks in the bundle
+      first, then `PATH`, so a run from source and the Homebrew fallback keep working. The build script
+      adds them as data files (executable bit kept), `smoke_test.py` runs `-version` on each, and the
+      size they add to the `.dmg` is to be measured (not known yet).
+   3. **Show where they are, in Settings > Library** (the owner's first idea; the exact place is not
+      settled, and About or Help are the alternatives). Two read-only lines, `ffmpeg` and `ffprobe`: the
+      path, whether it is the bundled copy or one from `PATH`, and its version; a missing one says so and
+      how to fix it. It reads the same `find_tool` as step 1, so the check and the display can't disagree.
+
+   Open questions: whether the start-up dialog may be dismissed for good (a "don't show again", or it
+   shows every start until the tools are found); whether Settings should let someone pick their own
+   ffmpeg (not asked for). When it is done, update `README.md` (What you need, Troubleshooting),
+   `ui/help/manual.md` (Getting started, Troubleshooting), `BUILDING.md`, `AGENTS.md` ("the built app does
+   not bundle them yet", the layout list and the bundled-binaries rule), `dev_docs/cross-platform.md`
+   (the ffmpeg lines) and tick the item under "Before making the repository public". Tests: the lookup
+   with temporary folders and a patched `PATH`, the dialog with the lookup patched (no test may need the
+   real tools to be absent); the existing tests that need ffmpeg already skip without it.
+
 ## Later
 
 - Logging follow-ups (the log file itself is done: `logsetup.py`): a Settings switch for verbose logging (only `--verbose` today), logging inside the library store and the CLI, and a dialog for an uncaught exception (it is only logged).
@@ -172,6 +214,12 @@
 - **Drag-to-change number boxes** everywhere, via one application-level event filter
   (`ui/spinbox_drag.py`); remove its line in `ui/app.py` to undo.
 
+- **ffmpeg and ffprobe are bundled for the release, never downloaded.** Checked at start-up with a
+  plain-language message when missing, and listed (path, bundled or `PATH`, version) in Settings >
+  Library. Downloading them on first launch was rejected: the update check is the only network use, a
+  third-party binary host is fragile and a binary fetched at run time has to be trusted. Plan in item 6
+  of "Next".
+
 ## Known rough edges
 - The Explorer re-reads a folder (ffprobe per new or changed file) on the first visit of each
   session, because what it read is forgotten at start-up (`prune_explorer`). A cache across sessions,
@@ -262,11 +310,10 @@
 - [x] Packaging: Nuitka build script and a macOS DMG like the sibling apps
       (`scripts/build_macos.sh`, [BUILDING.md](../BUILDING.md)). Still open: code signing
       and notarisation, and whether the built app can use the drive (a hardware check).
-- [ ] Decide how ffmpeg is supplied. Recommended: bundle a minimal decode-only LGPL build
-      of ffmpeg and ffprobe per architecture (a few MB each, built in CI without
-      `--enable-gpl`, shipped with its licence and build configuration), looked up before
-      `PATH`. Homebrew's is GPL and can't be copied in. `cdrdao` is not needed on macOS.
-      For now the app finds Homebrew's.
+- [ ] Supply ffmpeg: **decided, bundle it** (LGPL builds of ffmpeg and ffprobe per architecture,
+      with the MP3 encoder, looked up before `PATH`), with a start-up check and a line in Settings >
+      Library. Plan and open questions: item 6 under "Next". `cdrdao` is not needed on macOS. Until
+      then the app finds Homebrew's.
 - [x] Continuous integration: `.github/workflows/test.yml` (lint and tests on macOS, every
       push) and `build.yml` (tag: tests, builds, smoke tests, draft release). Unproven
       until the first run on GitHub (the repository is private).
