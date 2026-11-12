@@ -70,6 +70,27 @@ def _disc_list(p: QPainter, ink) -> None:
     p.drawEllipse(QRectF(10.7, 6.7, 1.6, 1.6))  # ...and its hole
 
 
+def _mp3_disc_list(p: QPainter, ink) -> None:
+    """A page of files with a disc in the corner: files going on a data CD (an MP3 disc).
+    The audio disc's icon is a list of tracks with a disc; this one has a page instead."""
+    p.drawPolygon(  # the page, with a folded corner
+        QPolygonF(
+            [
+                QPointF(x + 0.5, y + 0.5)
+                for x, y in ((1, 1), (6, 1), (9, 4), (9, 14), (1, 14))
+            ]
+        )
+    )
+    p.drawLine(QPointF(5.5, 1.5), QPointF(5.5, 4.5))
+    p.drawLine(QPointF(5.5, 4.5), QPointF(9, 4.5))
+    p.drawLine(QPointF(3, 8.5), QPointF(7, 8.5))
+    p.drawLine(QPointF(3, 11.5), QPointF(7, 11.5))
+    p.setBrush(Qt.BrushStyle.NoBrush)
+    p.drawEllipse(QRectF(8.5, 7.5, 6.5, 6.5))  # the disc...
+    p.setBrush(ink)
+    p.drawEllipse(QRectF(10.9, 9.9, 1.7, 1.7))  # ...and its hole
+
+
 def folder(dpr: float = 1.0) -> QIcon:
     return _icon(_folder, dpr)
 
@@ -85,6 +106,11 @@ def drive(dpr: float = 1.0) -> QIcon:
 def disc_list(dpr: float = 1.0, muted: bool = False) -> QIcon:
     """The icon for a disc in the tree. `muted` is as for `playlist`."""
     return _icon(_disc_list, dpr, ink_alpha=170 if muted else 255)
+
+
+def mp3_disc_list(dpr: float = 1.0, muted: bool = False) -> QIcon:
+    """The icon for an MP3 disc (a data CD of files), which is not the audio disc's."""
+    return _icon(_mp3_disc_list, dpr, ink_alpha=170 if muted else 255)
 
 
 def playlist(dpr: float = 1.0, muted: bool = False) -> QIcon:

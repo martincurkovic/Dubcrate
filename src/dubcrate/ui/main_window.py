@@ -42,7 +42,7 @@ from dubcrate.library.store import LibraryError
 from . import theme, wave_style
 from .about_dialog import AboutDialog, NoticesDialog
 from .burn_dialog import BurnDialog, BurnerFactory
-from .disc_tree import SLOT_WIDTH, DiscTree
+from .disc_tree import COLUMN_WIDTH, DiscTree
 from .disc_view import DiscView
 from .help_dialog import show_help_dialog
 from .models import (
@@ -171,6 +171,8 @@ class MainWindow(QMainWindow):
         self.tree.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.tree.setUniformRowHeights(True)
         self.tree.setAlternatingRowColors(False)
+        # (a click on the item that is already current changes nothing for Qt, so it needs this)
+        self.tree.clicked.connect(self._on_tree_clicked)
         left = QWidget()
         left_layout = QVBoxLayout(left)
         left_layout.setContentsMargins(12, 12, 12, 12)
@@ -286,6 +288,7 @@ class MainWindow(QMainWindow):
         self.disc_view.changed.connect(self._sync_disc_markers)
         self.disc_view.discs_changed.connect(self.refresh_discs)
         self.disc_view.opened.connect(self.open_disc)
+        self.disc_view.navigate_requested.connect(self._navigate_to)
         self.disc_view.message.connect(
             lambda text: self.statusBar().showMessage(text, 8000)
         )
@@ -304,6 +307,8 @@ class MainWindow(QMainWindow):
         # drag tracks onto one to add them; drag discs and folders about to file them.
         self.disc_tree = DiscTree()
         self.disc_tree.new_disc_requested.connect(self._on_plus_clicked)
+        self.disc_tree.new_folder_requested.connect(self._on_new_folder_clicked)
+        self.disc_tree.clicked.connect(self._on_disc_clicked)
         self.disc_tree.setHeaderHidden(True)
         self.disc_tree.setUniformRowHeights(True)
         self.disc_tree.setSelectionMode(
@@ -633,6 +638,13 @@ class MainWindow(QMainWindow):
         self.refresh_tracks()
         self._update_source_actions()
 
+    def _on_tree_clicked(self, index: QModelIndex) -> None:
+        """Clicking what is already picked in the library shows its tracks again: with a disc
+        open in the middle, picking the same playlist is not a change for Qt, so say it here."""
+        selection = index.siblingAtColumn(0).data(SELECTION_ROLE)
+        if selection is not None and selection == self._selection:
+            self.center.setCurrentIndex(0)
+
     # -- the discs (right pane) -------------------------------------------
 
     def refresh_discs(self) -> None:
@@ -644,6 +656,8 @@ class MainWindow(QMainWindow):
         open_id = self.disc_view.current_disc_id()
         model = build_disc_model(self._lib, open_id)
         model.tracks_dropped.connect(self._on_tracks_dropped)
+        model.tracks_dropped_in_dir.connect(self._on_tracks_dropped_in_dir)
+        model.rows_dropped.connect(self._on_rows_dropped)
         model.items_moved.connect(self.disc_view.move_items)
         model.renamed.connect(self._on_tree_renamed)
         self.disc_tree.setModel(model)
@@ -652,8 +666,8 @@ class MainWindow(QMainWindow):
         header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
         header.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
         header.setSectionResizeMode(2, QHeaderView.ResizeMode.Fixed)  # the + button
-        header.setMinimumSectionSize(SLOT_WIDTH)
-        header.resizeSection(2, SLOT_WIDTH)
+        header.setMinimumSectionSize(COLUMN_WIDTH)
+        header.resizeSection(2, COLUMN_WIDTH)
         self._restore_expanded(self.disc_tree, expanded)
         index = (
             find_selection(model, self._disc_pick) if self._disc_pick else QModelIndex()
@@ -680,8 +694,39 @@ class MainWindow(QMainWindow):
             else None
         )
         self._disc_pick = selection
-        if selection and selection[0] == "disc":
-            self.disc_view.set_disc(selection[1])  # opening a disc makes it the target
+        self._open_pick(selection)
+
+    def _navigate_to(self, disc_id: int, dir_id: object) -> None:
+        """A step of the path above the tracks was clicked: go to that folder of the disc (or
+        the disc itself), picking its row in the Discs list."""
+        selection = (
+            ("disc_dir", disc_id, dir_id) if dir_id is not None else ("disc", disc_id)
+        )
+        index = find_selection(self.disc_tree.model(), selection)
+        if index.isValid():
+            parent = index.parent()
+            while parent.isValid():
+                self.disc_tree.setExpanded(parent, True)
+                parent = parent.parent()
+            self.disc_tree.setCurrentIndex(index)
+        self._disc_pick = selection
+        self._open_pick(selection)
+
+    def _on_disc_clicked(self, index: QModelIndex) -> None:
+        """One click opens a disc, even if it is the one already picked (with the library
+        showing in the middle, that is not a change for Qt)."""
+        self._open_pick(index.siblingAtColumn(0).data(SELECTION_ROLE))
+
+    def _open_pick(self, selection: tuple | None) -> None:
+        if selection and selection[0] in ("disc", "disc_dir"):
+            disc_id = selection[1]
+            dir_id = selection[2] if selection[0] == "disc_dir" else None
+            if (
+                self.disc_view.current_disc_id() != disc_id
+                or self.disc_view.current_dir_id() != dir_id
+            ):
+                # opening a disc makes it the target
+                self.disc_view.set_disc(disc_id, dir_id)
             self.center.setCurrentIndex(1)
 
     def open_disc(self, disc_id: int) -> None:
@@ -696,6 +741,17 @@ class MainWindow(QMainWindow):
     def _on_tracks_dropped(self, disc_id: int, track_ids: list) -> None:
         self.disc_view.add_tracks(track_ids, disc_id=disc_id)
 
+    def _on_tracks_dropped_in_dir(
+        self, disc_id: int, dir_id: int, track_ids: list
+    ) -> None:
+        """Library tracks dropped on a folder of an MP3 disc go into that folder."""
+        self.disc_view.add_tracks(track_ids, disc_id=disc_id, dir_id=dir_id)
+
+    def _on_rows_dropped(self, disc_id: int, dir_id: object, rows: list) -> None:
+        """Tracks of the open disc dropped on a folder (or on the disc, for its root)."""
+        if disc_id == self.disc_view.current_disc_id():
+            self.disc_view.move_rows_to_dir(rows, dir_id)  # type: ignore[arg-type]
+
     def _folder_of(self, pick: tuple | None) -> int | None:
         """The folder a new disc beside `pick` goes in: the folder itself, or the one
         holding a disc; the top level if there is no pick."""
@@ -703,7 +759,7 @@ class MainWindow(QMainWindow):
             return None
         if pick[0] == "disc_folder":
             return pick[1]
-        return self._lib.disc(pick[1]).folder_id
+        return self._lib.disc(pick[1]).folder_id  # a disc, or a folder on one
 
     def _folder_here(self) -> int | None:
         """The folder a new disc or folder goes in: the one picked in the disc tree, or the
@@ -711,7 +767,24 @@ class MainWindow(QMainWindow):
         return self._folder_of(self._disc_pick)
 
     def _on_plus_clicked(self, pick: tuple) -> None:
-        self.new_disc(self._folder_of(pick))
+        if pick[0] == "disc_dir":  # on a folder of an MP3 disc: a folder beside it
+            beside = next(
+                d.parent_id for d in self._lib.disc_dirs(pick[1]) if d.id == pick[2]
+            )
+            self.new_disc_dir(pick[1], beside)
+        else:
+            self.new_disc(self._folder_of(pick))
+
+    def _on_new_folder_clicked(self, pick: tuple) -> None:
+        """The folder button: a folder inside the disc (its root) or inside the folder picked."""
+        self.new_disc_dir(pick[1], pick[2] if pick[0] == "disc_dir" else None)
+
+    def new_disc_dir(self, disc_id: int, parent_id: int | None = None) -> None:
+        """Make a folder on an MP3 disc and put its name in the tree up for editing."""
+        dir_id = self.disc_view.new_dir(disc_id, parent_id)
+        if dir_id is None:
+            return
+        self.edit_in_tree(("disc_dir", disc_id, dir_id))
 
     def new_disc(
         self, folder_id: int | None | object = ..., kind: DiscKind = "audio"
@@ -752,6 +825,8 @@ class MainWindow(QMainWindow):
     def _rename(self, selection: tuple, name: str) -> None:
         if selection[0] == "disc":
             self.disc_view.rename_disc(selection[1], name)
+        elif selection[0] == "disc_dir":
+            self.disc_view.rename_dir(selection[1], selection[2], name)
         else:
             self.disc_view.rename_folder(selection[1], name)
 
@@ -767,6 +842,8 @@ class MainWindow(QMainWindow):
             menu.addAction("Open", lambda: self.open_disc(disc_id))
             menu.addAction("Rename", lambda: self.edit_in_tree(("disc", disc_id)))
             menu.addAction("Duplicate", lambda: self.disc_view.duplicate_disc(disc_id))
+            if self._lib.disc(disc_id).kind == "mp3":
+                menu.addAction("New Folder on Disc", lambda: self.new_disc_dir(disc_id))
             if self._lib.disc(disc_id).kind == "audio":
                 menu.addAction(
                     "Make MP3 CD", lambda: self.disc_view.set_disc_kind(disc_id, "mp3")
@@ -780,6 +857,18 @@ class MainWindow(QMainWindow):
             menu.addAction("Burn…", lambda: self._open_and_burn(disc_id))
             menu.addSeparator()
             menu.addAction("Delete…", lambda: self.disc_view.delete_disc(disc_id))
+        elif kind == "disc_dir":
+            disc_id, dir_id = selection[1], selection[2]
+            menu.addAction("Open", lambda: self._open_pick(selection))
+            menu.addAction(
+                "New Folder Inside", lambda: self.new_disc_dir(disc_id, dir_id)
+            )
+            menu.addAction("Rename", lambda: self.edit_in_tree(selection))
+            menu.addSeparator()
+            menu.addAction(
+                "Delete Folder from Disc…",
+                lambda: self.disc_view.delete_dir(disc_id, dir_id),
+            )
         elif kind == "disc_folder":
             folder_id = selection[1]
             menu.addAction("New Disc Here", lambda: self.new_disc(folder_id))

@@ -81,7 +81,7 @@ def set_pregap_seconds(seconds: int) -> None:
 
 
 def get_mp3_bitrate() -> int:
-    """What new MP3 discs encode tracks that aren't MP3 at, in kbit/s (320 unless changed)."""
+    """The highest constant bitrate new MP3 discs use, in kbit/s (320 unless changed)."""
     try:
         value = int(_qs().value("discs/mp3_bitrate", mp3.DEFAULT_BITRATE))
     except (TypeError, ValueError):

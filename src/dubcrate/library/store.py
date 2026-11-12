@@ -9,7 +9,7 @@ is rebuilt.
 import os
 import sqlite3
 from collections.abc import Iterable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
 from types import TracebackType
@@ -19,6 +19,7 @@ from dubcrate import mp3
 from dubcrate.cd import DISC_80_SECTORS, MAX_TRACKS, disc_used_sectors
 from dubcrate.library.models import (
     AddResult,
+    DiscDir,
     DiscEntry,
     DiscFolder,
     DiscKind,
@@ -39,8 +40,14 @@ from dubcrate.planning import fit_tracks, split_sequential
 
 
 def _max_tracks(kind: str) -> int:
-    """Red Book allows 99 tracks on an audio CD; a data disc has no such limit."""
-    return MAX_TRACKS if kind == "audio" else 1 << 30
+    """Red Book allows 99 tracks on an audio CD; an MP3 CD holds 999 files in a folder."""
+    return MAX_TRACKS if kind == "audio" else mp3.MAX_FILES_PER_FOLDER
+
+
+def _limit_error(kind: str) -> str:
+    if kind == "audio":
+        return f"a disc holds at most {MAX_TRACKS} tracks"
+    return f"a folder holds at most {mp3.MAX_FILES_PER_FOLDER} files"
 
 
 @dataclass(frozen=True)
@@ -51,6 +58,7 @@ class _Slot:
     track_id: int
     title: str | None = None
     artist: str | None = None
+    dir_id: int | None = None  # the folder on an MP3 disc; None: the root
 
 
 class LibraryError(RuntimeError):
@@ -235,9 +243,20 @@ ALTER TABLE disc ADD COLUMN kind TEXT NOT NULL DEFAULT 'audio';
 ALTER TABLE disc ADD COLUMN mp3_bitrate INTEGER
 """
 
+_SCHEMA_V8 = """
+CREATE TABLE disc_dir (
+    id INTEGER PRIMARY KEY,
+    disc_id INTEGER NOT NULL REFERENCES disc(id) ON DELETE CASCADE,
+    parent_id INTEGER REFERENCES disc_dir(id) ON DELETE CASCADE,
+    name TEXT NOT NULL
+);
+CREATE INDEX disc_dir_disc ON disc_dir(disc_id);
+ALTER TABLE disc_track ADD COLUMN dir_id INTEGER REFERENCES disc_dir(id) ON DELETE SET NULL
+"""
+
 _MIGRATIONS = (
     _SCHEMA_V1, _SCHEMA_V2, _SCHEMA_V3, _SCHEMA_V4, _SCHEMA_V5, _migrate_to_v6,
-    _SCHEMA_V7,
+    _SCHEMA_V7, _SCHEMA_V8,
 )  # fmt: skip
 SCHEMA_VERSION = len(_MIGRATIONS)
 
@@ -691,6 +710,8 @@ class Library:
     def _summarize(self, row: sqlite3.Row) -> DiscSummary:
         entries = self.disc_entries(row["id"])
         used = disc_used_sectors((e.sectors for e in entries), row["pregap_sectors"])
+        if row["kind"] == "mp3":
+            used += mp3.FOLDER_OVERHEAD_SECTORS * len(self.disc_dirs(row["id"]))
         return DiscSummary(
             row["id"], row["name"], row["capacity_sectors"], row["pregap_sectors"],
             len(entries), used, row["created_at"], row["folder_id"], row["last_burned_at"],
@@ -746,6 +767,9 @@ class Library:
         if kind == row["kind"]:
             return
         with self._conn:
+            if kind == "audio" and self.disc_dirs(disc_id):
+                self._write_disc_slots(disc_id, self._flattened(disc_id))
+                self._conn.execute("DELETE FROM disc_dir WHERE disc_id = ?", (disc_id,))
             self._conn.execute(
                 "UPDATE disc SET kind = ?, mp3_bitrate = ?, pregap_sectors = 0,"
                 " updated_at = ? WHERE id = ?",
@@ -757,6 +781,184 @@ class Library:
                 ),
             )
 
+    # -- folders on an MP3 disc -------------------------------------------
+
+    def disc_dirs(self, disc_id: int) -> list[DiscDir]:
+        """The folders on an MP3 disc (none on any other), parents before their children."""
+        rows = self._conn.execute(
+            "SELECT * FROM disc_dir WHERE disc_id = ? ORDER BY id", (disc_id,)
+        )
+        return [DiscDir(r["id"], r["disc_id"], r["parent_id"], r["name"]) for r in rows]
+
+    def dir_file_counts(self, disc_id: int) -> dict[int | None, int]:
+        """How many tracks are in each folder of an MP3 disc (None: the root)."""
+        rows = self._conn.execute(
+            "SELECT dir_id, COUNT(*) AS n FROM disc_track WHERE disc_id = ? GROUP BY dir_id",
+            (disc_id,),
+        )
+        return {r["dir_id"]: r["n"] for r in rows}
+
+    def _dir_row(self, disc_id: int, dir_id: int) -> sqlite3.Row:
+        row = self._conn.execute(
+            "SELECT * FROM disc_dir WHERE id = ? AND disc_id = ?", (dir_id, disc_id)
+        ).fetchone()
+        if row is None:
+            raise DiscError(f"disc {disc_id} has no folder with id {dir_id}")
+        return row
+
+    @staticmethod
+    def _dir_depth(parents: dict[int, int | None], dir_id: int | None) -> int:
+        """How many levels deep a folder is: 0 for the root, 1 directly in it."""
+        depth = 0
+        while dir_id is not None:
+            depth, dir_id = depth + 1, parents[dir_id]
+        return depth
+
+    def _check_dir_name(
+        self,
+        disc_id: int,
+        parent_id: int | None,
+        name: str,
+        exclude: int | None = None,
+    ) -> str:
+        """The name to keep, or an error: not empty, and not another folder's in the same place
+        (compared as it will be written on the disc, where case doesn't tell names apart)."""
+        name = name.strip()
+        if not name:
+            raise DiscError("a folder needs a name")
+        written = mp3.dir_name(name).casefold()
+        for other in self.disc_dirs(disc_id):
+            if (
+                other.id != exclude
+                and other.parent_id == parent_id
+                and mp3.dir_name(other.name).casefold() == written
+            ):
+                raise DiscError(f"there is already a folder called “{other.name}” here")
+        return name
+
+    def create_disc_dir(
+        self, disc_id: int, name: str, parent_id: int | None = None
+    ) -> int:
+        """Make a folder on an MP3 disc, inside folder `parent_id` (default: the root).
+
+        The player's limits are kept: 99 folders on a disc (the root counts as one) and 8
+        levels (the root counts as the first)."""
+        row = self._disc_row(disc_id)
+        if row["kind"] != "mp3":
+            raise DiscError("only an MP3 CD has folders")
+        if parent_id is not None:
+            self._dir_row(disc_id, parent_id)
+        dirs = self.disc_dirs(disc_id)
+        if len(dirs) + 1 >= mp3.MAX_FOLDERS:
+            raise DiscError(
+                f"a disc holds at most {mp3.MAX_FOLDERS} folders, counting the root"
+            )
+        parents = {d.id: d.parent_id for d in dirs}
+        if self._dir_depth(parents, parent_id) + 2 > mp3.MAX_DEPTH:
+            raise DiscError(
+                f"folders can go at most {mp3.MAX_DEPTH} levels deep, counting the root"
+            )
+        name = self._check_dir_name(disc_id, parent_id, name)
+        with self._conn:
+            cursor = self._conn.execute(
+                "INSERT INTO disc_dir (disc_id, parent_id, name) VALUES (?, ?, ?)",
+                (disc_id, parent_id, name),
+            )
+            self._touch_disc(disc_id)
+        assert cursor.lastrowid is not None
+        return cursor.lastrowid
+
+    def rename_disc_dir(self, disc_id: int, dir_id: int, name: str) -> None:
+        row = self._dir_row(disc_id, dir_id)
+        name = self._check_dir_name(disc_id, row["parent_id"], name, exclude=dir_id)
+        with self._conn:
+            self._conn.execute(
+                "UPDATE disc_dir SET name = ? WHERE id = ?", (name, dir_id)
+            )
+            self._touch_disc(disc_id)
+
+    def delete_disc_dir(self, disc_id: int, dir_id: int) -> None:
+        """Delete a folder. Its tracks and folders move up a level; no track leaves the disc."""
+        row = self._dir_row(disc_id, dir_id)
+        parent = row["parent_id"]
+        slots = self._slots(disc_id)
+        inside = sum(1 for s in slots if s.dir_id == dir_id)
+        beside = sum(1 for s in slots if s.dir_id == parent)
+        if inside + beside > mp3.MAX_FILES_PER_FOLDER:
+            raise DiscError(
+                f"moving its tracks up would put {inside + beside} files in one folder;"
+                f" a folder holds at most {mp3.MAX_FILES_PER_FOLDER}"
+            )
+        dirs = self.disc_dirs(disc_id)
+        taken = {
+            mp3.dir_name(d.name).casefold()
+            for d in dirs
+            if d.parent_id == parent and d.id != dir_id
+        }
+        for child in (d for d in dirs if d.parent_id == dir_id):
+            if mp3.dir_name(child.name).casefold() in taken:
+                raise DiscError(
+                    f"moving “{child.name}” up would clash with a folder of the same name; rename one first"
+                )
+        with self._conn:
+            self._conn.execute(
+                "UPDATE disc_track SET dir_id = ? WHERE disc_id = ? AND dir_id = ?",
+                (parent, disc_id, dir_id),
+            )
+            self._conn.execute(
+                "UPDATE disc_dir SET parent_id = ? WHERE parent_id = ?",
+                (parent, dir_id),
+            )
+            self._conn.execute("DELETE FROM disc_dir WHERE id = ?", (dir_id,))
+            self._touch_disc(disc_id)
+
+    def move_to_dir(
+        self, disc_id: int, positions: Iterable[int], dir_id: int | None
+    ) -> None:
+        """Put the tracks at `positions` (their place in the whole list) into folder `dir_id`
+        of an MP3 disc, or into the root with None. Their order is kept."""
+        self._disc_row(disc_id)
+        if dir_id is not None:
+            self._dir_row(disc_id, dir_id)
+        slots = self._slots(disc_id)
+        moving = set(positions)
+        bad = sorted(p for p in moving if not 0 <= p < len(slots))
+        if bad:
+            raise DiscError(f"no track at position(s) {bad}")
+        arriving = sum(1 for p in moving if slots[p].dir_id != dir_id)
+        there = sum(1 for s in slots if s.dir_id == dir_id)
+        if there + arriving > mp3.MAX_FILES_PER_FOLDER:
+            raise DiscError(_limit_error("mp3"))
+        slots = [
+            replace(s, dir_id=dir_id) if i in moving else s for i, s in enumerate(slots)
+        ]
+        with self._conn:
+            self._write_disc_slots(disc_id, slots)
+
+    def _flattened(self, disc_id: int) -> list[_Slot]:
+        """The disc's slots, one folder after another (the root's first, then each folder A to Z,
+        its own folders after its tracks), with no folder left: the order a player lists them in."""
+        slots = self._slots(disc_id)
+        dirs = self.disc_dirs(disc_id)
+        out: list[_Slot] = []
+
+        def walk(here: int | None) -> None:
+            out.extend(replace(s, dir_id=None) for s in slots if s.dir_id == here)
+            for child in sorted(
+                (d for d in dirs if d.parent_id == here),
+                key=lambda d: d.name.casefold(),
+            ):
+                walk(child.id)
+
+        walk(None)
+        return out
+
+    def _touch_disc(self, disc_id: int) -> None:
+        self._conn.execute(
+            "UPDATE disc SET updated_at = ? WHERE id = ?",
+            (datetime.now(UTC).isoformat(timespec="seconds"), disc_id),
+        )
+
     def delete_disc(self, disc_id: int) -> None:
         self._disc_row(disc_id)
         with self._conn:
@@ -767,7 +969,7 @@ class Library:
         kind, bitrate = disc["kind"], disc["mp3_bitrate"]
         rows = self._conn.execute(
             "SELECT dt.position AS disc_position, dt.title AS dt_title,"
-            " dt.artist AS dt_artist, t.* FROM disc_track dt"
+            " dt.artist AS dt_artist, dt.dir_id AS dt_dir, t.* FROM disc_track dt"
             " JOIN track t ON t.id = dt.track_id WHERE dt.disc_id = ? ORDER BY dt.position",
             (disc_id,),
         )
@@ -779,17 +981,20 @@ class Library:
                 r["dt_artist"],
                 kind,
                 bitrate,
+                r["dt_dir"],
             )
             for r in rows
         ]
 
     def _slots(self, disc_id: int) -> list[_Slot]:
         rows = self._conn.execute(
-            "SELECT track_id, title, artist FROM disc_track WHERE disc_id = ?"
+            "SELECT track_id, title, artist, dir_id FROM disc_track WHERE disc_id = ?"
             " ORDER BY position",
             (disc_id,),
         )
-        return [_Slot(r["track_id"], r["title"], r["artist"]) for r in rows]
+        return [
+            _Slot(r["track_id"], r["title"], r["artist"], r["dir_id"]) for r in rows
+        ]
 
     def _write_disc_tracks(self, disc_id: int, track_ids: list[int]) -> None:
         """Replace a disc's track list with plain tracks (no CD text edits)."""
@@ -799,10 +1004,10 @@ class Library:
         """Replace a disc's rows; positions are always 0..n-1."""
         self._conn.execute("DELETE FROM disc_track WHERE disc_id = ?", (disc_id,))
         self._conn.executemany(
-            "INSERT INTO disc_track (disc_id, track_id, position, title, artist)"
-            " VALUES (?, ?, ?, ?, ?)",
+            "INSERT INTO disc_track (disc_id, track_id, position, title, artist, dir_id)"
+            " VALUES (?, ?, ?, ?, ?, ?)",
             [
-                (disc_id, s.track_id, pos, s.title, s.artist)
+                (disc_id, s.track_id, pos, s.title, s.artist, s.dir_id)
                 for pos, s in enumerate(slots)
             ],
         )
@@ -819,42 +1024,57 @@ class Library:
         position: int | None = None,
         fit: bool = False,
         strict: bool = False,
+        dir_id: int | None = None,
     ) -> AddResult:
-        """Add tracks to a disc, at `position` (default: the end).
+        """Add tracks to a disc, at `position` (default: the end), in folder `dir_id` of an
+        MP3 disc (default: the root). `position` counts within that folder.
 
         By default everything is added, even past capacity, so a planner can
         show the overflow. With `fit`, only tracks that still fit are added
         (see `fit_tracks`; `strict` stops at the first one that doesn't).
-        Going over 99 tracks is never allowed.
+        Going over 99 tracks (an audio CD), or 999 in a folder (an MP3 CD), is never allowed.
         """
         row = self._disc_row(disc_id)
+        if dir_id is not None:
+            self._dir_row(disc_id, dir_id)
         candidates = self.tracks_by_ids(track_ids)
         current = self.disc_entries(disc_id)
+        slots = self._slots(disc_id)
+        here = [i for i, s in enumerate(slots) if s.dir_id == dir_id]
+        limit = _max_tracks(row["kind"])
         if fit:
             accepted, rejected = fit_tracks(
                 [t.sectors_on(row["kind"], row["mp3_bitrate"]) for t in candidates],
                 used=disc_used_sectors(
                     (e.sectors for e in current), row["pregap_sectors"]
                 ),
-                count=len(current),
+                count=len(here),
                 capacity=row["capacity_sectors"],
                 pregap=row["pregap_sectors"],
-                max_tracks=_max_tracks(row["kind"]),
+                max_tracks=limit,
                 strict=strict,
             )
         else:
             accepted, rejected = list(range(len(candidates))), []
-        if len(current) + len(accepted) > _max_tracks(row["kind"]):
-            raise DiscError(f"a disc holds at most {MAX_TRACKS} tracks")
-        slots = self._slots(disc_id)
-        at = len(slots) if position is None else max(0, min(position, len(slots)))
-        slots[at:at] = [_Slot(candidates[i].id) for i in accepted]
+        if len(here) + len(accepted) > limit:
+            raise DiscError(_limit_error(row["kind"]))
+        at = self._insertion_point(slots, here, position)
+        slots[at:at] = [_Slot(candidates[i].id, dir_id=dir_id) for i in accepted]
         with self._conn:
             self._write_disc_slots(disc_id, slots)
         return AddResult(
             tuple(candidates[i].id for i in accepted),
             tuple(candidates[i].id for i in rejected),
         )
+
+    @staticmethod
+    def _insertion_point(slots: list, here: list[int], position: int | None) -> int:
+        """Where in the whole list the `position`th place of a folder is (`here`: the indexes
+        of the folder's slots). Past its last track means just after it."""
+        local = len(here) if position is None else max(0, min(position, len(here)))
+        if local < len(here):
+            return here[local]
+        return here[-1] + 1 if here else len(slots)
 
     def remove_from_disc(self, disc_id: int, positions: Iterable[int]) -> None:
         self._disc_row(disc_id)
@@ -879,26 +1099,38 @@ class Library:
             self._write_disc_slots(disc_id, slots)
 
     def reorder_disc(
-        self, disc_id: int, positions: Iterable[int], to_position: int
+        self,
+        disc_id: int,
+        positions: Iterable[int],
+        to_position: int,
+        *,
+        dir_id: int | None = None,
     ) -> None:
         """Move the tracks at `positions` so they start at `to_position`.
 
         `to_position` is an insertion point in the list as it is before the
         move, which is what a drag-and-drop gives you. The moved tracks keep
-        their relative order.
+        their relative order. Positions count within folder `dir_id` of an MP3
+        disc (default: the root, which is the whole list on any other disc).
         """
         self._disc_row(disc_id)
         slots = self._slots(disc_id)
+        here = [i for i, s in enumerate(slots) if s.dir_id == dir_id]
+        mine = [slots[i] for i in here]
         moving = sorted(set(positions))
-        if not moving or moving[0] < 0 or moving[-1] >= len(slots):
-            raise DiscError(f"positions must be between 0 and {len(slots) - 1}")
-        at = max(0, min(to_position, len(slots)))
+        if not moving or moving[0] < 0 or moving[-1] >= len(mine):
+            raise DiscError(f"positions must be between 0 and {len(mine) - 1}")
+        at = max(0, min(to_position, len(mine)))
         before = sum(1 for p in moving if p < at)
-        moved = [slots[p] for p in moving]
-        rest = [s for i, s in enumerate(slots) if i not in set(moving)]
+        moved = [mine[p] for p in moving]
+        rest = [s for i, s in enumerate(mine) if i not in set(moving)]
         rest[at - before : at - before] = moved
+        for index, slot in zip(here, rest, strict=True):
+            slots[index] = (
+                slot  # the folder keeps the places it had; only their order changes
+            )
         with self._conn:
-            self._write_disc_slots(disc_id, rest)
+            self._write_disc_slots(disc_id, slots)
 
     def set_entry_text(
         self, disc_id: int, position: int, field: str, text: str
@@ -1073,7 +1305,16 @@ class Library:
             mp3_bitrate=row["mp3_bitrate"],
         )
         with self._conn:
-            self._write_disc_slots(copy, self._slots(disc_id))
+            made: dict[int, int] = {}
+            for d in self.disc_dirs(disc_id):  # parents come before their children
+                made[d.id] = self._conn.execute(
+                    "INSERT INTO disc_dir (disc_id, parent_id, name) VALUES (?, ?, ?)",
+                    (copy, made.get(d.parent_id), d.name),
+                ).lastrowid
+            self._write_disc_slots(
+                copy,
+                [replace(s, dir_id=made.get(s.dir_id)) for s in self._slots(disc_id)],
+            )
         return copy
 
     def track_usage(self, track_ids: Iterable[int]) -> dict[int, TrackUsage]:

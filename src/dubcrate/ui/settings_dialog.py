@@ -218,9 +218,10 @@ class SettingsDialog(QDialog):
         self.mp3_combo.activated.connect(
             lambda _i: settings.set_mp3_bitrate(self.mp3_combo.currentData())
         )
-        form.addRow("MP3 CDs encode at:", self.mp3_combo)
+        form.addRow("MP3 CDs: highest rate:", self.mp3_combo)
         mp3_hint = QLabel(
-            "For new MP3 discs: tracks that are not MP3 already are encoded at this rate."
+            "For new MP3 discs. Files are always constant bitrate (variable-bitrate files load"
+            " slowly on a CDJ), at this rate, or lower for a lossy track that is below it."
             " MP3 files go on the disc as they are, never re-encoded."
         )
         mp3_hint.setWordWrap(True)

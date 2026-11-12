@@ -68,22 +68,20 @@ class Track(TrackRecord):
 
     def sectors_on(self, kind: DiscKind, mp3_bitrate: int | None = None) -> int:
         """Sectors this track takes on a disc of `kind`: CD audio sectors for an audio CD,
-        2048-byte data sectors for an MP3 CD (`mp3_bitrate`: what a non-MP3 is encoded at)."""
+        2048-byte data sectors for an MP3 CD (`mp3_bitrate`: the highest constant bitrate)."""
         if kind == "audio":
             return self.length_sectors
         return mp3.track_sectors(
             self.path,
-            file_size=self.file_size,
             duration=self.duration,
             source_bitrate=self.bitrate,
             disc_bitrate=mp3_bitrate or mp3.DEFAULT_BITRATE,
         )
 
     def exact_on(self, kind: DiscKind) -> bool:
-        """Whether `sectors_on` is the real size rather than an estimate."""
-        if kind == "audio":
-            return self.length_exact
-        return mp3.is_mp3(self.path) and bool(self.file_size)
+        """Whether `sectors_on` is the real size rather than an estimate (an MP3 disc's sizes
+        always are estimates: the files are only made, and measured, when it is burned)."""
+        return kind == "audio" and self.length_exact
 
 
 @dataclass(frozen=True)
@@ -147,9 +145,7 @@ class DiscSummary:
     folder_id: int | None = None  # None: at the top level
     last_burned_at: str | None = None  # a note that it was burned, not a copy of it
     kind: DiscKind = "audio"  # for "mp3" the sector counts are 2048-byte data sectors
-    mp3_bitrate: int | None = (
-        None  # what tracks that aren't MP3 are encoded at (mp3 discs)
-    )
+    mp3_bitrate: int | None = None  # the highest constant bitrate of an mp3 disc
 
     @property
     def free_sectors(self) -> int:
@@ -175,6 +171,7 @@ class DiscEntry:
     artist_override: str | None = None
     kind: DiscKind = "audio"  # the disc's, so `sectors` is in the disc's own unit
     mp3_bitrate: int | None = None
+    dir_id: int | None = None  # the folder on an MP3 disc it is in; None: the root
 
     @property
     def title(self) -> str:
@@ -211,6 +208,16 @@ class AddResult:
 class SplitResult:
     disc_ids: tuple[int, ...]
     too_long: tuple[int, ...]  # track ids longer than an empty disc
+
+
+@dataclass(frozen=True)
+class DiscDir:
+    """A folder on an MP3 disc (what the player shows), not one of the folders that organise discs."""
+
+    id: int
+    disc_id: int
+    parent_id: int | None  # None: directly under the disc's root
+    name: str
 
 
 @dataclass(frozen=True)

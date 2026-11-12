@@ -9,6 +9,7 @@ from PySide6.QtWidgets import QInputDialog, QMessageBox
 
 from dubcrate import settings
 from dubcrate.library import Library, NodeRecord, TrackRecord
+from dubcrate.ui.disc_tree import COLUMN_WIDTH
 from dubcrate.ui.main_window import MainWindow
 from dubcrate.ui.models import (
     DISC_ITEM_MIME,
@@ -959,7 +960,73 @@ def test_the_plus_has_its_own_column_so_it_never_covers_the_count(window):
     plus = tree.plus_rect(index)
     assert plus.left() > count.right()  # beside the "* 3", not over it
     assert tree.plus_visible(index)
-    assert tree.columnWidth(2) == tree.plus_rect(index).width() + 12  # (a fixed slot)
+    assert (
+        tree.columnWidth(2) == COLUMN_WIDTH
+    )  # (a fixed slot, with room for the folder button)
     assert tree.visualRect(index.siblingAtColumn(2)).contains(plus), (
         "the + sits inside its own column"
     )
+
+
+# -- one click opens it ---------------------------------------------------------
+
+
+def click(view, index):
+    """A real left click on a row's name."""
+    from PySide6.QtTest import QTest
+
+    view.scrollTo(index)
+    QTest.mouseClick(
+        view.viewport(), Qt.MouseButton.LeftButton, pos=view.visualRect(index).center()
+    )
+
+
+def test_one_click_opens_a_disc_even_when_it_is_the_picked_one(window):
+    win, lib = window
+    disc = lib.create_disc("Night")
+    other = lib.create_disc("Day")
+    win.refresh_discs()
+    win.show()
+    click(win.disc_tree, find_selection(win.disc_tree.model(), ("disc", disc)))
+    assert win.disc_view.current_disc_id() == disc and win.center.currentIndex() == 1
+    # go back to the library, then click the same disc again: no "current" change for Qt
+    click(win.tree, find_selection(win.tree.model(), ("all",)))
+    assert win.center.currentIndex() == 0
+    click(win.disc_tree, find_selection(win.disc_tree.model(), ("disc", disc)))
+    assert win.center.currentIndex() == 1 and win.disc_view.current_disc_id() == disc
+    # and a different disc still opens on a click
+    click(win.tree, find_selection(win.tree.model(), ("all",)))
+    click(win.disc_tree, find_selection(win.disc_tree.model(), ("disc", other)))
+    assert win.disc_view.current_disc_id() == other and win.center.currentIndex() == 1
+
+
+def test_clicking_the_picked_library_item_leaves_the_disc_and_shows_the_tracks(window):
+    win, lib = window
+    disc = lib.create_disc("Night")
+    win.refresh_discs()
+    win.show()
+    playlist = find_selection(win.tree.model(), ("all",))
+    click(win.tree, playlist)
+    click(win.disc_tree, find_selection(win.disc_tree.model(), ("disc", disc)))
+    assert win.center.currentIndex() == 1  # a disc is open
+    click(win.tree, playlist)  # the library item was still the picked one
+    assert win.center.currentIndex() == 0
+    assert win.disc_view.current_disc_id() == disc  # still the target for adds
+
+
+def test_the_plus_button_is_still_not_a_click_on_the_row(window):
+    win, lib = window
+    disc = lib.create_disc("Night")
+    win.refresh_discs()
+    win.show()
+    index = pick(win, ("disc", disc))
+    click(win.tree, find_selection(win.tree.model(), ("all",)))
+    from PySide6.QtTest import QTest
+
+    QTest.mouseClick(
+        win.disc_tree.viewport(),
+        Qt.MouseButton.LeftButton,
+        pos=win.disc_tree.plus_rect(index).center(),
+    )
+    # the + made a new disc and opened that one; it was not a click on the row it sits on
+    assert len(lib.discs()) == 2 and win.disc_view.current_disc_id() != disc

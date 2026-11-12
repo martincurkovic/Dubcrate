@@ -6,12 +6,15 @@ the *target*: the disc that tracks are added to (Return, the Add button, or drag
 The target stays the same while you browse your library, so you can pick tracks and add them.
 """
 
+from html import escape
+
 from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QHBoxLayout,
     QHeaderView,
     QLabel,
+    QMenu,
     QMessageBox,
     QPushButton,
     QStackedWidget,
@@ -28,6 +31,7 @@ from dubcrate.library.models import DiscKind
 from dubcrate.library.store import LibraryError
 from dubcrate.mp3 import format_span
 
+from . import theme
 from .capacity_bar import CapacitySummary
 from .models import DiscModel
 from .overlaps import overlap_message
@@ -84,6 +88,8 @@ class DiscView(QWidget):
     changed = Signal()  # the disc being shown, or what is on it, changed
     discs_changed = Signal()  # a disc or folder was made, renamed, moved or deleted
     opened = Signal(int)  # a disc was made or copied, and should be opened in the tree
+    # a step of the path above the tracks was clicked: (disc id, folder id or None for the disc)
+    navigate_requested = Signal(int, object)
     busy = Signal(bool, str)  # (working, what it is doing)
     progress = Signal(int, int)
     message = Signal(str)
@@ -95,12 +101,20 @@ class DiscView(QWidget):
         self._lib = lib
         self._measuring = False
         self._disc_id: int | None = None
+        self._dir_id: int | None = (
+            None  # the folder of an MP3 disc being shown; None: the root
+        )
         self._mp3_declined: set[int] = (
             set()
         )  # discs where "make it an MP3 CD?" got a no
 
         self.title = QLabel()
         self.title.setObjectName("panelTitle")
+        self.title.setTextInteractionFlags(
+            Qt.TextInteractionFlag.LinksAccessibleByMouse
+        )
+        self.title.linkActivated.connect(self._on_crumb)
+        self._crumbs: list[str] = []  # the path shown, as plain names
         self.count = QLabel()
         self.count.setObjectName("mutedLabel")
         head = QHBoxLayout()
@@ -124,6 +138,10 @@ class DiscView(QWidget):
         # the artist and the title share what is left: both are text that wants room
         header.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
         header.setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
+        self.table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.table.customContextMenuRequested.connect(
+            lambda pos: self.table_menu().popup(self.table.viewport().mapToGlobal(pos))
+        )
         self.table.remove_requested.connect(self.remove_selected)
         self.table.doubleClicked.connect(self._on_double_clicked)
         self.table.selectionModel().selectionChanged.connect(
@@ -186,10 +204,63 @@ class DiscView(QWidget):
             return set()
         return {e.track.id for e in self._lib.disc_entries(self._disc_id)}
 
-    def set_disc(self, disc_id: int | None) -> None:
-        """Open a disc: show it, and make it the one that tracks are added to."""
+    def current_dir_id(self) -> int | None:
+        """The folder of the open (MP3) disc whose tracks are shown; None for the root."""
+        return self._dir_id
+
+    def set_disc(self, disc_id: int | None, dir_id: int | None = None) -> None:
+        """Open a disc: show it, and make it the one that tracks are added to. For an MP3 disc,
+        `dir_id` is the folder to show and add to (None: the disc's root)."""
         self._disc_id = disc_id
+        self._dir_id = dir_id
         self._show_disc()
+
+    def _set_title(self, name: str, disc_id: int) -> None:
+        """The disc's name, and when a folder is open the path to it, each step but the last a
+        link back to that level (the disc's name goes to its root)."""
+        chain = self._dir_chain(disc_id, self._dir_id)
+        self._crumbs = [name, *(d.name for d in chain)]
+        if not chain:
+            self.title.setTextFormat(Qt.TextFormat.PlainText)
+            self.title.setText(name)
+            return
+        palette = theme.current_palette()
+        # (the colour goes in the text: the app's stylesheet leaves a label's link palette alone)
+        color = palette.get("link") or palette["accent"]
+        steps = [f'<a href="root">{escape(name)}</a>']
+        steps += [f'<a href="dir:{d.id}">{escape(d.name)}</a>' for d in chain[:-1]]
+        steps.append(escape(chain[-1].name))  # where you are: not a link
+        self.title.setTextFormat(Qt.TextFormat.RichText)
+        self.title.setText(
+            f"<style>a {{ color: {color}; }}</style>" + " / ".join(steps)
+        )
+
+    def crumb_names(self) -> list[str]:
+        """The path shown above the tracks as plain names: the disc, then each folder."""
+        return list(self._crumbs)
+
+    def _on_crumb(self, href: str) -> None:
+        if self._disc_id is not None:
+            dir_id = None if href == "root" else int(href.removeprefix("dir:"))
+            self.navigate_requested.emit(self._disc_id, dir_id)
+
+    def _dir_chain(self, disc_id: int, dir_id: int | None) -> list:
+        """The folders from the top of the disc down to `dir_id`."""
+        names = {d.id: d for d in self._lib.disc_dirs(disc_id)}
+        chain = []
+        while dir_id is not None and dir_id in names:
+            chain.append(names[dir_id])
+            dir_id = names[dir_id].parent_id
+        return chain[::-1]
+
+    def _dir_path(self, disc_id: int, dir_id: int | None) -> str:
+        """A folder's place on its disc, as "House / Deep" ("" for the root)."""
+        names = {d.id: d for d in self._lib.disc_dirs(disc_id)}
+        parts = []
+        while dir_id is not None and dir_id in names:
+            parts.append(names[dir_id].name)
+            dir_id = names[dir_id].parent_id
+        return " / ".join(reversed(parts))
 
     def reload(self) -> None:
         """Re-read the disc being shown (it may have been changed or deleted)."""
@@ -206,14 +277,25 @@ class DiscView(QWidget):
         self.stack.setCurrentIndex(1 if has_disc else 0)
         if has_disc:
             summary = self._lib.disc(disc_id)
+            if self._dir_id not in {
+                None,
+                *(d.id for d in self._lib.disc_dirs(disc_id)),
+            }:
+                self._dir_id = None  # that folder is gone
             entries = self._lib.disc_entries(disc_id)
-            self.model.set_entries(entries)
-            self.summary.show_disc(summary, entries)
-            self.title.setText(summary.name)
+            shown = [e for e in entries if e.dir_id == self._dir_id]
+            self.model.set_entries(shown)
+            self.summary.show_disc(summary, entries)  # the bar is the whole disc
+            self._set_title(summary.name, disc_id)
             n = summary.track_count
+            here = (
+                f"  ·  {len(shown)} here"
+                if summary.kind == "mp3" and len(shown) != n
+                else ""
+            )
             self.count.setText(
                 f"{'MP3 CD  ·  ' if summary.kind == 'mp3' else ''}"
-                f"{n} track{'s' if n != 1 else ''}  ·  {format_span(summary.used_sectors, summary.kind)}"
+                f"{n} track{'s' if n != 1 else ''}{here}  ·  {format_span(summary.used_sectors, summary.kind)}"
                 f" of {format_span(summary.capacity_sectors, summary.kind)}"
             )
             settings.set_last_disc(disc_id)
@@ -371,7 +453,7 @@ class DiscView(QWidget):
         if self._disc_id is None:
             return
         try:
-            self._lib.reorder_disc(self._disc_id, rows, target)
+            self._lib.reorder_disc(self._disc_id, rows, target, dir_id=self._dir_id)
         except LibraryError as exc:
             self._warn("Can't move those tracks", str(exc))
         self._show_disc()
@@ -438,10 +520,13 @@ class DiscView(QWidget):
         fit: bool = False,
         strict: bool = False,
         disc_id: int | None = None,
+        dir_id: int | None = None,
     ) -> None:
         """Add tracks to a disc: `disc_id`, else the open one (making one if there is none).
 
         Adding to a disc by name (a drop onto it in the tree) leaves the open disc as it is.
+        With a `disc_id` that is not the open disc, `dir_id` is the folder of that MP3 disc they
+        go to (the open disc takes them in the folder being shown).
         """
         if not track_ids:
             return
@@ -454,9 +539,19 @@ class DiscView(QWidget):
             if target is None:
                 target = self._create("Disc 1")
                 self._disc_id = target
+                self._dir_id = None
+            # into the folder being shown, if this is the disc being shown
+            folder = (
+                self._dir_id if disc_id is None else dir_id
+            )  # (a drop names its own)
             try:
                 result = self._lib.add_to_disc(
-                    target, track_ids, position=position, fit=fit, strict=strict
+                    target,
+                    track_ids,
+                    position=position,
+                    fit=fit,
+                    strict=strict,
+                    dir_id=folder,
                 )
             except LibraryError as exc:
                 self._warn("Can't add those tracks", str(exc))
@@ -503,7 +598,17 @@ class DiscView(QWidget):
             self._mp3_declined.add(disc_id)
 
     def set_disc_kind(self, disc_id: int, kind: DiscKind) -> None:
-        """Make a disc an audio CD or an MP3 CD. Its tracks stay."""
+        """Make a disc an audio CD or an MP3 CD. Its tracks stay (an audio CD has no folders, so
+        a disc's folders are dissolved, its tracks listed folder by folder)."""
+        if kind == "audio" and self._lib.disc_dirs(disc_id):
+            answer = QMessageBox.question(
+                self,
+                "Make this an audio CD?",
+                "An audio CD has no folders. The folders on this disc will be removed and its"
+                " tracks put in one list, folder by folder.",
+            )
+            if answer != QMessageBox.StandardButton.Yes:
+                return
         self._lib.set_disc_kind(
             disc_id,
             kind,
@@ -517,6 +622,100 @@ class DiscView(QWidget):
         self.message.emit(
             f"“{name}” is now {'an MP3 CD' if kind == 'mp3' else 'an audio CD'}"
         )
+
+    # -- folders on an MP3 disc ---------------------------------------------
+
+    def new_dir(self, disc_id: int, parent_id: int | None = None) -> int | None:
+        """Make a folder on an MP3 disc with a name that is free there; the window then puts it
+        up for editing. None (and a message) if the player's limits say no."""
+        taken = {
+            d.name.casefold()
+            for d in self._lib.disc_dirs(disc_id)
+            if d.parent_id == parent_id
+        }
+        name, n = "New Folder", 2
+        while name.casefold() in taken:
+            name, n = f"New Folder {n}", n + 1
+        try:
+            dir_id = self._lib.create_disc_dir(disc_id, name, parent_id)
+        except LibraryError as exc:
+            self._warn("Can't make a folder", str(exc))
+            return None
+        self.discs_changed.emit()
+        return dir_id
+
+    def rename_dir(self, disc_id: int, dir_id: int, name: str) -> None:
+        current = next(d for d in self._lib.disc_dirs(disc_id) if d.id == dir_id).name
+        if not name.strip() or name.strip() == current:
+            return
+        try:
+            self._lib.rename_disc_dir(disc_id, dir_id, name)
+        except LibraryError as exc:
+            self._warn("Can't rename the folder", str(exc))
+        self.reload()
+        self.discs_changed.emit()
+
+    def delete_dir(self, disc_id: int, dir_id: int) -> None:
+        gone = next(d for d in self._lib.disc_dirs(disc_id) if d.id == dir_id)
+        name = gone.name
+        answer = QMessageBox.question(
+            self,
+            "Delete Folder",
+            f'Delete the folder "{name}" from the disc?\n'
+            "Its tracks and folders move up a level. No track leaves the disc.",
+        )
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+        try:
+            self._lib.delete_disc_dir(disc_id, dir_id)
+        except LibraryError as exc:
+            self._warn("Can't delete the folder", str(exc))
+            return
+        if disc_id == self._disc_id and self._dir_id == dir_id:
+            self._dir_id = gone.parent_id  # what was shown moves up with it
+        self.reload()
+        self.discs_changed.emit()
+
+    def move_rows_to_dir(self, rows: list[int], dir_id: int | None) -> None:
+        """Put the shown tracks at `rows` into a folder of the open MP3 disc (None: its root)."""
+        if self._disc_id is None or not rows:
+            return
+        positions = [self.model.entry_at(r).position for r in rows]
+        try:
+            self._lib.move_to_dir(self._disc_id, positions, dir_id)
+        except LibraryError as exc:
+            self._warn("Can't move those tracks", str(exc))
+        self._show_disc()
+        self.discs_changed.emit()
+
+    def move_selected_to_dir(self, dir_id: int | None) -> None:
+        rows = sorted(i.row() for i in self.table.selectionModel().selectedRows())
+        self.move_rows_to_dir(rows, dir_id)
+
+    def table_menu(self) -> QMenu:
+        """What a right-click on the track list offers."""
+        menu = QMenu(self)
+        selected = bool(self.table.selectionModel().selectedRows())
+        if self._disc_id is not None:
+            dirs = self._lib.disc_dirs(self._disc_id)
+            if dirs:
+                move = menu.addMenu("Move to Folder")
+                move.setEnabled(selected)
+                if self._dir_id is not None:
+                    move.addAction(
+                        "(The disc's root)", lambda: self.move_selected_to_dir(None)
+                    )
+                for d in sorted(
+                    dirs, key=lambda d: self._dir_path(self._disc_id, d.id).casefold()
+                ):
+                    if d.id != self._dir_id:
+                        move.addAction(
+                            self._dir_path(self._disc_id, d.id),
+                            lambda _c=False, i=d.id: self.move_selected_to_dir(i),
+                        )
+        remove = menu.addAction("Remove from Disc", self.remove_selected)
+        remove.setEnabled(selected)
+        return menu
 
     def split(self, track_ids: list[int], name: str) -> None:
         """Cut `track_ids` (in order) across as many discs as it takes."""

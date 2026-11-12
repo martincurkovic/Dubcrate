@@ -145,7 +145,7 @@ class BurnDialog(QDialog):
             text = (
                 f"MP3 CD · {tracks} · {format_amount(summary.used_sectors, 'mp3')}"
                 f" of {format_amount(summary.capacity_sectors, 'mp3')}"
-                f" · other formats become {summary.mp3_bitrate} kbit/s MP3"
+                f" · constant bitrate, up to {summary.mp3_bitrate} kbit/s"
             )
         else:
             gap = (

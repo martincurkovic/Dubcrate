@@ -117,6 +117,25 @@ track: `DRFolder` with `explicitFilesystemMask` ISO 9660 | Joliet, `DRTrack.trac
      bitrate, the sample rate of a copied MP3, a name Joliet allows but the player doesn't)?
   4. The `DRBurnStrategy` for a data track is left to DiscRecording; if a burn fails to
      start, try `DRBurnStrategyCDTAO` or `CDSAO` in `burn_data`.
+- **[tests]** Folders (`disc_dir`, schema v8): an MP3 disc's tracks each live in a folder or the
+  root, and `render_plan` makes the same directories, numbering files from 1 in each, with empty
+  folders kept. The limits are Pioneer's, as researched by the owner: 999 files per folder, 99
+  folders counting the root, 8 levels counting the root (`mp3.MAX_*`); the store refuses to go past
+  them. "8 layers deep" was read as including the root, the safer reading: if the CDJ really allows
+  8 folders below the root, raise `MAX_DEPTH` to 9.
+- **[not tried]** Folders on the CDJ: whether it shows them as the disc has them, whether a
+  folder of 999 files and 8 levels really load, and in which order it lists folders against the
+  files in the root. A small first test: two folders, one inside the other, three files each.
+- **[tests]** Constant bitrate only (the owner's rule: VBR files load slowly on a CDJ-1000MK3).
+  `mp3.scan_mp3` reads every frame header (the Xing/Info tag is not trusted: plenty of CBR files
+  have none), and `render_mp3` copies an MP3 only if it is CBR at or under the disc's ceiling,
+  otherwise encodes constant: lossless at the ceiling (320 by default), a lossy source below it at
+  its own rate rounded up to a standard step (245 -> 256, 128 -> 128). Everything it writes is
+  scanned again and refused if it is not CBR. Against real ffmpeg output: CBR and VBR files, one
+  with an ID3v1 tag, AAC, FLAC, and noise at a high VBR rate.
+- **[not tried]** That this is what makes a CDJ load an MP3 disc quickly (the owner's finding, not
+  measured here), and whether the "Info" header frame ffmpeg writes in each file is harmless to the
+  player. If a file's first moment is silent or the load is still slow, try `-write_xing 0`.
 - **[not tried]** How near the limit a disc can get: `used` is the sum of the files plus the
   estimated overhead, checked again against the drive's free blocks. Try a nearly full one.
 - **[not tried]** The CDJ's limits on files per disc and folder depth (this puts every file

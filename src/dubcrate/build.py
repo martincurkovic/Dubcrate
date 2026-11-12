@@ -36,6 +36,17 @@ def disc_problems(lib: Library, disc_id: int) -> list[str]:
             problems.append(f"{label}: no longer in its source")
         if e.track.missing:
             problems.append(f"{label}: file not found ({e.track.path})")
+    if summary.kind == "mp3":
+        dirs = {d.id: d.name for d in lib.disc_dirs(disc_id)}
+        counts: dict[int | None, int] = {}
+        for e in entries:
+            counts[e.dir_id] = counts.get(e.dir_id, 0) + 1
+        for dir_id, n in counts.items():
+            if n > mp3.MAX_FILES_PER_FOLDER:
+                where = f"the folder “{dirs[dir_id]}”" if dir_id else "the disc's root"
+                problems.append(
+                    f"{n} files in {where}; a folder holds at most {mp3.MAX_FILES_PER_FOLDER}"
+                )
     if summary.over:
         problems.append(
             f"over capacity by {format_amount(-summary.free_sectors, summary.kind)}"
@@ -88,6 +99,16 @@ class PlanTrack:
     path: str
     title: str
     artist: str
+    dir_id: int | None = None  # the folder on an MP3 disc; None: the root
+
+
+@dataclass(frozen=True)
+class PlanDir:
+    """A folder on an MP3 disc, as plain data."""
+
+    id: int
+    parent_id: int | None
+    name: str
 
 
 @dataclass(frozen=True)
@@ -103,6 +124,7 @@ class BurnPlan:
     tracks: tuple[PlanTrack, ...]
     kind: DiscKind = "audio"
     mp3_bitrate: int | None = None
+    dirs: tuple[PlanDir, ...] = ()  # parents before their children
 
 
 @dataclass(frozen=True)
@@ -140,10 +162,12 @@ def plan_burn(lib: Library, disc_id: int) -> BurnPlan:
         pregap_sectors=summary.pregap_sectors,
         capacity_sectors=summary.capacity_sectors,
         tracks=tuple(
-            PlanTrack(e.track.id, e.track.path, e.title, e.artist) for e in entries
+            PlanTrack(e.track.id, e.track.path, e.title, e.artist, e.dir_id)
+            for e in entries
         ),
         kind=summary.kind,
         mp3_bitrate=summary.mp3_bitrate,
+        dirs=tuple(PlanDir(d.id, d.parent_id, d.name) for d in lib.disc_dirs(disc_id)),
     )
 
 
@@ -181,14 +205,23 @@ def render_plan(
 
 
 def _render_mp3_plan(plan: BurnPlan, workdir: Path, say: Progress) -> Rendered:
-    """Stage an MP3 disc: one numbered MP3 per track in a folder named for the disc."""
+    """Stage an MP3 disc: a folder named for the disc, holding its own folders, and in each
+    folder one MP3 per track numbered from 1 (so a player that sorts by name keeps the order)."""
     folder = workdir / mp3.volume_name(plan.name)
     folder.mkdir(parents=True, exist_ok=True)
     data = DataDisc(title=folder.name, folder=folder)
-    used = 0
-    for number, t in enumerate(plan.tracks, start=1):
-        say(f"preparing {number}/{len(plan.tracks)}: {t.title}")
-        dst = folder / mp3.file_name(number, t.artist, t.title)
+    where: dict[int | None, Path] = {None: folder}
+    for d in plan.dirs:  # parents first
+        where[d.id] = where[d.parent_id] / mp3.dir_name(d.name)
+        where[d.id].mkdir(
+            exist_ok=True
+        )  # (empty folders are kept: they are part of the plan)
+    used = mp3.FOLDER_OVERHEAD_SECTORS * len(plan.dirs)
+    numbers: dict[int | None, int] = {}
+    for done, t in enumerate(plan.tracks, start=1):
+        say(f"preparing {done}/{len(plan.tracks)}: {t.title}")
+        number = numbers[t.dir_id] = numbers.get(t.dir_id, 0) + 1
+        dst = where[t.dir_id] / mp3.file_name(number, t.artist, t.title)
         try:
             size = render_mp3(
                 Path(t.path),
@@ -197,10 +230,10 @@ def _render_mp3_plan(plan: BurnPlan, workdir: Path, say: Progress) -> Rendered:
                 artist=t.artist,
                 album=plan.name,
                 number=number,
-                bitrate=plan.mp3_bitrate or mp3.DEFAULT_BITRATE,
+                max_bitrate=plan.mp3_bitrate or mp3.DEFAULT_BITRATE,
             )
         except RenderError as exc:
-            raise BuildError(f"#{number} {t.title}: {exc}") from exc
+            raise BuildError(f"#{done} {t.title}: {exc}") from exc
         data.files.append(dst)
         used += mp3.data_sectors(size)
     data.sectors = used + mp3.FILESYSTEM_OVERHEAD_SECTORS

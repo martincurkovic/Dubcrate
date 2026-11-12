@@ -28,7 +28,9 @@
 
 - MP3 CDs: *built, never burned.* A disc is an audio CD or an MP3 CD (`disc.kind`, schema
   v7). See Decisions, and [burning.md](burning.md) for the hardware check. Still to do: split
-  across MP3 discs from the window (the CLI's `disc split --mp3` does), a way to pick the kind
+  across MP3 discs from the window (the CLI's `disc split --mp3` does), moving a folder to
+  another place on the disc (folders can be made, renamed and deleted; `delete` moves things
+  up), a way to pick the kind
   in the + button, burning an MP3 disc with the cdrdao backend, and whatever the first
   real test shows about the CDJ.
 - Rekordbox XML export as an import path with no SQLCipher dependency (a fallback if
@@ -95,6 +97,20 @@
   track. The planner estimates sizes conservatively; the staged files' real sizes
   (plus `FILESYSTEM_OVERHEAD_SECTORS`) are what the burn checks. Adding past an audio CD's
   length asks once per disc whether to make it an MP3 CD.
+- **MP3 bitrates.** Always constant bitrate; the disc's setting (`mp3_bitrate`, Settings > Discs)
+  is a ceiling, 320 by default. Sizes on an MP3 disc are estimates (shown with a ~) because
+  whether a file is copied or re-encoded is only known by reading it; the staged files are
+  measured at burn time. Caching a scan per track would make the common case (CBR copies) exact.
+- **Folders on an MP3 disc.** `disc_dir` rows (a tree per disc) and `disc_track.dir_id`; the
+  disc's global `position` order stays, and a folder's order is the relative order of its tracks.
+  `add_to_disc` and `reorder_disc` take a `dir_id` and count positions *within* that folder; the
+  Discs list shows a disc's folders as its children, and a selected folder opens its disc scoped
+  to it (`DiscView.set_disc(disc, dir)`), so the track list shows one folder while the capacity bar
+  keeps the whole disc. Selections are `("disc_dir", disc id, folder id)`.
+- **Clicking.** The trees open on `clicked` as well as on a change of the current row, because
+  clicking the row that is already current is not a change for Qt (the old bug: a disc already
+  picked in the Discs list, or a library item already picked on the left, needed a click elsewhere
+  and back).
 
 ## Known rough edges
 

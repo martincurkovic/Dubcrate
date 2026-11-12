@@ -19,7 +19,7 @@ from dubcrate.cd import (
     SAMPLES_PER_SECTOR,
     samples_to_sectors,
 )
-from dubcrate.mp3 import is_mp3
+from dubcrate.mp3 import LOSSY_CODECS, cbr_target, is_mp3, scan_mp3
 
 _CHUNK = 1 << 20
 
@@ -167,14 +167,17 @@ def render_mp3(
     artist: str,
     album: str = "",
     number: int | None = None,
-    bitrate: int = 320,
+    max_bitrate: int = 320,
 ) -> int:
     """Write `src` to `dst` as an MP3 for an MP3 CD; returns the file's size in bytes.
 
-    An MP3 is copied without re-encoding (a second lossy pass would only lose quality); anything
-    else is encoded at `bitrate` kbit/s, constant, at 44.1 kHz stereo. Either way the tags are
-    written fresh from the disc's own text (title and artist as edited for this disc) and cover
-    art is left off, which keeps the size predictable. `src` is only read.
+    Always constant bitrate (CDJs are slow to load variable-bitrate files). The rate is
+    `max_bitrate` (320), or less for a lossy source that is below it: that source's own rate,
+    at the next standard step up (`mp3.cbr_target`). An MP3 that is already constant bitrate at
+    or under `max_bitrate` is copied without re-encoding (a second lossy pass would only lose
+    quality); a variable-bitrate one is encoded to constant. Tags are written fresh from the
+    disc's own text (title and artist as edited for this disc) and cover art is left off.
+    `src` is only read.
     """
     cmd = [
         _require("ffmpeg"), "-nostdin", "-v", "error", "-y", "-i", str(src),
@@ -185,10 +188,12 @@ def render_mp3(
         cmd += ["-metadata", f"album={album}"]
     if number is not None:
         cmd += ["-metadata", f"track={number}"]
-    if is_mp3(src):
+    rate = _mp3_plan(src, max_bitrate)
+    if rate is None:
         cmd += ["-c:a", "copy"]
     else:
-        cmd += ["-c:a", "libmp3lame", "-b:a", f"{bitrate}k", "-ar", "44100", "-ac", "2"]
+        # (-b:a without -abr is constant bitrate in libmp3lame)
+        cmd += ["-c:a", "libmp3lame", "-b:a", f"{rate}k", "-ar", "44100", "-ac", "2"]
     cmd += ["-id3v2_version", "3", "-write_id3v1", "1", "-f", "mp3", str(dst)]
     dst.parent.mkdir(parents=True, exist_ok=True)
     proc = subprocess.run(cmd, check=False, capture_output=True, text=True)
@@ -197,4 +202,27 @@ def render_mp3(
         raise RenderError(
             f"ffmpeg failed for {src}: {proc.stderr.strip() or 'nothing was written'}"
         )
+    result = scan_mp3(dst)
+    if (
+        result is None or not result.cbr
+    ):  # never leave a variable-bitrate file on a disc
+        dst.unlink(missing_ok=True)
+        raise RenderError(f"{src.name}: the MP3 made from it is not constant bitrate")
     return dst.stat().st_size
+
+
+def _mp3_plan(src: Path, max_bitrate: int) -> int | None:
+    """None to copy `src` as it is, else the constant bitrate (kbit/s) to encode it at."""
+    if is_mp3(src):
+        scan = scan_mp3(src)
+        if scan is not None and scan.cbr and scan.bitrate <= max_bitrate:
+            return None
+        source = scan.bitrate if scan is not None else probe(src).bitrate
+        return cbr_target(source, max_bitrate)
+    info = probe(src)
+    # a lossless source says nothing by its file's rate: it goes at the ceiling
+    return (
+        cbr_target(info.bitrate, max_bitrate)
+        if info.codec in LOSSY_CODECS
+        else max_bitrate
+    )

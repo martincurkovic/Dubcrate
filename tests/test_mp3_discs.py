@@ -50,16 +50,142 @@ def test_a_sector_is_2048_bytes_and_every_file_costs_its_directory_entries():
     assert mp3.data_sectors(2049) == 2 + mp3.FILE_OVERHEAD_SECTORS
 
 
-def test_an_mp3_takes_its_files_size_and_anything_else_the_encoded_size():
-    kw = {"duration": 100.0, "source_bitrate": 128, "disc_bitrate": 320}
-    mp3_cost = mp3.track_sectors("a.MP3", file_size=4_000_000, **kw)
-    assert mp3_cost == mp3.data_sectors(4_000_000 + mp3.TAG_BYTES)
-    flac_cost = mp3.track_sectors("a.flac", file_size=40_000_000, **kw)
-    assert flac_cost == mp3.data_sectors(mp3.encoded_bytes(100.0, 320))
-    assert flac_cost > 100 * 320 * 125 / 2048  # never less than the bitrate says
-    # an MP3 whose size isn't known is estimated from its own bitrate, not the disc's
-    unknown = mp3.track_sectors("a.mp3", file_size=None, **kw)
-    assert unknown == mp3.data_sectors(mp3.encoded_bytes(100.0, 128))
+@pytest.mark.parametrize(
+    ("source", "ceiling", "expected"),
+    [
+        (None, 320, 320),  # unknown: the ceiling
+        (900, 320, 320),  # lossless-sized: the ceiling
+        (320, 320, 320),
+        (
+            245,
+            320,
+            256,
+        ),  # below it: the next standard rate up, never worse than the source
+        (256, 320, 256),
+        (190, 320, 192),
+        (128, 320, 128),
+        (96, 320, 96),
+        (20, 320, 32),  # (nothing below 32 exists)
+        (320, 192, 192),  # the disc's own ceiling wins
+        (245, 192, 192),
+        (100, 192, 112),
+    ],
+)
+def test_the_constant_bitrate_a_lossy_source_goes_at(source, ceiling, expected):
+    assert mp3.cbr_target(source, ceiling) == expected
+
+
+def test_estimates_use_the_constant_bitrate_the_file_will_have():
+    kw = {"duration": 100.0, "disc_bitrate": 320}
+    at = lambda rate: mp3.data_sectors(mp3.encoded_bytes(100.0, rate))
+    assert mp3.track_sectors("a.mp3", source_bitrate=128, **kw) == at(128)
+    assert mp3.track_sectors("a.MP3", source_bitrate=245, **kw) == at(256)
+    assert mp3.track_sectors("a.mp3", source_bitrate=None, **kw) == at(320)
+    # anything but an MP3 might be lossless, whose file rate says nothing: the ceiling
+    assert mp3.track_sectors("a.flac", source_bitrate=60, **kw) == at(320)
+    assert mp3.track_sectors("a.m4a", source_bitrate=128, **kw) == at(320)
+    assert mp3.track_sectors("a.mp3", source_bitrate=320, duration=100.0, disc_bitrate=192) == at(192)  # fmt: skip
+
+
+# -- telling constant from variable bitrate -------------------------------------
+
+
+def frame(bitrate_index=9, version_bits=3, pad=0, rate_index=0, tag=b""):
+    """One Layer III frame: header, then zeros (or `tag` where a Xing/Info tag goes)."""
+    h = bytes([0xFF, 0xE0 | version_bits << 3 | 0b010 | 1, bitrate_index << 4 | rate_index << 2 | pad << 1, 0x00])  # fmt: skip
+    rates = mp3._BITRATES_MPEG1 if version_bits == 3 else mp3._BITRATES_MPEG2
+    rate = mp3._SAMPLE_RATES[version_bits][rate_index]
+    length = (144 if version_bits == 3 else 72) * rates[
+        bitrate_index
+    ] * 1000 // rate + pad
+    body = bytearray(length - 4)
+    body[32 : 32 + len(tag)] = tag
+    return h + bytes(body)
+
+
+def id3v2(size=300):
+    n = size
+    return b"ID3\x03\x00\x00" + bytes([(n >> 21) & 0x7F, (n >> 14) & 0x7F, (n >> 7) & 0x7F, n & 0x7F]) + bytes(size)  # fmt: skip
+
+
+def scan(tmp_path, data):
+    path = tmp_path / "x.mp3"
+    path.write_bytes(data)
+    return mp3.scan_mp3(path)
+
+
+def test_frames_of_one_bitrate_are_constant_bitrate(tmp_path):
+    result = scan(tmp_path, frame() * 50)  # index 9 is 128 kbit/s
+    assert (result.cbr, result.bitrate, result.sample_rate, result.frames) == (True, 128, 44100, 50)  # fmt: skip
+
+
+def test_a_bitrate_that_changes_is_variable(tmp_path):
+    data = b"".join(frame(i) for i in (9, 11, 13, 9, 14, 12, 10) * 5)
+    result = scan(tmp_path, data)
+    assert not result.cbr and 100 < result.bitrate < 320
+
+
+def test_the_padding_bit_does_not_make_a_file_variable(tmp_path):
+    assert scan(tmp_path, b"".join(frame(pad=i % 2) for i in range(40))).cbr
+
+
+def test_tags_around_the_audio_are_not_audio(tmp_path):
+    data = id3v2() + frame(13, tag=b"Info") + frame(9) * 30 + b"TAG" + bytes(125)  # a 320 header on 128 audio  # fmt: skip
+    result = scan(tmp_path, data)
+    assert (result.cbr, result.bitrate, result.frames) == (
+        True,
+        128,
+        30,
+    )  # the Info frame left out
+    xing = (
+        id3v2()
+        + frame(9, tag=b"Xing")
+        + b"".join(frame(i) for i in (9, 12, 14, 10) * 4)
+    )
+    assert not scan(
+        tmp_path, xing
+    ).cbr  # a VBR file is told by its frames, with the Xing frame skipped
+
+
+def test_junk_between_frames_and_a_stray_ff_are_stepped_over(tmp_path):
+    data = frame() * 10 + b"\xff\xff\x00junk\xff\xe0" + frame() * 10
+    result = scan(tmp_path, data)
+    assert result.cbr and result.frames == 20
+
+
+def test_mpeg2_files_are_read_with_their_own_tables(tmp_path):
+    result = scan(tmp_path, b"".join(frame(8, version_bits=2, rate_index=0) for _ in range(20)))  # 64 kbit/s, 22.05 kHz  # fmt: skip
+    assert (result.cbr, result.bitrate, result.sample_rate) == (True, 64, 22050)
+
+
+@pytest.mark.parametrize(
+    "data", [b"", b"not an mp3 at all" * 50, bytes(2000), id3v2() + bytes(500)]
+)
+def test_a_file_that_is_not_mp3_audio_scans_as_none(tmp_path, data):
+    assert scan(tmp_path, data) is None
+
+
+# -- real files from ffmpeg: the scanner against an encoder -----------------------
+
+
+def encode(path, *args, source="sine=duration=3"):
+    subprocess.run(
+        ["ffmpeg", "-y", "-nostdin", "-v", "error", "-f", "lavfi", "-i", source, *args, str(path)],
+        check=True,
+    )  # fmt: skip
+    return path
+
+
+@needs_ffmpeg
+def test_the_scanner_agrees_with_ffmpegs_constant_and_variable_files(tmp_path):
+    cbr = mp3.scan_mp3(encode(tmp_path / "c.mp3", "-c:a", "libmp3lame", "-b:a", "192k"))
+    vbr = mp3.scan_mp3(encode(tmp_path / "v.mp3", "-c:a", "libmp3lame", "-q:a", "2"))
+    assert cbr.cbr and cbr.bitrate == 192 and not vbr.cbr
+    # with the ID3v1 tag ffmpeg can add at the end, too
+    tagged = encode(
+        tmp_path / "t.mp3", "-c:a", "libmp3lame", "-b:a", "320k", "-write_id3v1", "1"
+    )
+    assert mp3.scan_mp3(tagged).cbr and mp3.scan_mp3(tagged).bitrate == 320
 
 
 def test_file_names_are_numbered_clean_and_short_enough_for_joliet():
@@ -127,13 +253,16 @@ def test_an_mp3_disc_is_sized_in_data_sectors_and_has_no_gaps_or_99_track_limit(
     assert summary.track_count == 120 and not summary.over
     entries = lib.disc_entries(disc)
     assert all(e.kind == "mp3" for e in entries)
-    # the mp3 is its file's size; a flac is the encoded size at the disc's bitrate
     by_title = {e.title: e for e in entries}
-    mp3_track = by_title["Gamma"].track
+    gamma = by_title[
+        "Gamma"
+    ].track  # an MP3: at its own rate (or the next standard one up)
     assert by_title["Gamma"].sectors == mp3.data_sectors(
-        (mp3_track.file_size or 0) + mp3.TAG_BYTES
+        mp3.encoded_bytes(gamma.duration, mp3.cbr_target(gamma.bitrate, 320))
     )
-    assert by_title["Gamma"].exact and not by_title["Alpha"].exact
+    assert (
+        not by_title["Gamma"].exact and not by_title["Alpha"].exact
+    )  # (all estimates)
     audio = lib.create_disc("A")
     with pytest.raises(DiscError, match="at most 99"):
         lib.add_to_disc(audio, ids * 40)
@@ -199,6 +328,8 @@ def test_an_older_library_gets_the_new_columns(tmp_path):
 
     path = tmp_path / "old.db"
     with Library.open(path) as library:  # make it, then wind it back to schema 6
+        library._conn.execute("ALTER TABLE disc_track DROP COLUMN dir_id")
+        library._conn.execute("DROP TABLE disc_dir")
         library._conn.execute("ALTER TABLE disc DROP COLUMN kind")
         library._conn.execute("ALTER TABLE disc DROP COLUMN mp3_bitrate")
         library._conn.execute("INSERT INTO disc (name, capacity_sectors, created_at, updated_at) VALUES ('Old', 1, '', '')")  # fmt: skip
@@ -207,6 +338,7 @@ def test_an_older_library_gets_the_new_columns(tmp_path):
     with Library.open(path) as library:
         [disc] = library.discs()
         assert (disc.kind, disc.mp3_bitrate) == ("audio", None)
+        assert library.disc_dirs(disc.id) == []
         assert (
             library._conn.execute("PRAGMA user_version").fetchone()[0]
             == store.SCHEMA_VERSION
@@ -216,29 +348,99 @@ def test_an_older_library_gets_the_new_columns(tmp_path):
 # -- encoding and staging -----------------------------------------------------
 
 
+def made(tmp_path, src, name="out.mp3", **kw):
+    """render_mp3 into tmp_path; returns (the file's scan, what ffprobe says of it)."""
+    dst = tmp_path / name
+    render_mp3(src, dst, title="Edited", artist="Them", **kw)
+    return mp3.scan_mp3(dst), probe(dst)
+
+
 @needs_ffmpeg
-def test_a_non_mp3_is_encoded_at_the_chosen_bitrate_with_the_discs_own_tags(tmp_path):
+def test_a_lossless_file_is_encoded_constant_at_320_with_the_discs_own_tags(tmp_path):
     src = make_audio(tmp_path / "a.flac", 2.0, title="Original", artist="Someone")
+    # a sine compresses well: its flac rate is well under 320, and says nothing about quality
+    assert mp3.cbr_target(probe(src).bitrate, 320) < 320
     dst = tmp_path / "out" / "01.mp3"
-    size = render_mp3(
-        src, dst, title="Edited", artist="Them", album="Mix", number=1, bitrate=128
-    )
+    size = render_mp3(src, dst, title="Edited", artist="Them", album="Mix", number=1)
     assert size == dst.stat().st_size > 0
-    info = probe(dst)
+    info, scan = probe(dst), mp3.scan_mp3(dst)
     assert (info.codec, info.sample_rate, info.title, info.artist, info.album) == ("mp3", 44100, "Edited", "Them", "Mix")  # fmt: skip
-    assert 120 <= (info.bitrate or 0) <= 136
+    assert (scan.cbr, scan.bitrate) == (
+        True,
+        320,
+    )  # not ~160, as the flac's small size might suggest
     assert src.read_bytes()  # only read
 
 
 @needs_ffmpeg
-def test_an_mp3_is_copied_not_reencoded(tmp_path):
-    src = make_audio(tmp_path / "a.mp3", 2.0, title="Original")
+def test_the_discs_ceiling_lowers_what_lossless_is_encoded_at(tmp_path):
+    src = make_audio(tmp_path / "a.flac", 2.0)
+    scan, _ = made(tmp_path, src, max_bitrate=192)
+    assert (scan.cbr, scan.bitrate) == (True, 192)
+
+
+@needs_ffmpeg
+def test_a_constant_bitrate_mp3_is_copied_not_reencoded(tmp_path):
+    src = encode(tmp_path / "a.mp3", "-c:a", "libmp3lame", "-b:a", "192k", "-metadata", "title=Original")  # fmt: skip
     before = src.read_bytes()
-    dst = tmp_path / "out.mp3"
-    render_mp3(src, dst, title="Edited", artist="Them", bitrate=128)
+    scan, info = made(tmp_path, src)
     assert src.read_bytes() == before
-    assert probe(dst).title == "Edited"
-    assert probe(dst).bitrate == probe(src).bitrate  # not 128: it wasn't encoded again
+    assert info.title == "Edited"
+    assert (scan.cbr, scan.bitrate) == (
+        True,
+        192,
+    )  # still 192: not 320, and not encoded again
+
+
+@needs_ffmpeg
+def test_a_variable_bitrate_mp3_is_made_constant_at_its_rate_or_the_next_standard_up(
+    tmp_path,
+):
+    noise = "anoisesrc=duration=3:amplitude=0.5"
+    src = encode(tmp_path / "v.mp3", "-c:a", "libmp3lame", "-q:a", "0", source=noise)
+    original = mp3.scan_mp3(src)
+    assert (
+        not original.cbr and 100 < original.bitrate < 320
+    )  # a real variable-bitrate file
+    scan, _ = made(tmp_path, src)
+    assert scan.cbr and scan.bitrate == mp3.cbr_target(original.bitrate, 320)
+    assert scan.bitrate < 320  # a lossy source is not inflated to 320
+
+
+@needs_ffmpeg
+def test_a_vbr_mp3_over_the_ceiling_goes_to_the_ceiling(tmp_path):
+    src = encode(tmp_path / "v.mp3", "-c:a", "libmp3lame", "-q:a", "0", source="anoisesrc=duration=3:amplitude=0.5")  # fmt: skip
+    scan, _ = made(tmp_path, src, max_bitrate=128)
+    assert (scan.cbr, scan.bitrate) == (True, 128)
+
+
+@needs_ffmpeg
+def test_a_constant_mp3_above_the_ceiling_is_encoded_down_to_it(tmp_path):
+    src = encode(tmp_path / "c.mp3", "-c:a", "libmp3lame", "-b:a", "320k")
+    scan, _ = made(tmp_path, src, max_bitrate=192)
+    assert (scan.cbr, scan.bitrate) == (True, 192)
+
+
+@needs_ffmpeg
+def test_a_lossy_file_below_the_ceiling_keeps_its_rate(tmp_path):
+    src = encode(tmp_path / "a.m4a", "-c:a", "aac", "-b:a", "128k")
+    assert probe(src).codec == "aac"
+    scan, _ = made(tmp_path, src)
+    assert (scan.cbr, scan.bitrate) == (True, mp3.cbr_target(probe(src).bitrate, 320))
+    assert scan.bitrate < 320
+
+
+@needs_ffmpeg
+def test_what_is_written_is_checked_to_be_constant_bitrate(tmp_path, monkeypatch):
+    from dubcrate import render
+
+    src = make_audio(tmp_path / "a.flac", 2.0)
+    monkeypatch.setattr(
+        render, "scan_mp3", lambda _p: mp3.Mp3Scan(False, 200, 44100, 10)
+    )
+    with pytest.raises(RenderError, match="not constant bitrate"):
+        render_mp3(src, tmp_path / "x.mp3", title="t", artist="a")
+    assert not (tmp_path / "x.mp3").exists()  # never left on the disc
 
 
 @needs_ffmpeg
@@ -552,3 +754,30 @@ def test_the_command_line_makes_and_shows_an_mp3_disc(lib, capsys):
         and " MB " in out
     )
     assert "MP3" in out.splitlines()[-1]
+
+
+@needs_ffmpeg
+def test_the_command_line_makes_folders_and_adds_into_them(lib, capsys):
+    from dubcrate import cli_discs
+    from dubcrate.cli import build_parser
+
+    def run(*argv):
+        return cli_discs.run(lib, build_parser().parse_args(argv))
+
+    assert run("disc", "new", "Set", "--mp3") == 0
+    [disc] = lib.discs()
+    assert run("disc", "mkdir", str(disc.id), "House") == 0
+    [house] = lib.disc_dirs(disc.id)
+    assert run("disc", "mkdir", str(disc.id), "Deep", "--in", str(house.id)) == 0
+    deep = lib.disc_dirs(disc.id)[1]
+    ids = track_ids(lib)
+    assert (
+        run("disc", "add", str(disc.id), "--track", str(ids[0]), "--dir", str(deep.id))
+        == 0
+    )
+    out = capsys.readouterr().out
+    assert "House/Deep" in out and "[House/Deep]" in out
+    assert [e.dir_id for e in lib.disc_entries(disc.id)] == [deep.id]
+    assert (
+        run("disc", "mkdir", str(disc.id), "house") == 1
+    )  # a clash is an error, not a traceback

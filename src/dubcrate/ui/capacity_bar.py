@@ -13,6 +13,7 @@ from PySide6.QtCore import QEvent, QPointF, QRectF, Qt
 from PySide6.QtGui import QBrush, QColor, QPainter, QPainterPath, QPen
 from PySide6.QtWidgets import QLabel, QSizePolicy, QToolTip, QVBoxLayout, QWidget
 
+from dubcrate import mp3
 from dubcrate.library.models import DiscEntry, DiscSummary
 from dubcrate.mp3 import format_span
 
@@ -49,6 +50,14 @@ def disc_spans(entries: list[DiscEntry], pregap_sectors: int = 0) -> list[Span]:
             )
         )
     return spans
+
+
+def _fullest_folder(entries: list[DiscEntry]) -> int:
+    """The most files in any one folder (the root counts as one) of an MP3 disc."""
+    counts: dict[int | None, int] = {}
+    for e in entries:
+        counts[e.dir_id] = counts.get(e.dir_id, 0) + 1
+    return max(counts.values(), default=0)
 
 
 class CapacityBar(QWidget):
@@ -258,5 +267,8 @@ class CapacitySummary(QWidget):
             level = "critical" if summary.over else "warning"
         elif kind == "audio" and summary.track_count > 99:
             text += "\nA CD holds at most 99 tracks"
+            level = "critical"
+        elif kind == "mp3" and _fullest_folder(entries) > mp3.MAX_FILES_PER_FOLDER:
+            text += f"\nA folder holds at most {mp3.MAX_FILES_PER_FOLDER} files: put some in another folder"
             level = "critical"
         self._set_text(text, level)

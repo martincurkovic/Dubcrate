@@ -62,24 +62,42 @@ def _summary_line(s: DiscSummary, approx: bool = False) -> str:
     )
 
 
+def _dir_paths(lib: Library, disc_id: int) -> dict[int, str]:
+    """The folders of an MP3 disc as {id: "House/Deep"}."""
+    dirs = {d.id: d for d in lib.disc_dirs(disc_id)}
+
+    def path(dir_id: int) -> str:
+        d = dirs[dir_id]
+        return d.name if d.parent_id is None else f"{path(d.parent_id)}/{d.name}"
+
+    return {i: path(i) for i in dirs}
+
+
 def _show(lib: Library, disc_id: int) -> None:
     s = lib.disc(disc_id)
     if s.kind == "mp3":
         print(
             f'Disc {s.id} "{s.name}": MP3 CD, {_minutes(s.capacity_sectors)} size,'
-            f" other formats encoded at {s.mp3_bitrate} kbit/s"
+            f" constant bitrate, up to {s.mp3_bitrate} kbit/s"
         )
     else:
         print(f'Disc {s.id} "{s.name}": {_minutes(s.capacity_sectors)}, {_gap(s)}')
     entries = lib.disc_entries(disc_id)
+    paths = _dir_paths(lib, disc_id)
+    if paths:
+        print(
+            "  folders (id: path): " + ", ".join(f"{i}: {p}" for i, p in paths.items())
+        )
     for e in entries:
         t = e.track
         flags = ("~" if not e.exact else " ") + ("!" if t.missing or t.stale else " ")
         bpm = f"{t.bpm:6.1f}" if t.bpm else "     -"
         # the text shown is what will be written on the CD; a * marks one edited for this disc
         edited = "*" if e.edited else " "
+        where = f" [{paths[e.dir_id]}]" if e.dir_id else ""  # (a folder of an MP3 disc)
         print(
             f"  {e.position + 1:2d}. {_mmss(e.sectors):>6s}{flags}"
+            f"{where}"
             f" {_fit(e.artist, 24):24s}  {_fit(e.title, 38):38s}{edited} {bpm}  {t.key or '-':>4s}"
         )
     print(_summary_line(s, approx=any(not e.exact for e in entries)))
@@ -134,10 +152,22 @@ def cmd_add(lib: Library, args: argparse.Namespace) -> int:
         print(f"warning: couldn't measure {problem}", file=sys.stderr)
     position = args.at - 1 if args.at else None
     result = lib.add_to_disc(
-        args.disc, track_ids, position=position, fit=args.fit, strict=args.strict
+        args.disc,
+        track_ids,
+        position=position,
+        fit=args.fit,
+        strict=args.strict,
+        dir_id=args.dir,
     )
     print(f"added {len(result.added)} track(s)", end="")
     print(f", {len(result.rejected)} didn't fit" if result.rejected else "")
+    _show(lib, args.disc)
+    return 0
+
+
+def cmd_mkdir(lib: Library, args: argparse.Namespace) -> int:
+    dir_id = lib.create_disc_dir(args.disc, args.name, args.parent)
+    print(f"created folder {dir_id}")
     _show(lib, args.disc)
     return 0
 
@@ -282,7 +312,7 @@ def _mp3_flags(p: argparse.ArgumentParser) -> None:
         type=int,
         choices=mp3.BITRATES,
         default=mp3.DEFAULT_BITRATE,
-        help="with --mp3: kbit/s for tracks that aren't MP3 (default %(default)s)",
+        help="with --mp3: the highest constant bitrate in kbit/s (default %(default)s)",
     )
 
 
@@ -321,8 +351,19 @@ def add_parsers(sub: argparse._SubParsersAction) -> None:
         action="store_true",
         help="with --fit, stop at the first that doesn't",
     )
-    p.add_argument("--at", type=int, help="insert at this position (1-based)")
+    p.add_argument(
+        "--at", type=int, help="insert at this position (1-based, in the folder)"
+    )
+    p.add_argument(
+        "--dir", type=int, help="a folder of an MP3 disc to add to (default: the root)"
+    )
     p.set_defaults(fn=cmd_add)
+
+    p = disc.add_parser("mkdir", help="make a folder on an MP3 disc")
+    p.add_argument("disc", type=int)
+    p.add_argument("name")
+    p.add_argument("--in", dest="parent", type=int, help="inside this folder's id")
+    p.set_defaults(fn=cmd_mkdir)
 
     p = disc.add_parser("remove", help="remove tracks by position (1-based)")
     p.add_argument("disc", type=int)

@@ -323,7 +323,9 @@ class DiscModel(QAbstractTableModel):
         if role in (Qt.ItemDataRole.DisplayRole, Qt.ItemDataRole.EditRole):
             match column:
                 case 0:
-                    return str(entry.position + 1)
+                    return str(
+                        index.row() + 1
+                    )  # its place in what is shown (a folder, or the disc)
                 case 1:
                     return ("" if track.length_exact else "~") + format_clock(
                         entry.sectors
@@ -441,9 +443,12 @@ class DiscModel(QAbstractTableModel):
 # -- the source tree ----------------------------------------------------------
 
 # The library tree: ("all",) | ("source", id) | ("node", id, source_id).
-# The disc tree (right pane): ("disc_folder", id) | ("disc", id).
+# The disc tree (right pane): ("disc_folder", id) | ("disc", id) | ("disc_dir", disc id, folder id),
+# the last being a folder on an MP3 disc (what the player shows).
 SELECTION_ROLE = Qt.ItemDataRole.UserRole + 1
 NAME_ROLE = Qt.ItemDataRole.UserRole + 2  # the name without the track count
+# True on a disc-tree row that folders can be made in: an MP3 disc, or a folder on one
+FOLDER_HOST_ROLE = Qt.ItemDataRole.UserRole + 3
 Selection = tuple
 DISC_ITEM_MIME = (
     "application/x-dubcrate-disc-items"  # discs and folders dragged in the tree
@@ -468,11 +473,10 @@ def _playlist_icon() -> QIcon:
     )
 
 
-def _disc_icon() -> QIcon:
-    """A disc's own icon: a playlist that is going on a CD."""
-    return mono_icons.disc_list(
-        _dpr(), muted=not theme.current_palette().get("mono_icons")
-    )
+def _disc_icon(kind: str = "audio") -> QIcon:
+    """A disc's own icon: a playlist that is going on a CD, or (an MP3 disc) files going on one."""
+    draw = mono_icons.mp3_disc_list if kind == "mp3" else mono_icons.disc_list
+    return draw(_dpr(), muted=not theme.current_palette().get("mono_icons"))
 
 
 def _count_item(count: int | None) -> QStandardItem:
@@ -500,6 +504,10 @@ class DiscTreeModel(QStandardItemModel):
     """
 
     tracks_dropped = Signal(int, list)
+    tracks_dropped_in_dir = Signal(int, int, list)  # (disc id, folder id, track ids)
+    rows_dropped = Signal(
+        int, object, list
+    )  # (disc id, folder id or None, rows of the open disc)
     items_moved = Signal(
         list, object
     )  # ([("disc", id) | ("disc_folder", id)], folder id or None)
@@ -516,10 +524,19 @@ class DiscTreeModel(QStandardItemModel):
 
     def flags(self, index: QModelIndex) -> Qt.ItemFlag:
         base = super().flags(index) & ~Qt.ItemFlag.ItemIsEditable
-        if self._kind(index) in ("disc", "disc_folder"):
+        kind = self._kind(index)
+        if kind in ("disc", "disc_folder"):
             base |= Qt.ItemFlag.ItemIsDragEnabled | Qt.ItemFlag.ItemIsDropEnabled
             if index.column() == 0:
                 base |= Qt.ItemFlag.ItemIsEditable  # the name, edited in place
+        elif (
+            kind == "disc_dir"
+        ):  # a folder on an MP3 disc: tracks go into it, it stays put
+            base = (
+                base | Qt.ItemFlag.ItemIsDropEnabled
+            ) & ~Qt.ItemFlag.ItemIsDragEnabled
+            if index.column() == 0:
+                base |= Qt.ItemFlag.ItemIsEditable
         return base
 
     def setData(self, index, value, role=Qt.ItemDataRole.EditRole) -> bool:
@@ -528,7 +545,7 @@ class DiscTreeModel(QStandardItemModel):
         if (
             role == Qt.ItemDataRole.EditRole
             and index.column() == 0
-            and self._kind(index) in ("disc", "disc_folder")
+            and self._kind(index) in ("disc", "disc_folder", "disc_dir")
         ):
             self.renamed.emit(tuple(index.data(SELECTION_ROLE)), str(value))
             return False
@@ -538,7 +555,7 @@ class DiscTreeModel(QStandardItemModel):
         return Qt.DropAction.MoveAction | Qt.DropAction.CopyAction
 
     def mimeTypes(self) -> list[str]:
-        return [TRACK_MIME, DISC_ITEM_MIME]
+        return [TRACK_MIME, DISC_ITEM_MIME, DISC_ROWS_MIME]
 
     def mimeData(self, indexes: Sequence[QModelIndex]) -> QMimeData:
         items = [
@@ -553,7 +570,15 @@ class DiscTreeModel(QStandardItemModel):
     def canDropMimeData(self, data, action, row, column, parent) -> bool:
         kind = self._kind(parent)
         if data.hasFormat(TRACK_MIME):
-            return kind == "disc"  # tracks are added to a disc, nowhere else
+            return kind in (
+                "disc",
+                "disc_dir",
+            )  # tracks are added to a disc, or a folder on it
+        if data.hasFormat(DISC_ROWS_MIME):
+            return kind in (
+                "disc",
+                "disc_dir",
+            )  # tracks of the open disc, moved to a folder
         if data.hasFormat(DISC_ITEM_MIME):
             # into a folder, or (dropped on empty space) to the top level; never into a disc
             return kind == "disc_folder" or not parent.isValid()
@@ -564,10 +589,18 @@ class DiscTreeModel(QStandardItemModel):
             return True
         if not self.canDropMimeData(data, action, row, column, parent):
             return False
+        target = parent.siblingAtColumn(0).data(SELECTION_ROLE)
         if data.hasFormat(TRACK_MIME):
             ids = json.loads(bytes(data.data(TRACK_MIME)).decode())
-            self.tracks_dropped.emit(
-                parent.siblingAtColumn(0).data(SELECTION_ROLE)[1], ids
+            if target[0] == "disc_dir":
+                self.tracks_dropped_in_dir.emit(target[1], target[2], ids)
+            else:
+                self.tracks_dropped.emit(target[1], ids)
+            return True
+        if data.hasFormat(DISC_ROWS_MIME):
+            rows = json.loads(bytes(data.data(DISC_ROWS_MIME)).decode())
+            self.rows_dropped.emit(
+                target[1], target[2] if target[0] == "disc_dir" else None, rows
             )
             return True
         items = [
@@ -671,22 +704,51 @@ def build_disc_model(lib: Library, target_disc_id: int | None = None) -> DiscTre
         item = QStandardItem(disc.name)
         item.setData(("disc", disc.id), SELECTION_ROLE)
         item.setData(disc.name, NAME_ROLE)
-        item.setIcon(_disc_icon())
+        item.setIcon(_disc_icon(disc.kind))
         item.setEditable(False)
         item.setToolTip(_disc_tooltip(disc))
+        item.setData(disc.kind == "mp3", FOLDER_HOST_ROLE)
         if disc.id == target_disc_id:
             font = item.font()
             font.setBold(True)  # tracks are being added to this one
             item.setFont(font)
         count = _count_item(disc.track_count)
+        # An MP3 disc says so in words as well as in its icon: the number is "MP3 12".
+        label = (
+            f"MP3 {disc.track_count:,}"
+            if disc.kind == "mp3"
+            else f"{disc.track_count:,}"
+        )
+        count.setText(label)
         if disc.over:
             # a cue that does not rely on colour alone (the System 6 look has none to spare)
-            count.setText(f"* {disc.track_count:,}")
+            count.setText(f"* {label}")
             count.setForeground(QColor(theme.current_palette()["warning"]))
             count.setToolTip(item.toolTip())
         parent = folder_items.get(disc.folder_id, root)
         parent.appendRow([item, count, _spare_item()])
+        if disc.kind == "mp3":
+            _add_disc_dirs(lib, disc, item)
     return model
+
+
+def _add_disc_dirs(lib: Library, disc, disc_item: QStandardItem) -> None:
+    """Hang an MP3 disc's own folders under its row (A to Z, nested as on the disc)."""
+    counts = lib.dir_file_counts(disc.id)
+    items: dict[int, QStandardItem] = {}
+    dirs = lib.disc_dirs(disc.id)
+    for d in dirs:
+        item = QStandardItem(d.name)
+        item.setData(("disc_dir", disc.id, d.id), SELECTION_ROLE)
+        item.setData(d.name, NAME_ROLE)
+        item.setIcon(_folder_icon())
+        item.setEditable(False)
+        item.setToolTip(f"A folder on the MP3 disc “{disc.name}”")
+        item.setData(True, FOLDER_HOST_ROLE)
+        items[d.id] = item
+    for d in sorted(dirs, key=lambda d: d.name.casefold()):
+        parent = items.get(d.parent_id, disc_item)
+        parent.appendRow([items[d.id], _count_item(counts.get(d.id)), _spare_item()])
 
 
 def find_selection(model: QStandardItemModel, selection: Selection) -> QModelIndex:
