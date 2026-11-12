@@ -1,10 +1,8 @@
 # TODO List
 
-- [ ] Style play, back, forward buttons
-- [ ] Fix resize window rectangle in bottom right corner (might be macOS specific)
-- [ ] Version string in status bar bottom left (accounting for macOS rounded corners). Also might be worth having an "update available" button.
 - [ ] Fix tabs not spanning full width in settings window
-- [ ] Play one track into another in playlist (ie, play thru a playlist in order)
+- [ ] Auto download update (maybe once code signing in place...)
+- [ ] Play one track after another in playlist (ie, play thru a playlist in order)
 - [ ] Linux burn support
 - [ ] Windows burn support
 - [ ] Linux build script
@@ -15,3 +13,4 @@
 - [ ] Screenshot staging
 - [ ] Clean up user facing docs (readme, user guide)
 - [ ] Printing index labels (incl multiple label printing support for saving on A4 paper)
+- [ ] SD card waveform, hotcue, memory cue, loop point reverse engineering (read and write)
