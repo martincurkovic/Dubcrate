@@ -31,9 +31,15 @@
    - **No analysis**: BPM and key are only read from tags (blank when there are none), because the
      CDJ-1000 can't use them on a disc. Waveforms are computed from the audio when there is no
      rekordbox analysis.
-   - Maybe: borrow rekordbox's BPM, key and waveform for an Explorer file that is also in the
-     imported rekordbox library (match on path), and spot a song that is on a disc under two
-     source rows.
+   - *Done, not yet tried on real files:* a file that is also in the imported rekordbox library
+     (matched on its path, `store.path_key`: case and Unicode form folded) takes rekordbox's BPM and
+     key at `sync_directory` time, previews with rekordbox's waveform / beat grid / cues
+     (`Library.rekordbox_twin`, used by `PreviewController.load`), and counts as used when its twin is
+     on a disc (`track_usage`; the ● / ○ marks use `same_file_ids`). Not done: title, artist and the
+     rest still come from the tags; a borrowed BPM stays until the file changes if the track later
+     leaves rekordbox; no path mapping for a library moved to another folder or drive.
+   - The arrow keys jump a fixed 2 s (`preview.FALLBACK_JUMP_SECONDS`) for a track with no beat grid
+     and no tempo.
 4. **Printable track list** for the disc sleeve, since old CDJs have no screen for it.
    *Built, not yet tried on a printer* (checked with PDFs and offscreen renders). `labels.py`
    is the pure part (splitting a disc over N labels or Auto, columns, folders of an MP3 disc,
@@ -168,8 +174,9 @@
   keyed by path, size and modified time, would fix that. It shows only the files directly inside a
   folder (not recursive), does not watch folders, and a drive plugged in while the app is open needs
   the tree reloaded (`ExplorerTree.reload_roots`, not wired to anything yet).
-- The same song in rekordbox and in an Explorer folder is two track rows, so "already used" can't
-  see they are one (it works on track ids).
+- The same song in rekordbox and in an Explorer folder is two track rows, tied together only by
+  their path (`path_key`). A copy of the file in another folder, or a rekordbox library that points at
+  another drive's path, is not recognised.
 - AKAISDS's `wheel_guard` (a control answers the wheel only after a click) was not ported with the
   drag-to-change spin boxes, so scrolling over a spin box in a scrolling page can still change it.
 

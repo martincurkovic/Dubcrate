@@ -337,14 +337,27 @@ def test_rekordboxs_own_tempo_is_preferred_to_the_tag(chain):
     assert chain.player.position == pytest.approx(7.0)  # 4 beats x 1 s
 
 
-def test_with_no_grid_and_no_tempo_it_says_why_and_stays_put(chain):
+def test_with_no_grid_and_no_tempo_the_arrows_jump_two_seconds(chain):
     messages = []
     chain.controller.message.connect(messages.append)
     chain.controller._analysis = None
     chain.player.seek(3.0)
     chain.controller.beat_jump(1)
-    assert chain.player.position == 3.0
-    assert "can't beat jump" in messages[0]
+    assert chain.player.position == pytest.approx(5.0)
+    chain.controller.beat_jump(-1)
+    chain.controller.beat_jump(-1)
+    assert chain.player.position == pytest.approx(1.0)
+    chain.controller.beat_jump(-1)
+    assert chain.player.position == 0.0  # (clamped to the track)
+    assert messages == []  # (quietly: nothing to explain)
+
+
+def test_the_fixed_jump_ignores_the_beat_count_setting(chain):
+    settings.set_beat_jump(16)
+    chain.controller._analysis = None
+    chain.player.seek(3.0)
+    chain.controller.beat_jump(1)
+    assert chain.player.position == pytest.approx(5.0)
 
 
 def test_beat_jump_with_no_track_loaded_says_what_to_do_instead_of_doing_nothing(qapp):

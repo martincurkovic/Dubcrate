@@ -916,6 +916,7 @@ class MainWindow(QMainWindow):
 
     def _explorer_scanned(self, path: str, scan: DirectoryScan) -> None:
         self._lib.sync_directory(path, scan.tracks)
+        self._sync_disc_markers()  # (new rows may be the twin of a track on a disc)
         if scan.errors:
             self.statusBar().showMessage(
                 f"Couldn't read {len(scan.errors)} file(s) in {Path(path).name or path}",
@@ -1623,9 +1624,10 @@ class MainWindow(QMainWindow):
         """Mark the tracks on the open disc (●) and on any other disc (○), and say which disc
         adds go to."""
         disc_id = self.disc_view.current_disc_id()
+        # (a file is marked under every row it has: rekordbox's and the Explorer's)
         self.track_model.set_on_disc(
-            self.disc_view.current_track_ids(),
-            self._lib.tracks_on_discs(exclude=disc_id),
+            self._lib.same_file_ids(self.disc_view.current_track_ids()),
+            self._lib.same_file_ids(self._lib.tracks_on_discs(exclude=disc_id)),
         )
         if disc_id is None:
             self.target_label.setText("No disc open: adding starts a new one")

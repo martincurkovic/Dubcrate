@@ -8,6 +8,7 @@ is rebuilt.
 
 import os
 import sqlite3
+import unicodedata
 from collections.abc import Iterable
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
@@ -270,6 +271,14 @@ _MIGRATIONS = (
     _SCHEMA_V7, _SCHEMA_V8, _SCHEMA_V9,
 )  # fmt: skip
 SCHEMA_VERSION = len(_MIGRATIONS)
+
+
+def path_key(path: str) -> str:
+    """What two paths to the same file have in common, so rekordbox's copy of a track and the
+    Explorer's can be told to be one. A Mac keeps a name's case and Unicode form (é as one
+    character, or as e and an accent) but counts those as the same file, so both are folded."""
+    return unicodedata.normalize("NFC", path).casefold()
+
 
 _TRACK_FIELDS = (
     "path", "title", "artist", "album", "genre", "year", "comment", "bpm", "key",
@@ -564,7 +573,15 @@ class Library:
                 )
             }
             members: list[int] = []
+            twins = self._rekordbox_rows_by_file()
             for rec in tracks:
+                # a file that is also in rekordbox takes rekordbox's tempo and key, which were
+                # worked out from the audio; the tags only fill in what rekordbox has not got
+                twin = twins.get(path_key(rec.path))
+                if twin is not None:
+                    rec = replace(
+                        rec, bpm=twin["bpm"] or rec.bpm, key=twin["key"] or rec.key
+                    )
                 track_id, _is_new = self._write_track(source_id, rec, existing)
                 if track_id not in members:
                     members.append(track_id)
@@ -1463,21 +1480,77 @@ class Library:
         return {r["track_id"] for r in rows}
 
     def track_usage(self, track_ids: Iterable[int]) -> dict[int, TrackUsage]:
-        """The discs each track is already on; tracks on none are left out."""
+        """The discs each track is already on; tracks on none are left out. A track counts as
+        used when the same file (`path_key`) is on a disc under another row, such as the
+        rekordbox copy of an Explorer file."""
         ids = list(dict.fromkeys(track_ids))
-        discs: dict[int, dict[int, DiscRef]] = {}
+        key_of: dict[int, str] = {}
         for start in range(0, len(ids), 500):
             chunk = ids[start : start + 500]
             marks = ",".join("?" * len(chunk))
             for r in self._conn.execute(
-                "SELECT DISTINCT dt.track_id, d.id, d.name, d.last_burned_at"
-                " FROM disc_track dt JOIN disc d ON d.id = dt.disc_id"
-                f" WHERE dt.track_id IN ({marks}) ORDER BY d.id",
-                chunk,
+                f"SELECT id, path FROM track WHERE id IN ({marks})", chunk
             ):
-                discs.setdefault(r["track_id"], {})[r["id"]] = DiscRef(
+                key_of[r["id"]] = path_key(r["path"])
+        if not key_of:
+            return {}
+        wanted = set(key_of.values())
+        discs: dict[str, dict[int, DiscRef]] = {}
+        for r in self._conn.execute(
+            "SELECT t.path, d.id, d.name, d.last_burned_at FROM disc_track dt"
+            " JOIN track t ON t.id = dt.track_id JOIN disc d ON d.id = dt.disc_id"
+            " ORDER BY d.id"
+        ):
+            key = path_key(r["path"])
+            if key in wanted:
+                discs.setdefault(key, {})[r["id"]] = DiscRef(
                     r["id"], r["name"], r["last_burned_at"]
                 )
         return {
-            tid: TrackUsage(tuple(discs[tid].values())) for tid in ids if tid in discs
+            tid: TrackUsage(tuple(discs[key_of[tid]].values()))
+            for tid in ids
+            if tid in key_of and key_of[tid] in discs
+        }
+
+    # -- the same file under two rows ------------------------------------
+
+    def _rekordbox_rows_by_file(self) -> dict[str, sqlite3.Row]:
+        """The rekordbox tracks (not stale), by `path_key`; the first if two share a file."""
+        found: dict[str, sqlite3.Row] = {}
+        for r in self._conn.execute(
+            "SELECT t.* FROM track t JOIN source s ON s.id = t.source_id"
+            " WHERE s.kind = 'rekordbox' AND t.stale = 0 ORDER BY t.id"
+        ):
+            found.setdefault(path_key(r["path"]), r)
+        return found
+
+    def rekordbox_twin(self, track: Track) -> Track | None:
+        """The rekordbox track that is the same file as `track` (matched on its path), or None.
+        A rekordbox track has no twin of its own."""
+        row = self._rekordbox_rows_by_file().get(path_key(track.path))
+        return (
+            self._to_track(row) if row is not None and row["id"] != track.id else None
+        )
+
+    def same_file_ids(self, track_ids: Iterable[int]) -> set[int]:
+        """`track_ids` and the ids of every other track that is the same file, so a mark on a
+        track can show on its twin."""
+        ids = set(track_ids)
+        if not ids:
+            return ids
+        wanted: set[str] = set()
+        listed = list(ids)
+        for start in range(0, len(listed), 500):
+            chunk = listed[start : start + 500]
+            marks = ",".join("?" * len(chunk))
+            wanted.update(
+                path_key(r["path"])
+                for r in self._conn.execute(
+                    f"SELECT path FROM track WHERE id IN ({marks})", chunk
+                )
+            )
+        return ids | {
+            r["id"]
+            for r in self._conn.execute("SELECT id, path FROM track")
+            if path_key(r["path"]) in wanted
         }

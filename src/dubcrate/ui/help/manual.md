@@ -117,6 +117,7 @@ The **Explorer** tab (the second tab down the left edge) is for music that isn't
 - Dubcrate reads the tags of the files in a folder when you click it. A folder you have visited shows at once and is then checked again for files that came or went; a file that hasn't changed isn't read again.
 - Only the **files directly inside** the folder you picked show, not those in its sub-folders: open the sub-folder to see them.
 - Tags are just read, never worked out. A file with no BPM or key tag has them blank: Dubcrate doesn't analyse tracks (the CDJ-1000 can't use that data on a disc anyway), and the waveform you see when you preview is drawn from the audio itself.
+- **A file that is also in rekordbox** (the same path) uses rekordbox's data: its BPM and key show in the list (rekordbox's win over the tags; the tags fill in what rekordbox leaves blank), and previewing it shows rekordbox's waveform, beat grid, cues and phrases. A file elsewhere, or a copy, is just a file. Rekordbox's data is read when you open the folder, so re-import rekordbox, then open the folder again, to pick up a change.
 - **The Explorer's tracks are not part of your Library**: they don't appear in **All Tracks** or in a search of it. A track you add to a disc, though, is kept on that disc. Everything else the Explorer read is forgotten when Dubcrate next starts, and read again when you open the folder.
 - If a folder can't be read, the status bar says why. On a Mac, the first time you open Documents, Downloads, Desktop or a drive, macOS may ask whether Dubcrate may read it; if you said no, allow it under **System Settings > Privacy & Security > Files & Folders**.
 - Dubcrate remembers which tab and which folder you were on.
@@ -144,7 +145,7 @@ For rekordbox tracks the waveforms, beat grid, phrases and cues come from rekord
 
 **Scratching.** Grab the zoomed waveform and drag it, as you would a CDJ's jog wheel. The waveform sticks to your pointer, and you hear the track move with it: drag right to take it back, left to move it forward, faster for a higher pitch, and hold still for silence. While your hand is on it, a playing track is held, and it carries on from wherever you let go. A paused track stays paused after you let go, so you can use this to find a spot. Clicking without dragging doesn't jump anywhere: to jump, click the overview.
 
-**Beat jump.** With a track selected in the list, **←** and **→** jump back or forward by a set number of beats (4 unless you change it in **Settings > Audio**). The jump keeps its place within the beat, so the track stays in time, and it follows the beat grid, including any change of tempo. Tracks without rekordbox's beat grid use their tempo instead. A track with neither says so in the status bar. A playing track keeps playing.
+**Beat jump.** With a track selected in the list, **←** and **→** jump back or forward by a set number of beats (4 unless you change it in **Settings > Audio**). The jump keeps its place within the beat, so the track stays in time, and it follows the beat grid, including any change of tempo. Tracks without rekordbox's beat grid use their tempo instead. A track with neither (say, an MP3 with no BPM tag that isn't in rekordbox) jumps a fixed **2 seconds**, whatever the setting. A playing track keeps playing.
 
 **Waveform looks.** Choose how waveforms are drawn under **View > Waveform**, or in **Settings > Appearance**:
 
@@ -249,6 +250,8 @@ When you add a track that is **already on this disc or on another disc**, Dubcra
 > Add them anyway, or skip the duplicates?
 
 Choose **Add Anyway** to add everything, **Skip Duplicates** to add only the tracks that aren't used anywhere yet, or **Cancel** to add nothing. Return chooses **Add Anyway**. **Skip Duplicates** is left out when every track is already used, since there would be nothing to add. A track counts as a duplicate if it is on this disc or on any other disc, and the status bar tells you how many were skipped. The notice names each place a track is used, and lists the first eight tracks if there are more.
+
+**The same file counts as one track**, even when it is in rekordbox and in an Explorer folder: if the rekordbox copy is on a disc, the Explorer copy is flagged as used too (and the other way round). Dubcrate tells them apart by the file's path, ignoring capital letters, so a copy of the file in another place is a different track. The ● and ○ marks in the track list follow the same rule.
 
 A disc you burned says when. A test write (a simulated burn) puts nothing on a disc, so it doesn't count as a burn.
 

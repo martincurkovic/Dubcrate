@@ -17,6 +17,9 @@ from dubcrate.waveform import PREVIEW_COLUMNS, Waveform, compute_waveform
 from .player_strip import PlayerStrip
 from .tasks import run_async
 
+# the arrow keys' jump for a track with no beat grid and no tempo
+FALLBACK_JUMP_SECONDS = 2.0
+
 
 @dataclass(frozen=True)
 class LoadedMedia:
@@ -109,7 +112,8 @@ class PreviewController(QObject):
     def beat_jump(self, direction: int) -> None:
         """Jump the set number of beats forward (`direction` 1) or back (-1), in phase.
 
-        Uses the track's beat grid; without one, its tempo (rekordbox's, else the tag's).
+        Uses the track's beat grid; without one, its tempo (rekordbox's, else the tag's); with
+        neither, a fixed `FALLBACK_JUMP_SECONDS`.
         """
         if self.player.scratching:
             return
@@ -126,12 +130,11 @@ class PreviewController(QObject):
             target = jump_time(self._analysis.beat_times, position, beats)
         if target is None:
             bpm = (self._analysis.bpm if self._analysis else None) or self._track.bpm
-            if not bpm:
-                self.message.emit(
-                    "No beat grid or tempo for this track, so it can't beat jump"
-                )
-                return
-            target = position + beats * 60.0 / bpm
+            target = (
+                position + beats * 60.0 / bpm
+                if bpm
+                else position + direction * FALLBACK_JUMP_SECONDS
+            )
         self.player.seek(max(0.0, min(target, self.player.duration)))
 
     def shutdown(self) -> None:
@@ -168,7 +171,9 @@ class PreviewController(QObject):
             self._strip.show_error("File not found")
             self.message.emit(f"{track.title}: file not found")
             return
-        root = self._analysis_root(track)
+        # a file that is also in rekordbox (same path) uses rekordbox's waveform and beat grid
+        analysed = self._lib.rekordbox_twin(track) or track
+        root = self._analysis_root(analysed)
 
         def done(media: LoadedMedia) -> None:
             if serial != self._serial:
@@ -189,5 +194,5 @@ class PreviewController(QObject):
             self.message.emit(f"Couldn't load {track.title}: {text}")
 
         run_async(
-            lambda: load_media(track.path, root, track.analysis_path), done, failed
+            lambda: load_media(track.path, root, analysed.analysis_path), done, failed
         )
