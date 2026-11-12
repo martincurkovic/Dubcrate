@@ -10,10 +10,16 @@ ASCII-ish transport, reverse-engineered here:
 - an 18-byte header line, e.g. ``CDJ1K3  MAIN2.20\\r\\n``, then records;
 - a record starts with ``0x1f`` and a tag (``10``, ``18``, ``2b`` or ``22 54``),
   then 3 address bytes, 16 data bytes and 1 check byte;
-- every byte is stored as ``plain + 0x40`` (mod 256); a stored byte below ``0x40``
-  would clash with the framing, so it is sent as two bytes, ``0x3a + high nibble``
-  then ``0x30 + low nibble``;
+- a byte is stored by range: plain ``00``-``9f`` as ``plain + 0x40`` (``40``-``df``);
+  plain ``e0``-``ff`` unchanged; plain ``a0``-``df`` as ``s = plain - 0xa0``, sent as
+  the single byte ``s`` when ``s < 8``, otherwise as two bytes, ``0x3a + (s >> 4)``
+  then ``0x30 + (s & 15)``. Raw ``ff`` is therefore the flash's erased ``0xff``;
 - the address counts bytes and steps 16 per record; a few tail records are not data.
+
+The addresses in the file are not where the code runs: pointers inside the main
+program equal file address + 0xabfe0000, so in a disassembler base the image at
+0xac000100 (SuperH-4, big-endian). Code and data pointers also appear in a mirror
+0x20000000 higher (0xcc...), which is the same memory.
 
 Usage:
     uv run spikes/cdj_upd_decode.py CDJ1K3MN.UPD            # report only
@@ -31,23 +37,29 @@ HEADER_LEN = 0x12
 FRAME = 0x1F
 LINE = 16
 RECORD_LEN = 3 + LINE + 1  # address, data, check
-ESCAPE_FIRST = range(0x3A, 0x3F)
+ESCAPE_FIRST = range(0x3A, 0x3E)
+LOW_BASE = 0xA0
 NIBBLE = range(0x30, 0x40)
 
 
 def unescape(raw: bytes) -> bytes:
-    """Undo the transport: ``stored - 0x40``, with the two-byte escape for low values."""
+    """Undo the transport (see the module docstring for the byte map)."""
     out = bytearray()
     i = 0
     while i < len(raw):
         c = raw[i]
         if c in ESCAPE_FIRST and i + 1 < len(raw) and raw[i + 1] in NIBBLE:
-            stored = ((c - 0x3A) << 4) | (raw[i + 1] - 0x30)
+            out.append(LOW_BASE + (((c - 0x3A) << 4) | (raw[i + 1] - 0x30)))
             i += 2
-        else:
-            stored = c
+        elif c < 8:
+            out.append(LOW_BASE + c)
             i += 1
-        out.append((stored - 0x40) & 0xFF)
+        elif c >= 0xE0:
+            out.append(c)
+            i += 1
+        else:
+            out.append(c - 0x40)
+            i += 1
     return bytes(out)
 
 
@@ -114,7 +126,9 @@ def main() -> None:
         for address, data in lines.items():
             image[address - base : address - base + LINE] = data
         args.out.write_bytes(image)
-        print(f"wrote {args.out} ({len(image)} bytes), load it at {base:#08x}")
+        print(
+            f"wrote {args.out} ({len(image)} bytes), first byte is file address {base:#08x}"
+        )
 
 
 if __name__ == "__main__":
