@@ -114,6 +114,12 @@
    Intel build (needs `nasm`, only the workflow does it), the build in CI, the `.dmg` opened on a clean
    Mac (Gatekeeper and quarantine on the nested programs), and the FFmpeg tarball's GPG signature (the
    hash was taken from the first download, not from a signed source).
+7. **Card sync** (the CDJ-1000MK3's SD card). *The format is decoded and a pure reader/writer is built and
+   tested (`cdj_card.py`); nothing writes a card yet and no written file has been tried in a player.* A **Sync**
+   tab, pinned at the bottom of the tab strip, writes a Dubcrate audio disc's rekordbox cues to the card as
+   memory cues. Plan, decisions, hardware checklist and phases in [card-sync.md](card-sync.md); the format and
+   its gaps in [cdj1000mk3-card.md](cdj1000mk3-card.md). **The first thing is the write test on the player**
+   (Phase 0), then the pure core and a `dubcrate card` command, then the tab, then waveform pre-writing.
 
 ## Later
 
@@ -134,6 +140,15 @@
   and can't give us files for streamed or protected tracks).
 
 ## Decisions so far
+
+- **Card sync** (owner's choices 2026-11-13): every rekordbox cue (memory, hot A to H, loops) becomes a **CDJ memory
+  cue** (memory loop for a loop); the card's three hot cue slots are never written or touched (a disc has only three,
+  and they are the owner's). **Merge, never replace**: cues already on the card stay, near-duplicates (same track,
+  within 2 frames) are skipped, more than the player's 100 per disc are reported and not dropped silently. The **Sync
+  tab lists only Dubcrate's own audio discs**, not MP3 discs. Tests on the player come before building. Waveform
+  pre-writing is a later phase, and its amplitude scale is to be **fitted from the waveforms already on the card
+  and the audio of those tracks**, with the firmware as a cross-check, not by burning discs. See
+  [card-sync.md](card-sync.md).
 
 - **Level matching** (audio CDs only; owner's choices 2026-11-13): one fixed gain per track from its integrated
   loudness (LUFS) to a target, no compression or limiting, held back where the true peak would pass -0.3 dBTP
