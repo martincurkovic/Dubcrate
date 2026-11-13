@@ -305,6 +305,74 @@ def test_escape_with_a_disc_open_focuses_the_disc_list(window):
     assert win.center.currentIndex() == 1  # nothing else moved
 
 
+def test_enter_in_the_search_box_moves_to_the_first_track_of_what_it_found(window):
+    from PySide6.QtTest import QTest
+
+    win, _lib = window
+    win.show()
+    win.act_find.trigger()
+    QTest.keyClicks(
+        win.search, "Song 3"
+    )  # (typed, and not yet applied: the pause is running)
+    QTest.keyClick(win.search, Qt.Key.Key_Return)
+    assert win.focusWidget() is win.track_table
+    assert [t.title for t in win.track_model.tracks()] == ["Song 3"]  # applied at once
+    assert [i.row() for i in win.track_table.selectionModel().selectedRows()] == [0]
+    assert win.track_table.currentIndex().row() == 0
+    assert (
+        win.preview.track is None and not win.preview.player.playing
+    )  # picked, not played
+
+
+def test_enter_picks_the_first_track_even_when_nothing_was_typed(window):
+    from PySide6.QtTest import QTest
+
+    win, _lib = window
+    win.show()
+    win.search.setFocus()
+    QTest.keyClick(win.search, Qt.Key.Key_Enter)
+    assert win.focusWidget() is win.track_table
+    assert [i.row() for i in win.track_table.selectionModel().selectedRows()] == [0]
+
+
+def test_enter_with_nothing_found_just_moves_the_focus(window):
+    from PySide6.QtTest import QTest
+
+    win, _lib = window
+    win.show()
+    win.search.setFocus()
+    QTest.keyClicks(win.search, "no such song anywhere")
+    QTest.keyClick(win.search, Qt.Key.Key_Return)
+    assert win.track_model.rowCount() == 0 and win.focusWidget() is win.track_table
+    assert not win.track_table.selectionModel().hasSelection()
+
+
+def test_enter_with_a_disc_open_picks_the_first_track_of_the_disc(window):
+    from PySide6.QtTest import QTest
+
+    win, lib = window
+    disc = lib.create_disc("Night")
+    lib.add_to_disc(disc, ids(lib)[2:5])
+    win.refresh_discs()
+    pick(win, ("disc", disc))
+    win.show()
+    win.search.setFocus()
+    QTest.keyClick(win.search, Qt.Key.Key_Return)
+    table = win.disc_view.table
+    assert win.focusWidget() is table
+    assert [i.row() for i in table.selectionModel().selectedRows()] == [0]
+
+
+def test_escape_moves_focus_without_picking_a_track(window):
+    from PySide6.QtTest import QTest
+
+    win, _lib = window
+    win.show()
+    win.search.setFocus()
+    QTest.keyClick(win.search, Qt.Key.Key_Escape)
+    assert not win.track_table.selectionModel().hasSelection()
+
+
 def test_other_keys_and_modified_escape_still_belong_to_the_search_box(window):
     from PySide6.QtTest import QTest
 

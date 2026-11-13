@@ -285,6 +285,7 @@ class MainWindow(QMainWindow):
         self.search.setClearButtonEnabled(True)
         self.search.textChanged.connect(lambda _text: self._search_timer.start())
         self.search.escape_pressed.connect(self.leave_search)
+        self.search.returnPressed.connect(lambda: self.leave_search(pick_first=True))
 
         self.player_strip = PlayerStrip()
         self.player_strip.settings_requested.connect(self.open_settings)
@@ -647,15 +648,24 @@ class MainWindow(QMainWindow):
         self.search.setFocus()
         self.search.selectAll()
 
-    def leave_search(self) -> None:
-        """Escape in the search box: focus goes to the list on show (the tracks, or the open disc),
-        where Space plays and pauses again. The search itself stays as typed."""
+    def leave_search(self, *, pick_first: bool = False) -> None:
+        """Out of the search box into the list on show (the tracks, or the open disc), where Space
+        plays and pauses again. The search itself stays as typed.
+
+        Escape just moves the focus. Enter (`pick_first`) also picks the list's first row, after
+        applying a search that is still waiting for its pause, so it is the first of what is shown;
+        it neither loads nor plays it (Return in the list does that)."""
         shown = (
             self.disc_view.table
             if self.center.currentIndex() == 1
             else self.track_table
         )
+        if pick_first and self._search_timer.isActive():
+            self._search_timer.stop()
+            self.refresh_tracks()
         shown.setFocus()
+        if pick_first and shown.model().rowCount() > 0:
+            shown.selectRow(0)
 
     def show_help(self) -> None:
         show_help_dialog(self)
