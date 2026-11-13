@@ -8,6 +8,7 @@ from dubcrate import card_discs, cli
 from dubcrate import cdj_card as cc
 from dubcrate.analysis import Cue
 from dubcrate.library import Library, TrackRecord
+from dubcrate.library.rekordbox import RekordboxError
 
 DATA = Path(__file__).parent / "data" / "cdj_card"
 
@@ -31,7 +32,7 @@ def db(tmp_path):
     path = tmp_path / "lib.db"
     with Library.open(path) as lib:
         lib.replace_source(
-            "folder", "/m", "M",
+            "rekordbox", "/rb/master.db", "rb",
             [TrackRecord(ext_id=f"t{n}", path=f"/nonexistent/t{n}.flac", title=f"t{n}", duration=60.0) for n in range(13)],
         )  # fmt: skip
         by_title = {t.title: t for t in lib.tracks()}
@@ -48,14 +49,12 @@ def db(tmp_path):
 
 @pytest.fixture(autouse=True)
 def cues(monkeypatch):
-    """rekordbox cues for the first and last track of the 12-track disc."""
+    """rekordbox's database, stood in for: cues on the first and last track of the 12-track disc."""
     wanted = {
         "t0": [Cue("memory", 15.0), Cue("hot", 40.0, slot=1)],
         "t11": [Cue("loop", 30.0, end=34.0)],
     }
-    monkeypatch.setattr(
-        card_discs, "rekordbox_cues", lambda _lib, t: wanted.get(t.title, ())
-    )
+    monkeypatch.setattr(card_discs, "read_cues", lambda _path: wanted)
 
 
 def run(db, *argv):
@@ -185,3 +184,29 @@ def test_sync_to_a_folder_that_is_not_a_card_stops_before_anything(
 ):
     assert run(db, "card", "sync", 1, "--card", tmp_path, "--yes") == 1
     assert "is this the player's card" in capsys.readouterr().err
+
+
+def test_a_rekordbox_database_that_cant_be_read_is_a_plain_error_and_nothing_is_written(
+    db, card, tmp_path, monkeypatch, capsys
+):
+    def broken(_path):
+        raise RekordboxError("could not open /rb/master.db")
+
+    monkeypatch.setattr(card_discs, "read_cues", broken)
+    before = card_bytes(card)
+    assert (
+        run(
+            db,
+            "card",
+            "sync",
+            1,
+            "--card",
+            card,
+            "--yes",
+            "--backup-dir",
+            tmp_path / "bk",
+        )
+        == 1
+    )
+    assert "could not open /rb/master.db" in capsys.readouterr().err
+    assert card_bytes(card) == before

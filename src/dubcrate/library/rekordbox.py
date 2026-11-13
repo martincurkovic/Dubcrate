@@ -15,6 +15,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from dubcrate.analysis import Cue
 from dubcrate.library.models import NodeRecord, TrackRecord
 
 Progress = Callable[[str], None]
@@ -218,3 +219,62 @@ def read_master_db(
         finally:
             db.close()
     return library
+
+
+def cue_from_row(row: Any) -> Cue | None:
+    """A `Cue` from a `djmdCue` row; None for a row that can't be used (no time, or deleted).
+
+    rekordbox 6 and 7 keep cues **in the database**, not in the analysis files (those only carry
+    them in a USB export): so the preview's cue markers, which read the analysis files, have shown
+    none for a local library. `Kind` 0 is a memory cue and 1, 2, 3 ... a hot cue by number (A, B, C
+    ...), **which was read off a real library and not from any documentation**, and `Kind` 5
+    turned up on loops and as a near-copy of hot cue C: not understood. A row with an `OutMsec`
+    after its `InMsec` is a loop, whatever its kind.
+    """
+    if getattr(row, "rb_local_deleted", 0):
+        return None
+    start = _int_or_none(getattr(row, "InMsec", None))
+    if start is None or start < 0:
+        return None
+    number = _int_or_none(getattr(row, "Kind", 0)) or 0
+    stop = _int_or_none(getattr(row, "OutMsec", None))
+    is_loop = stop is not None and stop > start
+    return Cue(
+        kind="loop" if is_loop else ("hot" if number else "memory"),
+        time=start / 1000.0,
+        end=stop / 1000.0 if is_loop and stop is not None else None,
+        slot=number or None,
+        label=str(getattr(row, "Comment", "") or ""),
+    )
+
+
+def cues_by_content(rows: Iterable[Any]) -> dict[str, list[Cue]]:
+    """Cues grouped by track (the content ID, a rekordbox track's `ext_id`), each in time order."""
+    grouped: dict[str, list[Cue]] = defaultdict(list)
+    for row in rows:
+        if (cue := cue_from_row(row)) is not None:
+            grouped[str(row.ContentID)].append(cue)
+    return {k: sorted(v, key=lambda c: c.time) for k, v in grouped.items()}
+
+
+def read_cues(path: Path | None = None) -> dict[str, list[Cue]]:
+    """Every cue rekordbox holds, by track, from a snapshot copy (read-only, like `read_master_db`)."""
+    source = path or default_master_db()
+    if source is None or not source.is_file():
+        raise RekordboxError(
+            f"no rekordbox master.db found at {path or 'the default location'}"
+        )
+    try:
+        from pyrekordbox.masterdb import MasterDatabase
+    except ImportError as exc:  # pragma: no cover
+        raise RekordboxError(f"pyrekordbox is unavailable: {exc}") from exc
+    with tempfile.TemporaryDirectory(prefix="dubcrate-rb-") as tmp:
+        copy = _snapshot(source, Path(tmp))
+        try:
+            db = MasterDatabase(path=copy)
+        except Exception as exc:
+            raise RekordboxError(f"could not open {source}: {exc}") from exc
+        try:
+            return cues_by_content(db.get_cue())
+        finally:
+            db.close()

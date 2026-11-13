@@ -150,3 +150,50 @@ def test_missing_database_is_a_clear_error(tmp_path):
 def test_default_master_db_is_none_when_not_installed(tmp_path, monkeypatch):
     monkeypatch.setattr(Path, "home", lambda: tmp_path)
     assert rb.default_master_db() is None
+
+
+def cue_row(**kw):
+    base = {
+        "ContentID": "10",
+        "InMsec": 15000,
+        "OutMsec": -1,
+        "Kind": 0,
+        "Comment": None,
+        "rb_local_deleted": 0,
+    }
+    return SimpleNamespace(**{**base, **kw})  # fmt: skip
+
+
+def test_a_cue_row_is_a_memory_cue_a_hot_cue_or_a_loop():
+    memory = rb.cue_from_row(cue_row(Kind=0, InMsec=51))
+    assert (memory.kind, memory.time, memory.slot, memory.end) == (
+        "memory",
+        0.051,
+        None,
+        None,
+    )
+    hot = rb.cue_from_row(cue_row(Kind=2, InMsec=85832, Comment="drop"))
+    assert (hot.kind, hot.time, hot.slot, hot.label) == ("hot", 85.832, 2, "drop")
+    loop = rb.cue_from_row(cue_row(Kind=5, InMsec=243801, OutMsec=303801))
+    assert (loop.kind, loop.time, loop.end, loop.slot) == ("loop", 243.801, 303.801, 5)
+
+
+def test_a_cue_with_no_usable_time_or_a_deleted_one_is_skipped():
+    assert rb.cue_from_row(cue_row(InMsec=None)) is None
+    assert rb.cue_from_row(cue_row(InMsec=-1)) is None
+    assert rb.cue_from_row(cue_row(rb_local_deleted=1)) is None
+    assert (
+        rb.cue_from_row(cue_row(OutMsec=0)).kind == "memory"
+    )  # -1 and 0 both mean no end
+
+
+def test_cues_are_grouped_by_track_in_time_order():
+    rows = [
+        cue_row(ContentID="1", Kind=3, InMsec=90000),
+        cue_row(ContentID="2", Kind=1, InMsec=5000),
+        cue_row(ContentID="1", Kind=1, InMsec=30000),
+        cue_row(ContentID="1", Kind=0, InMsec=40, rb_local_deleted=1),
+    ]
+    grouped = rb.cues_by_content(rows)
+    assert [c.time for c in grouped["1"]] == [30.0, 90.0]
+    assert [c.time for c in grouped["2"]] == [5.0]

@@ -11,12 +11,13 @@ import sys
 from pathlib import Path
 
 from dubcrate import cdj_card as cc
-from dubcrate.card_discs import prepare_disc
+from dubcrate.card_discs import RekordboxCues, prepare_disc
 from dubcrate.card_report import describe_card, describe_plan
 from dubcrate.card_sync import plan_card
 from dubcrate.library import Library
 from dubcrate.library.lengths import measure_tracks
 from dubcrate.library.paths import default_library_path
+from dubcrate.library.rekordbox import RekordboxError
 
 
 def cmd_show(_: Library, args: argparse.Namespace) -> int:
@@ -54,12 +55,19 @@ def cmd_sync(lib: Library, args: argparse.Namespace) -> int:
         return 1
 
     inputs = []
-    for disc_id in args.disc:
-        if lib.disc(disc_id).kind == "audio":
-            ids = [e.track.id for e in lib.disc_entries(disc_id)]
-            for problem in measure_tracks(lib, ids):
-                print(f"warning: couldn't measure {problem}", file=sys.stderr)
-        inputs.append(prepare_disc(lib, disc_id))
+    rekordbox = RekordboxCues(
+        lib
+    )  # rekordbox's database is read once, when first needed
+    try:
+        for disc_id in args.disc:
+            if lib.disc(disc_id).kind == "audio":
+                ids = [e.track.id for e in lib.disc_entries(disc_id)]
+                for problem in measure_tracks(lib, ids):
+                    print(f"warning: couldn't measure {problem}", file=sys.stderr)
+            inputs.append(prepare_disc(lib, disc_id, rekordbox))
+    except RekordboxError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
 
     runnable = [i for i in inputs if i.request is not None]
     for i in inputs:

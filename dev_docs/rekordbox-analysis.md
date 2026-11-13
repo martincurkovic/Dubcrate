@@ -72,9 +72,16 @@ read-only: Dubcrate never writes to rekordbox.
   tracks**; its kinds are 1 Intro, 2 Up, 3 Down, 5 Chorus, 6 Outro, and a 15-phrase
   track came out exactly as rbxport shows it **[measured]**. Mood 2 (21 tracks) and 3
   (1 track) use kinds up to 10, named from the format notes **[notes]**, unchecked.
-- **Cues: none of the 300 sampled tracks had any**, so the parsing of `PCO2` / `PCOB`
-  entries (field names `time`, `hot_cue`, `loop_time`, `type`, `comment`) is defensive
-  and only [tests]-checked with fake entries. Verify on a track that has cues.
+- **Cues are in the database, not the analysis files** **[measured 2026-11-13]**: none of 1,065
+  tracks' analysis files held a cue (`PCO2` / `PCOB`, which `analysis.read_analysis` reads, are only
+  written in a USB export), but `master.db`'s `djmdCue` table has **4,310 cues over 1,061 of the 1,065
+  tracks**. Columns used: `ContentID` (a track's `ext_id`), `InMsec`, `OutMsec` (-1: none), `Kind`,
+  `Comment`. Read by `library/rekordbox.py: read_cues` (a snapshot copy, like the import). **Kind**, as
+  read off this library and not from documentation: `0` memory cue (880 rows, most within the first
+  0.2 s of a track: **[unknown]** whether those are user memory cues or the track's automatic cue
+  point), `1`, `2`, `3` hot cues A, B, C (about 1,000 each), `5` on 427 tracks and on the two loops
+  (`OutMsec` set), often 2 ms from hot cue C (**[unknown]** what it is), `6` and `7` on three rows. No
+  `4`. So the preview's cue markers (which read the analysis files) have shown none for a local library.
 - **Speed:** a full `.EXT` parse is about 54 ms with pyrekordbox; `read_analysis` for a
   track is about 57 ms (fine on a worker thread); reading just the preview from
   `.2EX` is about 0.4 ms, which is why the Preview column can be filled for the rows on

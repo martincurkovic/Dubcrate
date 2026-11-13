@@ -11,15 +11,16 @@ has not been marked as burned. **A disc with gaps (`pregap_sectors`) is a guess*
 with gaps lays the TOC out has not been checked on a drive.
 """
 
-from collections.abc import Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
 from dubcrate import cdj_card as cc
-from dubcrate.analysis import Cue, read_analysis, share_root
+from dubcrate.analysis import Cue
 from dubcrate.card_sync import DiscRequest, map_cues
 from dubcrate.library import Library
 from dubcrate.library.models import DiscEntry, Track
+from dubcrate.library.rekordbox import read_cues
 
 
 @dataclass
@@ -43,24 +44,43 @@ def disc_toc(
     )
 
 
-def rekordbox_cues(lib: Library, track: Track) -> Sequence[Cue]:
-    """The cues rekordbox holds for a track, read from its analysis files (never written).
+class RekordboxCues:
+    """rekordbox's cues for tracks, read from its database (a snapshot copy, never written).
 
-    A file that is also in rekordbox (same path) uses rekordbox's, as the preview does. A track
-    with no analysis gives none.
+    The database is read once per rekordbox source, the first time a track of it is asked about.
+    A file that is also in rekordbox (same path) takes rekordbox's cues, as the preview takes its
+    waveform; a track with no rekordbox twin has none.
     """
-    analysed = lib.rekordbox_twin(track) or track
-    source = next((s for s in lib.sources() if s.id == analysed.source_id), None)
-    if source is None or source.kind != "rekordbox" or not analysed.analysis_path:
-        return ()
-    analysis = read_analysis(
-        share_root(Path(source.path)), analysed.analysis_path, track.duration
-    )
-    return analysis.cues if analysis else ()
+
+    def __init__(
+        self,
+        lib: Library,
+        load: Callable[[Path], Mapping[str, Sequence[Cue]]] | None = None,
+    ) -> None:
+        self._lib = lib
+        self._load = load
+        self._by_source: dict[int, Mapping[str, Sequence[Cue]]] = {}
+
+    def for_track(self, track: Track) -> Sequence[Cue]:
+        analysed = self._lib.rekordbox_twin(track) or track
+        source = next(
+            (s for s in self._lib.sources() if s.id == analysed.source_id), None
+        )
+        if source is None or source.kind != "rekordbox":
+            return ()
+        if source.id not in self._by_source:
+            self._by_source[source.id] = (self._load or read_cues)(Path(source.path))
+        return self._by_source[source.id].get(analysed.ext_id, ())
 
 
-def prepare_disc(lib: Library, disc_id: int) -> DiscInput:
-    """Everything `plan_card` needs for one disc, or the reasons it can't be synced."""
+def prepare_disc(
+    lib: Library, disc_id: int, cues: RekordboxCues | None = None
+) -> DiscInput:
+    """Everything `plan_card` needs for one disc, or the reasons it can't be synced.
+
+    Give one `RekordboxCues` for all the discs of a sync so rekordbox's database is read once.
+    """
+    cues = cues or RekordboxCues(lib)
     summary = lib.disc(disc_id)
     result = DiscInput(disc_id, summary.name)
     if summary.kind != "audio":
@@ -84,9 +104,8 @@ def prepare_disc(lib: Library, disc_id: int) -> DiscInput:
     starts, lead_out = disc_toc(entries, summary.pregap_sectors)
     cues_by_track: dict[int, Sequence[Cue]] = {}
     for entry in entries:
-        cues = rekordbox_cues(lib, entry.track)
-        if cues:
-            cues_by_track[entry.position + 1] = cues
+        if found := cues.for_track(entry.track):
+            cues_by_track[entry.position + 1] = found
     result.cue_tracks = len(cues_by_track)
     mapped = map_cues(cues_by_track, starts, lead_out)
     result.request = DiscRequest(

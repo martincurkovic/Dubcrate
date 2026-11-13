@@ -27,7 +27,7 @@ any of it has been loaded by a player.
 ## What Sync does
 
 ```
-rekordbox cues (ANLZ) ─┐
+rekordbox cues (master.db) ─┐
 Dubcrate disc ─────────┼─► plan (pure) ─► compare with the card ─► you confirm ─► back up
 disc TOC ──────────────┘                                                              │
    (computed from the disc's tracks, or read from the disc in the drive)               ▼
@@ -41,8 +41,15 @@ disc TOC ──────────────┘                          
 - A loop keeps its start and end. A loop with no length, or an end before its start, is skipped.
 - A cue past the end of its track as rendered is skipped and reported.
 - Colours, labels and comments are dropped: the card has no field for them.
-- **Only tracks with rekordbox cues give any**: a track from the Explorer or a plain folder has
-  none unless it is the same file as a rekordbox track (`Library.rekordbox_twin`).
+- **Where rekordbox's cues are**: its database (`djmdCue`), not the analysis files (those have none for a
+  local library: 4,310 cues over 1,061 of 1,065 tracks in the owner's). Read from a snapshot copy at sync
+  time (`library/rekordbox.py: read_cues`), never stored in Dubcrate's library. `Kind` 0 is a memory cue and
+  1, 2, 3 hot cues A, B, C, **read off the owner's library**; `Kind` 5 (on 427 tracks, and the two loops,
+  often 2 ms from hot cue C) is not understood; two cues within 2 frames merge, which absorbs that
+  near-copy. **Open question for the owner**: most tracks have a `Kind` 0 cue within the first 0.2 s (the
+  track's automatic cue point?): wanted as a memory cue on the card, or skipped?
+- **Only tracks that are in rekordbox give any**: a track from the Explorer or a plain folder has none
+  unless it is the same file as a rekordbox track (`Library.rekordbox_twin`).
 
 ### Merging into what is on the card
 
@@ -92,7 +99,7 @@ Two different discs with the same track lengths share an ID and so their cues.
 | Piece | Where | Needs |
 |---|---|---|
 | Card files, disc ID | `src/dubcrate/cdj_card.py` | **done** (read, write, round trip) |
-| rekordbox cues to card entries, merge, plan | `src/dubcrate/card_sync.py` (**done**, pure, no Qt; 24 tests on the real card files) | cue parsing checked on real rekordbox cues |
+| rekordbox cues to card entries, merge, plan | `src/dubcrate/card_sync.py` (**done**, pure, no Qt; 24 tests on the real card files) | the `Kind` meanings confirmed by the owner (see below) |
 | Backup, write, verify, eject | same, with a thin I/O layer | the write test |
 | Command line | `dubcrate card show / backup / sync DISC... --card PATH [--dry-run] [--yes]` | the above |
 | Sync tab | `ui/`: a tab **pinned at the bottom** of `source_tabs.py`'s strip (it has Library, Explorer and pins now, all added "at the bottom": a fixed bottom group needs a small change), a middle pane with the discs and the card | the above |
@@ -138,9 +145,14 @@ Do these in order; each is an image in `~/cdj-card/` and a row in the doc's expe
    player's carry 1 Jan 1970, and macOS added a `.Spotlight-V100` folder. If a file is ignored,
    that is one suspect (the content is the other), and the way to rule it out is writing the same
    bytes into the image without mounting it (not built).
-3. **rekordbox cues**: set a handful in rekordbox on a few tracks of one disc's tracks (memory
-   cues, hot cues, a loop; be exact: a cue at exactly 1:00.000), so the cue parsing can be checked
-   against real files. (None of the 300 sampled tracks had any.) Dubcrate only reads them.
+3. **Confirm what rekordbox's cue kinds mean** (no need to set any: the library already has 4,310). Open
+   rekordbox and look at three tracks, which `dubcrate card sync` lists (these three are in the owner's
+   library): *The Booth* (Hills), *Blessings (Original Mix)* (Calvin Harris, Clementine Douglas) and *I
+   Could Be The One (Original Mix)* (Avicii vs. Nicky Romero). The database has, in seconds: Booth `Kind 0`
+   0.051, `1` 60.051, `2` 85.832, `3` 196.926; Blessings `0` 0.075, `1` 59.149, `2` 147.761, `3` 265.910,
+   `5` 265.912; I Could Be The One `1` 90.153, `2` 134.684, `3` 390.152. Say which are hot cues A, B, C,
+   whether the 0.05 s ones are memory cues you made or the automatic cue point, and what the 265.912
+   one is.
 4. **A burned disc's TOC**: burn a small Dubcrate disc, `drutil toc` it, save the output, so
    `toc_from_lengths` is checked.
 5. Optional, as no longer blocking: set hot cue A on a second track while A exists on a first,
@@ -187,7 +199,7 @@ track plays (cdj1000mk3-card.md). Writing needs what a column means and the scal
 
 1. **The player may not accept a written file.** Phase 0 step 2 decides it; everything is on
    hold until then. A rejected card is reformatted in the player and restored from images.
-2. **rekordbox cue parsing is unverified** (fake data only), and so is whether a cue's time lines
+2. **The cue kinds are read off one library, not documented** (see Phase 0 step 3), and so is whether a cue's time lines
    up with the rendered audio: an MP3's encoder delay can shift the player's idea of time against
    rekordbox's by a few tens of milliseconds, more than a frame.
 3. **A computed ID that does not match the burned disc** (burn gaps, an edit after the burn):
