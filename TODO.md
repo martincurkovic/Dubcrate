@@ -2,8 +2,6 @@
 
 - [ ] Auto download update (maybe once code signing in place...)
 - [x] Linux burn support
-  - [x] Export disc as files (WAVs + TOC, or MP3 folder + ISO)
-  - [x] cdrdao backend (drive info, errors, progress, MP3 discs via ISO)
   - [ ] Try on a real Linux machine + drive (dev_docs/linux-test-plan.md)
 - [ ] Windows burn support
   - [ ] Spike on a real Windows machine (cdrdao + CD-TEXT)
