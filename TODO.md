@@ -2,7 +2,7 @@
 
 - [x] Fix tabs not spanning full width in settings window
 - [ ] Auto download update (maybe once code signing in place...)
-- [ ] Play one track after another in playlist (ie, play thru a playlist in order)
+- [x] Play one track after another in playlist (ie, play thru a playlist in order)
 - [ ] Linux burn support
   - [x] Export disc as files (WAVs + TOC, or MP3 folder + ISO)
   - [x] cdrdao backend (drive info, errors, progress, MP3 discs via ISO)
@@ -14,6 +14,7 @@
 - [x] Support for adding other folder locations in track browser
 - [ ] Mixxx library support
 - [x] Audio normalisation setting?
+  - [ ] Change audio normalisation setting to checkbox and offer a couple of presets for LUFS in a combobox instead of a spinbox
   - [ ] Try on a real disc + CDJ (waveform height, any clipping, is -10 LUFS right?)
 - [ ] Engine DJ library support
 - [ ] Serato library support

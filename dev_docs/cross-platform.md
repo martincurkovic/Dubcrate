@@ -124,11 +124,19 @@ was run on a Windows desktop or drive. What they showed:
   (a narrow table column opened wider because Qt's minimum header width is larger on Linux; a
   shortcut search for "space" also matched "Backspace"), fixed. **[tests]** on Linux, **[not tried]**
   with a display, a sound card or a drive. PySide6's Linux wheels need glibc 2.34 (Intel) or 2.39 (Arm).
-- [ ] Skip the macOS-specific tests off macOS (`test_app_bundle.py`, `test_build_files.py`;
-  `test_mp3_discs.py` already skips the DiscRecording test).
+- [x] Skip the macOS-specific tests off macOS: **not needed** (checked 2026-11-13). `test_app_bundle.py` and
+  `test_build_files.py` read repository files and call pure functions (`extend_tool_path` only changes
+  `PATH` when `main` asks for it on a Mac), so they pass on Linux as they are: the whole suite ran on Arm Linux in
+  Docker with 1302 passed and 4 skipped, none of the skips in those two files (the skips are the DiscRecording
+  test, two Explorer ones, and the local rekordbox sample). The Windows leg is still unseen after its fixes.
 - [ ] Expect some failures on first run (paths, line endings, file locking on Windows,
   `pyrekordbox`'s SQLCipher dependency). Fix or mark each with a reason; do not delete tests.
-- [ ] Check what `pyrekordbox` needs on Windows and Linux for SQLCipher (it worked on the Mac).
+- [x] Check what `pyrekordbox` needs on Windows and Linux for SQLCipher (it worked on the Mac). It needs
+  nothing extra: `sqlcipher3-wheels` 0.5.7 ships binary wheels for Python 3.13 on macOS (arm64, x86_64),
+  Linux (`manylinux_2_28` aarch64 and x86_64) and Windows (amd64, arm64), all in `uv.lock`, with SQLCipher built
+  in. On Arm Linux in Docker the smoke test's SQLCipher check passes (it opens an encrypted in-memory database,
+  reads `cipher_version` and imports pyrekordbox). **[tests]** only: no real `master.db` was opened (rekordbox
+  doesn't exist on Linux), and the Intel Linux and Windows wheels are left to CI.
   It is the known bundling risk in `AGENTS.md`.
 
 ### Phase 2: Export (useful on any OS before any burn backend works): done 2026-11-13
