@@ -1,6 +1,6 @@
 # TODO List
 
-- [ ] Fix tabs not spanning full width in settings window
+- [x] Fix tabs not spanning full width in settings window
 - [ ] Auto download update (maybe once code signing in place...)
 - [ ] Play one track after another in playlist (ie, play thru a playlist in order)
 - [ ] Linux burn support
@@ -31,4 +31,5 @@
 - [ ] SD card sync metadata tab
 - [ ] Clean up unnecessary options in settings and add cm/in units (maybe in print dialog too)
 - [ ] Make burn playlist folder structure appear in the print label window
-- [ ] Reduce spacing in label printer labels around artist and track name, allowing more chars to fit
+- [x] Reduce spacing in label printer labels around artist and track name, allowing more chars to fit
+  - [ ] Check on real paper (and say if the vertical line spacing should shrink too)
