@@ -728,10 +728,16 @@ def test_discrecording_makes_a_data_track_of_the_staged_folder(tmp_path):
     )
 
 
-def test_the_cdrdao_backend_says_it_cannot_burn_mp3_discs(tmp_path):
+def test_the_cdrdao_backend_burns_an_mp3_disc_from_an_image_or_says_why_not(
+    tmp_path, monkeypatch
+):
+    """With no cdrdao it says so; the real write is in test_cdrdao_backend (a stand-in cdrdao)."""
+    from dubcrate import tools
     from dubcrate.burn.cdrdao import CdrdaoBurner
 
-    with pytest.raises(BurnError, match="audio CDs"):
+    monkeypatch.setattr(tools, "BUNDLE_DIR", tmp_path / "no-bundle")
+    monkeypatch.setattr(tools.shutil, "which", lambda _name: None)
+    with pytest.raises(BurnError, match="cdrdao was not found"):
         CdrdaoBurner().burn_data(DataDisc("V", tmp_path), None, print)
 
 

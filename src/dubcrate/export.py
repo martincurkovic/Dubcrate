@@ -21,6 +21,7 @@ from dubcrate.build import BuildError, BurnPlan, Progress, render_plan
 from dubcrate.burn.base import DataDisc, Disc, DiscTrack
 from dubcrate.burn.cdrdao import build_toc
 from dubcrate.cd import format_clock, format_msf
+from dubcrate.iso import IsoError, build_iso
 
 
 class ExportError(RuntimeError):
@@ -33,6 +34,7 @@ class ExportResult:
     readme: Path
     toc: Path | None  # an audio disc's cdrdao table of contents
     disc_folder: Path | None  # an MP3 disc's contents (inside `folder`)
+    iso: Path | None  # an MP3 disc's image, if a tool to make one was found
     lengths: dict[
         int, int
     ]  # track id -> rendered CD sectors (audio), to store in the library
@@ -101,13 +103,21 @@ def _finish_audio(plan: BurnPlan, folder: Path, disc: Disc, lengths: dict[int, i
     toc.write_text(build_toc(renamed, plan.pregap_sectors, relative_to=folder), encoding="ascii")  # fmt: skip
     readme = folder / "README.txt"
     readme.write_text(_audio_readme(plan, renamed), encoding="utf-8")
-    return ExportResult(folder, readme, toc, None, lengths)
+    return ExportResult(folder, readme, toc, None, None, lengths)
 
 
 def _finish_mp3(plan: BurnPlan, folder: Path, disc: DataDisc) -> ExportResult:
+    """The folder is what the disc holds; the ISO image of it (ISO 9660 + Joliet) is made too when a
+    tool for it exists, and a missing one is only said in the README (the folder is still good)."""
+    iso: Path | None = None
+    note = ""
+    try:
+        iso = build_iso(disc.folder, mp3.volume_name(plan.name), folder / "disc.iso")
+    except IsoError as exc:
+        note = str(exc)
     readme = folder / "README.txt"
-    readme.write_text(_mp3_readme(plan, disc), encoding="utf-8")
-    return ExportResult(folder, readme, None, disc.folder, {})
+    readme.write_text(_mp3_readme(plan, disc, iso, note), encoding="utf-8")
+    return ExportResult(folder, readme, None, disc.folder, iso, {})
 
 
 _NOT_TRIED = "These steps have been checked against the programs' documentation, not tried on every system."
@@ -145,8 +155,14 @@ With another program (K3b, Brasero, Windows, ...)
 """
 
 
-def _mp3_readme(plan: BurnPlan, disc: DataDisc) -> str:
+def _mp3_readme(plan: BurnPlan, disc: DataDisc, iso: Path | None, note: str) -> str:
     name = disc.folder.name
+    image = (
+        "  disc.iso  the same disc as an image (ISO 9660 with Joliet): burn this with any program's\n"
+        '            "burn image" (Brasero, K3b, Windows, Finder), or: xorriso -as cdrecord -v dev=/dev/sr0 speed=10 disc.iso\n'
+        if iso
+        else f"  (No disc.iso was made: {note})\n"
+    )
     return f"""Dubcrate export: {plan.name}
 {"=" * (17 + len(plan.name))}
 
@@ -156,7 +172,7 @@ In this folder
   {name}/   exactly what goes on the disc, with its folders and numbered file names, so a player
   {" " * len(name)}   that sorts by name keeps your order. Burn the CONTENTS of this folder as a data CD.
   (This README is outside it on purpose, so it does not end up on the disc.)
-
+{image}
 A data CD for a CD player (ISO 9660 with Joliet), by any of these
   macOS     Finder: File > New Burn Folder, drag the folder's contents in, Burn.
   Windows   Put the folder's contents in the disc drive's window (Explorer offers "Burn to disc").

@@ -298,9 +298,9 @@ Things to know:
 **Export…** (bottom left of the burn window) writes the disc as files, so you can burn it with another program or on another computer, and it needs no drive. It makes a new folder, named after the disc, inside the folder you choose (it never overwrites anything):
 
 - An **audio CD** gives one WAV per track (`01 Artist - Title.wav` and so on, each a whole number of CD sectors, so tracks join exactly), `disc.toc` (a table of contents for the free program [cdrdao](https://cdrdao.sourceforge.net), with the CD-TEXT), and a `README.txt` with the commands.
-- An **MP3 CD** gives the folder that goes on the disc, with a `README.txt` beside it that says how to burn it as a data CD.
+- An **MP3 CD** gives the folder that goes on the disc, `disc.iso` (the same disc as an image any program can burn, made when a tool for it is installed: on Linux, `xorriso`), and a `README.txt` beside them that says how to burn it as a data CD.
 
-On a computer that can't burn from Dubcrate (everything except a Mac so far), the burn window says so and Export… is the way to get a disc. The disc is not marked as burned.
+On a computer that can't burn from Dubcrate, the burn window says so and Export… is the way to get a disc (on Linux, Dubcrate burns with `cdrdao` when it is installed, but that is new and has not been tried on a real drive; Windows isn't supported yet). Exporting does not mark the disc as burned.
 
 **From the command line**
 

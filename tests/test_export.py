@@ -11,6 +11,7 @@ from dubcrate.build import BuildError, plan_burn
 from dubcrate.burn import cdrdao
 from dubcrate.burn.base import Disc, DiscTrack
 from dubcrate.export import ExportError, export_plan, new_export_folder, wav_name
+from dubcrate.iso import find_iso_tool
 from dubcrate.library import Library
 from dubcrate.library.folder import scan_folder
 
@@ -123,12 +124,20 @@ def test_an_mp3_disc_exports_its_folder_with_the_readme_outside_it(lib, tmp_path
     result = export_plan(plan_burn(lib, disc), tmp_path)
     assert result.toc is None and result.lengths == {}
     assert result.disc_folder.parent == result.folder
+    readme = result.readme.read_text(encoding="utf-8")
+    if find_iso_tool():  # the image of the disc, next to its folder
+        assert (
+            result.iso == result.folder / "disc.iso" and result.iso.stat().st_size > 0
+        )
+        assert "disc.iso" in readme and "No disc.iso" not in readme
+    else:
+        assert result.iso is None and "No disc.iso was made" in readme
     files = sorted(p.name for p in result.disc_folder.iterdir())
     assert files == ["01 Same - Alpha.mp3", "02 Zoë - Café Beta Remix.mp3"]  # fmt: skip
     assert not (
         result.disc_folder / "README.txt"
     ).exists()  # it must not end up on the disc
-    assert "xorriso" in result.readme.read_text(encoding="utf-8")
+    assert "xorriso" in readme
 
 
 @needs_ffmpeg

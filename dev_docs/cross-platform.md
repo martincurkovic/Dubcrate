@@ -64,6 +64,21 @@ until a person with that OS and an optical drive has checked it.
 | `ui/help/manual.md`, `README.md`, `CONTRIBUTING.md` | Mention Homebrew, `~/Library/Application Support/Dubcrate/`, macOS-only burning | Say what each OS needs, per OS |
 | `tests/test_app_bundle.py`, `tests/test_build_files.py` | Check the macOS build files | Skip off macOS (Phase 1) |
 
+## Checked with real tools in a Linux container (2026-11-13, no drive)
+
+Docker on a Mac, Ubuntu 24.04, cdrdao 1.2.4: findings, all **[tests]** (not hardware).
+- Our TOC is valid; lengths and gaplessness come out right (`cdrdao show-toc`).
+- Relative file names in a TOC are resolved against the **current directory**, not the TOC's folder.
+- A track under **4 seconds** is refused by cdrdao unless `--force`: now caught before the burn.
+- `cdrdao write` asks "hit enter" when it wants a disc: our run closes its stdin.
+- `cdrdao scanbus` lists drives through sysfs; without one it prints `Unable to glob through sysfs`.
+- cdrdao's failure texts for "no such device" and an unusable device are mapped to plain messages (the
+  permission-denied text is assumed to follow the same shape: **[not tried]**).
+- Qt's X11 plugin needs `libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-render-util0
+  libxcb-xkb1 libxkbcommon-x11-0`; the app then runs on Xvfb and draws correctly with the system font.
+  Sound, a real window manager, HiDPI, Wayland and printing are **[not tried]**.
+- The next step is [linux-test-plan.md](linux-test-plan.md), on a real Linux machine.
+
 ## Roadmap
 
 ### Phase 0: groundwork (no behaviour change, no drive needed): done 2026-11-13
@@ -110,12 +125,12 @@ until a person with that OS and an optical drive has checked it.
   Still to do: an ISO for MP3 discs, once Phase 3 can build one.
 - [x] The README says how to burn it with `cdrdao write disc.toc` (from inside the folder, since
   the TOC's file names are relative: whether cdrdao resolves them against the TOC's folder or the
-  working directory is **[not tried]**, so the README says to run it from the folder, which is right
-  either way), K3b/Brasero, Finder, Explorer and `xorriso`. **None of those steps was run.**
+  working directory: **checked with cdrdao 1.2.4 in Docker: the working directory**, so running it from
+  the folder is required), K3b/Brasero, Finder, Explorer and `xorriso`. **None of those steps was run.**
 
 ### Phase 3: Linux (the easiest burn)
 
-- [ ] Harden `burn/cdrdao.py`:
+- [x] Harden `burn/cdrdao.py` (done 2026-11-13 against cdrdao 1.2.4's own strings and error output; **no drive was involved**, so none of it is **[hardware]**):
   - `media_info` from `cdrdao disk-info --device X` (blank? capacity?), parsed defensively,
     with "unknown" always allowed (the existing rule: an unknown is never a reason to refuse);
   - choose the drive (`scan_devices` exists), and pass it through `BurnOptions.device`;
@@ -123,9 +138,12 @@ until a person with that OS and an optical drive has checked it.
   - the quirks below (eject and reinsert after a simulation). CD-TEXT is switched on by the
     `CD_TEXT` block our TOC already contains; check every flag we pass against the installed
     version's `--help`, since releases differ.
-- [ ] MP3 discs: `burn_data` for cdrdao. Build the ISO (ISO 9660 + Joliet) with `xorriso` or
-  `mkisofs`/`genisoimage` (find the tool like `cdrdao`), write it with a `TRACK MODE1` TOC.
-  Alternative: let `xorriso` write the disc itself. Decide by trying both on a real drive.
+- [x] MP3 discs, built (`iso.py`, `cdrdao.build_data_toc`, `CdrdaoBurner.burn_data`): the ISO (ISO 9660 +
+  Joliet + Rock Ridge) comes from `xorriso -as mkisofs` (else `genisoimage` / `mkisofs`; `hdiutil` on a Mac),
+  and is written as one `TRACK MODE1` data track. Export makes the same `disc.iso`. **[tests]**: xorriso's
+  image was read back with `isoinfo` (Joliet names, volume id) and cdrdao's `show-toc` accepts the TOC. The
+  write itself is **[not tried]**; the alternative is `xorriso -as cdrecord ... disc.iso`. Decide by trying both
+  on a real drive (step 6 of [linux-test-plan.md](linux-test-plan.md)).
 - [ ] Hardware checks, in the style of `burning.md`: drive detection, a simulated audio burn, a
   real audio burn on a CDJ-1000MK3 (gapless boundaries, CD-TEXT), an MP3 disc. Tag results
   **[hardware DATE]**.

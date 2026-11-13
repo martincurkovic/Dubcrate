@@ -13,6 +13,9 @@
 - [cross-platform.md](cross-platform.md): Linux and Windows support: what is portable, what
   is macOS-only, the decision to use `cdrdao`, and the phased plan. Read before touching
   burners, tool lookup, paths or packaging.
+- [linux-test-plan.md](linux-test-plan.md): the checklist for the first session on a real Linux
+  machine (setup, what the container already proved, then the steps that need a display, a sound
+  card and a drive).
 - [roadmap.md](roadmap.md): what is next, what is unverified, and what to do before
   making the repository public.
 

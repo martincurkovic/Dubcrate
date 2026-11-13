@@ -9,6 +9,11 @@ You need a Mac (the primary platform), [uv](https://docs.astral.sh/uv/), and
 `ffmpeg`/`ffprobe` on your `PATH` (`brew install ffmpeg`; a built app bundles its own, see `BUILDING.md`). uv fetches Python 3.13.
 The optional `cdrdao` burn backend needs `brew install cdrdao`.
 
+**Linux** (early; burning from the window is not proven there): install `ffmpeg` and `cdrdao` (and `xorriso` for
+MP3 discs) from your package manager, and Qt's libraries for the X11 plugin. The exact packages and a step-by-step
+first-session checklist are in [dev_docs/linux-test-plan.md](dev_docs/linux-test-plan.md). With Docker running,
+`scripts/test_linux.sh` runs the whole suite on Ubuntu from any OS.
+
 ```sh
 uv sync                                    # install everything
 uv run dubcrate-gui                        # run the app
