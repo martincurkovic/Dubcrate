@@ -8,7 +8,7 @@ from PySide6.QtCore import QEvent, Qt
 from PySide6.QtGui import QKeyEvent
 from PySide6.QtWidgets import QMessageBox
 
-from dubcrate import settings
+from dubcrate import loudness, settings
 from dubcrate.burn import BurnError, MediaInfo
 from dubcrate.library import Library
 from dubcrate.library.folder import scan_folder
@@ -517,3 +517,143 @@ def test_a_disc_that_cannot_be_burned_cannot_be_exported_either(make_dialog, lib
     empty = lib.create_disc("Empty")
     dialog, _ = make_dialog(disc=empty)
     assert not dialog.export_button.isEnabled()
+
+
+# -- level matching ---------------------------------------------------------------------------
+
+
+DEFAULT = (
+    loudness.DEFAULT_TARGET_LUFS
+)  # what level matching aims at unless told otherwise
+
+
+def choose_levels(dialog, mode):
+    """What a click on the Levels box does."""
+    index = dialog.levels_combo.findData(mode)
+    dialog.levels_combo.setCurrentIndex(index)
+    dialog.levels_combo.activated.emit(index)
+
+
+def test_the_levels_start_off_and_nothing_is_measured(make_dialog, lib):
+    dialog, _ = make_dialog()
+    assert dialog.levels_combo.currentData() == "off"
+    assert dialog._plan.levels_note == "" and not dialog.levels_spin.isEnabled()
+    assert all(t.loudness is None for t in lib.tracks())
+
+
+def test_matching_measures_once_then_shows_the_gains(
+    make_dialog, wait_for, lib, monkeypatch
+):
+    from dubcrate.ui import burn_dialog
+
+    measured = []
+    real = burn_dialog.measure_loudness
+    monkeypatch.setattr(
+        burn_dialog,
+        "measure_loudness",
+        lambda tracks, progress=None: (
+            measured.append(len(tracks)) or real(tracks, progress)
+        ),
+    )
+    dialog, _ = make_dialog()
+    choose_levels(dialog, "match")
+    assert wait_for(lambda: not dialog._measuring)
+    assert measured == [2]  # both tracks, on a worker
+    assert all(t.loudness for t in lib.tracks())  # and remembered
+    assert f"Levels matched to {DEFAULT} LUFS" in dialog.levels_label.text()
+    assert dialog._plan.levels_note == dialog.levels_label.text()
+    assert dialog.levels_spin.isEnabled()
+    assert any(t.gain_db for t in dialog._plan.tracks)
+
+    before = [t.gain_db for t in dialog._plan.tracks]
+    dialog.levels_spin.setValue(
+        DEFAULT - 3
+    )  # a new target: new gains, nothing measured again
+    assert f"{DEFAULT - 3} LUFS" in dialog.levels_label.text() and measured == [2]
+    assert [t.gain_db for t in dialog._plan.tracks] != before
+    choose_levels(dialog, "off")  # and back
+    assert [t.gain_db for t in dialog._plan.tracks] == [0.0, 0.0]
+    assert dialog.levels_label.text() == "" and not dialog.levels_spin.isEnabled()
+
+
+def test_a_burn_with_matching_on_writes_tracks_at_the_target(make_dialog, wait_for):
+    from dubcrate.loudness import measure
+
+    class Measuring(FakeBurner):
+        """Measures the WAVs while it holds them (a burn's files are gone when it ends)."""
+
+        levels = None
+
+        def burn(self, disc, options, progress):
+            self.levels = [measure(t.wav).lufs for t in disc.tracks]
+            super().burn(disc, options, progress)
+
+    burner = Measuring()
+    dialog, _ = make_dialog(burner)
+    choose_levels(dialog, "match")
+    assert wait_for(lambda: not dialog._measuring)
+    assert not dialog.burn_button.isEnabled()  # (still needs the blank CD-R ticked)
+    burn(dialog, wait_for)
+    assert burner.levels == [pytest.approx(DEFAULT, abs=0.3)] * 2
+    assert (
+        f"Levels matched to {DEFAULT} LUFS" in dialog.log.toPlainText()
+    )  # the log says so
+
+
+def test_the_settings_can_have_matching_on_when_the_window_opens(
+    qapp, lib, disc_id, wait_for
+):
+    settings.set_levels_mode("match")
+    settings.set_levels_target(-12)
+    dialog = BurnDialog(lib, disc_id, burner_factory=lambda: FakeBurner())
+    try:
+        assert dialog.levels_combo.currentData() == "match" and dialog.levels_spin.value() == -12  # fmt: skip
+        assert wait_for(lambda: not dialog._measuring and not dialog._busy)
+        assert "Levels matched to -12 LUFS" in dialog.levels_label.text()
+    finally:
+        dialog.close()
+        dialog.deleteLater()
+
+
+def test_a_failed_measurement_blocks_the_burn_and_says_how_to_get_past_it(make_dialog, wait_for, monkeypatch):  # fmt: skip
+    from dubcrate.render import RenderError
+    from dubcrate.ui import burn_dialog
+
+    def broken(tracks, progress=None):
+        raise RenderError("ffmpeg fell over")
+
+    monkeypatch.setattr(burn_dialog, "measure_loudness", broken)
+    dialog, _ = make_dialog()
+    choose_levels(dialog, "match")
+    assert wait_for(lambda: not dialog._measuring)
+    dialog.confirm_check.setChecked(True)
+    assert not dialog.burn_button.isEnabled()
+    assert "ffmpeg fell over" in dialog.problems_label.text()
+    assert "Leave as they are" in dialog.problems_label.text()
+    choose_levels(dialog, "off")  # the way out
+    assert dialog.burn_button.isEnabled() and dialog.problems_label.text() == ""
+
+
+def test_an_mp3_disc_has_no_levels_row(make_dialog, lib):
+    mp3_disc = lib.create_disc("M", kind="mp3")
+    lib.add_to_disc(mp3_disc, [t.id for t in lib.tracks(sort="title")])
+    dialog, _ = make_dialog(disc=mp3_disc)
+    assert not dialog._has_levels and dialog._plan.levels_note == ""
+
+
+def test_exporting_with_matching_on_writes_matched_files(make_dialog, wait_for, tmp_path, monkeypatch):  # fmt: skip
+    from dubcrate.loudness import measure
+
+    dialog, _ = make_dialog()
+    choose_levels(dialog, "match")
+    assert wait_for(lambda: not dialog._measuring)
+    out = tmp_path / "out"
+    out.mkdir()
+    monkeypatch.setattr("dubcrate.ui.burn_dialog.ask_export_folder", lambda _parent: str(out))  # fmt: skip
+    dialog.export_button.click()
+    assert wait_for(lambda: not dialog._busy)
+    folder = out / "Friday export"
+    assert f"Levels matched to {DEFAULT} LUFS" in (folder / "README.txt").read_text(
+        encoding="utf-8"
+    )
+    assert [measure(w).lufs for w in sorted(folder.glob("*.wav"))] == [pytest.approx(DEFAULT, abs=0.3)] * 2  # fmt: skip

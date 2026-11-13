@@ -128,17 +128,22 @@ def probe(path: Path) -> SourceInfo:
     )
 
 
-def render_track(src: Path, dst: Path) -> int:
+def render_track(src: Path, dst: Path, gain_db: float = 0.0) -> int:
     """Render `src` to `dst` as CD-ready WAV; returns the length in sectors.
 
     The output is padded with digital silence to a whole sector so that track
-    boundaries on the disc fall exactly where the TOC says they do.
+    boundaries on the disc fall exactly where the TOC says they do. `gain_db` is a plain volume
+    change (level matching, see `loudness.py`), applied in floating point before the conversion to
+    16 bits, so it costs no precision and does not change the length.
     """
+    chain = f"aresample=osr={SAMPLE_RATE}:osf=s16:dither_method=triangular_hp"
+    if gain_db:
+        chain = f"volume={gain_db:.2f}dB:precision=double," + chain
     cmd = [
         _require("ffmpeg"), "-nostdin", "-v", "error", "-i", str(src),
         "-map", "0:a:0", "-vn",
         # Triangular high-passed dither when reducing bit depth (24-bit -> 16).
-        "-af", f"aresample=osr={SAMPLE_RATE}:osf=s16:dither_method=triangular_hp",
+        "-af", chain,
         "-ac", str(CHANNELS), "-f", "s16le", "-",
     ]  # fmt: skip
     dst.parent.mkdir(parents=True, exist_ok=True)

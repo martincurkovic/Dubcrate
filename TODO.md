@@ -4,17 +4,27 @@
 - [ ] Auto download update (maybe once code signing in place...)
 - [ ] Play one track after another in playlist (ie, play thru a playlist in order)
 - [ ] Linux burn support
+  - [x] Export disc as files (WAVs + TOC, or MP3 folder + ISO)
+  - [x] cdrdao backend (drive info, errors, progress, MP3 discs via ISO)
+  - [ ] Try on a real Linux machine + drive (dev_docs/linux-test-plan.md)
 - [ ] Windows burn support
-- [ ] Linux build script
+  - [ ] Spike on a real Windows machine (cdrdao + CD-TEXT)
+- [ ] Linux build script (AppImage / Flatpak / uv tool?)
 - [ ] Windows build script and installer
 - [x] Support for adding other folder locations in track browser
-  - [x] Think about how waveform analysis might look tho
 - [ ] Mixxx library support
-- [ ] Audio normalisation setting?
+- [x] Audio normalisation setting?
+  - [ ] Try on a real disc + CDJ (waveform height, any clipping, is -10 LUFS right?)
 - [ ] Engine DJ library support
-- [ ] Bundle dependencies (ffmpeg, et. al)
+- [ ] Serato library support
+- [x] Bundle dependencies (ffmpeg, et. al)
+  - [ ] Linux / Windows (they use the system ffmpeg for now)
+- [x] CI test legs for Linux, macOS, Windows
+  - [ ] Drop `experimental` from the Windows leg in test.yml once happy
+- [ ] Run build.yml in CI (bundled ffmpeg, smoke test, does PySide6 import on macOS 15?)
+- [ ] Hardware checks on the Mac: burn window, MP3 disc
 - [ ] Homebrew packaging once first release public
-- [ ] Fix about window resizing, layout, blurry icon
+- [ ] Fix About window resizing, layout, blurry icon
 - [x] Screenshot staging
 - [ ] Clean up user facing docs (readme, user guide)
 - [ ] SD card waveform, hotcue, memory cue, loop point reverse engineering

@@ -27,14 +27,16 @@ from PySide6.QtWidgets import (
     QPlainTextEdit,
     QProgressBar,
     QPushButton,
+    QSpinBox,
     QVBoxLayout,
     QWidget,
 )
 
-from dubcrate import settings
+from dubcrate import loudness, settings
 from dubcrate.build import (
     BuildError,
     BurnPlan,
+    apply_levels,
     disc_problems,
     format_amount,
     media_problems,
@@ -54,6 +56,7 @@ from dubcrate.burn import (
 from dubcrate.cd import SECTORS_PER_SECOND, format_clock
 from dubcrate.export import ExportError, ExportResult, export_plan
 from dubcrate.library import Library
+from dubcrate.library.levels import measure_loudness, needs_loudness, store_loudness
 from dubcrate.library.models import DiscKind
 from dubcrate.render import RenderError
 
@@ -152,6 +155,10 @@ class BurnDialog(QDialog):
         self._plan: BurnPlan | None = None
         if not self._problems:
             self._plan = plan_burn(lib, disc_id)
+        # What the disc is without level matching; `_plan` is this, or this with a gain on each track
+        self._base_plan = self._plan
+        self._measuring = False
+        self._levels_error = ""
 
         title = QLabel(summary.name)
         title.setObjectName("panelTitle")
@@ -205,8 +212,35 @@ class BurnDialog(QDialog):
         self.confirm_check.toggled.connect(lambda _on: self._update())
         self.simulate_check.toggled.connect(lambda _on: self._update())
 
+        # Level matching (audio CDs only; see loudness.py): off or on as the Settings say, per burn
+        self.levels_combo = QComboBox()
+        self.levels_combo.addItem("Leave as they are", settings.LEVELS_OFF)
+        self.levels_combo.addItem("Match loudness", settings.LEVELS_MATCH)
+        self.levels_spin = QSpinBox()
+        self.levels_spin.setRange(*loudness.TARGET_RANGE)
+        self.levels_spin.setSuffix(" LUFS")
+        self.levels_spin.setValue(settings.get_levels_target())
+        self.levels_spin.setToolTip("The loudness the tracks are brought to")
+        self.levels_label = QLabel()
+        self.levels_label.setObjectName("usageLabel")
+        self.levels_label.setWordWrap(True)
+        self.levels_label.setVisible(False)
+        self._has_levels = self._kind == "audio" and self._base_plan is not None
+        if self._has_levels and settings.get_levels_mode() == settings.LEVELS_MATCH:
+            self.levels_combo.setCurrentIndex(
+                self.levels_combo.findData(settings.LEVELS_MATCH)
+            )
+        self.levels_combo.activated.connect(lambda _i: self._apply_levels())
+        self.levels_spin.valueChanged.connect(lambda _v: self._apply_levels())
+        levels_row = QHBoxLayout()
+        levels_row.addWidget(self.levels_combo, 1)
+        levels_row.addWidget(self.levels_spin)
+
         form = QFormLayout()
         form.addRow("Speed:", self.speed_combo)
+        if self._has_levels:
+            form.addRow("Levels:", levels_row)
+            form.addRow(self.levels_label)
         form.addRow(self.simulate_check)
         form.addRow(self.confirm_check)
 
@@ -257,6 +291,8 @@ class BurnDialog(QDialog):
         layout.addLayout(buttons)
 
         self._update()
+        if self._has_levels:
+            self._apply_levels()  # (the Settings may have it on already)
         if self._plan is not None and not self._backend_problem:
             self.check_drive()
 
@@ -273,6 +309,8 @@ class BurnDialog(QDialog):
         problems = list(self._problems)
         if self._backend_problem:
             problems.append(self._backend_problem)
+        if self._levels_error:
+            problems.append(self._levels_error)
         if self._media_error:
             problems.append(self._media_error)
         if self._media is not None:
@@ -283,12 +321,13 @@ class BurnDialog(QDialog):
         problems = self._all_problems()
         self.problems_label.setText("\n".join(f"• {p}" for p in problems))
         self.problems_label.setVisible(bool(problems))
+        working = self._busy or self._measuring
         ready = (
             self._plan is not None
             and not problems
             and self._media is not None
             and self.confirm_check.isChecked()
-            and not self._busy
+            and not working
             and not self._finished
         )
         self.burn_button.setEnabled(ready)
@@ -300,10 +339,16 @@ class BurnDialog(QDialog):
             self.simulate_check,
             self.confirm_check,
             self.check_button,
+            self.levels_combo,
         ):
-            widget.setEnabled(not self._busy and not self._finished)
-        self.close_button.setEnabled(not self._busy)
-        self.export_button.setEnabled(self._plan is not None and not self._busy)
+            widget.setEnabled(not working and not self._finished)
+        self.levels_spin.setEnabled(
+            not working
+            and not self._finished
+            and self.levels_combo.currentData() == settings.LEVELS_MATCH
+        )
+        self.close_button.setEnabled(not working)
+        self.export_button.setEnabled(self._plan is not None and not working)
         if self._backend_problem:
             text, level = (
                 (
@@ -334,6 +379,82 @@ class BurnDialog(QDialog):
         if self._burner is None:
             self._burner = self._burner_factory()
         return self._burner
+
+    # -- levels -----------------------------------------------------------
+
+    def _say_levels(self, text: str, level: str) -> None:
+        """The line under the Levels row (hidden while it has nothing to say)."""
+        self._set_level(self.levels_label, text, level)
+        self.levels_label.setVisible(bool(text))
+
+    def _apply_levels(self) -> None:
+        """Set `_plan` to the disc with or without level matching, as the controls say. Matching needs
+        each track measured first: that is done on a worker, once per file (it is remembered)."""
+        if not self._has_levels or self._base_plan is None or self._busy:
+            return
+        self._levels_error = ""
+        if self.levels_combo.currentData() != settings.LEVELS_MATCH:
+            self._plan = self._base_plan
+            self._say_levels("", "normal")
+            self._update()
+            return
+        ids = list(dict.fromkeys(t.track_id for t in self._base_plan.tracks))
+        todo = [t for t in self._lib.tracks_by_ids(ids) if needs_loudness(t)]
+        if not todo:
+            self._levels_ready(ids, [])
+            return
+        self._measuring = True
+        self.progress.setRange(0, len(todo))
+        self.progress.setValue(0)
+        self.progress.setVisible(True)
+        self._set_level(
+            self.levels_label, f"Measuring levels… 0 of {len(todo)}", "normal"
+        )
+        self._update()
+
+        def report(done: int, total: int) -> None:
+            self._set_level(
+                self.levels_label, f"Measuring levels… {done} of {total}", "normal"
+            )
+            self.progress.setValue(done)
+
+        run_async(
+            _expected_failures(lambda report: measure_loudness(todo, report)),
+            lambda result: self._levels_measured(ids, result),
+            self._levels_failed,
+            report,
+        )
+
+    def _levels_measured(self, ids: list[int], result) -> None:
+        found, problems = result
+        store_loudness(self._lib, found)
+        self._measuring = False
+        self.progress.setVisible(False)
+        self._levels_ready(ids, problems)
+
+    def _levels_failed(self, text: str) -> None:
+        self._measuring = False
+        self.progress.setVisible(False)
+        self._plan = self._base_plan
+        self._levels_error = f"couldn't measure the levels: {text} (choose “Leave as they are” to burn without matching)"
+        self._say_levels("", "normal")
+        self._update()
+
+    def _levels_ready(self, ids: list[int], problems: list[str]) -> None:
+        """Every track that can be is measured: put a gain on each and say what that is."""
+        assert self._base_plan is not None
+        measured = {
+            t.id: t.loudness
+            for t in self._lib.tracks_by_ids(ids)
+            if t.loudness is not None
+        }
+        self._plan = apply_levels(self._base_plan, measured, self.levels_spin.value())
+        note = self._plan.levels_note
+        held = "held back" in note or bool(problems)
+        self._say_levels(note, "warning" if held else "normal")
+        for problem in problems:
+            logger.warning("levels: %s", problem)
+        self._update()
 
     # -- the drive --------------------------------------------------------
 
@@ -377,6 +498,8 @@ class BurnDialog(QDialog):
             f"{'Test burn' if simulate else 'Burning'} “{plan.name}”"
             f"{' (MP3 CD)' if plan.kind == 'mp3' else ''} at {speed}x"
         )
+        if plan.levels_note:
+            self._append(plan.levels_note)
         logger.info(
             "%s of disc %s “%s” at %sx",
             "test burn" if simulate else "burn",
@@ -463,6 +586,8 @@ class BurnDialog(QDialog):
         plan = self._plan
         self.log.clear()
         self._append(f"Exporting “{plan.name}” to {parent}")
+        if plan.levels_note:
+            self._append(plan.levels_note)
         logger.info("export of disc %s “%s” to %s", self._disc_id, plan.name, parent)
         self.status_label.setText("")
         self.progress.setRange(0, 0)
@@ -507,7 +632,9 @@ class BurnDialog(QDialog):
     # -- closing ----------------------------------------------------------
 
     def reject(self) -> None:
-        if self._busy:  # a burn can't be taken back halfway: wait for it
+        if (
+            self._busy or self._measuring
+        ):  # a burn can't be taken back halfway: wait for it
             return
         super().reject()
 

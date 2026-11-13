@@ -266,9 +266,14 @@ _SCHEMA_V9 = """
 ALTER TABLE source ADD COLUMN hidden INTEGER NOT NULL DEFAULT 0
 """
 
+_SCHEMA_V10 = """
+ALTER TABLE track ADD COLUMN loudness_lufs REAL;
+ALTER TABLE track ADD COLUMN true_peak_db REAL
+"""
+
 _MIGRATIONS = (
     _SCHEMA_V1, _SCHEMA_V2, _SCHEMA_V3, _SCHEMA_V4, _SCHEMA_V5, _migrate_to_v6,
-    _SCHEMA_V7, _SCHEMA_V8, _SCHEMA_V9,
+    _SCHEMA_V7, _SCHEMA_V8, _SCHEMA_V9, _SCHEMA_V10,
 )  # fmt: skip
 SCHEMA_VERSION = len(_MIGRATIONS)
 
@@ -472,12 +477,13 @@ class Library:
         if rec.ext_id in existing:
             track_id = existing[rec.ext_id]
             assignments = ", ".join(f"{f} = ?" for f in _TRACK_FIELDS)
-            # A changed file size means the measured CD length is out of date.
+            # A changed file size means the measured CD length and loudness are out of date.
             self._conn.execute(
-                "UPDATE track SET cd_sectors = CASE WHEN file_size IS ?"
-                f" THEN cd_sectors END, {assignments}, missing = ?, stale = 0"
-                " WHERE id = ?",
-                [rec.file_size, *values, missing, track_id],
+                "UPDATE track SET cd_sectors = CASE WHEN file_size IS ? THEN cd_sectors END,"
+                " loudness_lufs = CASE WHEN file_size IS ? THEN loudness_lufs END,"
+                " true_peak_db = CASE WHEN file_size IS ? THEN true_peak_db END,"
+                f" {assignments}, missing = ?, stale = 0 WHERE id = ?",
+                [rec.file_size] * 3 + [*values, missing, track_id],
             )
             return track_id, False
         columns = ", ".join(_TRACK_FIELDS)
@@ -774,6 +780,8 @@ class Library:
             missing=bool(r["missing"]),
             stale=bool(r["stale"]),
             cd_sectors=r["cd_sectors"],
+            loudness_lufs=r["loudness_lufs"],
+            true_peak_db=r["true_peak_db"],
             **fields,
         )
 
@@ -784,6 +792,15 @@ class Library:
         with self._conn:
             self._conn.execute(
                 "UPDATE track SET cd_sectors = ? WHERE id = ?", (sectors, track_id)
+            )
+
+    def set_loudness(self, track_id: int, lufs: float, true_peak_db: float) -> None:
+        """Record a track's measured loudness (see `loudness.py`). It is forgotten when the file's
+        size changes at a re-import, like the measured CD length."""
+        with self._conn:
+            self._conn.execute(
+                "UPDATE track SET loudness_lufs = ?, true_peak_db = ? WHERE id = ?",
+                (lufs, true_peak_db, track_id),
             )
 
     def tracks_by_ids(self, track_ids: Iterable[int]) -> list[Track]:

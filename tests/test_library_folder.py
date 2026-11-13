@@ -69,7 +69,7 @@ def test_scan_reads_tags_and_builds_the_directory_tree(tmp_path):
     assert names[tmp_path.name].parent_ext_id is None and names[tmp_path.name].is_folder
     assert names["Sets"].is_folder and not names["Sets"].track_ext_ids
     assert not names["Warm"].is_folder
-    assert [p.rsplit("/", 1)[1] for p in names["Warm"].track_ext_ids] == [
+    assert [Path(p).name for p in names["Warm"].track_ext_ids] == [
         "three.flac",
         "two.flac",
     ]

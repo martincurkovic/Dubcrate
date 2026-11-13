@@ -2,7 +2,7 @@
 
 from PySide6.QtCore import QByteArray, QSettings
 
-from dubcrate import keys, labels, mp3
+from dubcrate import keys, labels, loudness, mp3
 
 THEME_SYSTEM = "system"
 THEME_LIGHT = "light"
@@ -171,6 +171,36 @@ def get_burn_speed() -> int:
 
 def set_burn_speed(speed: int) -> None:
     _qs().setValue("burn/speed", int(speed))
+
+
+LEVELS_OFF = "off"
+LEVELS_MATCH = "match"
+
+
+def get_levels_mode() -> str:
+    """Whether a burn matches the loudness of its tracks by default: "off" (they are left as they
+    are) or "match". Off unless chosen. A burn can still change it for itself."""
+    value = str(_qs().value("levels/mode", LEVELS_OFF))
+    return value if value in (LEVELS_OFF, LEVELS_MATCH) else LEVELS_OFF
+
+
+def set_levels_mode(mode: str) -> None:
+    _qs().setValue("levels/mode", LEVELS_MATCH if mode == LEVELS_MATCH else LEVELS_OFF)
+
+
+def get_levels_target() -> int:
+    """The loudness, in LUFS, that level matching brings tracks to (-14 unless changed)."""
+    low, high = loudness.TARGET_RANGE
+    try:
+        value = int(_qs().value("levels/target", loudness.DEFAULT_TARGET_LUFS))
+    except (TypeError, ValueError):
+        return loudness.DEFAULT_TARGET_LUFS
+    return min(max(value, low), high)
+
+
+def set_levels_target(lufs: int) -> None:
+    low, high = loudness.TARGET_RANGE
+    _qs().setValue("levels/target", min(max(int(lufs), low), high))
 
 
 def _as_bool(value: object, default: bool) -> bool:

@@ -129,7 +129,7 @@ def _audio_readme(plan: BurnPlan, disc: Disc) -> str:
 {"=" * (17 + len(plan.name))}
 
 An audio CD of {len(disc.tracks)} tracks, {format_clock(disc.total_sectors)} ({format_msf(disc.total_sectors)}), {gap}.
-
+{plan.levels_note + chr(10) if plan.levels_note else ""}
 In this folder
   NN Artist - Title.wav   each track as 16-bit, 44.1 kHz stereo, a whole number of CD sectors long,
                           so tracks join exactly. The number is the track's place on the disc.

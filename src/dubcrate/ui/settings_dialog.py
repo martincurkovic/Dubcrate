@@ -11,12 +11,13 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QPushButton,
+    QSpinBox,
     QTabWidget,
     QVBoxLayout,
     QWidget,
 )
 
-from dubcrate import keys, mp3, settings, tools
+from dubcrate import keys, loudness, mp3, settings, tools
 from dubcrate.audio import devices
 from dubcrate.audio.decode import DecodedAudio
 from dubcrate.audio.devices import BUFFER_SIZES, SAMPLE_RATE, buffer_msec
@@ -258,7 +259,44 @@ class SettingsDialog(QDialog):
         hint.setWordWrap(True)
         hint.setObjectName("mutedLabel")
         form.addRow(hint)
+
+        # level matching: audio CDs only (see loudness.py)
+        self.levels_combo = QComboBox()
+        self.levels_combo.addItem("Leave as they are", settings.LEVELS_OFF)
+        self.levels_combo.addItem("Match loudness", settings.LEVELS_MATCH)
+        self.levels_combo.setCurrentIndex(
+            max(0, self.levels_combo.findData(settings.get_levels_mode()))
+        )
+        self.levels_combo.activated.connect(self._on_levels_chosen)
+        form.addRow("Track levels:", self.levels_combo)
+        self.levels_target_spin = QSpinBox()
+        self.levels_target_spin.setRange(*loudness.TARGET_RANGE)
+        self.levels_target_spin.setSuffix(" LUFS")
+        self.levels_target_spin.setValue(settings.get_levels_target())
+        self.levels_target_spin.setEnabled(
+            settings.get_levels_mode() == settings.LEVELS_MATCH
+        )
+        self.levels_target_spin.valueChanged.connect(settings.set_levels_target)
+        form.addRow("Target loudness:", self.levels_target_spin)
+        levels_hint = QLabel(
+            "Match loudness gives each track on an audio CD one fixed volume change so the tracks play"
+            " at about the same level. It never compresses or limits, so the music keeps its dynamics,"
+            " and it never turns a track up past the point where its peaks would clip (those tracks"
+            " are lifted less and the burn window says so). -10 LUFS keeps loud dance tracks close to"
+            " how they were; -14 is gentler and holds nothing back. Burning with it takes a moment"
+            " longer the first time, while"
+            " each track is measured. MP3 discs are left as they are. You can change this for a"
+            " single burn in the burn window."
+        )
+        levels_hint.setWordWrap(True)
+        levels_hint.setObjectName("mutedLabel")
+        form.addRow(levels_hint)
         return page
+
+    def _on_levels_chosen(self, _index: int = 0) -> None:
+        mode = self.levels_combo.currentData()
+        settings.set_levels_mode(mode)
+        self.levels_target_spin.setEnabled(mode == settings.LEVELS_MATCH)
 
     # -- library ----------------------------------------------------------
 

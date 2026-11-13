@@ -133,6 +133,12 @@
 
 ## Decisions so far
 
+- **Level matching** (audio CDs only; owner's choices 2026-11-13): one fixed gain per track from its integrated
+  loudness (LUFS) to a target, no compression or limiting, held back where the true peak would pass -0.3 dBTP
+  (reported, never squashed); default target -10 LUFS (moved from -14 because quiet discs made the CDJ's waveform
+  flat); off unless chosen in Settings > Burning or per burn. MP3 discs are not matched (a gain would mean
+  re-encoding every file). Loudness is the one measurement the app takes of audio, at burn time, cached.
+
 - The layout is three panes under the player: the library's file tree on the left, the track list (or the open disc) in the middle, and the **Discs** list on the right.
 - A **disc is a playlist**: in the right-hand list, filed in folders, opened in the middle by clicking it (which also makes it the target for adds). Burned or not makes no difference, and there are **no frozen burn snapshots**: a disc only remembers when it was last burned. Dragging tracks onto a disc adds them to it (rekordbox-style); discs and folders drag into folders. Folders are listed first, A to Z, then discs A to Z; deleting a folder deletes what is in it (its discs and folders, at any depth; the tracks stay in the library), after asking unless it is empty. That replaced "moves its contents up a level", at the owner's request. (Schema v6 converted old burn records: a burned disc got `last_burned_at`, and a burn of a deleted disc became a disc.)
 - Double-click previews a track; Return (or the button, or dragging) adds it to a disc.
@@ -253,6 +259,13 @@
   [burning.md](burning.md)).
 
 ## Unverified
+
+- **Level matching on a real disc and a CDJ-1000MK3** (built 2026-11-13: `loudness.py`, burn window, Settings).
+  Proven by tests: a track rendered with a gain measures that much louder; two tracks of different levels come
+  out at the target. NOT checked: how it sounds, whether any burn clips on the CDJ's output (the ceiling is
+  -0.3 dBTP, a guess from mastering practice), and **how the CDJ-1000MK3 draws its waveform**: if it is not
+  auto-scaled, a quieter target means a flatter waveform. A good check: burn one track at -14 and at -10 and
+  compare the waveform and the output level.
 
 - **Label printing on real hardware**: only PDFs and offscreen renders so far. Not checked: a real
   printer on A4 or Letter sticker paper, whether the Mac print panel overrides the page size, the

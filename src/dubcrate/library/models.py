@@ -5,6 +5,7 @@ from typing import Literal
 
 from dubcrate import mp3
 from dubcrate.cd import estimate_sectors
+from dubcrate.loudness import Loudness
 
 SourceKind = Literal["folder", "rekordbox"]
 # An audio CD is limited by minutes; an MP3 CD is a data disc, limited by bytes.
@@ -54,6 +55,10 @@ class Track(TrackRecord):
     # No longer in its source but kept because a disc still uses it.
     stale: bool = False
     cd_sectors: int | None = None  # measured length once known
+    loudness_lufs: float | None = (
+        None  # integrated loudness once measured (level matching)
+    )
+    true_peak_db: float | None = None  # its true peak, dBTP
 
     @property
     def length_sectors(self) -> int:
@@ -61,6 +66,13 @@ class Track(TrackRecord):
         if self.cd_sectors is not None:
             return self.cd_sectors
         return estimate_sectors(self.duration)
+
+    @property
+    def loudness(self) -> Loudness | None:
+        """What level matching measured for this file, or None if it has not been."""
+        if self.loudness_lufs is None or self.true_peak_db is None:
+            return None
+        return Loudness(self.loudness_lufs, self.true_peak_db)
 
     @property
     def length_exact(self) -> bool:

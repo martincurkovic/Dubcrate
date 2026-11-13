@@ -5,14 +5,14 @@ import sys
 import tempfile
 from pathlib import Path
 
-from dubcrate import mp3
+from dubcrate import loudness, mp3
 from dubcrate.build import (
     BuildError,
     build_burn_disc,
     disc_problems,
     media_notes,
     media_problems,
-    plan_burn,
+    planned_with_levels,
 )
 from dubcrate.burn import (
     BACKENDS,
@@ -283,7 +283,9 @@ def cmd_burn(lib: Library, args: argparse.Namespace) -> int:
             raise BurnError("; ".join(problems))
         with tempfile.TemporaryDirectory(prefix="dubcrate-burn-") as tmp:
             work = Path(args.work).expanduser() if args.work else Path(tmp)
-            burn_disc, pregap = build_burn_disc(lib, args.disc, work, progress=print)
+            burn_disc, pregap = build_burn_disc(
+                lib, args.disc, work, progress=print, target_lufs=_target(args)
+            )
             exact = (
                 burn_disc.sectors
                 if isinstance(burn_disc, DataDisc)
@@ -324,7 +326,8 @@ def cmd_export(lib: Library, args: argparse.Namespace) -> int:
             print(f"  - {problem}", file=sys.stderr)
         return 2
     try:
-        result = export_plan(plan_burn(lib, args.disc), Path(args.dir).expanduser(), progress=print)  # fmt: skip
+        plan = planned_with_levels(lib, args.disc, _target(args))
+        result = export_plan(plan, Path(args.dir).expanduser(), progress=print)
     except (BuildError, ExportError) as exc:
         print(f"export failed: {exc}", file=sys.stderr)
         return 1
@@ -333,6 +336,29 @@ def cmd_export(lib: Library, args: argparse.Namespace) -> int:
     print(f"exported to {result.folder}")
     print(f"read {result.readme.name} there for how to burn it")
     return 0
+
+
+def _target(args: argparse.Namespace) -> int | None:
+    """The loudness to match an audio CD to (--levels match), or None to leave the tracks as they are."""
+    return args.target if args.levels == "match" else None
+
+
+def _levels_flags(p: argparse.ArgumentParser) -> None:
+    p.add_argument(
+        "--levels",
+        choices=["off", "match"],
+        default="off",
+        help="match: give each track one fixed gain so they play at about the same loudness"
+        " (audio CDs; never compresses or limits). Default: off",
+    )
+    p.add_argument(
+        "--target",
+        type=int,
+        default=loudness.DEFAULT_TARGET_LUFS,
+        metavar="LUFS",
+        help=f"with --levels match: the loudness to match to, {loudness.TARGET_RANGE[0]} to"
+        f" {loudness.TARGET_RANGE[1]} (default %(default)s)",
+    )
 
 
 def _mp3_flags(p: argparse.ArgumentParser) -> None:
@@ -447,6 +473,7 @@ def add_parsers(sub: argparse._SubParsersAction) -> None:
     )
     p.add_argument("disc", type=int)
     p.add_argument("dir", help="an existing folder: the export is made in a new folder inside it")  # fmt: skip
+    _levels_flags(p)
     p.set_defaults(fn=cmd_export)
 
     p = sub.add_parser("burn", help="burn a disc (dry run unless --yes)")
@@ -458,6 +485,7 @@ def add_parsers(sub: argparse._SubParsersAction) -> None:
         help="default: discrecording on a Mac, cdrdao elsewhere",
     )
     p.add_argument("--speed", type=int, default=10)
+    _levels_flags(p)
     p.add_argument("--device")
     p.add_argument("--work", help="keep rendered WAVs here (default: a temp dir)")
     p.add_argument("--simulate", action="store_true", help="laser-off test write")
