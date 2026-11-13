@@ -87,3 +87,27 @@ the drive what the inserted disc holds, prints it, and refuses if the audio won'
 (or there is no disc). A drive that can't say is not a reason to refuse.
 A real burn marks the disc as burned (a note on the disc, which stays editable); `--simulate` doesn't. See
 [burning.md](burning.md) for what has and hasn't been tried on hardware.
+
+## The CDJ-1000MK3's SD card
+
+```sh
+dubcrate card show /Volumes/DISK_IMG          # the discs, cues, loops, hot cues and waveforms on a card
+dubcrate card show ~/cdj-card/files/X --waveforms
+dubcrate card backup /Volumes/DISK_IMG        # copy the card's few kilobytes aside
+dubcrate card sync 3 4 --card /Volumes/DISK_IMG          # dry run: what would be written
+dubcrate card sync 3 4 --card /Volumes/DISK_IMG --yes    # back up, write, read back
+```
+
+The card argument is the card's root, its `PIONEER` folder, or `PIONEER/CDJ` (a mounted card or a copy
+of that folder). `sync` takes **audio disc ids** (see `dubcrate disc list`): every **rekordbox cue** on
+their tracks (memory cues, hot cues, loops) becomes a **memory cue** on the card, hot cue slots are
+never touched, and cues already on the card are kept. It measures the tracks' lengths first (the card
+entry is the disc's TOC), skips and names a disc it can't sync (MP3, one track, a length that can't be
+measured), warns when a disc isn't marked as burned or has gaps, and is a **dry run unless `--yes`**.
+With `--yes` it copies the card's files to `--backup-dir` (default `card-backups` next to the
+library) before writing, writes the disc files and then the index, and reads them back.
+
+**No file written this way has been loaded by a player yet.** Read [card-sync.md](card-sync.md) (the
+plan and what to test first) and [cdj1000mk3-card.md](cdj1000mk3-card.md) before using `--yes` on a
+card you care about: keep an image of it (`spikes/cdj_card_snap.sh`) so it can be put back.
+

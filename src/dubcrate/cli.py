@@ -4,7 +4,7 @@ import argparse
 import sys
 from pathlib import Path
 
-from dubcrate import cli_discs
+from dubcrate import cli_card, cli_discs
 from dubcrate.cd import format_msf
 from dubcrate.library import ImportSummary, Library
 from dubcrate.library.folder import scan_folder
@@ -155,6 +155,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--limit", type=int, default=25)
     p.set_defaults(fn=cmd_tracks)
     cli_discs.add_parsers(sub)
+    cli_card.add_parsers(sub)
     return parser
 
 

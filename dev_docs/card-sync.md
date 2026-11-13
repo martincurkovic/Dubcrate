@@ -4,8 +4,12 @@ Goal: a **Sync** tab that writes a Dubcrate disc's cues onto the CDJ-1000MK3's S
 disc loads in the player with its rekordbox cues already set. The card format is in
 [cdj1000mk3-card.md](cdj1000mk3-card.md) (read that first: what is measured, and its
 **"Gaps, and where more testing is indicated"**). The module that reads and writes it is
-`src/dubcrate/cdj_card.py`. **Status 2026-11-13: only that module exists.** No file written by it
-has been loaded by a player, and nothing in the app uses it.
+`src/dubcrate/cdj_card.py`. **Status 2026-11-13: Phases 1 and 2's core are built and tested; the Sync tab is not; nothing has been tried
+on a player.** Built: `cdj_card.py` (the format, `write_card`, `backup_card`), `card_sync.py` (cue
+mapping, merge, plan), `card_discs.py` (a Dubcrate disc's TOC and rekordbox cues), `card_report.py`,
+`cli_card.py` (`dubcrate card show | backup | sync`, a dry run unless `--yes`), and the Phase 0 tooling
+(`spikes/cdj_card_testimage.py`, `cdj_card_restore.sh`, with two test images made). No file written by
+any of it has been loaded by a player.
 
 ## Decisions (the owner, 2026-11-13)
 
@@ -88,7 +92,7 @@ Two different discs with the same track lengths share an ID and so their cues.
 | Piece | Where | Needs |
 |---|---|---|
 | Card files, disc ID | `src/dubcrate/cdj_card.py` | **done** (read, write, round trip) |
-| rekordbox cues to card entries, merge, plan | `src/dubcrate/card_sync.py` (new, pure, no Qt) | cue parsing checked on real rekordbox cues |
+| rekordbox cues to card entries, merge, plan | `src/dubcrate/card_sync.py` (**done**, pure, no Qt; 24 tests on the real card files) | cue parsing checked on real rekordbox cues |
 | Backup, write, verify, eject | same, with a thin I/O layer | the write test |
 | Command line | `dubcrate card show / backup / sync DISC... --card PATH [--dry-run] [--yes]` | the above |
 | Sync tab | `ui/`: a tab **pinned at the bottom** of `source_tabs.py`'s strip (it has Library, Explorer and pins now, all added "at the bottom": a fixed bottom group needs a small change), a middle pane with the discs and the card | the above |
@@ -108,10 +112,32 @@ Do these in order; each is an image in `~/cdj-card/` and a row in the doc's expe
 
 1. **Note the player's firmware version** (its display shows it at start-up) in AGENTS.md's hardware
    notes. The disassembly was 2.20.
-2. **Write test** (gaps section 1a, 1b): from a copy of an image, change a disc's cues with
-   `cdj_card.py`, write the image back to the card (`dd`, a tool to be added: only the owner
-   can run it, it needs `sudo`), load the disc and see whether the cues appear. Then give a disc
-   that has an index entry but no file (CD 2 or 3 in `09`) a cues-only file.
+2. **Write test** (gaps section 1a, 1b). Two test images are **already made** in `~/cdj-card/` (by
+   `spikes/cdj_card_testimage.py`, from copies; the originals are untouched). Run these in a
+   normal Terminal (they need `sudo`), with the card in its reader, then in the player:
+
+   | Image | What it holds | Expect on the player |
+   |---|---|---|
+   | `t1-cues-swapped-cd1` | CD 1's cues **replaced**: memory cues at 20 s and 30 s into track 1, 45 s into track 2, 10 s into track 3, a loop 50 s to 52 s in track 1. Hot cues A (track 1, 15 s) and B (track 3, 2 s) and the three waveforms are kept. | Load CD 1: the new cues, not the old ones (2, 5, 10, 4 s, 1:04, the 40 s loop) |
+   | `t2-cd2-file-from-scratch` | CD 2 given a file **made from nothing**, cues only (no waveform): 15 s into track 1, 20 s into track 2, 30 s into the **last** track (12). | Load CD 2: those three cues |
+
+   ```sh
+   spikes/cdj_card_restore.sh t1-cues-swapped-cd1 /dev/diskN     # N from: diskutil list external physical
+   ```
+   Put the card in the player, load CD 1, find the cues (the memory call buttons), play a track,
+   eject the disc, pull the card, then image it: `spikes/cdj_card_snap.sh 11-after-t1 /dev/diskN`.
+   Then `uv run spikes/cdj_card_dump.py diff ~/cdj-card/t1-cues-swapped-cd1.img ...` (mount each
+   read-only first) or just dump `11-after-t1` to see whether the player **kept, changed or
+   dropped** what we wrote. Repeat with `t2-cd2-file-from-scratch` and CD 2 (`12-after-t2`).
+   **Outcomes**: the cues appear (the writer is accepted: this is the point of Phase 0); the player
+   says `CARD ERROR` or `UNFORMAT` (reformat in the player, restore an image, and tell me what
+   was on the display); the card loads but shows none of our cues (the file was ignored: the ID,
+   the chunk layout or a directory entry is wrong: image it and I compare). To put the card back
+   to how it was: `cdj_card_restore.sh 10-third-cd-20-tracks /dev/diskN`.
+   **A confound to remember**: the files macOS wrote into the test images carry today's date, the
+   player's carry 1 Jan 1970, and macOS added a `.Spotlight-V100` folder. If a file is ignored,
+   that is one suspect (the content is the other), and the way to rule it out is writing the same
+   bytes into the image without mounting it (not built).
 3. **rekordbox cues**: set a handful in rekordbox on a few tracks of one disc's tracks (memory
    cues, hot cues, a loop; be exact: a cue at exactly 1:00.000), so the cue parsing can be checked
    against real files. (None of the 300 sampled tracks had any.) Dubcrate only reads them.
@@ -122,16 +148,19 @@ Do these in order; each is an image in `~/cdj-card/` and a row in the doc's expe
 6. For the waveform, **copy the audio** of the played tracks off the CDs (macOS mounts an audio CD
    as AIFF files): CD 1 tracks 1 to 3, and track 1 of CD 2 and of CD 3. Kept locally, never added.
 
-### Phase 1: the pure core and the command line (no hardware needed)
+### Phase 1: the pure core and the command line: **built**
 
-`card_sync.py`: cue mapping, merge, plan, with tests on fake cards and the real fixtures in
-`tests/data/cdj_card/`; then `dubcrate card show` and `backup`. Can start before Phase 0, but
-nothing here is trustworthy until step 2 above says the player takes our file.
+`card_sync.py` (cue mapping, merge, plan), `card_discs.py` (the library half), `card_report.py`, and
+`dubcrate card show | backup | sync`, with tests on the real card files (`tests/test_card_sync.py`,
+`test_card_discs.py`, `test_cli_card.py`). Nothing here is trustworthy until Phase 0 step 2 says the
+player takes our file, and the rekordbox cue reading is checked on real cues (step 3).
 
-### Phase 2: writing
+### Phase 2: writing: **the core is built; what is left**
 
-`card sync` with the backup, write, verify and eject, behind `--dry-run` and `--yes`; the
-write-test tooling for the owner.
+`card sync --yes` already backs up, writes (files, then the index), and reads back. Still to do:
+eject afterwards, a card with no `PIONEER/CDJ` yet (`write_card(create=True)` exists and is **untried on
+a player**), reading the TOC from the disc in the drive instead of computing it, and whatever the write
+test shows the player needs.
 
 ### Phase 3: the Sync tab
 

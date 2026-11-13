@@ -25,8 +25,12 @@ whether the player accepts a file *written* here; parsing and writing are checke
 player wrote (`tests/test_cdj_card.py`), byte for byte.
 """
 
+import os
+import re
+import shutil
 import struct
-from collections.abc import Sequence
+import time
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 
@@ -90,6 +94,19 @@ def toc_from_lengths(lengths: Sequence[int], gap: int = 0) -> tuple[list[int], i
         starts.append(position)
         position += length
     return starts, position
+
+
+def toc_from_drutil(text: str) -> tuple[list[int], int]:
+    """Track starts and the lead-out, in absolute frames, from the text of macOS's `drutil toc`."""
+
+    def find(pattern: str) -> list[int]:
+        return [frames(*(int(g) for g in m)) for m in re.findall(pattern, text)]
+
+    starts = find(r"Track\s+\d+:\s+(\d+):(\d+)\.(\d+)")
+    lead_out = find(r"Lead-out:\s+(\d+):(\d+)\.(\d+)")
+    if not starts or len(lead_out) != 1:
+        raise CardFormatError("That doesn't look like the output of `drutil toc`.")
+    return starts, lead_out[0]
 
 
 @dataclass(frozen=True)
@@ -429,6 +446,73 @@ def read_card(path: Path) -> tuple[IndexFile, dict[str, TrackFile | None]]:
             TrackFile.parse(file.read_bytes()) if file.is_file() else None
         )
     return index, files
+
+
+def write_card(
+    path: Path,
+    index: IndexFile,
+    files: Mapping[str, TrackFile],
+    *,
+    create: bool = False,
+) -> None:
+    """Write disc files, then the index, into a card's `PIONEER/CDJ` folder and check them.
+
+    `files` maps an index name (`CDJ00001`) to its file; only those are written. Each goes through
+    a temporary name and a rename, so an interrupted write leaves the old file; the index is last,
+    so an entry never points at a file that was not written (an entry with no file is a state the
+    player makes itself). Everything is read back and compared. `create` makes `PIONEER/CDJ` on a
+    card that has none: **the player has not been shown a folder made this way**.
+    Only these files in that folder are touched.
+    """
+    try:
+        folder = card_dir(path)
+    except CardFormatError:
+        if not create:
+            raise
+        folder = path / CARD_DIR[0] / CARD_DIR[1]
+        folder.mkdir(parents=True, exist_ok=True)
+    names = {e.name for e in index.entries}
+    if unknown := sorted(set(files) - names):
+        raise CardFormatError(
+            f"{unknown[0]} is not in the index, so it can't be written."
+        )
+    for name, file in files.items():
+        _replace(folder / f"{name}.PDJ", file.to_bytes())
+    _replace(folder / INDEX_NAME, index.to_bytes())
+
+
+def _replace(target: Path, data: bytes) -> None:
+    temporary = target.with_name(target.name + ".TMP")
+    try:
+        with open(temporary, "wb") as handle:
+            handle.write(data)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, target)
+    finally:
+        temporary.unlink(missing_ok=True)
+    if target.read_bytes() != data:
+        raise CardFormatError(
+            f"{target.name} read back differently from what was written."
+        )
+
+
+def backup_card(path: Path, into: Path) -> Path:
+    """Copy a card's `PIONEER/CDJ` files (a few kilobytes) to a new `card-DATE-TIME` folder in `into`.
+
+    Returns that folder. Nothing on the card is changed; this is what a sync does before it writes.
+    """
+    folder = card_dir(path)
+    stamp = time.strftime("%Y%m%d-%H%M%S")
+    destination = into / f"card-{stamp}"
+    n = 1
+    while destination.exists():  # two backups in one second
+        n += 1
+        destination = into / f"card-{stamp}-{n}"
+    destination.mkdir(parents=True)
+    for file in sorted(folder.glob("*.PDJ")):
+        shutil.copy2(file, destination / file.name)
+    return destination
 
 
 class _Reader:

@@ -114,12 +114,13 @@
    Intel build (needs `nasm`, only the workflow does it), the build in CI, the `.dmg` opened on a clean
    Mac (Gatekeeper and quarantine on the nested programs), and the FFmpeg tarball's GPG signature (the
    hash was taken from the first download, not from a signed source).
-7. **Card sync** (the CDJ-1000MK3's SD card). *The format is decoded and a pure reader/writer is built and
-   tested (`cdj_card.py`); nothing writes a card yet and no written file has been tried in a player.* A **Sync**
+7. **Card sync** (the CDJ-1000MK3's SD card). *The format is decoded; the reader/writer, the cue mapping and merge, and
+   `dubcrate card show | backup | sync` are built and tested (`cdj_card.py`, `card_sync.py`, `cli_card.py`); the Sync tab is
+   not, and no written file has been tried in a player.* A **Sync**
    tab, pinned at the bottom of the tab strip, writes a Dubcrate audio disc's rekordbox cues to the card as
    memory cues. Plan, decisions, hardware checklist and phases in [card-sync.md](card-sync.md); the format and
    its gaps in [cdj1000mk3-card.md](cdj1000mk3-card.md). **The first thing is the write test on the player**
-   (Phase 0), then the pure core and a `dubcrate card` command, then the tab, then waveform pre-writing.
+   (Phase 0: two test images are made, the checklist is in the plan), then the tab, then waveform pre-writing.
 
 ## Later
 

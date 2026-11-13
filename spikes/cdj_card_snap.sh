@@ -12,25 +12,14 @@
 # Needs sudo (the raw device is root-only) and pv (brew install pv). Run it in a
 # normal Terminal window: sudo needs a terminal to ask for the password.
 set -eu
+source ${0:A:h}/cdj_card_common.zsh
 
 name=${1:?usage: cdj_card_snap.sh NAME [/dev/diskN]   (writes ~/cdj-card/NAME.img)}
 out=$HOME/cdj-card/$name.img
 [[ -e $out ]] && { echo "$out already exists; pick another name" >&2; exit 1; }
 
-MIN_BYTES=$((64 * 1024 * 1024))
-
-# Size of a disk in bytes, from "Disk Size: 2.0 GB (2013265920 Bytes) (...)".
-disk_bytes() {
-  diskutil info "$1" | awk -F'[()]' '/Disk Size|Total Size/ {print $2; exit}' | awk '{print $1}'
-}
-
 if [[ -n ${2:-} ]]; then
-  disk=/dev/${2#/dev/}
-  # Only a whole, real, external disk: not the Mac's own, not a mounted disk image.
-  info=$(diskutil info "$disk") || { echo "no such disk: $disk" >&2; exit 1; }
-  print -r -- "$info" | grep -q "Device Location: *External" || { echo "$disk is not an external disk" >&2; exit 1; }
-  print -r -- "$info" | grep -q "Whole: *Yes" || { echo "$disk is a partition: give the whole disk (e.g. /dev/disk4)" >&2; exit 1; }
-  print -r -- "$info" | grep -q "Virtual: *No" || { echo "$disk is a disk image, not a card" >&2; exit 1; }
+  disk=$(require_card_disk "$2")
 else
   # The card: the one external physical disk of a card's size.
   disks=()

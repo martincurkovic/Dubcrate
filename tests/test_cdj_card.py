@@ -1,7 +1,6 @@
 """The CDJ-1000MK3 card files: every fixture here was written by the player itself (a real card,
 see dev_docs/cdj1000mk3-card.md), so reading them and writing them back byte for byte is the test."""
 
-import re
 from pathlib import Path
 
 import pytest
@@ -15,13 +14,7 @@ INDEXES = sorted(p.name for p in DATA.glob("index*.PDJ"))
 
 def toc(name: str) -> tuple[list[int], int]:
     """Track starts and lead-out, in absolute frames, from a saved `drutil toc`."""
-    text = (DATA / name).read_text(encoding="utf-8")
-    find = lambda pattern: [
-        cc.frames(*(int(g) for g in m)) for m in re.findall(pattern, text)
-    ]
-    starts = find(r"Track\s+\d+:\s+(\d+):(\d+)\.(\d+)")
-    (lead_out,) = find(r"Lead-out:\s+(\d+):(\d+)\.(\d+)")
-    return starts, lead_out
+    return cc.toc_from_drutil((DATA / name).read_text(encoding="utf-8"))
 
 
 @pytest.mark.parametrize("name", FILES)
@@ -260,3 +253,69 @@ def test_read_card_reads_from_a_copy_of_the_folder_or_the_card_root(tmp_path):
 def test_a_folder_that_is_not_a_card_is_an_expected_error(tmp_path):
     with pytest.raises(cc.CardFormatError, match="card"):
         cc.read_card(tmp_path)
+
+
+def test_toc_from_drutil_reads_the_tracks_and_the_lead_out():
+    starts, lead_out = toc("CD1_TOC.txt")
+    assert len(starts) == 12
+    assert (starts[0], starts[1], starts[-1], lead_out) == (150, 28905, 323803, 350683)
+    with pytest.raises(cc.CardFormatError, match="drutil"):
+        cc.toc_from_drutil("nothing useful here")
+
+
+# --- writing a card ------------------------------------------------------------------------------
+
+
+def make_card(tmp_path):
+    folder = tmp_path / "PIONEER" / "CDJ"
+    folder.mkdir(parents=True)
+    (folder / cc.INDEX_NAME).write_bytes((DATA / "index_three_discs.PDJ").read_bytes())
+    (folder / "CDJ00001.PDJ").write_bytes((DATA / "disc1_full.PDJ").read_bytes())
+    return folder
+
+
+def test_write_card_writes_the_files_then_the_index_and_reads_back(tmp_path):
+    folder = make_card(tmp_path)
+    index, _ = cc.read_card(tmp_path)
+    file = cc.TrackFile.new(index.entries[1].disc_id)
+    file.cues.append(cc.CueEntry.memory(0, 525, track=1))
+    cc.write_card(tmp_path, index, {"CDJ00002": file})
+    again_index, again = cc.read_card(tmp_path)
+    assert again["CDJ00002"].cues == file.cues
+    assert again["CDJ00001"] is not None  # untouched
+    assert again_index.to_bytes() == index.to_bytes()
+    assert sorted(p.name for p in folder.iterdir()) == [
+        "CDJ00001.PDJ",
+        "CDJ00002.PDJ",
+        "CDJINDX0.PDJ",
+    ]  # no temporary file left behind
+
+
+def test_write_card_leaves_the_other_files_exactly_as_they_were(tmp_path):
+    folder = make_card(tmp_path)
+    before = (folder / "CDJ00001.PDJ").read_bytes()
+    index, _ = cc.read_card(tmp_path)
+    file = cc.TrackFile.new(index.entries[2].disc_id)
+    cc.write_card(tmp_path, index, {"CDJ00003": file})
+    assert (folder / "CDJ00001.PDJ").read_bytes() == before
+
+
+def test_write_card_refuses_a_file_the_index_does_not_list(tmp_path):
+    make_card(tmp_path)
+    index, _ = cc.read_card(tmp_path)
+    file = cc.TrackFile.new(index.entries[0].disc_id)
+    with pytest.raises(cc.CardFormatError, match="not in the index"):
+        cc.write_card(tmp_path, index, {"CDJ00099": file})
+
+
+def test_write_card_makes_the_folder_only_when_asked(tmp_path):
+    index = cc.IndexFile()
+    disc = cc.DiscId.from_toc(*toc("CD2_TOC.txt"))
+    entry = index.add(disc)
+    file = cc.TrackFile.new(disc)
+    with pytest.raises(cc.CardFormatError, match="card"):
+        cc.write_card(tmp_path, index, {entry.name: file})
+    cc.write_card(tmp_path, index, {entry.name: file}, create=True)
+    again_index, files = cc.read_card(tmp_path)
+    assert [e.name for e in again_index.entries] == ["CDJ00001"]
+    assert files["CDJ00001"].disc_id.key == disc.key
