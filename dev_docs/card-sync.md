@@ -11,6 +11,63 @@ mapping, merge, plan), `card_discs.py` (a Dubcrate disc's TOC and rekordbox cues
 (`spikes/cdj_card_testimage.py`, `cdj_card_restore.sh`, with two test images made). No file written by
 any of it has been loaded by a player.
 
+## Handover (end of 2026-11-13: read this first)
+
+**State.** Committed by the owner: the card format and its reader/writer (`cdj_card.py`), the cue mapping,
+merge and plan (`card_sync.py`), the library glue (`card_discs.py`), reports (`card_report.py`), the command line
+(`dubcrate card show | backup | sync`), reading rekordbox's cues from its database (`library/rekordbox.py:
+read_cues`), and the spikes. The suite passed (1,438 tests, ruff clean). **Nothing here has been tried on a
+player**, there is **no Sync tab**, and the owner's `TODO.md` is theirs (untouched).
+
+**Waiting on the owner** (they have rekordbox; the agent doesn't):
+1. *Which of rekordbox's cues are which*: for *The Booth*, *Blessings (Original Mix)* and *I Could Be The One
+   (Original Mix)* the database times are in Phase 0 step 3 below. Not answered yet. The mapping `Kind` 0 =
+   memory, 1, 2, 3 = hot A, B, C was read off the library, not documented, and `Kind` 5 (427 tracks, the two
+   loops, often 2 ms from hot C) is not understood. (`cue_from_row` says so.)
+2. *Skip memory cues in the first second of a track?* Most tracks have a `Kind` 0 cue within 0.2 s (the
+   automatic cue point?). The agent's recommendation was to skip them, **after** the answer to 1. Not built.
+
+**The hardware session (the owner, Phase 0 below)**, in order: note the player's **firmware version**; the write
+test with the two images already in `~/cdj-card/` (`t1-cues-swapped-cd1`, `t2-cd2-file-from-scratch`, each
+made from a copy; `cdj_card_restore.sh` writes one to the card, the owner runs it: it needs `sudo`); `drutil toc`
+of a small Dubcrate burn; copy the audio of CD 1 tracks 1 to 3 and CD 2 and 3 track 1 for the waveform fit.
+**Until the write test says the player takes our file, treat every `card sync --yes` as an experiment on an
+imaged card, and do not build the tab on the assumption that it does.** After it: image the card
+(`cdj_card_snap.sh 11-after-t1 /dev/diskN`) and `cdj_card_dump.py dump/diff` to see what the player did to
+our file.
+
+**What an agent can do without hardware**, best first: (1) read a disc's TOC from the drive (`drutil toc` through
+`cdj_card.toc_from_drutil`, a mockable subprocess in one macOS-only helper; then `card sync` can use the real
+TOC instead of computing it, which covers a disc edited after its burn); (2) the Sync tab (the pinned bottom tab
+in `ui/source_tabs.py`, a middle pane, status per disc from `card_sync.Status`, a dry-run list and a
+confirmation before writing, offscreen renders in all three looks, then `manual.md` and screenshots); (3) the
+waveform scale: Ghidra and `openjdk@25` are installed by Homebrew (`analyzeHeadless` is not on `PATH`: look in
+the Caskroom) and the firmware is still `~/Downloads/CDJ1000MK3_061023.EXE`, the `/tmp` extraction is gone
+(`dev_docs/cdj1000mk3-card.md`, "Reproducing the analysis"); or fit it from the card's five waveform records
+against the audio, which needs the owner to copy the tracks; (4) make the preview's waveform show the
+**database** cues (it reads the analysis files, so shows none): small, separate, not asked for yet.
+
+**Guesses in the code, each to be checked and none a measurement**: `DUPLICATE_FRAMES = 2`;
+`toc_from_lengths` for a disc with gaps (and `pregap_sectors`' unit: `burning.md`); `IndexFile.next_name`
+(highest + 1; numbering after a deleted disc is unknown); `write_card(create=True)` (a card with no
+`PIONEER/CDJ`: the player has not been shown one made this way); the flags word `0x0020` in a disc's file; the
+`HC11` length field (0 or 60); the loop's last field `0x00010000`; the hot cue slot numbers (C = 3 never seen).
+
+**Gotchas that cost time**
+- `sudo` needs a real terminal: the agent cannot run `cdj_card_snap.sh` or `cdj_card_restore.sh`, and must never
+  write to the owner's card or mount it (images in `~/cdj-card/` are theirs, outside the repo; so are the
+  `CD1 TOC.txt` etc., with copies in `tests/data/cdj_card/`).
+- `hdiutil attach` gives the image a **different disk number each time**: take it from the command's output.
+  Mount images `readOnly`; `cdj_card_testimage.py` is the only thing that mounts one read-write, and only a copy.
+- `ruff format` re-wraps lines, so a scripted exact-string edit written from memory fails (or, worse, a
+  slice-and-reindent edit mangles a file: it happened to `cli_card.py`): read the region first.
+- rekordbox: to look at its data use `dubcrate --library <scratch> import-rekordbox` (a snapshot copy) and a
+  script with `pyrekordbox.masterdb.MasterDatabase` on `rekordbox._snapshot`: never the live `master.db`.
+- The card's files carry the date 1 Jan 1970 and the player ignores the Mac's `.Spotlight-V100`. Files macOS
+  writes carry today's date: a possible (unproven) reason if the player ignores a test image.
+- The owner would rather not waste discs (a memory note): prefer data already captured; one rewritable disc
+  of test tones if a disc is unavoidable; ask before any burn.
+
 ## Decisions (the owner, 2026-11-13)
 
 1. **Every rekordbox cue becomes a CDJ memory cue**: memory cues, hot cues (A to H) and loops

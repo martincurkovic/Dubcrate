@@ -236,7 +236,7 @@ CD 1 is 12 tracks, CD 2 is 12 tracks, CD 3 is 20.
 | `04-hotcue-A` | + hot cue A at 15 s, track 1 | `HC11` slot A, position 1275 |
 | `05-memorycue-track2-4sec-1min4sec` | + memory cues at 4 s and 1:04, track 2 | positions are disc-wide |
 | `06-hotcueB-track3-2secs` | + hot cue B at 2 s, track 3 (played briefly) | slot number = A 1, B 2; waveform part-filled |
-| `04-memcue-track1-2sec` (misnumbered) | + memory cue at 2 s, track 1 | cues kept in the order set, not sorted |
+| `07-memcue-track1-2sec` (made as `04-`, renamed by the owner) | + memory cue at 2 s, track 1 | cues kept in the order set, not sorted |
 | `08-loop-track1-approx40-42sec` | + a loop, by ear, about 40 to 42 s, track 1 | loop = a `CN11` entry, kind `0x20` |
 | `09-second-cd-nothing-set` | CD 2 loaded, nothing set | an index entry, no file |
 | `10-third-cd-20-tracks` | CD 3 loaded (and, **[inferred]** from the files, track 1 of CD 2 and 3 played) | files for 2 and 3; 20-track ID |

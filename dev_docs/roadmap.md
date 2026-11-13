@@ -347,6 +347,10 @@
 - Mouse drag-and-drop in the window (the drop handling is tested directly, not with a
   real drag).
 - Everything in [burning.md](burning.md) marked **[not tried]**.
+- **Card sync on a real player**: no file written by Dubcrate has been loaded by a CDJ; the cue kinds in
+  rekordbox's database (`Kind` 0 / 1, 2, 3 / 5) were read off one library; a disc's TOC is computed, not read
+  from a burned disc; the player's firmware version is not recorded. See [card-sync.md](card-sync.md) (Handover)
+  and [cdj1000mk3-card.md](cdj1000mk3-card.md) (Gaps).
 
 ## Before making the repository public
 
