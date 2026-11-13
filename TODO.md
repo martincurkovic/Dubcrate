@@ -25,7 +25,7 @@
 - [ ] Run build.yml in CI (bundled ffmpeg, smoke test, does PySide6 import on macOS 15?)
 - [ ] Hardware checks on the Mac: burn window, MP3 disc
 - [ ] Homebrew packaging once first release public
-- [ ] Fix About window resizing, layout, blurry icon
+- [x] Fix About window resizing, layout, blurry icon
 - [x] Screenshot staging
   - [ ] Maybe use some real songs, not fake ones
 - [ ] Clean up user facing docs (readme, user guide)

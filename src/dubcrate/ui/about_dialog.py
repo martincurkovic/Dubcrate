@@ -50,6 +50,30 @@ class NoticesDialog(QDialog):
         style_markdown(self.viewer.document())
 
 
+ABOUT_WIDTH = (
+    460  # the text column's width: the window is as wide as this and the margins
+)
+LOGO_SIZE = 80  # the icon's size in points (it is drawn at the screen's real pixels)
+
+
+def logo_pixmap(path: Path, size: int, ratio: float) -> QPixmap:
+    """The icon `size` points square, made of `size * ratio` real pixels and marked with that
+    ratio, so a Retina screen shows it sharp instead of stretching a small picture. Null if the
+    file can't be read."""
+    pixmap = QPixmap(str(path))
+    if pixmap.isNull():
+        return pixmap
+    side = round(size * ratio)
+    pixmap = pixmap.scaled(
+        side,
+        side,
+        Qt.AspectRatioMode.KeepAspectRatio,
+        Qt.TransformationMode.SmoothTransformation,
+    )
+    pixmap.setDevicePixelRatio(ratio)
+    return pixmap
+
+
 class AboutDialog(QDialog):
     def __init__(
         self, parent: QWidget | None, checker: UpdateChecker, icon: Path | None
@@ -58,29 +82,37 @@ class AboutDialog(QDialog):
         self.setWindowTitle("About Dubcrate")
         self._checker = checker
         layout = QVBoxLayout(self)
-        layout.setSpacing(8)
+        layout.setSpacing(12)
+        # a fixed size: the text wraps at a set width, so the window is exactly as tall as it needs,
+        # and cannot be dragged smaller than its text
+        layout.setSizeConstraint(QVBoxLayout.SizeConstraint.SetFixedSize)
 
+        # the icon at the top left, the name beside it and the version just under the name
+        header = QHBoxLayout()
+        header.setSpacing(16)
+        self.logo: QLabel | None = None
         if icon is not None:
-            logo = QLabel()
-            pixmap = QPixmap(str(icon))
+            pixmap = logo_pixmap(icon, LOGO_SIZE, self.devicePixelRatioF())
             if not pixmap.isNull():
-                logo.setPixmap(
-                    pixmap.scaled(
-                        96,
-                        96,
-                        Qt.AspectRatioMode.KeepAspectRatio,
-                        Qt.TransformationMode.SmoothTransformation,
-                    )
-                )
-                logo.setAlignment(Qt.AlignmentFlag.AlignCenter)
-                layout.addWidget(logo)
-        self.name_label = QLabel("<b>Dubcrate</b>")
-        self.name_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(self.name_label)
+                self.logo = QLabel()
+                self.logo.setPixmap(pixmap)
+                self.logo.setFixedSize(LOGO_SIZE, LOGO_SIZE)
+                header.addWidget(self.logo, 0, Qt.AlignmentFlag.AlignTop)
+        titles = QVBoxLayout()
+        titles.setSpacing(2)
+        # (the size is in the text: the theme's stylesheet decides a label's font and would
+        # override a QFont set here)
+        self.name_label = QLabel(
+            '<span style="font-size:22pt; font-weight:bold">Dubcrate</span>'
+        )
         self.version_label = QLabel(f"Version {app_version()}")
         self.version_label.setObjectName("mutedLabel")
-        self.version_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(self.version_label)
+        titles.addStretch()
+        titles.addWidget(self.name_label)
+        titles.addWidget(self.version_label)
+        titles.addStretch()
+        header.addLayout(titles, 1)
+        layout.addLayout(header)
 
         body = QLabel(
             "Burn audio CDs for old-style CDJs from your DJ library.<br>"
@@ -88,18 +120,16 @@ class AboutDialog(QDialog):
             "rekordbox, Pioneer DJ, AlphaTheta and CDJ are trademarks of their owners; Apple and "
             "Macintosh are trademarks of Apple Inc. This project is not affiliated with any of them."
         )
-        body.setWordWrap(True)
-        body.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(body)
         credits = QLabel(
             "The Macintosh System 6 theme is an homage; its font, ChiKareGo2, is by Giles Booth "
             "(CC BY). The licences of everything else Dubcrate includes are under "
             "Third-Party Notices."
         )
         credits.setObjectName("mutedLabel")
-        credits.setWordWrap(True)
-        credits.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(credits)
+        for text in (body, credits):
+            text.setWordWrap(True)
+            text.setFixedWidth(ABOUT_WIDTH)
+            layout.addWidget(text)
 
         buttons = QHBoxLayout()
         buttons.addStretch()
@@ -113,9 +143,7 @@ class AboutDialog(QDialog):
         close.setDefault(True)
         close.clicked.connect(self.accept)
         buttons.addWidget(close)
-        buttons.addStretch()
         layout.addLayout(buttons)
-        self.setMinimumWidth(480)
         self.notices: NoticesDialog | None = None
 
     def show_notices(self) -> None:

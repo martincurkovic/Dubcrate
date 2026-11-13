@@ -3,10 +3,11 @@
 import threading
 import time
 import urllib.error
+from pathlib import Path
 
 import pytest
 from PySide6.QtCore import QUrl
-from PySide6.QtWidgets import QMessageBox
+from PySide6.QtWidgets import QLabel, QMessageBox
 
 from dubcrate import settings, updates
 from dubcrate.library import Library
@@ -275,6 +276,51 @@ def test_about_says_what_the_app_is_and_who_it_is_not(qapp):
     joined = " ".join(label.text() for label in text)
     assert "General Public License" in joined and "not affiliated" in joined
     assert "ChiKareGo2" in joined and "Third-Party Notices" in joined
+
+
+def test_about_has_the_icon_top_left_with_the_name_beside_it_and_the_version_under(
+    qapp,
+):
+    from dubcrate.ui.version import icon_path
+
+    dialog = AboutDialog(None, UpdateChecker(None), icon_path())
+    dialog.show()
+    qapp.processEvents()
+
+    def box(widget):
+        return widget.mapTo(dialog, widget.rect().topLeft()), widget.size()
+
+    (logo_at, logo_size) = box(dialog.logo)
+    (name_at, name_size) = box(dialog.name_label)
+    (version_at, _) = box(dialog.version_label)
+    assert logo_at.x() < 30 and logo_at.y() < 30  # top left
+    assert name_at.x() >= logo_at.x() + logo_size.width()  # to the right of the icon
+    assert logo_at.y() <= name_at.y() < logo_at.y() + logo_size.height()  # beside it
+    assert version_at.y() >= name_at.y() + name_size.height()  # just below the name
+    assert version_at.x() == name_at.x()
+    dialog.close()
+
+
+def test_about_is_exactly_as_big_as_its_text_and_cannot_be_dragged_smaller(qapp):
+    dialog = AboutDialog(None, UpdateChecker(None), None)
+    dialog.show()
+    qapp.processEvents()
+    assert dialog.minimumSize() == dialog.maximumSize() == dialog.size()
+    for label in dialog.findChildren(QLabel):
+        assert label.height() >= label.heightForWidth(label.width()) or not label.wordWrap()  # fmt: skip
+    dialog.close()
+
+
+def test_the_about_icon_is_made_of_real_pixels_for_a_sharp_screen(qapp):
+    from dubcrate.ui.version import icon_path
+
+    for ratio in (1.0, 2.0):
+        pixmap = about_dialog.logo_pixmap(icon_path(), 80, ratio)
+        assert (
+            pixmap.width() == round(80 * ratio) and pixmap.devicePixelRatio() == ratio
+        )
+        assert pixmap.deviceIndependentSize().width() == 80
+    assert about_dialog.logo_pixmap(Path("/no/such/icon.png"), 80, 2.0).isNull()
 
 
 def test_about_opens_the_notices(qapp):
