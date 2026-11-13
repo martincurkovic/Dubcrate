@@ -82,7 +82,8 @@ def tool_version(tool: Tool) -> str:
             [str(tool.path), "-version"],
             check=False,
             capture_output=True,
-            text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=10,
         )
     except (OSError, subprocess.SubprocessError):

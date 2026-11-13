@@ -79,6 +79,21 @@ Docker on a Mac, Ubuntu 24.04, cdrdao 1.2.4: findings, all **[tests]** (not hard
   Sound, a real window manager, HiDPI, Wayland and printing are **[not tried]**.
 - The next step is [linux-test-plan.md](linux-test-plan.md), on a real Linux machine.
 
+## Windows: the first CI run (2026-11-13)
+
+15 of 1,242 tests failed on `windows-latest` (and the run took 26 minutes, see below). **[tests]** only; nothing
+was run on a Windows desktop or drive. What they showed:
+- **A real bug:** `probe` decoded ffprobe's UTF-8 output with the system code page (cp1252), so accents in tags
+  became mojibake. Fixed everywhere a tool's output is read (`encoding="utf-8", errors="replace"`).
+- Tests that assumed a POSIX system, now portable: `:` as the path separator, `/` in paths, `os.access` and
+  the executable bit, `str(path)` against Qt's forward slashes, `read_text()` without an encoding, shell
+  script stand-ins (skipped on Windows).
+- The cdrdao TOC writes a Windows path with its backslashes as `\134` octal escapes, which is valid TOC
+  syntax; whether a Windows cdrdao wants backslashes, forward slashes or Cygwin paths is **[not tried]**.
+- **Slowness, on every OS:** the suite left every window alive (over 1,000 top-level widgets by the end), and
+  every theme change restyled all of them. Now deleted after each test: the full suite takes about 100 s on a
+  Mac (it was 275 s) and a theme test 0.04 s (it was 11 s).
+
 ## Roadmap
 
 ### Phase 0: groundwork (no behaviour change, no drive needed): done 2026-11-13

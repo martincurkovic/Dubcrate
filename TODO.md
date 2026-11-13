@@ -10,6 +10,7 @@
 - [x] Support for adding other folder locations in track browser
   - [x] Think about how waveform analysis might look tho
 - [ ] Mixxx library support
+- [ ] Audio normalisation setting?
 - [ ] Engine DJ library support
 - [ ] Bundle dependencies (ffmpeg, et. al)
 - [ ] Homebrew packaging once first release public

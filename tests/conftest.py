@@ -32,6 +32,9 @@ def qapp():
     app = QApplication.instance() or QApplication([])
     app.setOrganizationName("DubcrateTests")
     app.setApplicationName("DubcrateTests")
+    # Closing the last window must not quit the app: once it has, every new QEventLoop returns at once
+    # (the windows are deleted after each test, see _no_windows_left_behind)
+    app.setQuitOnLastWindowClosed(False)
     theme.apply_to_app(app, "dark")
     return app
 
@@ -59,11 +62,8 @@ def wait_for(qapp):
     return wait
 
 
-@pytest.fixture(scope="session", autouse=True)
-def _destroy_qt_widgets_before_exit():
-    """Windows the tests leave behind are torn down by PySide at interpreter exit, and that order can
-    segfault inside Shiboken after every test passed. Delete them while the event loop is still whole."""
-    yield
+def _destroy_widgets(rounds: int = 1) -> None:
+    """Close and delete every top-level widget, running the deletions while the event loop is whole."""
     import gc
 
     from PySide6.QtCore import QCoreApplication, QEvent
@@ -72,13 +72,32 @@ def _destroy_qt_widgets_before_exit():
     app = QApplication.instance()
     if app is None:
         return
-    for _ in range(3):
+    for _ in range(rounds):
         for widget in app.topLevelWidgets():
             widget.close()
             widget.deleteLater()
         QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
         app.processEvents()
         gc.collect()
+
+
+@pytest.fixture(autouse=True)
+def _no_windows_left_behind(qapp):
+    """Delete the windows a test leaves behind, as the test ends. Left alone they pile up (over a
+    thousand top-level widgets by the end of the suite), and every theme change restyles all of them:
+    a `setStyleSheet` that takes 0.04 s early on took 11 s late, which on a slow CI machine ran past the
+    job's time limit. Declared before any test fixture, so it is torn down after them (a fixture that
+    closes its own window has already done so)."""
+    yield
+    _destroy_widgets()
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _destroy_qt_widgets_before_exit():
+    """Windows the tests leave behind are torn down by PySide at interpreter exit, and that order can
+    segfault inside Shiboken after every test passed. Delete them while the event loop is still whole."""
+    yield
+    _destroy_widgets(rounds=3)
 
 
 class FakeAudioDevice:

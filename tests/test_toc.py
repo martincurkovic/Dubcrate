@@ -2,6 +2,7 @@ from pathlib import Path
 
 from dubcrate.burn.base import Disc, DiscTrack
 from dubcrate.burn.cdrdao import build_toc
+from dubcrate.cd import cdtext_toc_escape
 
 
 def _disc() -> Disc:
@@ -21,7 +22,7 @@ def test_toc_structure():
     assert toc.count("TRACK AUDIO") == 2
     assert 'TITLE "Warm Up"' in toc
     assert 'PERFORMER "DJ Test"' in toc
-    assert f'FILE "{Path("/tmp/a.wav").resolve()}" 0' in toc
+    assert f'FILE "{cdtext_toc_escape(str(Path("/tmp/a.wav").resolve()))}" 0' in toc
     assert 'TITLE "Caf\\351"' in toc
 
 

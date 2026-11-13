@@ -1118,7 +1118,9 @@ def test_help_menu_opens_the_log_folder(window, monkeypatch, tmp_path):
     )
     win.act_show_log.trigger()
     assert (tmp_path / "logs").is_dir()  # made, so there is something to open
-    assert [u.toLocalFile() for u in opened] == [str(tmp_path / "logs")]
+    assert [Path(u.toLocalFile()) for u in opened] == [
+        tmp_path / "logs"
+    ]  # (Qt gives "/", Windows paths use "\\")
 
 
 def dots(win):

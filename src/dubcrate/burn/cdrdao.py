@@ -105,7 +105,8 @@ def scan_devices() -> list[tuple[str, str]]:
         [exe, "scanbus"],
         check=False,
         capture_output=True,
-        text=True,
+        encoding="utf-8",
+        errors="replace",
         stdin=subprocess.DEVNULL,
     )
     pairs = []
@@ -238,7 +239,8 @@ class CdrdaoBurner:
                 [exe, "disk-info", "--device", device],
                 check=False,
                 capture_output=True,
-                text=True,
+                encoding="utf-8",
+                errors="replace",
                 stdin=subprocess.DEVNULL,
                 timeout=60,
             )
@@ -305,7 +307,8 @@ class CdrdaoBurner:
             stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
-            text=True,
+            encoding="utf-8",
+            errors="replace",
         )
         assert proc.stdout is not None
         seen: list[str] = []

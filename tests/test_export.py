@@ -10,6 +10,7 @@ from dubcrate import export
 from dubcrate.build import BuildError, plan_burn
 from dubcrate.burn import cdrdao
 from dubcrate.burn.base import Disc, DiscTrack
+from dubcrate.cd import cdtext_toc_escape
 from dubcrate.export import ExportError, export_plan, new_export_folder, wav_name
 from dubcrate.iso import find_iso_tool
 from dubcrate.library import Library
@@ -74,7 +75,9 @@ def test_the_toc_can_name_files_relative_to_where_it_is_written(tmp_path):
     disc = Disc("T", "P", [DiscTrack(tmp_path / "01 A.wav", "A", "P", 150)])
     relative = cdrdao.build_toc(disc, relative_to=tmp_path)
     assert 'FILE "01 A.wav" 0' in relative and str(tmp_path) not in relative
-    assert str(tmp_path.resolve()) in cdrdao.build_toc(disc)  # unchanged without it
+    assert cdtext_toc_escape(str(tmp_path.resolve())) in cdrdao.build_toc(
+        disc
+    )  # unchanged without it
 
 
 # -- the real thing -------------------------------------------------------------------------
@@ -133,7 +136,7 @@ def test_an_mp3_disc_exports_its_folder_with_the_readme_outside_it(lib, tmp_path
     else:
         assert result.iso is None and "No disc.iso was made" in readme
     files = sorted(p.name for p in result.disc_folder.iterdir())
-    assert files == ["01 Same - Alpha.mp3", "02 Zoë - Café Beta Remix.mp3"]  # fmt: skip
+    assert files == ["01 Same - Alpha.mp3", "02 Zo\u00eb - Caf\u00e9 Beta Remix.mp3"]  # fmt: skip
     assert not (
         result.disc_folder / "README.txt"
     ).exists()  # it must not end up on the disc

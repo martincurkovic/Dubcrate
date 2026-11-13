@@ -86,7 +86,11 @@ def probe(path: Path) -> SourceInfo:
          ":format=duration,bit_rate:format_tags"),
         "-of", "json", str(path),
     ]  # fmt: skip
-    proc = subprocess.run(cmd, check=False, capture_output=True, text=True)
+    # (ffprobe writes UTF-8; `text=True` alone would decode it with the system's code page, so on Windows
+    # an accent in a tag came out as mojibake)
+    proc = subprocess.run(
+        cmd, check=False, capture_output=True, encoding="utf-8", errors="replace"
+    )
     if proc.returncode != 0:
         raise RenderError(f"ffprobe failed for {path}: {proc.stderr.strip()}")
     data = json.loads(proc.stdout)
@@ -200,7 +204,9 @@ def render_mp3(
         cmd += ["-c:a", "libmp3lame", "-b:a", f"{rate}k", "-ar", "44100", "-ac", "2"]
     cmd += ["-id3v2_version", "3", "-write_id3v1", "1", "-f", "mp3", str(dst)]
     dst.parent.mkdir(parents=True, exist_ok=True)
-    proc = subprocess.run(cmd, check=False, capture_output=True, text=True)
+    proc = subprocess.run(
+        cmd, check=False, capture_output=True, encoding="utf-8", errors="replace"
+    )
     if proc.returncode != 0 or not dst.exists() or dst.stat().st_size == 0:
         dst.unlink(missing_ok=True)
         raise RenderError(

@@ -225,6 +225,23 @@ def test_the_first_tab_is_picked_and_the_others_can_be(qapp):
     assert bar.current() == "library" and seen[-1] == ("library", "library")
 
 
+def test_a_tab_picked_just_before_the_bar_goes_away_is_not_revealed_afterwards(
+    qapp, capsys
+):
+    """Picking a tab schedules a scroll-into-view for a moment later; the bar may be gone by then,
+    which must not raise (the app's exception hook would log it as an uncaught error)."""
+    from PySide6.QtCore import QCoreApplication, QEvent
+
+    bar = SourceTabBar()
+    bar.add_tab("library", "Library", library_glyph)
+    bar.add_tab("explorer", "Explorer", explorer_glyph)
+    bar.set_current("explorer")  # schedules the reveal
+    bar.deleteLater()
+    QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+    qapp.processEvents()  # the scheduled call comes due
+    assert "already deleted" not in capsys.readouterr().err
+
+
 def test_the_tabs_paint_in_every_look(qapp):
     from dubcrate.ui import theme
 

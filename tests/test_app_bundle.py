@@ -14,15 +14,18 @@ from dubcrate.ui import app, smoke_test, version
 
 def test_homebrews_folders_are_added_to_the_path_of_an_app_started_from_finder():
     # Finder gives an app only /usr/bin:/bin:/usr/sbin:/sbin, and ffmpeg lives in Homebrew's
-    path = app.extend_tool_path("/usr/bin:/bin:/usr/sbin:/sbin")
+    system = ["/usr/bin", "/bin", "/usr/sbin", "/sbin"]
+    path = app.extend_tool_path(
+        os.pathsep.join(system)
+    )  # (the function splits on the system's separator)
     folders = path.split(os.pathsep)
-    assert folders[:4] == ["/usr/bin", "/bin", "/usr/sbin", "/sbin"]
+    assert folders[:4] == system
     assert "/opt/homebrew/bin" in folders and "/usr/local/bin" in folders
 
 
 def test_the_users_own_order_wins_and_nothing_is_added_twice():
-    path = app.extend_tool_path("/usr/local/bin:/usr/bin:/opt/homebrew/bin")
-    assert path == "/usr/local/bin:/usr/bin:/opt/homebrew/bin"
+    given = os.pathsep.join(["/usr/local/bin", "/usr/bin", "/opt/homebrew/bin"])
+    assert app.extend_tool_path(given) == given
     assert app.extend_tool_path("").split(os.pathsep)[0] != ""  # (no empty first entry)
 
 

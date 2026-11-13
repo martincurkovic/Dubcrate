@@ -56,11 +56,11 @@ def build_iso(folder: Path, volume: str, out: Path) -> Path:
 
     `folder` and what is in it are only read. Raises `IsoError`.
     """
+    if not folder.is_dir():
+        raise IsoError(f"“{folder}” is not a folder.")
     tool = find_iso_tool()
     if tool is None:
         raise IsoError(missing_message())
-    if not folder.is_dir():
-        raise IsoError(f"“{folder}” is not a folder.")
     out.unlink(missing_ok=True)
     if tool.name == "hdiutil":
         cmd = [str(tool.path), "makehybrid", "-iso", "-joliet", "-default-volume-name", volume, "-o", str(out), str(folder)]  # fmt: skip
@@ -68,7 +68,7 @@ def build_iso(folder: Path, volume: str, out: Path) -> Path:
         cmd = [str(tool.path), "-as", "mkisofs", "-quiet", "-J", "-r", "-V", volume, "-o", str(out), str(folder)]  # fmt: skip
     else:
         cmd = [str(tool.path), "-quiet", "-J", "-r", "-V", volume, "-o", str(out), str(folder)]  # fmt: skip
-    proc = subprocess.run(cmd, check=False, capture_output=True, text=True, stdin=subprocess.DEVNULL)  # fmt: skip
+    proc = subprocess.run(cmd, check=False, capture_output=True, encoding="utf-8", errors="replace", stdin=subprocess.DEVNULL)  # fmt: skip
     if (
         not out.exists()
         and tool.name == "hdiutil"

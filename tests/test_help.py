@@ -174,7 +174,7 @@ def test_the_settings_tabs_the_guide_names_exist(qapp):
 
 def test_the_column_menu_item_the_guide_names_exists():
     assert "Reset Columns" in MANUAL
-    source = (MANUAL_PATH.parent.parent / "main_window.py").read_text()
+    source = (MANUAL_PATH.parent.parent / "main_window.py").read_text(encoding="utf-8")
     assert '"Reset Columns"' in source
 
 

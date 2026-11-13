@@ -350,7 +350,9 @@ class SourceTabBar(QWidget):
     def _picked(self, key: str) -> None:
         self._current = key  # (before saying so: a listener asks `current()`)
         # (a moment later: a tab added just now has not been laid out yet)
-        QTimer.singleShot(0, lambda: self._reveal(key))
+        QTimer.singleShot(
+            0, self, lambda: self._reveal(key)
+        )  # (dropped if the bar is gone by then)
         self.current_changed.emit(key)
 
     def current(self) -> str:

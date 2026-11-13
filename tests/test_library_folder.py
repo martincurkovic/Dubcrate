@@ -1,5 +1,6 @@
 import shutil
 import subprocess
+from pathlib import Path
 
 import pytest
 
@@ -52,7 +53,7 @@ def test_scan_reads_tags_and_builds_the_directory_tree(tmp_path):
     (tmp_path / "Empty").mkdir()
     scan = scan_folder(tmp_path)
     assert not scan.errors
-    by_name = {t.path.rsplit("/", 1)[1]: t for t in scan.tracks}
+    by_name = {Path(t.path).name: t for t in scan.tracks}
     one = by_name["one.flac"]
     assert (one.title, one.artist, one.genre, one.year) == ("One", "Me", "House", 2024)
     assert (one.bpm, one.key, one.comment) == (128.0, "8A", "hi")
@@ -80,7 +81,7 @@ def test_unreadable_files_are_reported_not_fatal(tmp_path):
     touch(tmp_path / "broken.mp3")
     scan = scan_folder(tmp_path)
     assert [t.title for t in scan.tracks] == ["good"]
-    assert [p.rsplit("/", 1)[1] for p, _ in scan.errors] == ["broken.mp3"]
+    assert [Path(p).name for p, _ in scan.errors] == ["broken.mp3"]
     assert all("broken.mp3" not in e for n in scan.nodes for e in n.track_ext_ids)
 
 
@@ -120,4 +121,4 @@ def test_a_corrupt_flac_that_probes_cleanly_is_still_unreadable(tmp_path):
     touch(tmp_path / "corrupt.flac")  # ffprobe exits 0 for this but finds no audio
     scan = scan_folder(tmp_path)
     assert [t.title for t in scan.tracks] == ["good"]
-    assert [p.rsplit("/", 1)[1] for p, _ in scan.errors] == ["corrupt.flac"]
+    assert [Path(p).name for p, _ in scan.errors] == ["corrupt.flac"]

@@ -42,8 +42,9 @@ def test_a_tool_on_path_is_found_and_says_so(nowhere, tmp_path, monkeypatch):
 
 
 def test_the_bundled_copy_wins_over_path(nowhere, tmp_path, monkeypatch):
-    bundled = _fake_tool(tmp_path / "bundle", "ffmpeg")
-    on_path = _fake_tool(tmp_path / "usr", "ffmpeg")
+    name = tools._file_name("ffmpeg")  # (ffmpeg.exe on Windows)
+    bundled = _fake_tool(tmp_path / "bundle", name)
+    on_path = _fake_tool(tmp_path / "usr", name)
     monkeypatch.setattr(tools, "BUNDLE_DIR", bundled.parent)
     monkeypatch.setattr(tools.shutil, "which", lambda _name: str(on_path))
     found = tools.find_tool("ffmpeg")
@@ -51,6 +52,7 @@ def test_the_bundled_copy_wins_over_path(nowhere, tmp_path, monkeypatch):
     assert found.source == "bundled with Dubcrate"
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="Windows has no executable bit")
 def test_a_bundled_file_that_is_not_executable_is_skipped(nowhere, tmp_path, monkeypatch):  # fmt: skip
     bundled = _fake_tool(tmp_path / "bundle", "ffmpeg", mode=0o644)
     monkeypatch.setattr(tools, "BUNDLE_DIR", bundled.parent)
@@ -141,3 +143,24 @@ def test_a_bundled_tool_is_an_exe_on_windows(nowhere, tmp_path, monkeypatch):
     assert tools.find_tool("ffmpeg") is None
     exe = _fake_tool(tmp_path, "ffmpeg.exe")
     assert tools.find_tool("ffmpeg").path == exe
+
+
+def test_tool_output_is_read_as_utf8_not_the_systems_code_page(monkeypatch, tmp_path):
+    """ffprobe writes UTF-8. Decoded with the system's code page (cp1252 on Windows) an accent in a
+    tag came out as mojibake ("Zoë" as "ZoÃ«"), found by the Windows CI run."""
+    import subprocess
+
+    from dubcrate import render
+
+    seen = {}
+
+    def fake_run(cmd, **kwargs):
+        seen.update(kwargs)
+        out = '{"streams": [{}], "format": {"duration": "1.0", "tags": {"artist": "Zoë"}}}'
+        return subprocess.CompletedProcess(cmd, 0, stdout=out, stderr="")
+
+    monkeypatch.setattr(render.subprocess, "run", fake_run)
+    monkeypatch.setattr(render, "_require", lambda name: name)
+    assert render.probe(tmp_path / "a.mp3").artist == "Zoë"
+    assert seen["encoding"] == "utf-8" and seen["errors"] == "replace"
+    assert "text" not in seen  # (text=True alone is what used the code page)
