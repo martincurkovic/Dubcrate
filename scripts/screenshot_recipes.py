@@ -354,11 +354,11 @@ def _labels(ctx):
     window.print_labels(ctx.demo.discs["peak"])
     dialog = window.label_dialog
     dialog.resize(1120, 780)
-    for row in range(
-        dialog.disc_list.count()
-    ):  # two discs share a page, as they would on sticker paper
-        if "Friday" in dialog.disc_list.item(row).text():
-            dialog.disc_list.item(row).setCheckState(Qt.CheckState.Checked)
+    for (
+        item
+    ) in dialog._disc_items():  # two discs share a page, as they would on sticker paper
+        if "Friday" in item.text(0):
+            item.setCheckState(0, Qt.CheckState.Checked)
     ctx.settle(10)
     return _over(window, dialog)
 

@@ -51,17 +51,16 @@ def discs(lib, ids):
 
 
 def tick(dialog, *disc_ids):
-    for i in range(dialog.disc_list.count()):
-        item = dialog.disc_list.item(i)
-        on = item.data(Qt.ItemDataRole.UserRole) in disc_ids
-        item.setCheckState(Qt.CheckState.Checked if on else Qt.CheckState.Unchecked)
+    for item in dialog._disc_items():
+        on = item.data(0, Qt.ItemDataRole.UserRole) in disc_ids
+        item.setCheckState(0, Qt.CheckState.Checked if on else Qt.CheckState.Unchecked)
 
 
 def test_every_disc_is_listed_and_the_picked_one_is_ticked(qapp, lib, discs):
     one = discs[0]
     dialog = LabelDialog(lib, picked=one)
-    names = [dialog.disc_list.item(i).text() for i in range(dialog.disc_list.count())]
-    assert names == ["One  (6)", "Two  (6)", "Empty  (0)", "Data  (2)  MP3"]
+    names = [i.text(0) for i in dialog._disc_items()]
+    assert names == ["Data  (2)  MP3", "Empty  (0)", "One  (6)", "Two  (6)"]  # A to Z
     assert [d.id for d in dialog.ticked_discs()] == [one]
 
 
@@ -69,6 +68,137 @@ def test_an_empty_disc_is_not_ticked_for_you(qapp, lib, discs):
     dialog = LabelDialog(lib, picked=discs[2])
     assert dialog.ticked_discs() == []
     assert not dialog.print_button.isEnabled() and not dialog.pdf_button.isEnabled()
+
+
+def tree_shape(dialog):
+    """The picker as nested (text, children) pairs."""
+
+    def shape(item):
+        return (item.text(0), [shape(item.child(r)) for r in range(item.childCount())])
+
+    tree = dialog.disc_tree
+    return [shape(tree.topLevelItem(r)) for r in range(tree.topLevelItemCount())]
+
+
+@pytest.fixture
+def filed(lib, ids):
+    """Sets / (Friday, Saturday / Late), Spare, and discs at the top: Zed and Alpha."""
+    sets = lib.create_disc_folder("Sets")
+    late = lib.create_disc_folder("Late", parent_id=sets)
+    lib.create_disc_folder("Nothing in here")
+    made = {}
+    for name, folder in (
+        ("Friday", sets),
+        ("Saturday", late),
+        ("Sunday", late),
+        ("Zed", None),
+        ("Alpha", None),
+    ):
+        disc = lib.create_disc(name)
+        lib.add_to_disc(disc, ids[:3])
+        if folder is not None:
+            lib.move_disc(disc, folder)
+        made[name] = disc
+    blank = lib.create_disc("Blank")  # no tracks
+    lib.move_disc(blank, late)
+    made["Blank"] = blank
+    return made
+
+
+def test_the_discs_are_shown_in_the_folders_that_hold_them(qapp, lib, filed):
+    dialog = LabelDialog(lib)
+    assert tree_shape(dialog) == [
+        (
+            "Sets",
+            [
+                (
+                    "Late",
+                    [("Blank  (0)", []), ("Saturday  (3)", []), ("Sunday  (3)", [])],
+                ),
+                ("Friday  (3)", []),
+            ],
+        ),  # folders first, then discs, each A to Z, as in the Discs list
+        ("Alpha  (3)", []),
+        ("Zed  (3)", []),
+    ]  # (and no "Nothing in here": a folder with no disc is left out)
+    assert dialog.disc_tree.topLevelItem(
+        0
+    ).isExpanded()  # opened, so every disc is in view
+
+
+def test_a_folder_that_holds_only_discs_with_no_tracks_has_no_tick_box(qapp, lib):
+    folder = lib.create_disc_folder("Ideas")
+    disc = lib.create_disc("Empty")
+    lib.move_disc(disc, folder)
+    dialog = LabelDialog(lib)
+    item = dialog.disc_tree.topLevelItem(0)
+    assert item.text(0) == "Ideas" and item.child(0).text(0) == "Empty  (0)"
+    assert item.checkState(0) == Qt.CheckState.Unchecked  # (no box is drawn)
+    assert not item.flags() & Qt.ItemFlag.ItemIsUserCheckable
+    assert not item.child(0).flags() & Qt.ItemFlag.ItemIsUserCheckable
+
+
+def test_ticking_a_folder_ticks_every_disc_in_it_and_leaves_empty_ones(
+    qapp, lib, filed
+):
+    dialog = LabelDialog(lib)
+    sets = dialog.disc_tree.topLevelItem(0)
+    sets.setCheckState(0, Qt.CheckState.Checked)
+    assert [d.name for d in dialog.ticked_discs()] == ["Saturday", "Sunday", "Friday"]
+    late = sets.child(0)
+    assert late.checkState(0) == Qt.CheckState.Checked  # the folder inside it too
+    assert (
+        late.child(0).checkState(0) == Qt.CheckState.Unchecked
+    )  # Blank: nothing to print
+    sets.setCheckState(0, Qt.CheckState.Unchecked)
+    assert dialog.ticked_discs() == []
+
+
+def test_a_folder_shows_when_only_some_of_its_discs_are_ticked(qapp, lib, filed):
+    dialog = LabelDialog(lib)
+    sets = dialog.disc_tree.topLevelItem(0)
+    late = sets.child(0)
+    tick(dialog, filed["Saturday"])
+    assert late.checkState(0) == Qt.CheckState.PartiallyChecked
+    assert sets.checkState(0) == Qt.CheckState.PartiallyChecked
+    tick(dialog, filed["Saturday"], filed["Sunday"])
+    assert late.checkState(0) == Qt.CheckState.Checked
+    assert sets.checkState(0) == Qt.CheckState.PartiallyChecked  # Friday is still out
+    tick(dialog, filed["Saturday"], filed["Sunday"], filed["Friday"])
+    assert sets.checkState(0) == Qt.CheckState.Checked
+    tick(dialog)
+    assert sets.checkState(0) == Qt.CheckState.Unchecked
+
+
+def test_ticking_a_folder_plans_the_labels_once(qapp, lib, filed, monkeypatch):
+    dialog = LabelDialog(lib)
+    planned = []
+    real = dialog.refresh
+    monkeypatch.setattr(dialog, "refresh", lambda *a: (planned.append(1), real(*a))[1])
+    dialog.disc_tree.topLevelItem(0).setCheckState(0, Qt.CheckState.Checked)
+    assert len(planned) == 1  # not once for each disc the tick reached
+
+
+def test_all_and_none_tick_every_disc_that_has_tracks(qapp, lib, filed):
+    dialog = LabelDialog(lib)
+    dialog._tick_all(Qt.CheckState.Checked)
+    assert sorted(d.name for d in dialog.ticked_discs()) == [
+        "Alpha", "Friday", "Saturday", "Sunday", "Zed",
+    ]  # fmt: skip
+    assert dialog.disc_tree.topLevelItem(0).checkState(0) == Qt.CheckState.Checked
+    dialog._tick_all(Qt.CheckState.Unchecked)
+    assert dialog.ticked_discs() == []
+    assert dialog.disc_tree.topLevelItem(0).checkState(0) == Qt.CheckState.Unchecked
+
+
+def test_the_label_is_still_titled_with_the_folders_the_disc_is_in(qapp, lib, filed):
+    dialog = LabelDialog(lib, picked=filed["Saturday"])
+    assert dialog.ticked_discs()[0].name == "Saturday"
+    assert label_dialog.disc_paths(lib)[filed["Saturday"]] == "Sets / Late / Saturday"
+    headings = [placed.label.heading for page in dialog._pages for placed in page]
+    assert headings == [
+        "Sets / Late / Saturday"
+    ]  # (printed as before: the sticker has no tree)
 
 
 def test_discs_in_folders_are_named_with_their_path(qapp, lib, ids):
@@ -506,7 +636,7 @@ def test_the_messages_have_room_set_aside_so_nothing_moves_when_they_come(
         dialog.outline_check,
         dialog.summary_label,
         dialog.problems_label,
-        dialog.disc_list,
+        dialog.disc_tree,
     )
     before = [w.geometry() for w in controls]
     dialog.height_spin.setValue(20)  # a warning appears (see the test above)

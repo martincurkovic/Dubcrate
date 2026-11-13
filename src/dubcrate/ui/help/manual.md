@@ -335,7 +335,7 @@ Old players have no screen for a track list, so Dubcrate can print one for the c
 
 ![The label window: two discs on one sheet, with the settings on the left](screenshots/labels.png "The label window")
 
-1. **Tick the discs** to print, on the left. The disc you opened is ticked already. **All** and **None** tick or clear the list.
+1. **Tick the discs** to print, on the left. They are listed in the folders you filed them in, as in the Discs list (folders first, then discs, each A to Z; a folder with no disc in it is left out). Ticking a **folder** ticks every disc inside it, and a folder shows a filled box when only some of its discs are ticked. The disc you opened is ticked already. A disc with no tracks is shown but can't be ticked. **All** and **None** tick or clear the list. Labels are printed in the order shown, and each is headed with the disc's name and the folders it is in (for example *Sets / Friday / Opening*).
 2. Choose the **Paper**: A3, A4, A5, A6, US Letter or US Legal.
 3. Type the size of one label: **Label width** and **Label height**, in millimetres. 100 × 50 is a good start for a case.
 4. **Font size** is **Auto** (the text as large as fits, up to a limit, so a short list isn't blown up) unless you choose a size in points. The line under the settings says what Auto came to, which is a good place to start.

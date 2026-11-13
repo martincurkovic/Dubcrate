@@ -24,11 +24,11 @@ from PySide6.QtWidgets import (
     QFormLayout,
     QHBoxLayout,
     QLabel,
-    QListWidget,
-    QListWidgetItem,
     QMessageBox,
     QPushButton,
     QSpinBox,
+    QTreeWidget,
+    QTreeWidgetItem,
     QVBoxLayout,
     QWidget,
 )
@@ -38,6 +38,7 @@ from dubcrate.library import Library
 from dubcrate.library.models import DiscSummary
 from dubcrate.ui import label_paint
 from dubcrate.ui.label_preview import FIT, ZOOM_STEPS, PagePreview
+from dubcrate.ui.models import _disc_icon, _folder_icon
 
 logger = logging.getLogger(__name__)
 
@@ -73,6 +74,15 @@ def disc_paths(lib: Library) -> dict[int, str]:
     return {d.id: " / ".join([*folder_path(d.folder_id), d.name]) for d in lib.discs()}
 
 
+def _by_name(thing) -> str:
+    return thing.name.casefold()
+
+
+def _tickable(item: QTreeWidgetItem) -> bool:
+    """A disc with tracks, or a folder that has one inside."""
+    return bool(item.flags() & Qt.ItemFlag.ItemIsUserCheckable)
+
+
 def _advice(options: labels.LabelOptions) -> str:
     """What could help a list that is too long, given what is already allowed."""
     ideas = ["make the label taller"]
@@ -93,19 +103,18 @@ class LabelDialog(QDialog):
         self._page = 0
         self._options = settings.get_label_options()
         self.setWindowTitle("Print Labels")
-        self.resize(1000, 720)
+        self.resize(1000, 760)
 
-        self.disc_list = QListWidget()
-        self.disc_list.setMinimumWidth(240)
-        paths = disc_paths(lib)
-        for disc in lib.discs():
-            kind = "  MP3" if disc.kind == "mp3" else ""
-            item = QListWidgetItem(f"{paths[disc.id]}  ({disc.track_count}){kind}")
-            item.setData(Qt.ItemDataRole.UserRole, disc.id)
-            item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
-            on = disc.id == picked and disc.track_count > 0
-            item.setCheckState(Qt.CheckState.Checked if on else Qt.CheckState.Unchecked)
-            self.disc_list.addItem(item)
+        self.disc_tree = (
+            QTreeWidget()
+        )  # the Discs list's folders, with a tick box on each disc
+        self.disc_tree.setHeaderHidden(True)
+        self.disc_tree.setMinimumWidth(240)
+        self.disc_tree.setMinimumHeight(120)  # room for a few folders and discs at once
+        self._ticking = (
+            False  # a tick is being carried to the folders and discs it covers
+        )
+        self._fill_disc_tree(picked)
         all_button = QPushButton("All")
         none_button = QPushButton("None")
         all_button.clicked.connect(lambda: self._tick_all(Qt.CheckState.Checked))
@@ -224,7 +233,7 @@ class LabelDialog(QDialog):
 
         left = QVBoxLayout()
         left.addWidget(QLabel("Discs"))
-        left.addWidget(self.disc_list, 1)
+        left.addWidget(self.disc_tree, 1)
         pick_row = QHBoxLayout()
         pick_row.addWidget(all_button)
         pick_row.addWidget(none_button)
@@ -278,7 +287,7 @@ class LabelDialog(QDialog):
         self.key_check.toggled.connect(self.refresh)
         self.duration_check.toggled.connect(self.refresh)
         self.outline_check.toggled.connect(self.refresh)
-        self.disc_list.itemChanged.connect(self.refresh)
+        self.disc_tree.itemChanged.connect(self._on_item_changed)
         self.refresh()
 
     @staticmethod
@@ -317,26 +326,156 @@ class LabelDialog(QDialog):
         self.height_spin.setMaximum(page_h)
         self.refresh()
 
-    def _tick_all(self, state: Qt.CheckState) -> None:
-        self.disc_list.blockSignals(True)
-        for i in range(self.disc_list.count()):
-            item = self.disc_list.item(i)
-            if state == Qt.CheckState.Unchecked or self._track_count(item) > 0:
-                item.setCheckState(state)
-        self.disc_list.blockSignals(False)
+    # -- the discs: the Discs list's folders, each disc with a tick box --------------------
+
+    def _fill_disc_tree(self, picked: int | None) -> None:
+        """Folders first, then discs, each A to Z, as in the Discs list on the right. A folder with
+        no disc anywhere inside it is left out, and a disc with no tracks is shown but can't be
+        ticked (there is nothing to print)."""
+        folders = self._lib.disc_folders()
+        discs = self._lib.discs()
+        by_parent: dict[int | None, list] = {}
+        for folder in folders:
+            by_parent.setdefault(folder.parent_id, []).append(folder)
+        in_folder: dict[int | None, list[DiscSummary]] = {}
+        for disc in discs:
+            in_folder.setdefault(disc.folder_id, []).append(disc)
+
+        def has_discs(folder_id: int) -> bool:
+            return bool(in_folder.get(folder_id)) or any(
+                has_discs(f.id) for f in by_parent.get(folder_id, [])
+            )
+
+        def fill(parent: QTreeWidget | QTreeWidgetItem, folder_id: int | None) -> None:
+            for folder in sorted(by_parent.get(folder_id, []), key=_by_name):
+                if not has_discs(folder.id):
+                    continue
+                item = QTreeWidgetItem(parent, [folder.name])
+                item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsUserCheckable)
+                item.setIcon(0, _folder_icon())
+                fill(item, folder.id)
+                self._set_folder_flags(item)
+            for disc in sorted(in_folder.get(folder_id, []), key=_by_name):
+                kind = "  MP3" if disc.kind == "mp3" else ""
+                item = QTreeWidgetItem(
+                    parent, [f"{disc.name}  ({disc.track_count}){kind}"]
+                )
+                item.setData(0, Qt.ItemDataRole.UserRole, disc.id)
+                item.setIcon(0, _disc_icon(disc.kind))
+                item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsUserCheckable)
+                if disc.track_count > 0:
+                    item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
+                    on = disc.id == picked
+                    item.setCheckState(
+                        0, Qt.CheckState.Checked if on else Qt.CheckState.Unchecked
+                    )
+
+        self._ticking = True
+        fill(self.disc_tree, None)
+        for item in self._folder_items():
+            self._update_folder(item)
+        self._ticking = False
+        self.disc_tree.expandAll()
+        chosen = next(
+            (i for i in self._disc_items() if self._disc_id(i) == picked), None
+        )
+        if chosen is not None:
+            self.disc_tree.setCurrentItem(chosen)
+
+    @staticmethod
+    def _set_folder_flags(item: QTreeWidgetItem) -> None:
+        """A folder is tickable when a disc that can be ticked is somewhere inside it."""
+        if any(_tickable(item.child(r)) for r in range(item.childCount())):
+            item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
+
+    def _walk(self, parent: QTreeWidgetItem | None = None):
+        """Every item below `parent` (the top level if None), in the order shown."""
+        count = (
+            self.disc_tree.topLevelItemCount()
+            if parent is None
+            else parent.childCount()
+        )
+        for row in range(count):
+            item = (
+                self.disc_tree.topLevelItem(row)
+                if parent is None
+                else parent.child(row)
+            )
+            yield item
+            yield from self._walk(item)
+
+    def _disc_items(self) -> list[QTreeWidgetItem]:
+        return [i for i in self._walk() if self._disc_id(i) is not None]
+
+    def _folder_items(self) -> list[QTreeWidgetItem]:
+        """Every folder, the innermost first (so a folder is worked out after what is inside it)."""
+        return [i for i in reversed(list(self._walk())) if self._disc_id(i) is None]
+
+    def _update_folder(self, folder: QTreeWidgetItem) -> None:
+        """A folder shows ticked, unticked, or partly ticked, from the discs inside it."""
+        states = [
+            i.checkState(0)
+            for i in self._walk(folder)
+            if i.flags() & Qt.ItemFlag.ItemIsUserCheckable
+            and (self._disc_id(i) is not None or i.childCount() == 0)
+        ] or [Qt.CheckState.Unchecked]
+        if not folder.flags() & Qt.ItemFlag.ItemIsUserCheckable:
+            return
+        folder.setCheckState(
+            0,
+            Qt.CheckState.Checked
+            if all(s == Qt.CheckState.Checked for s in states)
+            else Qt.CheckState.Unchecked
+            if all(s == Qt.CheckState.Unchecked for s in states)
+            else Qt.CheckState.PartiallyChecked,
+        )
+
+    def _on_item_changed(self, item: QTreeWidgetItem, _column: int = 0) -> None:
+        """A tick on a folder ticks everything in it; a tick on a disc brings its folders up to date.
+        Either way the labels are planned once."""
+        if self._ticking:
+            return
+        self._ticking = True
+        try:
+            if self._disc_id(item) is None:  # a folder: all its tickable discs follow
+                state = item.checkState(0)
+                if state != Qt.CheckState.PartiallyChecked:
+                    for disc in self._disc_items_in(item):
+                        disc.setCheckState(0, state)
+            for folder in self._folder_items():
+                self._update_folder(folder)
+        finally:
+            self._ticking = False
         self.refresh()
 
-    def _disc_id(self, item: QListWidgetItem) -> int:
-        return item.data(Qt.ItemDataRole.UserRole)
+    def _disc_items_in(self, folder: QTreeWidgetItem) -> list[QTreeWidgetItem]:
+        return [
+            i
+            for i in self._walk(folder)
+            if self._disc_id(i) is not None
+            and i.flags() & Qt.ItemFlag.ItemIsUserCheckable
+        ]
 
-    def _track_count(self, item: QListWidgetItem) -> int:
-        return self._lib.disc(self._disc_id(item)).track_count
+    def _tick_all(self, state: Qt.CheckState) -> None:
+        self._ticking = True
+        for item in self._disc_items():
+            if item.flags() & Qt.ItemFlag.ItemIsUserCheckable:
+                item.setCheckState(0, state)
+        for folder in self._folder_items():
+            self._update_folder(folder)
+        self._ticking = False
+        self.refresh()
+
+    @staticmethod
+    def _disc_id(item: QTreeWidgetItem) -> int | None:
+        return item.data(0, Qt.ItemDataRole.UserRole)
 
     def ticked_discs(self) -> list[DiscSummary]:
+        """The ticked discs, in the order they are listed here."""
         return [
-            self._lib.disc(self._disc_id(self.disc_list.item(i)))
-            for i in range(self.disc_list.count())
-            if self.disc_list.item(i).checkState() == Qt.CheckState.Checked
+            self._lib.disc(self._disc_id(i))
+            for i in self._disc_items()
+            if i.checkState(0) == Qt.CheckState.Checked
         ]
 
     def options(self) -> labels.LabelOptions:
