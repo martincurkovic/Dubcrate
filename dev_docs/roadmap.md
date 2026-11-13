@@ -269,7 +269,7 @@
 
 ## Unverified
 
-- **Level matching on a real disc and a CDJ-1000MK3** (built 2026-11-13: `loudness.py`, burn window, Settings).
+- **Level matching on a real disc and a CDJ-1000MK3** (built 2026-11-13: `loudness.py`, burn window, Settings; the presets and the Peak to full scale choice came later the same day and are not checked either).
   Proven by tests: a track rendered with a gain measures that much louder; two tracks of different levels come
   out at the target. NOT checked: how it sounds, whether any burn clips on the CDJ's output (the ceiling is
   -0.3 dBTP, a guess from mastering practice), and **how the CDJ-1000MK3 draws its waveform**: if it is not

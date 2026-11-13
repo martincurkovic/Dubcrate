@@ -671,6 +671,10 @@ def build_source_model(lib: Library) -> QStandardItemModel:
     root.appendRow([everything, _count_item(lib.count_tracks())])
 
     sources = lib.sources()
+    if (
+        len(sources) == 1
+    ):  # (its row, which carried its path as a tooltip, is not shown)
+        everything.setToolTip(f"{sources[0].name}\n{sources[0].path}")
     for source in sources:
         if len(sources) == 1:
             item = root  # no row of its own: what is in it goes at the top level

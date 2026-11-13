@@ -205,6 +205,17 @@ def test_source_tree_nests_nodes_under_their_source_with_counts(qapp):
     lib.close()
 
 
+def test_the_only_source_keeps_its_name_and_path_as_a_tooltip_on_all_tracks(qapp):
+    lib = make_lib()
+    model = build_source_model(lib)
+    assert model.item(0).toolTip() == "My rekordbox\n/db"
+    make_second_source(lib)
+    several = build_source_model(lib)  # keep it: the items belong to the model
+    assert several.item(0).toolTip() == ""  # (each source's own row has it)
+    assert several.item(1).toolTip() == "/db"
+    lib.close()
+
+
 def make_second_source(lib):
     lib.replace_source(
         "folder", "/other", "Other", [TrackRecord(ext_id="o", path="/other/o.mp3", title="O")], []
