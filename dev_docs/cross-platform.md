@@ -59,7 +59,7 @@ until a person with that OS and an optical drive has checked it.
 | `scripts/build_macos.sh`, `scripts/dmg_settings.py`, `assets/dmg/`, `BUILDING.md` | Packaging is a macOS app and a DMG | One build per OS (Phase 5) |
 | `.github/workflows/test.yml` | Runs on `macos-15` only, and says so in a comment | Matrix (Phase 1) |
 | `.github/workflows/build.yml` | macOS arm and Intel builds; the release job is the only Linux one | Add per-OS builds (Phase 5) |
-| `ui/explorer.py: mounted_volumes()` | Finds drives in macOS's `/Volumes` (dropping the boot-disk link); returns none elsewhere, so the Explorer shows only Music and home | Linux (`/media`, `/run/media`, `/mnt`) and Windows (drive letters) **[not tried]** |
+| `ui/explorer.py: mounted_volumes()` | Finds drives in macOS's `/Volumes` (dropping the boot-disk link); returns none elsewhere, so the Explorer shows only Music and home | Linux (`/media`, `/run/media`, `/mnt`) and Windows (drive letters) **[not tried]**. Plugging a drive in while the app runs is noticed by a `QFileSystemWatcher` on `volume_parents()`: tried on a Mac with a mounted disk image; Linux **[not tried]**; Windows has no folder to watch, so its list is read again when the tab opens |
 | `ui/smoke_test.py` | Has a `darwin` check (DiscRecording, built-app specifics) | Per-OS smoke test |
 | `ui/help/manual.md`, `README.md`, `CONTRIBUTING.md` | Mention Homebrew, `~/Library/Application Support/Dubcrate/`, macOS-only burning | Say what each OS needs, per OS |
 | `tests/test_app_bundle.py`, `tests/test_build_files.py` | Check the macOS build files | Skip off macOS (Phase 1) |

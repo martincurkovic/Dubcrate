@@ -27,6 +27,7 @@
 - [ ] Homebrew packaging once first release public
 - [ ] Fix About window resizing, layout, blurry icon
 - [x] Screenshot staging
+  - [ ] Maybe use some real songs, not fake ones
 - [ ] Clean up user facing docs (readme, user guide)
 - [ ] SD card waveform, hotcue, memory cue, loop point reverse engineering
 - [ ] SD card sync metadata tab

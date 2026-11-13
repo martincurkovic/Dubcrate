@@ -237,8 +237,10 @@
 - The Explorer re-reads a folder (ffprobe per new or changed file) on the first visit of each
   session, because what it read is forgotten at start-up (`prune_explorer`). A cache across sessions,
   keyed by path, size and modified time, would fix that. It shows only the files directly inside a
-  folder (not recursive), does not watch folders, and a drive plugged in while the app is open needs
-  the tree reloaded (`ExplorerTree.reload_roots`, not wired to anything yet).
+  folder (not recursive), does not watch folders. A drive plugged in or taken out is picked up by a watch on `/Volumes`
+  (`ExplorerTree(watch=volume_parents())`, a moment after the change; Windows has nothing to watch and
+  lists its drives again when the Explorer tab is opened; Linux's folders are watched but **not tried**, and
+  a drive mounted by hand onto an existing folder in `/mnt` changes nothing there, so it waits for the tab).
 - The same song in rekordbox and in an Explorer folder is two track rows, tied together only by
   their path (`path_key`). A copy of the file in another folder, or a rekordbox library that points at
   another drive's path, is not recognised.

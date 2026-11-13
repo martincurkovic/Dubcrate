@@ -12,7 +12,7 @@ import sys
 from collections.abc import Callable
 from pathlib import Path
 
-from PySide6.QtCore import QPoint, Qt, Signal
+from PySide6.QtCore import QFileSystemWatcher, QModelIndex, QPoint, Qt, QTimer, Signal
 from PySide6.QtGui import QStandardItem, QStandardItemModel
 from PySide6.QtWidgets import QAbstractItemView, QMenu, QTreeView
 
@@ -24,6 +24,9 @@ log = logging.getLogger(__name__)
 PATH_ROLE = Qt.ItemDataRole.UserRole + 20  # the folder's full path
 LOADED_ROLE = Qt.ItemDataRole.UserRole + 21  # True once its subfolders have been listed
 VOLUME_ROLE = Qt.ItemDataRole.UserRole + 22  # True on a drive (for its icon)
+DRIVE_SETTLE_MS = (
+    600  # after a change in /Volumes and the like, before the drives are listed again
+)
 
 
 def mounted_volumes() -> list[Path]:
@@ -57,6 +60,16 @@ def _mac_volumes(base: Path = Path("/Volumes")) -> list[Path]:
     return volumes
 
 
+def _linux_bases() -> list[Path]:
+    user = os.environ.get("USER") or Path.home().name
+    return [
+        Path("/media") / user,
+        Path("/run/media") / user,
+        Path("/media"),
+        Path("/mnt"),
+    ]
+
+
 def _linux_volumes(
     bases: list[Path] | None = None, is_mount: Callable[[Path], bool] = os.path.ismount
 ) -> list[Path]:
@@ -64,13 +77,7 @@ def _linux_volumes(
     a drive someone mounted by hand is usually under /mnt. Only real mount points count, since
     /mnt and /media hold empty folders too. The system disk is "/", which is never offered."""
     if bases is None:
-        user = os.environ.get("USER") or Path.home().name
-        bases = [
-            Path("/media") / user,
-            Path("/run/media") / user,
-            Path("/media"),
-            Path("/mnt"),
-        ]
+        bases = _linux_bases()
     volumes: list[Path] = []
     seen: set[Path] = set()
     for base in bases:
@@ -120,6 +127,18 @@ def _windows_volumes(drives: list[tuple[str, int]], system_drive: str) -> list[P
     ]
 
 
+def volume_parents() -> list[Path]:
+    """The folders whose contents change when a drive is plugged in or taken out, for the tree to
+    watch. One helper per system. Windows has none (a drive letter is not a folder): its list is
+    read again whenever the Explorer tab is opened. Linux: NOT tried; a drive mounted by hand
+    onto an existing folder under /mnt changes nothing there, so it waits for the tab."""
+    if sys.platform == "darwin":
+        return [Path("/Volumes")]
+    if sys.platform == "win32":
+        return []
+    return [*_linux_bases(), Path("/run/media")]
+
+
 def volume_label(volume: Path) -> str:
     """A drive's name for the tree: its folder name, or for a Windows drive "D:"."""
     return volume.name or str(volume).rstrip("\\/")
@@ -164,10 +183,13 @@ class ExplorerTree(QTreeView):
         self,
         parent=None,
         roots: Callable[[], list[tuple[str, Path, bool]]] | None = None,
+        watch: list[Path] | None = None,
     ):
+        """`watch`: folders where a drive appears; the rows are listed again when one changes."""
         super().__init__(parent)
         self._roots = roots or explorer_roots
         self._pinned: set[str] = set()
+        self._syncing = False  # rows are being brought up to date, not picked
         self.setHeaderHidden(True)
         self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.customContextMenuRequested.connect(self._on_context_menu)
@@ -179,6 +201,16 @@ class ExplorerTree(QTreeView):
         self.selectionModel().currentChanged.connect(self._on_current_changed)
         theme.notifier.changed.connect(self._refresh_icons)
         self.reload_roots()
+        self._watch = list(watch or [])
+        self._watcher = QFileSystemWatcher(self)
+        self._watcher.directoryChanged.connect(lambda _path: self._drives_timer.start())
+        self._drives_timer = QTimer(self)  # one refresh for a burst of changes, and a
+        self._drives_timer.setSingleShot(
+            True
+        )  # moment for the drive to finish mounting
+        self._drives_timer.setInterval(DRIVE_SETTLE_MS)
+        self._drives_timer.timeout.connect(self._drives_changed)
+        self._watch_folders()
 
     # -- the rows --------------------------------------------------------
 
@@ -197,6 +229,17 @@ class ExplorerTree(QTreeView):
         self._model.clear()
         for name, path, volume in self._roots():
             self._model.appendRow(self._item(name, path, volume))
+
+    def _watch_folders(self) -> None:
+        """Watch the folders that exist (one that appears later is picked up on the next change)."""
+        have = set(self._watcher.directories())
+        new = [str(p) for p in self._watch if str(p) not in have and p.is_dir()]
+        if new:
+            self._watcher.addPaths(new)
+
+    def _drives_changed(self) -> None:
+        self._watch_folders()
+        self.refresh_roots()
 
     def _load(self, item: QStandardItem) -> None:
         if item.data(LOADED_ROLE):
@@ -228,8 +271,17 @@ class ExplorerTree(QTreeView):
 
     def refresh_roots(self) -> None:
         """List the drives again (one plugged in since, or taken out) without losing what is
-        open or picked."""
-        self._sync_children(None, self._roots())
+        open or picked. If the picked folder was on a drive that is gone, nothing is picked
+        afterwards and `folder_selected` is not emitted (Qt would move the pick to the next row,
+        and the window would jump to a folder nobody chose)."""
+        current = self.current_path()
+        self._syncing = True
+        try:
+            self._sync_children(None, self._roots())
+            if current is not None and self._item_for(current) is None:
+                self.setCurrentIndex(QModelIndex())
+        finally:
+            self._syncing = False
 
     def refresh_folder(self, path: str) -> None:
         """List a folder's subfolders again (a loaded one: an unopened one reads when opened)."""
@@ -290,6 +342,8 @@ class ExplorerTree(QTreeView):
     # -- the choice ------------------------------------------------------
 
     def _on_current_changed(self, current, _previous) -> None:
+        if self._syncing:
+            return
         path = current.data(PATH_ROLE) if current.isValid() else None
         if path:
             self.folder_selected.emit(path)

@@ -51,7 +51,7 @@ from .about_dialog import AboutDialog, NoticesDialog
 from .burn_dialog import BurnDialog, BurnerFactory
 from .disc_tree import COLUMN_WIDTH, DiscTree
 from .disc_view import DiscView
-from .explorer import ExplorerTree
+from .explorer import ExplorerTree, volume_parents
 from .help_dialog import show_help_dialog
 from .label_dialog import LabelDialog
 from .models import (
@@ -221,7 +221,7 @@ class MainWindow(QMainWindow):
         library_layout.addWidget(self.tree, 1)
 
         # the Explorer: folders on this Mac, read when you open them, with nothing imported
-        self.explorer_tree = ExplorerTree()
+        self.explorer_tree = ExplorerTree(watch=volume_parents())
         self.explorer_tree.folder_selected.connect(self._on_explorer_folder)
         explorer_page = self._folder_page("Explorer", self.explorer_tree)
         self.explorer_tree.pin_requested.connect(self.pin_folder)

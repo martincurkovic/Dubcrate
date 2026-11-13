@@ -206,6 +206,89 @@ def test_the_roots_can_be_read_again_for_drives_that_came_and_went(tree, tmp_pat
     assert [widget._model.item(r).text() for r in range(2)] == ["Music", "USB"]
 
 
+def drive_tree(volumes):
+    """A tree whose drives are the folders in `volumes`, watched as /Volumes would be."""
+
+    def roots():
+        found = sorted(
+            p for p in volumes.parent.glob(volumes.name + "/*") if p.is_dir()
+        )
+        return [(p.name, p, True) for p in found]
+
+    widget = ExplorerTree(roots=roots, watch=[volumes])
+    widget.resize(300, 400)
+    widget.show()
+    return widget
+
+
+def test_a_drive_plugged_in_or_taken_out_shows_up_without_reopening_the_tab(qapp, tmp_path, wait_for):  # fmt: skip
+    volumes = tmp_path / "Volumes"
+    (volumes / "Boot").mkdir(parents=True)
+    widget = drive_tree(volumes)
+    assert root_names(widget) == ["Boot"]
+    (volumes / "Gig Stick").mkdir()
+    assert wait_for(lambda: root_names(widget) == ["Boot", "Gig Stick"])
+    (volumes / "Gig Stick").rmdir()
+    assert wait_for(lambda: root_names(widget) == ["Boot"])
+    widget.close()
+
+
+def test_a_drive_change_keeps_what_is_picked_and_open(qapp, tmp_path, wait_for):
+    volumes = tmp_path / "Volumes"
+    (volumes / "Boot" / "Sets").mkdir(parents=True)
+    widget = drive_tree(volumes)
+    widget.select_path(str(volumes / "Boot" / "Sets"))
+    picked = []
+    widget.folder_selected.connect(picked.append)
+    (volumes / "Gig Stick").mkdir()
+    assert wait_for(lambda: root_names(widget) == ["Boot", "Gig Stick"])
+    assert widget.current_path() == str(volumes / "Boot" / "Sets") and picked == []
+    widget.close()
+
+
+def test_taking_out_the_picked_drive_picks_nothing_else(qapp, tmp_path, wait_for):
+    volumes = tmp_path / "Volumes"
+    for name in ("Boot", "Gig Stick", "Zed"):
+        (volumes / name).mkdir(parents=True)
+    widget = drive_tree(volumes)
+    widget.select_path(str(volumes / "Gig Stick"))
+    picked = []
+    widget.folder_selected.connect(picked.append)
+    (volumes / "Gig Stick").rmdir()
+    assert wait_for(lambda: root_names(widget) == ["Boot", "Zed"])
+    assert picked == [] and widget.current_path() is None  # not "Zed", picked for you
+    widget.close()
+
+
+def test_a_watched_folder_that_appears_later_is_watched_from_then_on(qapp, tmp_path, wait_for):  # fmt: skip
+    base = tmp_path / "run"
+    base.mkdir()
+    volumes = (
+        base / "media"
+    )  # not there yet, as /run/media/<user> is before the first drive
+    widget = ExplorerTree(roots=list, watch=[base, volumes])
+    assert widget._watcher.directories() == [str(base)]
+    volumes.mkdir()
+    assert wait_for(lambda: str(volumes) in widget._watcher.directories())
+    widget.close()
+
+
+def test_no_folders_to_watch_is_fine(qapp):
+    widget = ExplorerTree(roots=list)
+    assert widget._watcher.directories() == []
+    widget.close()
+
+
+def test_each_system_says_where_its_drives_appear(monkeypatch):
+    monkeypatch.setattr(sys, "platform", "darwin")
+    assert explorer.volume_parents() == [Path("/Volumes")]
+    monkeypatch.setattr(sys, "platform", "win32")
+    assert explorer.volume_parents() == []  # drive letters are not folders
+    monkeypatch.setattr(sys, "platform", "linux")
+    assert Path("/mnt") in explorer.volume_parents()
+    assert Path("/run/media") in explorer.volume_parents()
+
+
 # -- the tab strip -------------------------------------------------------------------------
 
 
