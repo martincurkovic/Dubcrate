@@ -291,7 +291,7 @@ A disc you burned says when. A test write (a simulated burn) puts nothing on a d
 Things to know:
 
 - Dubcrate **won't burn** if there is no disc, if the music is longer than what the disc holds (a 74-minute disc with 78 minutes planned, say), or if the disc can't be burned as planned. The reasons are listed in red. If the drive can't say how much a disc holds, Dubcrate goes by the size the disc was planned for.
-- **Levels** (audio CDs): **Match loudness** gives each track one fixed volume change so the tracks on the disc play at about the same loudness, and shows the range of changes it will make (for example "gains -6.0 to +3.2 dB across 16 tracks"). It never compresses or limits, so the music keeps its dynamics. A track is never turned up so far that its peaks would clip: one that can't reach the target without that is lifted as far as is safe and counted as **held back by peak headroom**. The target is in LUFS (a loudness scale; -10 keeps loud dance tracks close to how they were, -14 is gentler and holds nothing back) and starts at your choice in **Settings > Burning**. The first time a track is measured takes a moment (it is remembered after that, until the file changes). The same setting applies to **Export…**, MP3 discs are left as they are, and your music files are never changed: only the copy written to the disc is.
+- **Levels** (audio CDs): tick **Normalise** to give each track one fixed volume change, and pick what to bring the tracks to, and the window shows the range of changes it will make (for example "gains -6.0 to +3.2 dB across 16 tracks"). It never compresses or limits, so the music keeps its dynamics. The loudness choices (**Loud** -9, **Club** -10, **Balanced** -12 and **Gentle** -14 LUFS, a loudness scale) bring the tracks to about the same level: -10 keeps loud dance tracks close to how they were, and -14 is the gentlest. A track is never turned up so far that its peaks would clip: one that can't reach the target without that is lifted as far as is safe and counted as **held back by peak headroom**. **Peak to full scale** works differently: each track is made as loud as it can safely be, with its highest peak just under full scale (-0.3 dBTP, a little below 0 dB so the 16-bit conversion and a player's output can't clip), so tracks end up at different loudnesses. It can turn a track down by a hair if its peak was already over, and no track is lifted by more than 12 dB (one that would need more is counted as **held back by the 12 dB limit**). The box starts as you set it in **Settings > Burning**. The first time a track is measured takes a moment (it is remembered after that, until the file changes). The same setting applies to **Export…**, MP3 discs are left as they are, and your music files are never changed: only the copy written to the disc is.
 - **Test only** runs everything except writing to the disc (the laser stays off), which is a safe way to check your drive. A test doesn't mark the disc as burned.
 - After a real burn the disc is marked as burned, and it stays open and editable. Ticking the box is needed again before every burn.
 - A failed burn says why in the log, and the disc is not marked. A burn can't be stopped once it has started.
@@ -321,7 +321,7 @@ dubcrate burn 1 --yes                # really burns
 - Every track is converted to CD quality (16-bit, 44.1 kHz stereo) and the disc gets **CD-TEXT** titles, so the artist and title show on the player.
 - After a successful real burn, Dubcrate marks the disc as burned.
 - `dubcrate export 1 ~/Desktop` does what **Export…** does, into a new folder inside `~/Desktop`.
-- `--levels match` (with `--target -10`) on `burn` and `export` matches the loudness of an audio CD's tracks, as **Levels** in the window does.
+- `--levels match` (with `--target -10`, any whole number from -24 to -6) or `--levels peak` on `burn` and `export` normalises an audio CD's tracks, as **Levels** in the window does.
 
 The full list of command-line options is in the project's developer notes.
 
@@ -361,9 +361,9 @@ Your choices are remembered for next time.
 
 ![The Settings window, on the Audio tab](screenshots/settings.png "Settings")
 
-- **Discs:** how **new** discs are planned: **Plan new discs for** 80 or 74 minutes (the same size, as megabytes, for an MP3 CD), **Between tracks**, which is **Gapless** unless you choose 1, 2 or 3 seconds of silence (audio CDs only), and **MP3 CDs: highest rate**, the top constant bitrate for new MP3 discs (320 kbit/s unless you lower it).
-- **Burning:** the **Burn speed** a burn starts with (10x unless you change it). Old players read discs burned slowly more reliably, and 10x to 16x is a good range. Your drive may not offer every speed. You can still pick another speed for a single burn in the burn window. **Track levels** chooses whether a burn starts with **Match loudness** on, and its **Target loudness**; see [Burning a disc](#burning-a-disc).
-- **Audio:** the **Output device** for previews and the **Buffer size**, with a button that plays a short test tone, and the **Beat jump** distance for the arrow keys.
+- **Discs:** how **new** discs are planned: **Plan new discs for** 80 minutes (700 MB) or 74 minutes (650 MB), the same size, as megabytes, for an MP3 CD, **Between tracks**, which is **Gapless** unless you choose 1, 2 or 3 seconds of silence (audio CDs only), and **MP3 CDs: highest rate**, the top constant bitrate for new MP3 discs (320 kbit/s unless you lower it).
+- **Burning:** the **Burn speed** a burn starts with (10x unless you change it). Old players read discs burned slowly more reliably, and 10x to 16x is a good range. Your drive may not offer every speed. You can still pick another speed for a single burn in the burn window. **Normalise the levels of tracks on audio CDs** chooses whether a burn starts with normalising on, and **Normalise to** what to bring the tracks to; see [Burning a disc](#burning-a-disc).
+- **Audio:** the **Output device** for previews and the **Buffer size**, and the **Beat jump** distance for the arrow keys.
 - **Library:** whether Dubcrate updates your rekordbox library each time it starts (on by default), and whether it checks for a newer version of Dubcrate when it starts (also on by default; see [Updates](#updates-and-what-dubcrate-sends)).
 - **Appearance:** the **Theme** (the same choice as **View > Theme**), the **Waveform style** (the same as **View > Waveform**), the **Waveform background**, and the **Key notation**: **Camelot** (8A) or **Musical** (A min). Only what is shown changes; your library, rekordbox and the files keep what they have.
 
@@ -412,7 +412,7 @@ This is the only time Dubcrate uses the network. It asks `github.com` for the li
 ## Troubleshooting
 
 - **A preview crackles.** Raise the buffer size in **Settings** (try 2048 frames).
-- **No sound, or the wrong output.** Choose the output device in **Settings** and press the test tone button.
+- **No sound, or the wrong output.** Choose the output device in **Settings**, then double-click a track to hear it.
 - **Dubcrate says it can't find ffmpeg.** The download includes it, so this means the app has been damaged or changed: download it again. If you run Dubcrate from source, install it with `brew install ffmpeg` and restart. Your library, rekordbox import and previews of MP3, WAV and FLAC files still work without it, but folder import and burning don't. **Settings > Library** shows what Dubcrate found.
 - **New tracks from rekordbox aren't showing.** Dubcrate updates rekordbox when it starts, and only if **Settings > Library** is on. To update while it is open, select the rekordbox source and press ⇧⌘R. If the status bar said it couldn't update, it says why.
 - **Dubcrate can't find my rekordbox library.** Choose **Choose File…** when importing and pick `master.db`.

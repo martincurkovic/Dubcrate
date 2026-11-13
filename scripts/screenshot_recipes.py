@@ -383,13 +383,11 @@ def _burn(ctx):
     window.burn_current_disc()
     dialog = window.burn_dialog
     ctx.settle(10)
-    # level matching on, as the guide describes it (the tracks are measured on a worker)
-    dialog.levels_combo.setCurrentIndex(dialog.levels_combo.findData("match"))
-    dialog.levels_combo.activated.emit(dialog.levels_combo.currentIndex())
+    # normalising on, as the guide describes it (the tracks are measured on a worker)
+    # (the made-up tracks are quiet: at -10 every one is held back, so the gentle preset)
+    dialog.levels_combo.setCurrentIndex(dialog.levels_combo.findData("-14"))
+    dialog.levels_check.setChecked(True)
     ctx.wait_for(lambda: not dialog._measuring)
-    dialog.levels_spin.setValue(
-        -14
-    )  # (the made-up tracks are quiet: at -10 every one is held back)
     dialog.confirm_check.setChecked(True)
     ctx.settle(6)
     return dialog
@@ -400,7 +398,7 @@ def _settings(ctx):
     from dubcrate.ui.settings_dialog import SettingsDialog
 
     window = ctx.window()
-    dialog = SettingsDialog(window, device_factory=lambda *a: Silent())
+    dialog = SettingsDialog(window)
     dialog.resize(
         640, 400
     )  # taller than its minimum, which clips the grey explanations

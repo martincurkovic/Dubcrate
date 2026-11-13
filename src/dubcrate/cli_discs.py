@@ -284,7 +284,7 @@ def cmd_burn(lib: Library, args: argparse.Namespace) -> int:
         with tempfile.TemporaryDirectory(prefix="dubcrate-burn-") as tmp:
             work = Path(args.work).expanduser() if args.work else Path(tmp)
             burn_disc, pregap = build_burn_disc(
-                lib, args.disc, work, progress=print, target_lufs=_target(args)
+                lib, args.disc, work, progress=print, target=_target(args)
             )
             exact = (
                 burn_disc.sectors
@@ -338,18 +338,21 @@ def cmd_export(lib: Library, args: argparse.Namespace) -> int:
     return 0
 
 
-def _target(args: argparse.Namespace) -> int | None:
-    """The loudness to match an audio CD to (--levels match), or None to leave the tracks as they are."""
-    return args.target if args.levels == "match" else None
+def _target(args: argparse.Namespace) -> loudness.Target | None:
+    """What to bring an audio CD's tracks to (--levels match or peak), or None to leave them as they are."""
+    if args.levels == "peak":
+        return loudness.PEAK_TARGET
+    return loudness.Target(args.target) if args.levels == "match" else None
 
 
 def _levels_flags(p: argparse.ArgumentParser) -> None:
     p.add_argument(
         "--levels",
-        choices=["off", "match"],
+        choices=["off", "match", "peak"],
         default="off",
-        help="match: give each track one fixed gain so they play at about the same loudness"
-        " (audio CDs; never compresses or limits). Default: off",
+        help="match: give each track one fixed gain so they play at about the same loudness;"
+        " peak: one fixed gain so each track's highest peak reaches"
+        f" {loudness.PEAK_CEILING_DB:g} dBTP (audio CDs; neither compresses or limits). Default: off",
     )
     p.add_argument(
         "--target",

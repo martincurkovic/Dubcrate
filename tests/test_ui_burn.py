@@ -527,17 +527,19 @@ DEFAULT = (
 )  # what level matching aims at unless told otherwise
 
 
-def choose_levels(dialog, mode):
-    """What a click on the Levels box does."""
-    index = dialog.levels_combo.findData(mode)
-    dialog.levels_combo.setCurrentIndex(index)
-    dialog.levels_combo.activated.emit(index)
+def choose_levels(dialog, key):
+    """What the Levels row does when it is ticked and a preset picked (`key` None: unticked)."""
+    if key is not None:
+        index = dialog.levels_combo.findData(key)
+        dialog.levels_combo.setCurrentIndex(index)
+        dialog.levels_combo.activated.emit(index)
+    dialog.levels_check.setChecked(key is not None)
 
 
 def test_the_levels_start_off_and_nothing_is_measured(make_dialog, lib):
     dialog, _ = make_dialog()
-    assert dialog.levels_combo.currentData() == "off"
-    assert dialog._plan.levels_note == "" and not dialog.levels_spin.isEnabled()
+    assert not dialog.levels_check.isChecked() and not dialog.levels_combo.isEnabled()
+    assert dialog._plan.levels_note == "" and dialog.levels_combo.currentData() == "-10"
     assert all(t.loudness is None for t in lib.tracks())
 
 
@@ -556,24 +558,27 @@ def test_matching_measures_once_then_shows_the_gains(
         ),
     )
     dialog, _ = make_dialog()
-    choose_levels(dialog, "match")
+    choose_levels(dialog, str(DEFAULT))
     assert wait_for(lambda: not dialog._measuring)
     assert measured == [2]  # both tracks, on a worker
     assert all(t.loudness for t in lib.tracks())  # and remembered
     assert f"Levels matched to {DEFAULT} LUFS" in dialog.levels_label.text()
     assert dialog._plan.levels_note == dialog.levels_label.text()
-    assert dialog.levels_spin.isEnabled()
+    assert dialog.levels_combo.isEnabled()
     assert any(t.gain_db for t in dialog._plan.tracks)
 
     before = [t.gain_db for t in dialog._plan.tracks]
-    dialog.levels_spin.setValue(
-        DEFAULT - 3
-    )  # a new target: new gains, nothing measured again
-    assert f"{DEFAULT - 3} LUFS" in dialog.levels_label.text() and measured == [2]
+    choose_levels(dialog, "-14")  # a new target: new gains, nothing measured again
+    assert "-14 LUFS" in dialog.levels_label.text() and measured == [2]
     assert [t.gain_db for t in dialog._plan.tracks] != before
-    choose_levels(dialog, "off")  # and back
+    choose_levels(
+        dialog, "peak"
+    )  # peak normalising: its own note, still nothing measured
+    assert dialog.levels_label.text().startswith("Peak-normalised to -0.3 dBTP")
+    assert measured == [2]
+    choose_levels(dialog, None)  # and back
     assert [t.gain_db for t in dialog._plan.tracks] == [0.0, 0.0]
-    assert dialog.levels_label.text() == "" and not dialog.levels_spin.isEnabled()
+    assert dialog.levels_label.text() == "" and not dialog.levels_combo.isEnabled()
 
 
 def test_a_burn_with_matching_on_writes_tracks_at_the_target(make_dialog, wait_for):
@@ -590,7 +595,7 @@ def test_a_burn_with_matching_on_writes_tracks_at_the_target(make_dialog, wait_f
 
     burner = Measuring()
     dialog, _ = make_dialog(burner)
-    choose_levels(dialog, "match")
+    choose_levels(dialog, str(DEFAULT))
     assert wait_for(lambda: not dialog._measuring)
     assert not dialog.burn_button.isEnabled()  # (still needs the blank CD-R ticked)
     burn(dialog, wait_for)
@@ -603,11 +608,11 @@ def test_a_burn_with_matching_on_writes_tracks_at_the_target(make_dialog, wait_f
 def test_the_settings_can_have_matching_on_when_the_window_opens(
     qapp, lib, disc_id, wait_for
 ):
-    settings.set_levels_mode("match")
-    settings.set_levels_target(-12)
+    settings.set_levels_enabled(True)
+    settings.set_levels_choice("-12")
     dialog = BurnDialog(lib, disc_id, burner_factory=lambda: FakeBurner())
     try:
-        assert dialog.levels_combo.currentData() == "match" and dialog.levels_spin.value() == -12  # fmt: skip
+        assert dialog.levels_check.isChecked() and dialog.levels_combo.currentData() == "-12"  # fmt: skip
         assert wait_for(lambda: not dialog._measuring and not dialog._busy)
         assert "Levels matched to -12 LUFS" in dialog.levels_label.text()
     finally:
@@ -624,13 +629,13 @@ def test_a_failed_measurement_blocks_the_burn_and_says_how_to_get_past_it(make_d
 
     monkeypatch.setattr(burn_dialog, "measure_loudness", broken)
     dialog, _ = make_dialog()
-    choose_levels(dialog, "match")
+    choose_levels(dialog, str(DEFAULT))
     assert wait_for(lambda: not dialog._measuring)
     dialog.confirm_check.setChecked(True)
     assert not dialog.burn_button.isEnabled()
     assert "ffmpeg fell over" in dialog.problems_label.text()
-    assert "Leave as they are" in dialog.problems_label.text()
-    choose_levels(dialog, "off")  # the way out
+    assert "untick Normalise" in dialog.problems_label.text()
+    choose_levels(dialog, None)  # the way out
     assert dialog.burn_button.isEnabled() and dialog.problems_label.text() == ""
 
 
@@ -645,7 +650,7 @@ def test_exporting_with_matching_on_writes_matched_files(make_dialog, wait_for, 
     from dubcrate.loudness import measure
 
     dialog, _ = make_dialog()
-    choose_levels(dialog, "match")
+    choose_levels(dialog, str(DEFAULT))
     assert wait_for(lambda: not dialog._measuring)
     out = tmp_path / "out"
     out.mkdir()

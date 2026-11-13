@@ -74,7 +74,7 @@ dubcrate burn 1 --yes --simulate              # laser-off test write; needs a di
 dubcrate burn 1 --yes                         # really burns; uses up the blank CD-R
 ```
 
-`--levels match [--target LUFS]` matches the tracks' loudness (audio CDs; also on `export`).
+`--levels match [--target LUFS]` matches the tracks' loudness, and `--levels peak` brings each track's highest peak to -0.3 dBTP (audio CDs; also on `export`).
 
 Options: `--backend discrecording|cdrdao` (default `discrecording` on a Mac, `cdrdao` elsewhere), `--speed N`
 (default 10, which is the slowest this project's drive offers), `--device`, and

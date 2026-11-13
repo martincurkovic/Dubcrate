@@ -104,6 +104,7 @@ def set_last_disc(disc_id: int | None) -> None:
 
 
 DISC_MINUTES = (80, 74)
+DISC_BOX_MB = {80: 700, 74: 650}  # what is printed on the disc and its box
 PREGAP_SECONDS = (0, 1, 2, 3)  # 0 is gapless
 
 
@@ -173,34 +174,40 @@ def set_burn_speed(speed: int) -> None:
     _qs().setValue("burn/speed", int(speed))
 
 
-LEVELS_OFF = "off"
-LEVELS_MATCH = "match"
+def get_levels_enabled() -> bool:
+    """Whether a burn brings the levels of its tracks to a target by default. Off unless chosen; a burn
+    can still change it for itself. (Before the tick box there was `levels/mode`, "match" or "off".)"""
+    qs = _qs()
+    if qs.contains("levels/enabled"):
+        return _as_bool(qs.value("levels/enabled"), False)
+    return str(qs.value("levels/mode", "off")) == "match"
 
 
-def get_levels_mode() -> str:
-    """Whether a burn matches the loudness of its tracks by default: "off" (they are left as they
-    are) or "match". Off unless chosen. A burn can still change it for itself."""
-    value = str(_qs().value("levels/mode", LEVELS_OFF))
-    return value if value in (LEVELS_OFF, LEVELS_MATCH) else LEVELS_OFF
+def set_levels_enabled(on: bool) -> None:
+    _qs().setValue("levels/enabled", bool(on))
 
 
-def set_levels_mode(mode: str) -> None:
-    _qs().setValue("levels/mode", LEVELS_MATCH if mode == LEVELS_MATCH else LEVELS_OFF)
-
-
-def get_levels_target() -> int:
-    """The loudness, in LUFS, that level matching brings tracks to (-14 unless changed)."""
-    low, high = loudness.TARGET_RANGE
+def get_levels_choice() -> str:
+    """The key of the chosen `loudness.PRESETS` entry (club, -10 LUFS, unless changed). A target saved
+    before there were presets (`levels/target`, any LUFS) becomes the nearest preset."""
+    qs = _qs()
+    if qs.contains("levels/choice"):
+        return loudness.preset_for(qs.value("levels/choice")).key
     try:
-        value = int(_qs().value("levels/target", loudness.DEFAULT_TARGET_LUFS))
+        return loudness.nearest_preset(int(qs.value("levels/target"))).key
     except (TypeError, ValueError):
-        return loudness.DEFAULT_TARGET_LUFS
-    return min(max(value, low), high)
+        return loudness.DEFAULT_PRESET
 
 
-def set_levels_target(lufs: int) -> None:
-    low, high = loudness.TARGET_RANGE
-    _qs().setValue("levels/target", min(max(int(lufs), low), high))
+def set_levels_choice(key: str) -> None:
+    _qs().setValue("levels/choice", loudness.preset_for(key).key)
+
+
+def get_levels_target() -> loudness.Target | None:
+    """What a burn brings its tracks to by default, or None when that is switched off."""
+    if not get_levels_enabled():
+        return None
+    return loudness.preset_for(get_levels_choice()).target
 
 
 def _as_bool(value: object, default: bool) -> bool:

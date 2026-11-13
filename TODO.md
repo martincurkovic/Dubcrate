@@ -13,8 +13,10 @@
 - [ ] Windows build script and installer
 - [x] Support for adding other folder locations in track browser
 - [ ] Mixxx library support
+- [ ] Change browser views to not show top level folder for each tab, same for rekordbox tab
+- [ ] Remove time machine backup from Explorer tab in macOS
 - [x] Audio normalisation setting?
-  - [ ] Change audio normalisation setting to checkbox and offer a couple of presets for LUFS in a combobox instead of a spinbox
+  - [x] Change audio normalisation setting to checkbox and offer a couple of presets for LUFS in a combobox instead of a spinbox
   - [ ] Try on a real disc + CDJ (waveform height, any clipping, is -10 LUFS right?)
 - [ ] Engine DJ library support
 - [ ] Serato library support

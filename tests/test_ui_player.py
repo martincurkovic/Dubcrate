@@ -27,7 +27,7 @@ from dubcrate.ui.models import (
 )
 from dubcrate.ui.player_strip import IDLE_HINT, PlayerStrip, clock
 from dubcrate.ui.preview import PreviewController, load_media
-from dubcrate.ui.settings_dialog import TONE_LEVEL, SettingsDialog, make_test_tone
+from dubcrate.ui.settings_dialog import SettingsDialog
 from dubcrate.ui.track_table import PreviewDelegate, TrackTable, render_preview
 from dubcrate.ui.waveform_view import ZOOMS, DetailView, OverviewView
 from dubcrate.waveform import Waveform
@@ -694,26 +694,6 @@ def test_a_machine_with_no_audio_backend_still_opens_the_dialog(qapp, monkeypatc
 
     monkeypatch.setattr(devices, "list_output_devices", broken)
     assert SettingsDialog().device_combo.count() == 1
-
-
-def test_the_test_tone_plays_through_the_chosen_settings_and_stops_when_closed(
-    qapp, two_devices
-):
-    dialog = SettingsDialog()
-    dialog.buffer_combo.setCurrentIndex(dialog.buffer_combo.findData(512))
-    dialog.play_test_tone()
-    player = dialog._tone_player
-    assert player is not None and player.playing and player._buffer_frames == 512
-    device = player._device
-    dialog.reject()
-    assert dialog._tone_player is None and device.closed
-
-
-def test_the_test_tone_is_quiet_and_has_soft_edges(qapp):
-    tone = make_test_tone()
-    assert abs(tone.duration - 0.8) < 0.01 and tone.samples.shape[1] == 2
-    assert np.abs(tone.samples).max() <= TONE_LEVEL * 32767 + 1
-    assert abs(int(tone.samples[0, 0])) < 100 and abs(int(tone.samples[-1, 0])) < 100
 
 
 def test_the_theme_choice_is_announced(qapp):

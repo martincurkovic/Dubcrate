@@ -1,17 +1,13 @@
 """Settings: where audio goes, how big the buffer is, and how the app looks."""
 
-import numpy as np
-from PySide6.QtCore import Qt, QTimer, Signal
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
     QDialog,
     QDialogButtonBox,
     QFormLayout,
-    QHBoxLayout,
     QLabel,
-    QPushButton,
-    QSpinBox,
     QTabWidget,
     QVBoxLayout,
     QWidget,
@@ -19,40 +15,20 @@ from PySide6.QtWidgets import (
 
 from dubcrate import keys, loudness, mp3, settings, tools
 from dubcrate.audio import devices
-from dubcrate.audio.decode import DecodedAudio
-from dubcrate.audio.devices import BUFFER_SIZES, SAMPLE_RATE, buffer_msec
-from dubcrate.audio.player import AudioPlayer
+from dubcrate.audio.devices import BUFFER_SIZES, buffer_msec
 
 from . import key_style, theme, wave_style
 from .full_width_tabs import FullWidthTabBar
-
-TONE_SECONDS = 0.8
-TONE_LEVEL = 0.25  # a test tone should never startle anyone
-
-
-def make_test_tone() -> DecodedAudio:
-    """A short 440 Hz tone with soft edges, as CD-format audio."""
-    frames = int(SAMPLE_RATE * TONE_SECONDS)
-    t = np.arange(frames) / SAMPLE_RATE
-    envelope = np.minimum(
-        1.0, np.minimum(t, TONE_SECONDS - t) / 0.05
-    )  # 50 ms fades: no clicks
-    wave = (np.sin(2 * np.pi * 440 * t) * envelope * TONE_LEVEL * 32767).astype(
-        np.int16
-    )
-    return DecodedAudio(np.repeat(wave[:, None], 2, axis=1))
 
 
 class SettingsDialog(QDialog):
     audio_changed = Signal()
     theme_chosen = Signal(str)
 
-    def __init__(self, parent=None, device_factory=None):
+    def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Settings")
         self.setMinimumWidth(480)
-        self._device_factory = device_factory  # tests: a stand-in for the sound card
-        self._tone_player: AudioPlayer | None = None
 
         tabs = QTabWidget()
         tabs.setTabBar(FullWidthTabBar(tabs))  # before any tab is added
@@ -134,40 +110,12 @@ class SettingsDialog(QDialog):
         jump_hint.setObjectName("mutedLabel")
         form.addRow(jump_hint)
 
-        self.test_button = QPushButton("Play Test Tone")
-        self.test_button.clicked.connect(self.play_test_tone)
-        row = QHBoxLayout()
-        row.addWidget(self.test_button)
-        row.addStretch(1)
-        form.addRow(row)
         return page
 
     def _on_audio_chosen(self, _index: int = 0) -> None:
         settings.set_audio_device(self.device_combo.currentData())
         settings.set_audio_buffer(self.buffer_combo.currentData())
         self.audio_changed.emit()
-
-    def play_test_tone(self) -> None:
-        """A short tone through the chosen device and buffer, whether or not they are saved yet."""
-        self._stop_tone()
-        player = AudioPlayer(device_factory=self._device_factory, parent=self)
-        player.configure(
-            self.device_combo.currentData(), self.buffer_combo.currentData()
-        )
-        player.failed.connect(lambda text: self.test_button.setToolTip(text))
-        player.load(make_test_tone(), autoplay=True)
-        self._tone_player = player
-        QTimer.singleShot(int(TONE_SECONDS * 1000) + 200, self._stop_tone)
-
-    def _stop_tone(self) -> None:
-        if self._tone_player is not None:
-            self._tone_player.shutdown()
-            self._tone_player.deleteLater()
-            self._tone_player = None
-
-    def done(self, result: int) -> None:
-        self._stop_tone()
-        super().done(result)
 
     # -- discs ------------------------------------------------------------
 
@@ -183,7 +131,9 @@ class SettingsDialog(QDialog):
 
         self.minutes_combo = QComboBox()
         for minutes in settings.DISC_MINUTES:
-            self.minutes_combo.addItem(f"{minutes} minutes", minutes)
+            self.minutes_combo.addItem(
+                f"{minutes} minutes ({settings.DISC_BOX_MB[minutes]} MB)", minutes
+            )
         self.minutes_combo.setCurrentIndex(
             max(0, self.minutes_combo.findData(settings.get_disc_minutes()))
         )
@@ -262,32 +212,29 @@ class SettingsDialog(QDialog):
         hint.setObjectName("mutedLabel")
         form.addRow(hint)
 
-        # level matching: audio CDs only (see loudness.py)
+        # normalising the levels: audio CDs only (see loudness.py)
+        self.levels_check = QCheckBox("Normalise the levels of tracks on audio CDs")
+        self.levels_check.setChecked(settings.get_levels_enabled())
+        self.levels_check.toggled.connect(self._on_levels_toggled)
+        form.addRow(self.levels_check)
         self.levels_combo = QComboBox()
-        self.levels_combo.addItem("Leave as they are", settings.LEVELS_OFF)
-        self.levels_combo.addItem("Match loudness", settings.LEVELS_MATCH)
+        for preset in loudness.PRESETS:
+            self.levels_combo.addItem(preset.label, preset.key)
         self.levels_combo.setCurrentIndex(
-            max(0, self.levels_combo.findData(settings.get_levels_mode()))
+            max(0, self.levels_combo.findData(settings.get_levels_choice()))
         )
-        self.levels_combo.activated.connect(self._on_levels_chosen)
-        form.addRow("Track levels:", self.levels_combo)
-        self.levels_target_spin = QSpinBox()
-        self.levels_target_spin.setRange(*loudness.TARGET_RANGE)
-        self.levels_target_spin.setSuffix(" LUFS")
-        self.levels_target_spin.setValue(settings.get_levels_target())
-        self.levels_target_spin.setEnabled(
-            settings.get_levels_mode() == settings.LEVELS_MATCH
+        self.levels_combo.setEnabled(self.levels_check.isChecked())
+        self.levels_combo.activated.connect(
+            lambda _i: settings.set_levels_choice(self.levels_combo.currentData())
         )
-        self.levels_target_spin.valueChanged.connect(settings.set_levels_target)
-        form.addRow("Target loudness:", self.levels_target_spin)
+        form.addRow("Normalise to:", self.levels_combo)
         levels_hint = QLabel(
-            "Match loudness gives each track on an audio CD one fixed volume change so the tracks play"
-            " at about the same level. It never compresses or limits, so the music keeps its dynamics,"
-            " and it never turns a track up past the point where its peaks would clip (those tracks"
-            " are lifted less and the burn window says so). -10 LUFS keeps loud dance tracks close to"
-            " how they were; -14 is gentler and holds nothing back. Burning with it takes a moment"
-            " longer the first time, while"
-            " each track is measured. MP3 discs are left as they are. You can change this for a"
+            "Each track on an audio CD gets one fixed volume change: no compression or limiting, so the"
+            " music keeps its dynamics. The loudness choices bring the tracks to about the same level, but"
+            " never turn one up past the point where its peaks would clip (those are lifted less, and the"
+            " burn window says so). Peak to full scale makes each track as loud as it can safely be"
+            " instead, so levels still differ from track to track. The first burn takes a moment longer"
+            " while the tracks are measured. MP3 discs are left as they are. You can change this for a"
             " single burn in the burn window."
         )
         levels_hint.setWordWrap(True)
@@ -295,10 +242,9 @@ class SettingsDialog(QDialog):
         form.addRow(levels_hint)
         return page
 
-    def _on_levels_chosen(self, _index: int = 0) -> None:
-        mode = self.levels_combo.currentData()
-        settings.set_levels_mode(mode)
-        self.levels_target_spin.setEnabled(mode == settings.LEVELS_MATCH)
+    def _on_levels_toggled(self, on: bool) -> None:
+        settings.set_levels_enabled(on)
+        self.levels_combo.setEnabled(on)
 
     # -- library ----------------------------------------------------------
 

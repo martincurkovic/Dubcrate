@@ -167,6 +167,11 @@ def test_the_settings_tabs_the_guide_names_exist(qapp):
         assert f"**{name}:**" in MANUAL, name
     assert "Plan new discs for" in MANUAL and "Between tracks" in MANUAL
     assert dialog.minutes_combo.currentData() == 80  # "80 minutes ... gapless"
+    assert [dialog.minutes_combo.itemText(i) for i in range(2)] == [
+        "80 minutes (700 MB)",
+        "74 minutes (650 MB)",
+    ]
+    assert "80 minutes (700 MB) or 74 minutes (650 MB)" in MANUAL
     assert "Burn speed" in MANUAL and dialog.speed_combo.currentData() == 10  # "10x"
     assert "Waveform style" in MANUAL and "Waveform background" in MANUAL
     assert dialog.wave_style_combo.itemText(0) == "3-Band"

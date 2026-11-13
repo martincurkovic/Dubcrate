@@ -136,7 +136,12 @@
 - **Level matching** (audio CDs only; owner's choices 2026-11-13): one fixed gain per track from its integrated
   loudness (LUFS) to a target, no compression or limiting, held back where the true peak would pass -0.3 dBTP
   (reported, never squashed); default target -10 LUFS (moved from -14 because quiet discs made the CDJ's waveform
-  flat); off unless chosen in Settings > Burning or per burn. MP3 discs are not matched (a gain would mean
+  flat); off unless chosen in Settings > Burning or per burn. **Presets, not a number** (owner's choice, same
+  day): a tick box plus a combo of Peak to full scale, Loud -9, Club -10 (default), Balanced -12 and Gentle -14 LUFS;
+  louder loudness presets were left out because nothing but a limiter could reach them (they would just be held
+  back by peak headroom) and Peak already means as loud as is safe. **Peak to full scale** reverses the earlier
+  "never peak normalise": one fixed gain puts each track's true peak at -0.3 dBTP (up to the 12 dB cap, and down
+  if it was over); it does not match loudness. The command line still takes any LUFS (`--target`) and `--levels peak`. MP3 discs are not matched (a gain would mean
   re-encoding every file). Loudness is the one measurement the app takes of audio, at burn time, cached.
 
 - The layout is three panes under the player: the library's file tree on the left, the track list (or the open disc) in the middle, and the **Discs** list on the right.

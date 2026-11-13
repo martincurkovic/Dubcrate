@@ -45,7 +45,7 @@ def test_a_hidden_tab_does_not_take_a_share(qapp):
 
 
 def test_settings_tabs_match_the_pane_width(qapp):
-    dialog = SettingsDialog(device_factory=lambda *a: None)
+    dialog = SettingsDialog()
     dialog.show()
     QApplication.processEvents()
     tabs = dialog.findChild(QTabWidget)

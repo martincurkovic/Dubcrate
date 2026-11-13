@@ -27,7 +27,6 @@ from PySide6.QtWidgets import (
     QPlainTextEdit,
     QProgressBar,
     QPushButton,
-    QSpinBox,
     QVBoxLayout,
     QWidget,
 )
@@ -212,29 +211,25 @@ class BurnDialog(QDialog):
         self.confirm_check.toggled.connect(lambda _on: self._update())
         self.simulate_check.toggled.connect(lambda _on: self._update())
 
-        # Level matching (audio CDs only; see loudness.py): off or on as the Settings say, per burn
+        # Normalising the levels (audio CDs only; see loudness.py): on or off as the Settings say, per burn
+        self.levels_check = QCheckBox("Normalise")
         self.levels_combo = QComboBox()
-        self.levels_combo.addItem("Leave as they are", settings.LEVELS_OFF)
-        self.levels_combo.addItem("Match loudness", settings.LEVELS_MATCH)
-        self.levels_spin = QSpinBox()
-        self.levels_spin.setRange(*loudness.TARGET_RANGE)
-        self.levels_spin.setSuffix(" LUFS")
-        self.levels_spin.setValue(settings.get_levels_target())
-        self.levels_spin.setToolTip("The loudness the tracks are brought to")
+        for preset in loudness.PRESETS:
+            self.levels_combo.addItem(preset.label, preset.key)
+        self.levels_combo.setCurrentIndex(
+            max(0, self.levels_combo.findData(settings.get_levels_choice()))
+        )
         self.levels_label = QLabel()
         self.levels_label.setObjectName("usageLabel")
         self.levels_label.setWordWrap(True)
         self.levels_label.setVisible(False)
         self._has_levels = self._kind == "audio" and self._base_plan is not None
-        if self._has_levels and settings.get_levels_mode() == settings.LEVELS_MATCH:
-            self.levels_combo.setCurrentIndex(
-                self.levels_combo.findData(settings.LEVELS_MATCH)
-            )
+        self.levels_check.setChecked(self._has_levels and settings.get_levels_enabled())
+        self.levels_check.toggled.connect(lambda _on: self._apply_levels())
         self.levels_combo.activated.connect(lambda _i: self._apply_levels())
-        self.levels_spin.valueChanged.connect(lambda _v: self._apply_levels())
         levels_row = QHBoxLayout()
+        levels_row.addWidget(self.levels_check)
         levels_row.addWidget(self.levels_combo, 1)
-        levels_row.addWidget(self.levels_spin)
 
         form = QFormLayout()
         form.addRow("Speed:", self.speed_combo)
@@ -339,13 +334,11 @@ class BurnDialog(QDialog):
             self.simulate_check,
             self.confirm_check,
             self.check_button,
-            self.levels_combo,
+            self.levels_check,
         ):
             widget.setEnabled(not working and not self._finished)
-        self.levels_spin.setEnabled(
-            not working
-            and not self._finished
-            and self.levels_combo.currentData() == settings.LEVELS_MATCH
+        self.levels_combo.setEnabled(
+            not working and not self._finished and self.levels_check.isChecked()
         )
         self.close_button.setEnabled(not working)
         self.export_button.setEnabled(self._plan is not None and not working)
@@ -393,7 +386,7 @@ class BurnDialog(QDialog):
         if not self._has_levels or self._base_plan is None or self._busy:
             return
         self._levels_error = ""
-        if self.levels_combo.currentData() != settings.LEVELS_MATCH:
+        if not self.levels_check.isChecked():
             self._plan = self._base_plan
             self._say_levels("", "normal")
             self._update()
@@ -436,7 +429,9 @@ class BurnDialog(QDialog):
         self._measuring = False
         self.progress.setVisible(False)
         self._plan = self._base_plan
-        self._levels_error = f"couldn't measure the levels: {text} (choose “Leave as they are” to burn without matching)"
+        self._levels_error = (
+            f"couldn't measure the levels: {text} (untick Normalise to burn without it)"
+        )
         self._say_levels("", "normal")
         self._update()
 
@@ -448,7 +443,11 @@ class BurnDialog(QDialog):
             for t in self._lib.tracks_by_ids(ids)
             if t.loudness is not None
         }
-        self._plan = apply_levels(self._base_plan, measured, self.levels_spin.value())
+        self._plan = apply_levels(
+            self._base_plan,
+            measured,
+            loudness.preset_for(self.levels_combo.currentData()).target,
+        )
         note = self._plan.levels_note
         held = "held back" in note or bool(problems)
         self._say_levels(note, "warning" if held else "normal")

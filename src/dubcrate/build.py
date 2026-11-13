@@ -12,7 +12,14 @@ from dubcrate.library.lengths import measure_tracks
 from dubcrate.library.levels import ensure_loudness
 from dubcrate.library.models import DiscKind
 from dubcrate.library.store import Library
-from dubcrate.loudness import Gain, Loudness, describe_gains, gain_for
+from dubcrate.loudness import (
+    PEAK_CEILING_DB,
+    Gain,
+    Loudness,
+    Target,
+    describe_gains,
+    gain_for,
+)
 from dubcrate.mp3 import format_amount
 from dubcrate.render import RenderError, ToolMissingError, render_mp3, render_track
 
@@ -178,10 +185,10 @@ def plan_burn(lib: Library, disc_id: int) -> BurnPlan:
 
 
 def apply_levels(
-    plan: BurnPlan, measured: dict[int, Loudness], target_lufs: float
+    plan: BurnPlan, measured: dict[int, Loudness], target: Target
 ) -> BurnPlan:
     """`plan` with a gain on each track that has been measured (`measured`: track id to loudness), so
-    that they come out at about `target_lufs`. A track that was not measured keeps no gain, and the
+    that they come out at `target` (a loudness, or each one's peak). A track that was not measured keeps no gain, and the
     note says so. Only audio CDs are matched: an MP3 disc is returned as it is."""
     if plan.kind != "audio":
         return plan
@@ -192,14 +199,14 @@ def apply_levels(
         if loud is None:
             tracks.append(replace(t, gain_db=0.0))
             continue
-        gains[t.track_id] = gain_for(loud, target_lufs)
+        gains[t.track_id] = gain_for(loud, target)
         tracks.append(replace(t, gain_db=gains[t.track_id].db))
     unmeasured = len(plan.tracks) - sum(1 for t in plan.tracks if t.track_id in gains)
     # (a track repeated on the disc is one measurement, listed each time it plays)
     listed = [gains[t.track_id] for t in plan.tracks if t.track_id in gains]
-    note = (
-        f"Levels matched to {target_lufs:g} LUFS: {describe_gains(listed, unmeasured)}"
-    )
+    what = "Peak-normalised" if target.peak else "Levels matched"
+    to = f"to {PEAK_CEILING_DB:g} dBTP" if target.peak else f"to {target}"
+    note = f"{what} {to}: {describe_gains(listed, unmeasured, target)}"
     return replace(plan, tracks=tuple(tracks), levels_note=note)
 
 
@@ -283,13 +290,11 @@ def _render_mp3_plan(plan: BurnPlan, workdir: Path, say: Progress) -> Rendered:
     return Rendered(data, 0, {})
 
 
-def planned_with_levels(
-    lib: Library, disc_id: int, target_lufs: float | None
-) -> BurnPlan:
-    """`plan_burn`, with level matching to `target_lufs` if that is given (None: off): measures what
+def planned_with_levels(lib: Library, disc_id: int, target: Target | None) -> BurnPlan:
+    """`plan_burn`, with the levels brought to `target` if that is given (None: off): measures what
     has not been measured yet, which takes a moment. For the library's own thread."""
     plan = plan_burn(lib, disc_id)
-    if target_lufs is None or plan.kind != "audio":
+    if target is None or plan.kind != "audio":
         return plan
     problems = ensure_loudness(lib, [t.track_id for t in plan.tracks])
     if problems:
@@ -299,7 +304,7 @@ def planned_with_levels(
         for t in lib.tracks_by_ids(t.track_id for t in plan.tracks)
         if t.loudness is not None
     }
-    return apply_levels(plan, measured, target_lufs)
+    return apply_levels(plan, measured, target)
 
 
 def build_burn_disc(
@@ -307,20 +312,18 @@ def build_burn_disc(
     disc_id: int,
     workdir: Path,
     progress: Progress | None = None,
-    target_lufs: float | None = None,
+    target: Target | None = None,
 ) -> tuple[BurnDisc | DataDisc, int]:
     """Render a planned disc to CD-ready WAVs (or, for an MP3 disc, a folder of MP3s);
     returns (the disc to burn, pregap sectors).
 
     Measures lengths first and refuses to render a disc that can't be burned.
     Rendered lengths are saved back to the library. For a worker thread, use
-    `plan_burn` here and `render_plan` there instead. `target_lufs` turns level matching on.
+    `plan_burn` here and `render_plan` there instead. `target` turns level matching on.
     """
     if lib.disc(disc_id).kind == "audio":  # an MP3 disc is sized from file sizes
         measure_tracks(lib, [e.track.id for e in lib.disc_entries(disc_id)])
-    rendered = render_plan(
-        planned_with_levels(lib, disc_id, target_lufs), workdir, progress
-    )
+    rendered = render_plan(planned_with_levels(lib, disc_id, target), workdir, progress)
     for track_id, sectors in rendered.lengths.items():
         lib.set_cd_sectors(track_id, sectors)
     return rendered.disc, rendered.pregap_sectors
