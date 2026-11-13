@@ -12,7 +12,7 @@ from dubcrate.library.lengths import measure_tracks
 from dubcrate.library.models import DiscKind
 from dubcrate.library.store import Library
 from dubcrate.mp3 import format_amount
-from dubcrate.render import RenderError, render_mp3, render_track
+from dubcrate.render import RenderError, ToolMissingError, render_mp3, render_track
 
 Progress = Callable[[str], None]
 
@@ -190,6 +190,8 @@ def render_plan(
         wav = workdir / f"{number:02d}.wav"
         try:
             sectors = render_track(Path(t.path), wav)
+        except ToolMissingError as exc:
+            raise BuildError(str(exc)) from exc
         except RenderError as exc:
             raise BuildError(f"#{number} {t.title}: {exc}") from exc
         lengths[t.track_id] = sectors
@@ -232,6 +234,8 @@ def _render_mp3_plan(plan: BurnPlan, workdir: Path, say: Progress) -> Rendered:
                 number=number,
                 max_bitrate=plan.mp3_bitrate or mp3.DEFAULT_BITRATE,
             )
+        except ToolMissingError as exc:
+            raise BuildError(str(exc)) from exc
         except RenderError as exc:
             raise BuildError(f"#{done} {t.title}: {exc}") from exc
         data.files.append(dst)

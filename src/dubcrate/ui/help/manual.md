@@ -35,7 +35,7 @@ Dubcrate helps you put music from your rekordbox library (or any folder) onto au
 4. **Watch the bar.** It shows how full the disc is and turns red if the disc is too long.
 5. **Burn it.** Open the disc by clicking it, press **Burn…**, check the drive, tick that a blank CD-R is inside, and burn.
 
-You need **ffmpeg** installed: Dubcrate uses it to read tracks and to prepare them for the disc. With Homebrew: `brew install ffmpeg`.
+Dubcrate comes with **ffmpeg** and **ffprobe**, which it uses to read tracks and to prepare them for the disc, so there is nothing to install. **Settings > Library** shows where it found each one and which version it is. (A copy you have installed yourself, for instance with Homebrew, is only used if Dubcrate's own is missing.)
 
 ---
 
@@ -399,7 +399,7 @@ This is the only time Dubcrate uses the network. It asks `github.com` for the li
 
 - **A preview crackles.** Raise the buffer size in **Settings** (try 2048 frames).
 - **No sound, or the wrong output.** Choose the output device in **Settings** and press the test tone button.
-- **"ffmpeg not found".** Install it (`brew install ffmpeg`) and restart Dubcrate.
+- **Dubcrate says it can't find ffmpeg.** The download includes it, so this means the app has been damaged or changed: download it again. If you run Dubcrate from source, install it with `brew install ffmpeg` and restart. Your library, rekordbox import and previews of MP3, WAV and FLAC files still work without it, but folder import and burning don't. **Settings > Library** shows what Dubcrate found.
 - **New tracks from rekordbox aren't showing.** Dubcrate updates rekordbox when it starts, and only if **Settings > Library** is on. To update while it is open, select the rekordbox source and press ⇧⌘R. If the status bar said it couldn't update, it says why.
 - **Dubcrate can't find my rekordbox library.** Choose **Choose File…** when importing and pick `master.db`.
 - **A track is greyed out, or its file is missing.** Reconnect the drive or put the file back, then re-import the source (⇧⌘R).

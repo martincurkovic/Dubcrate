@@ -53,7 +53,7 @@ with CD-TEXT so track titles appear on the CDJ.
 - **A CD burner** that can write CD-R and blank
   **CD-R** discs. CD-RW works, but is not recommended for old CD players.
 - **[ffmpeg](https://ffmpeg.org/)**, which Dubcrate uses to read tracks and prepare
-  them for the disc. On a Mac with Homebrew: `brew install ffmpeg`.
+  them for the disc. The download includes it; nothing to install. (Running from source: `brew install ffmpeg`.)
 - **A player that reads audio CDs**.
 - Music as **MP3, WAV, FLAC, AIFF, AAC/M4A, Ogg, Opus or WMA**.
 - Optionally, an existing **rekordbox 7** library. rekordbox version 6 uses the same format and will likely work, but is untested.
@@ -62,8 +62,7 @@ with CD-TEXT so track titles appear on the CDJ.
 
 Download the latest `.dmg` from the [Releases page](https://github.com/martincurkovic/Dubcrate/releases)
 (`Dubcrate-macos-arm.dmg` for Apple Silicon, `Dubcrate-macos-intel.dmg` for Intel Macs),
-open it and drag Dubcrate to your Applications folder. It needs macOS 14 or later, and
-`ffmpeg` (see above). Other than optionally checking for updates upon startup, Dubcrate works completely offline.
+open it and drag Dubcrate to your Applications folder. It needs macOS 14 or later. Other than optionally checking for updates upon startup, Dubcrate works completely offline.
 
 The app is not signed, because a signing certificate is hard to justify for a free
 single-person project, so macOS will warn about it the first time. To open it anyway:

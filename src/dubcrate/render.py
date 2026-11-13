@@ -6,7 +6,6 @@ sectors without a second pass over the file.
 """
 
 import json
-import shutil
 import subprocess
 import wave
 from dataclasses import dataclass
@@ -20,12 +19,17 @@ from dubcrate.cd import (
     samples_to_sectors,
 )
 from dubcrate.mp3 import LOSSY_CODECS, cbr_target, is_mp3, scan_mp3
+from dubcrate.tools import find_tool, missing_message
 
 _CHUNK = 1 << 20
 
 
 class RenderError(RuntimeError):
     pass
+
+
+class ToolMissingError(RenderError):
+    """ffmpeg or ffprobe can't be found. An expected failure: the message is for the user."""
 
 
 @dataclass(frozen=True)
@@ -67,10 +71,10 @@ def _parse_year(value: str) -> int | None:
 
 
 def _require(tool: str) -> str:
-    found = shutil.which(tool)
-    if not found:
-        raise RenderError(f"{tool} not found on PATH")
-    return found
+    found = find_tool(tool)
+    if found is None:
+        raise ToolMissingError(missing_message(tool))
+    return str(found.path)
 
 
 def probe(path: Path) -> SourceInfo:

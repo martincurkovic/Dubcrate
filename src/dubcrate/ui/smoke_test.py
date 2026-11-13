@@ -19,6 +19,8 @@ from PySide6.QtCore import QSettings
 from PySide6.QtGui import QFontDatabase, QPixmap
 from PySide6.QtWidgets import QApplication
 
+from dubcrate import tools
+
 
 class _SilentDevice:  # a stand-in sound card
     def start(self, gen):
@@ -150,12 +152,54 @@ def _check_ca_bundle() -> str:
 
 
 def _check_tools() -> str:
-    """ffmpeg and ffprobe read the tracks, cdrdao is the optional second burner: only reported."""
-    found = [
-        f"{tool}: {shutil.which(tool) or 'not found'}"
-        for tool in ("ffmpeg", "ffprobe", "cdrdao")
-    ]
-    return ", ".join(found)
+    """ffmpeg and ffprobe read the tracks; cdrdao is the optional second burner: only reported.
+
+    A built app must carry its own ffmpeg and ffprobe, and they must work: decode a WAV, encode an
+    MP3 (LAME) and read the result back. A run from source only reports what it found."""
+    built = bool(getattr(sys, "frozen", False)) or "__compiled__" in globals()
+    found = []
+    for name in tools.REQUIRED:
+        tool = tools.find_tool(name)
+        if built:
+            assert tool is not None and tool.bundled, (
+                f"{name} is not bundled in the app: {tool.path if tool else 'not found'}"
+            )
+        found.append(tools.describe(name))
+        if tool is not None and tool.bundled:
+            assert tools.tool_version(tool), f"the bundled {name} won't run"
+    if all(
+        (tool := tools.find_tool(name)) is not None and tool.bundled
+        for name in tools.REQUIRED
+    ):
+        found.append(_exercise_bundled_tools())
+    found.append(f"cdrdao: {shutil.which('cdrdao') or 'not found'}")
+    return "; ".join(found)
+
+
+def _exercise_bundled_tools() -> str:
+    """Run what a disc needs through the bundled ffmpeg and ffprobe: render a WAV the way an audio
+    CD does (resampled to 16-bit / 44.1 kHz, to a pipe), the same for the preview's decoder, and
+    encode a constant-bitrate MP3 that ffprobe reads back."""
+    from dubcrate.audio.decode import _via_ffmpeg
+    from dubcrate.render import probe, render_mp3, render_track
+
+    with tempfile.TemporaryDirectory() as scratch:
+        src = Path(scratch) / "tone.wav"
+        with wave.open(str(src), "wb") as out:
+            out.setnchannels(2)
+            out.setsampwidth(2)
+            out.setframerate(48000)
+            out.writeframes(bytes(48000 * 4 // 2))
+        sectors = render_track(src, Path(scratch) / "cd.wav")
+        assert sectors > 0, "render_track made nothing"
+        assert len(_via_ffmpeg(str(src))) > 0, "the preview decoder got no audio"
+        dst = Path(scratch) / "tone.mp3"
+        render_mp3(
+            src, dst, title="Smoke", artist="Test"
+        )  # (raises if not constant bitrate)
+        info = probe(dst)
+        assert info.codec == "mp3", f"ffprobe read the MP3 as {info.codec!r}"
+    return "bundled ffmpeg rendered a disc WAV, decoded for preview and encoded an MP3 that ffprobe read"
 
 
 def _check_window() -> str:

@@ -6,7 +6,7 @@ the [README](README.md). AI coding agents should also read [AGENTS.md](AGENTS.md
 ## Set up
 
 You need a Mac (the primary platform), [uv](https://docs.astral.sh/uv/), and
-`ffmpeg`/`ffprobe` on your `PATH` (`brew install ffmpeg`). uv fetches Python 3.13.
+`ffmpeg`/`ffprobe` on your `PATH` (`brew install ffmpeg`; a built app bundles its own, see `BUILDING.md`). uv fetches Python 3.13.
 The optional `cdrdao` burn backend needs `brew install cdrdao`.
 
 ```sh

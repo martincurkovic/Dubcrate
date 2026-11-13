@@ -19,6 +19,7 @@ the repo; follow whatever it reports.
 ## Layout
 
 - `src/dubcrate/cd.py`: Red Book constants, sector maths, CD-TEXT string cleaning.
+- `src/dubcrate/tools.py`: `find_tool(name)` (Qt-free; bundled `dubcrate/bin` first, then `PATH`; a `Tool` says its path and whether it is bundled), `missing_tools`, `missing_message`, `describe` / `tool_version` (Settings > Library lists both, the log has them, `smoke_test._check_tools` fails a built app that doesn't bundle both). `ui/tools_dialog.py` is the notice `ui/app.py` shows after start-up if one is missing (every start until found; no "don't show again", no way to choose another ffmpeg).
 - `src/dubcrate/render.py`: ffmpeg decode to 16-bit/44.1k stereo WAV, padded to whole sectors.
 - `src/dubcrate/burn/base.py`: `Disc`, `DiscTrack`, `BurnOptions`, `Burner` protocol.
 - `src/dubcrate/burn/discrecording.py`: macOS backend (PyObjC). Import only on darwin.
@@ -53,7 +54,7 @@ the repo; follow whatever it reports.
   - `src/dubcrate/settings.py`: QSettings (theme, window layout, last disc, default disc size and gap, key notation, waveform look, burn speed, beat jump, update-check switches, the label window's options (`get_label_options`, `labels/*`), and the left tab, last Explorer folder and pinned folders).
 - `src/dubcrate/updates.py`: the update check (GitHub Releases, no Qt, `urlopen` injectable). `ui/update_check.py` (`UpdateChecker`: runs it on a worker and applies the policy: you asked = say everything, start-up = only news, once a day, skipped versions stay quiet), `ui/update_dialog.py`, `ui/about_dialog.py` (About, and the third-party notices from `ui/help/THIRD_PARTY_NOTICES.md`), `ui/version.py` (the version and the icon: a built app reads `dubcrate/_build_version.py`, which the build script writes from the git tag and does not track).
 - `src/main.py`, `src/dubcrate/ui/smoke_test.py`: the entry that `pyside6-deploy` compiles, and `dubcrate-gui --smoke-test=FILE`, which CI runs against every built app (it never touches your settings, library, rekordbox or a drive).
-- `scripts/` (`build_macos.sh`, `make_icons.sh`, `dmg_settings.py`), `assets/dmg/`, `.github/workflows/` (`test.yml`: lint and tests on every push; `build.yml`: on a `v*.*.*` tag, tests, then the Apple Silicon and Intel builds, then a draft release), `BUILDING.md`: packaging, modelled on AKAISDS and JV Studio. `tests/test_build_files.py` checks that the script, the DMG layout and the workflows agree.
+- `scripts/` (`build_macos.sh`, `build_ffmpeg_macos.sh`, `make_icons.sh`, `dmg_settings.py`), `assets/dmg/`, `.github/workflows/` (`test.yml`: lint and tests on every push; `build.yml`: on a `v*.*.*` tag, tests, then the Apple Silicon and Intel builds, then a draft release), `BUILDING.md`: packaging, modelled on AKAISDS and JV Studio. `tests/test_build_files.py` checks that the script, the DMG layout and the workflows agree.
 - `scripts/make_screenshots.py` + `screenshot_recipes.py` + `demo_music.py`: regenerate the guide's and README's pictures (`src/dubcrate/ui/help/screenshots/`, offscreen at 2x; about a minute; `--list`, `--only NAME`, `--overwrite`, `--out DIR`, `--scheme`). One `@shot` recipe per picture. They are taken from a MADE-UP collection (`demo_music.py` synthesises MP3s with invented titles, artists, BPM and key tags into a temp folder) imported into a temp library, with the Explorer pointed at a pretend home folder and no drives: nothing of the owner's is read, and the player has a silent sound card and the burn window a stand-in burner. Staged: the track list's Preview column is filled in (the app only fills it from rekordbox analysis; a plain folder shows a waveform once a track is loaded), and a folder import has no phrases, cues or beat grid. The label picture is the window composited over the main window (`_over`: a dialog is a window of its own, so `window.grab()` alone leaves it out). `tests/test_make_screenshots.py` fails if the guide names a picture with no recipe, a recipe has no file, or a file is named by neither the guide nor the README. **Change the UI -> re-run `uv run python scripts/make_screenshots.py --overwrite` and look at the PNGs.** A new picture: add a recipe, run it, reference it from `manual.md`.
 - `spikes/`: throwaway hardware drivers. Reusable logic belongs in the package.
 - `tests/`: pytest. Tests must not need a drive, a disc or the network (`conftest.py` blocks all three).
@@ -109,10 +110,12 @@ the repo; follow whatever it reports.
   (GPL-2.0-or-later) could be used, but no tag library is needed: `ffprobe` reads tags.
 - GUI will be PySide6 and packaged with Nuitka. Avoid dependencies that make
   Nuitka bundling hard (SQLCipher bindings are the known risk).
-- Bundled binaries (ffmpeg, cdrdao) are run as subprocesses, never linked. An
-  eventual bundled ffmpeg must be an LGPL build. The built app does not bundle them yet:
-  it finds Homebrew's (`extend_tool_path` in `ui/app.py`, because Finder gives an app a
-  minimal `PATH`).
+- Bundled binaries (ffmpeg, ffprobe) are run as subprocesses, never linked, and must be LGPL
+  builds (`scripts/build_ffmpeg_macos.sh`: no `--enable-gpl` / `--enable-nonfree`, LAME linked in
+  statically; the script refuses a GPL build). Always find them with `tools.find_tool` (the bundle
+  `dubcrate/bin`, then `PATH`), never `shutil.which` or a bare name; a missing one is
+  `render.ToolMissingError`, an expected error. `extend_tool_path` in `ui/app.py` adds Homebrew's
+  folders to `PATH` only for the fallback (Finder gives an app a minimal `PATH`). `cdrdao` is not bundled.
 - **The only network use is the update check** (`updates.py`, once a day at start-up
   unless switched off in Settings, or when asked). Keep it that way, and keep what it
   sends to a request for GitHub's release list.

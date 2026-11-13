@@ -4,8 +4,9 @@ set -e
 # build_macos.sh - builds the Dubcrate.app bundle and the DMG that installs it
 # Can be run from anywhere. Handles uv sync and the packaging (pyside6-deploy / Nuitka), the same way as AKAISDS and JV Studio.
 #
-# The app is built for macOS 14 and later, the oldest the Qt 6.12 wheels support. It needs ffmpeg and ffprobe (Homebrew's is
-# found: see extend_tool_path in src/dubcrate/ui/app.py); they are not bundled yet.
+# The app is built for macOS 14 and later, the oldest the Qt 6.12 wheels support. It bundles LGPL builds of ffmpeg and ffprobe
+# (scripts/build_ffmpeg_macos.sh makes them for this Mac's architecture, the first time), which dubcrate/tools.py looks for
+# before PATH.
 
 APP_NAME="Dubcrate"
 MIN_MACOS="14.0"
@@ -24,6 +25,12 @@ export MACOSX_DEPLOYMENT_TARGET="$MIN_MACOS"
 
 # the .icns is made from the 1024px master (assets/icon/AppIcon.png) on every build; it is not tracked
 "$ROOT_DIR/scripts/make_icons.sh"
+
+# ffmpeg and ffprobe for this architecture (a no-op if already built: delete build/ffmpeg to build them again). They are copied
+# to a fixed name so the data argument below doesn't depend on the architecture.
+"$ROOT_DIR/scripts/build_ffmpeg_macos.sh"
+rm -rf "$ROOT_DIR/build/ffmpeg/bundle"
+cp -R "$ROOT_DIR/build/ffmpeg/$(uname -m)" "$ROOT_DIR/build/ffmpeg/bundle"
 
 cd "$SRC_DIR"
 
@@ -57,8 +64,9 @@ sed -i '' "s|^python_path = .*|python_path = $ROOT_DIR/.venv/bin/python|" pyside
 
 # Data the app reads at run time, paths relative to src/ (where this runs), as SRC=DEST inside the app:
 #   the stylesheet templates, icons and the System 6 font, the user guide, the app icon (the splash and the window icon;
-#   dubcrate/ui/app.py looks for it beside itself) and the licence. tests/test_build_files.py checks that these exist.
-DATA_ARGS="--include-data-dir=dubcrate/ui/icons=dubcrate/ui/icons --include-data-files=dubcrate/ui/style.qss.template=dubcrate/ui/style.qss.template --include-data-files=dubcrate/ui/style_system6.qss.template=dubcrate/ui/style_system6.qss.template --include-data-dir=dubcrate/ui/fonts=dubcrate/ui/fonts --include-data-dir=dubcrate/ui/help=dubcrate/ui/help --include-data-files=../assets/icon/AppIcon.png=dubcrate/ui/AppIcon.png --include-data-files=../LICENSE=LICENSE"
+#   dubcrate/ui/app.py looks for it beside itself), the licence, and ffmpeg and ffprobe with their licences (as dubcrate/bin, where
+#   dubcrate/tools.py looks). tests/test_build_files.py checks that these exist (the ffmpeg folder is made above, so not in a clean checkout).
+DATA_ARGS="--include-data-dir=dubcrate/ui/icons=dubcrate/ui/icons --include-data-files=dubcrate/ui/style.qss.template=dubcrate/ui/style.qss.template --include-data-files=dubcrate/ui/style_system6.qss.template=dubcrate/ui/style_system6.qss.template --include-data-dir=dubcrate/ui/fonts=dubcrate/ui/fonts --include-data-dir=dubcrate/ui/help=dubcrate/ui/help --include-data-files=../assets/icon/AppIcon.png=dubcrate/ui/AppIcon.png --include-data-files=../LICENSE=LICENSE --include-data-dir=../build/ffmpeg/bundle=dubcrate/bin"
 
 # Modules that are loaded by name, which Nuitka's import scan can miss: the bridge to Apple's DiscRecording framework
 # (PyObjC), the rekordbox reader with its encrypted-database driver, and the C bridge miniaudio is built on (cffi). --smoke-test (below) shows if one is still missing.
@@ -69,6 +77,14 @@ sed -i '' "s|^extra_args = .*|extra_args = --quiet --noinclude-qt-translations -
 
 echo "Building $APP_NAME.app..."
 uv run pyside6-deploy -c pysidedeploy.spec
+
+# Make sure the bundled tools can run (Nuitka copies data files, and the executable bit must survive), and sign them: a macOS
+# binary that is modified or unsigned won't start on Apple Silicon.
+BUNDLED_TOOLS="$APP_NAME.app/Contents/MacOS/dubcrate/bin"
+for tool in ffmpeg ffprobe; do
+    chmod 755 "$BUNDLED_TOOLS/$tool"
+    /usr/bin/codesign -s - --force "$BUNDLED_TOOLS/$tool"
+done
 
 # Nuitka has no option for a minimum macOS version, so set it in Info.plist: on anything older macOS then says the app can't be
 # opened with this version instead of letting it crash. Nuitka's ad-hoc signature seals Info.plist, so sign again the way Nuitka does.

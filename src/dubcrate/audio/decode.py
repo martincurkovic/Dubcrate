@@ -6,12 +6,13 @@ Everything is converted to the CD's own format, so what you preview is what a di
 would hold, and playback needs no further conversion.
 """
 
-import shutil
 import subprocess
 from dataclasses import dataclass
 
 import miniaudio
 import numpy as np
+
+from dubcrate.tools import find_tool, missing_message
 
 from .devices import SAMPLE_RATE
 
@@ -51,10 +52,12 @@ def _via_miniaudio(path: str) -> np.ndarray:
 
 
 def _via_ffmpeg(path: str) -> np.ndarray:
-    ffmpeg = shutil.which("ffmpeg")
-    if not ffmpeg:
-        raise DecodeError("ffmpeg not found, and miniaudio can't read this format")
-    cmd = [ffmpeg, "-nostdin", "-v", "error", "-i", path, "-vn", "-map", "0:a:0",
+    ffmpeg = find_tool("ffmpeg")
+    if ffmpeg is None:
+        raise DecodeError(
+            f"Dubcrate can't read this kind of file without ffmpeg. {missing_message('ffmpeg')}"
+        )
+    cmd = [str(ffmpeg.path), "-nostdin", "-v", "error", "-i", path, "-vn", "-map", "0:a:0",
            "-ac", str(CHANNELS), "-ar", str(SAMPLE_RATE), "-f", "s16le", "-"]  # fmt: skip
     proc = subprocess.run(cmd, capture_output=True, check=False)
     if proc.returncode != 0 or not proc.stdout:

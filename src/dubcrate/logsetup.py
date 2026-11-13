@@ -108,6 +108,9 @@ def log_startup() -> None:
     _logger.info(
         "%s; log file %s", "built app" if bundled else "from source", log_path()
     )
+    from dubcrate import tools
+
+    tools.log_tools()
 
 
 def install_exception_hooks() -> None:

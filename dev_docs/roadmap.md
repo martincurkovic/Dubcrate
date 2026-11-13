@@ -64,8 +64,8 @@
    window on a real display. The guide's "Burning a disc" section must be kept in step
    with the burn window.
 
-6. **ffmpeg and ffprobe: check at start-up, bundle them, show where they are.** *Planned (owner's
-   decisions, 2026-11-12), not started.* Today the app never checks: it only finds Homebrew's copy on
+6. **ffmpeg and ffprobe: check at start-up, bundle them, show where they are.** *Built 2026-11-13
+   (see the end of this item for what is and isn't proven); the plan below is kept for the reasons.*  Today the app never checks: it only finds Homebrew's copy on
    `PATH` (`extend_tool_path` in `ui/app.py`), and when they are missing a folder import reports every
    file as unreadable and a preview or burn fails with "not found". Dubcrate needs `ffprobe` for tags and
    lengths of folder music, and `ffmpeg` to render discs, to preview formats miniaudio can't read, and to
@@ -97,14 +97,19 @@
       path, whether it is the bundled copy or one from `PATH`, and its version; a missing one says so and
       how to fix it. It reads the same `find_tool` as step 1, so the check and the display can't disagree.
 
-   Open questions: whether the start-up dialog may be dismissed for good (a "don't show again", or it
-   shows every start until the tools are found); whether Settings should let someone pick their own
-   ffmpeg (not asked for). When it is done, update `README.md` (What you need, Troubleshooting),
-   `ui/help/manual.md` (Getting started, Troubleshooting), `BUILDING.md`, `AGENTS.md` ("the built app does
-   not bundle them yet", the layout list and the bundled-binaries rule), `dev_docs/cross-platform.md`
-   (the ffmpeg lines) and tick the item under "Before making the repository public". Tests: the lookup
-   with temporary folders and a patched `PATH`, the dialog with the lookup patched (no test may need the
-   real tools to be absent); the existing tests that need ffmpeg already skip without it.
+   **Built (2026-11-13), with these choices where the plan left them open:** the start-up notice shows
+   at every start until the tools are found (no "don't show again"), and Settings > Library only
+   displays them (no picking your own ffmpeg). The build is `scripts/build_ffmpeg_macos.sh` (FFmpeg 9.0.2
+   and LAME 3.100, pinned and hash-checked; LGPL, static, about 37 MB for the two programs before the
+   DMG compresses them), called by `scripts/build_macos.sh`. The lookup is `tools.py`; a missing tool
+   is `render.ToolMissingError`, which the task layer treats as an expected error; the smoke test
+   fails a built app that doesn't bundle both tools or can't render a disc track and encode an MP3 with
+   them. Docs updated: README, guide, `BUILDING.md`, `AGENTS.md`, `cross-platform.md`, the notices.
+   **Proven:** the arm64 build of the tools, every input format (MP3, WAV, FLAC, AIFF, M4A, Opus, WMA)
+   through `render_track`, `render_mp3` and the preview decoder, and the tests. **Not proven:** the
+   Intel build (needs `nasm`, only the workflow does it), the build in CI, a release `.dmg` on a clean
+   Mac (Gatekeeper and quarantine on the nested programs), and the FFmpeg tarball's GPG signature (the
+   hash was taken from the first download, not from a signed source).
 
 ## Later
 
@@ -310,7 +315,7 @@
 - [x] Packaging: Nuitka build script and a macOS DMG like the sibling apps
       (`scripts/build_macos.sh`, [BUILDING.md](../BUILDING.md)). Still open: code signing
       and notarisation, and whether the built app can use the drive (a hardware check).
-- [ ] Supply ffmpeg: **decided, bundle it** (LGPL builds of ffmpeg and ffprobe per architecture,
+- [x] Supply ffmpeg: **bundled** (built, see item 6; not yet seen in a release build from CI) (LGPL builds of ffmpeg and ffprobe per architecture,
       with the MP3 encoder, looked up before `PATH`), with a start-up check and a line in Settings >
       Library. Plan and open questions: item 6 under "Next". `cdrdao` is not needed on macOS. Until
       then the app finds Homebrew's.

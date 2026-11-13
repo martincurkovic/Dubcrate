@@ -16,6 +16,8 @@ from typing import Any
 
 from PySide6.QtCore import QObject, QRunnable, QThreadPool, Signal, Slot
 
+from dubcrate.render import ToolMissingError
+
 log = logging.getLogger(__name__)
 _live: set["_Relay"] = set()  # keeps relays alive until their result arrives
 
@@ -70,7 +72,9 @@ class _Task(QRunnable):
             else:
                 result = self._fn()
         except Exception as e:  # noqa: BLE001 - reported to the UI, never allowed to kill the pool thread
-            if isinstance(e, TaskError):
+            if isinstance(
+                e, TaskError | ToolMissingError
+            ):  # (messages written for the user)
                 log.warning("task failed: %s", e)
             else:
                 log.error(

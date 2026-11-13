@@ -8,19 +8,21 @@ import sys
 from PySide6.QtGui import QIcon, QPixmap
 from PySide6.QtWidgets import QApplication
 
-from dubcrate import logsetup
+from dubcrate import logsetup, tools
 from dubcrate.library import Library
 
 from . import dialog_log, spinbox_drag, theme
 from .main_window import MainWindow
 from .splash import StartupSplash
 from .startup import maybe_refresh
+from .tools_dialog import MissingToolsDialog
 from .version import app_version, icon_path
 
 log = logging.getLogger(__name__)
 
 # Where Homebrew puts ffmpeg (Apple Silicon, Intel). An app started from Finder or the Dock is
-# given only /usr/bin:/bin:/usr/sbin:/sbin, so without these it can't find the tools it runs.
+# given only /usr/bin:/bin:/usr/sbin:/sbin, so without these it can't find the tools it runs
+# (when the app has no bundled copy: `tools.find_tool` looks in the bundle first).
 TOOL_DIRS = ("/opt/homebrew/bin", "/usr/local/bin")
 
 
@@ -104,12 +106,16 @@ def _run(args: argparse.Namespace, qt_args: list[str]) -> int:
     with Library.open(args.library) as lib:
         lib.prune_explorer()  # what the Explorer read last time is only a cache (discs keep theirs)
         imported = maybe_refresh(lib, splash.set_status, skip=args.no_import)
+        splash.set_status("Checking tools…")
+        missing = tools.missing_tools()
         splash.set_status("Loading Dubcrate…")
         window = MainWindow(lib, persist=True, update_check=True)
         window.show()
         splash.finish()
         if imported is not None and imported.message():
             window.statusBar().showMessage(imported.message(), 15000)
+        if missing:
+            MissingToolsDialog(missing, window).exec()
         return app.exec()
 
 

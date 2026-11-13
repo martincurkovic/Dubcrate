@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from dubcrate.library.models import NodeRecord, TrackRecord
-from dubcrate.render import RenderError, SourceInfo, probe
+from dubcrate.render import RenderError, SourceInfo, ToolMissingError, probe
 
 AUDIO_EXTENSIONS = frozenset(
     {".mp3", ".flac", ".wav", ".aif", ".aiff", ".m4a", ".aac", ".ogg", ".opus", ".wma"}
@@ -122,6 +122,8 @@ def scan_folder(
     def run(path: Path) -> tuple[Path, SourceInfo | str]:
         try:
             return path, probe(path)
+        except ToolMissingError:
+            raise
         except (RenderError, OSError, ValueError) as exc:
             return path, str(exc)
 
@@ -182,6 +184,8 @@ def scan_directory(
             return path, old
         try:
             return path, _record(path, probe(path))
+        except ToolMissingError:
+            raise
         except (RenderError, OSError, ValueError) as exc:
             return path, str(exc)
 

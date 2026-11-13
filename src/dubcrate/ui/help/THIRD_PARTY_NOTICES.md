@@ -44,9 +44,13 @@ The theme, the colour palettes, the icons and a few widgets (the volume knob and
 
 How rekordbox stores waveforms, beat grids, cue points and phrases was learned from Deep Symmetry's documentation of the format (<https://djl-analysis.deepsymmetry.org>) and checked against real files. No code was copied from it.
 
+## Programs that come with Dubcrate, and are run, not linked
+
+The app includes **ffmpeg** and **ffprobe** (FFmpeg 9.0.2, LGPL-2.1-or-later; <https://ffmpeg.org>), which read your tracks, convert them to CD quality and write MP3 files, and the **LAME** MP3 encoder (3.100, LGPL-2.0-or-later; <https://lame.sourceforge.io>), which is built into `ffmpeg`. They are built without `--enable-gpl` and without `--enable-nonfree`. Dubcrate starts them as separate programs and does not link them. They are in the `dubcrate/bin` folder inside the app, with their licence texts, their build configuration and the written offer of source (`licenses/`). The exact sources and the script that builds them (`scripts/build_ffmpeg_macos.sh`) are in the Dubcrate source repository, so you can rebuild them and put your own copy in that folder, or install ffmpeg on your `PATH`.
+
 ## Programs Dubcrate runs, but does not include
 
-Dubcrate starts these as separate programs. It does not contain or link them: **ffmpeg** and **ffprobe** (LGPL-2.1-or-later, or GPL, depending on how your copy was built; <https://ffmpeg.org>), which read your tracks and convert them to CD quality, and the optional **cdrdao** (GPL; <https://cdrdao.sourceforge.net>). **DiscRecording** is part of macOS.
+Dubcrate starts the optional **cdrdao** (GPL; <https://cdrdao.sourceforge.net>) as a separate program if you have it installed; it does not contain or link it. **DiscRecording** is part of macOS.
 
 ## Trademarks
 

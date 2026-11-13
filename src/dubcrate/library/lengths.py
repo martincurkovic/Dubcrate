@@ -7,7 +7,7 @@ from pathlib import Path
 from dubcrate.cd import measured_sectors
 from dubcrate.library.models import Track
 from dubcrate.library.store import Library
-from dubcrate.render import RenderError, probe
+from dubcrate.render import RenderError, ToolMissingError, probe
 
 Progress = Callable[[int, int], None]  # (done, total)
 
@@ -30,6 +30,8 @@ def probe_lengths(
     def run(track: Track) -> tuple[Track, int | str]:
         try:
             return track, measured_sectors(probe(Path(track.path)).duration)
+        except ToolMissingError:
+            raise
         except (RenderError, OSError, ValueError) as exc:
             return track, str(exc)
 

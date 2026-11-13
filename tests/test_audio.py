@@ -5,7 +5,8 @@ import wave
 import numpy as np
 import pytest
 
-from dubcrate.audio import decode, devices
+from dubcrate import tools
+from dubcrate.audio import devices
 from dubcrate.audio.decode import DecodedAudio, DecodeError, decode_file
 from dubcrate.audio.devices import SAMPLE_RATE, buffer_msec
 from dubcrate.audio.player import AudioPlayer, PlaybackState, render_block
@@ -368,8 +369,9 @@ def test_garbage_is_a_decode_error(tmp_path):
 
 def test_missing_ffmpeg_is_a_clear_error(tmp_path, monkeypatch):
     (tmp_path / "bad.m4a").write_bytes(b"nope")
-    monkeypatch.setattr(decode.shutil, "which", lambda _name: None)
-    with pytest.raises(DecodeError, match="ffmpeg not found"):
+    monkeypatch.setattr(tools, "BUNDLE_DIR", tmp_path / "no-bundle")
+    monkeypatch.setattr(tools.shutil, "which", lambda _name: None)
+    with pytest.raises(DecodeError, match="brew install ffmpeg"):
         decode_file(str(tmp_path / "bad.m4a"))
 
 

@@ -41,7 +41,7 @@ until a person with that OS and an optical drive has checked it.
 | Library, planning, discs, folders, the MP3 and CBR logic, CD-TEXT cleaning | plain Python **[tests]** |
 | UI | PySide6, which runs on all three; tests run offscreen **[tests]** (on macOS only so far) |
 | Audio preview | miniaudio (cross-platform) |
-| Rendering and probing | `ffmpeg` / `ffprobe` found on `PATH` |
+| Rendering and probing | `ffmpeg` / `ffprobe`: `tools.find_tool` looks in the app's bundle (`dubcrate/bin`, macOS builds only so far), then `PATH` |
 | App data, log folder | `platformdirs` (`library/paths.py`, `logsetup.py`); the theme's icon cache has `darwin` / `win32` / other branches |
 | rekordbox library location | `library/rekordbox.py: default_master_db` has macOS and Windows paths, and returns `None` on Linux (rekordbox doesn't exist there; a copied `master.db` can still be picked by hand) |
 | Label printing | `QPrinter` / `QPdfWriter` and a painter (`ui/label_paint.py`), so portable in principle; **[not tried]** off macOS, and not tried on a real printer anywhere (PDF output is tested) |
@@ -151,8 +151,9 @@ until a person with that OS and an optical drive has checked it.
 
 - [ ] `build.yml`: a job per OS producing an installer or archive; the smoke test
   (`--smoke-test=FILE`) runs against each build, as for macOS. The release job already runs on Linux.
-- [ ] ffmpeg: today the app finds Homebrew's. A bundled ffmpeg **must be an LGPL build**
-  (`AGENTS.md`). Decide per OS.
+- [ ] ffmpeg: macOS bundles an LGPL build (`scripts/build_ffmpeg_macos.sh`, looked up by
+  `tools.find_tool` before `PATH`). Linux and Windows still need their own: the same flags would
+  do (LGPL, static, LAME built in), but nothing was tried there. Decide per OS.
 - [ ] Update `BUILDING.md`, `README.md`, `CONTRIBUTING.md` and the guide per OS.
 
 ## What we know about cdrdao (read before relying on it)

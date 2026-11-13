@@ -1,7 +1,7 @@
 """Settings: where audio goes, how big the buffer is, and how the app looks."""
 
 import numpy as np
-from PySide6.QtCore import QTimer, Signal
+from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -16,7 +16,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from dubcrate import keys, mp3, settings
+from dubcrate import keys, mp3, settings, tools
 from dubcrate.audio import devices
 from dubcrate.audio.decode import DecodedAudio
 from dubcrate.audio.devices import BUFFER_SIZES, SAMPLE_RATE, buffer_msec
@@ -293,6 +293,26 @@ class SettingsDialog(QDialog):
         update_hint.setWordWrap(True)
         update_hint.setObjectName("mutedLabel")
         form.addRow(update_hint)
+        form.addRow(QLabel("Tools Dubcrate runs:"))
+        self.tool_labels: dict[str, QLabel] = {}
+        for name in tools.REQUIRED:
+            label = QLabel(tools.describe(name))
+            label.setWordWrap(True)
+            label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+            self.tool_labels[name] = label
+            form.addRow(label)
+        tools_hint = QLabel(
+            "ffmpeg reads and converts your music and ffprobe reads its tags and lengths."
+            " Dubcrate uses the copy it comes with, else one on your PATH."
+            + (
+                f" A missing one can be installed with “{tools.INSTALL_COMMAND}”."
+                if tools.missing_tools()
+                else ""
+            )
+        )
+        tools_hint.setWordWrap(True)
+        tools_hint.setObjectName("mutedLabel")
+        form.addRow(tools_hint)
         return page
 
     # -- appearance -------------------------------------------------------
