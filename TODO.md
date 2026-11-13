@@ -1,9 +1,7 @@
 # TODO List
 
-- [x] Fix tabs not spanning full width in settings window
 - [ ] Auto download update (maybe once code signing in place...)
-- [x] Play one track after another in playlist (ie, play thru a playlist in order)
-- [ ] Linux burn support
+- [x] Linux burn support
   - [x] Export disc as files (WAVs + TOC, or MP3 folder + ISO)
   - [x] cdrdao backend (drive info, errors, progress, MP3 discs via ISO)
   - [ ] Try on a real Linux machine + drive (dev_docs/linux-test-plan.md)
@@ -11,12 +9,8 @@
   - [ ] Spike on a real Windows machine (cdrdao + CD-TEXT)
 - [ ] Linux build script (AppImage / Flatpak / uv tool?)
 - [ ] Windows build script and installer
-- [x] Support for adding other folder locations in track browser
 - [ ] Mixxx library support
-- [x] Change browser views to not show top level folder for each tab, same for rekordbox tab
-- [x] Remove time machine backup from Explorer tab in macOS
 - [x] Audio normalisation setting?
-  - [x] Change audio normalisation setting to checkbox and offer a couple of presets for LUFS in a combobox instead of a spinbox
   - [ ] Try on a real disc + CDJ (waveform height, any clipping, is -10 LUFS right?)
 - [ ] Engine DJ library support
 - [ ] Serato library support
@@ -27,15 +21,12 @@
 - [ ] Run build.yml in CI (bundled ffmpeg, smoke test, does PySide6 import on macOS 15?)
 - [ ] Hardware checks on the Mac: burn window, MP3 disc
 - [ ] Homebrew packaging once first release public
-- [x] Fix About window resizing, layout, blurry icon
 - [x] Screenshot staging
   - [ ] Maybe use some real songs, not fake ones
 - [ ] Clean up user facing docs (readme, user guide)
 - [ ] SD card waveform, hotcue, memory cue, loop point reverse engineering
 - [ ] SD card sync metadata tab
 - [ ] Clean up long text labels in settings and add cm/in units (maybe in print dialog too)
-- [x] Make burn playlist folder structure appear in the print label window
-- [x] Reduce spacing in label printer labels around artist and track name, allowing more chars to fit
   - [ ] Check on real paper (and say if the vertical line spacing should shrink too)
 
 ## More from the roadmap and dev_docs
