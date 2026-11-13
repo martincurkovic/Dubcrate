@@ -325,8 +325,8 @@
 
 ## Before making the repository public
 
-- [ ] Put the ruff settings in `pyproject.toml`. They currently come from a config
-      outside the repository, so a contributor would get different results.
+- [x] Put the ruff settings in `pyproject.toml` (`[tool.ruff]`: line length 88, the rest is ruff
+      0.17's own defaults; there turned out to be no outside config, `ruff --isolated` gives the same rules).
 - [x] Packaging: Nuitka build script and a macOS DMG like the sibling apps
       (`scripts/build_macos.sh`, [BUILDING.md](../BUILDING.md)). Still open: code signing
       and notarisation, and whether the built app can use the drive (a hardware check).

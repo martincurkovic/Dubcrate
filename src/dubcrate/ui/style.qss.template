@@ -738,6 +738,15 @@ QLabel#emptyState {
    Dubcrate additions
    ============================================================ */
 
+/* A tab widget in document mode (Settings), which is what lets its tab bar span the
+   whole width. Qt then paints no frame round the pages, so the page stack gets one. */
+QTabWidget#fullWidthTabs > QStackedWidget {
+    border: 1px solid ${border};
+    border-bottom-left-radius: 4px;
+    border-bottom-right-radius: 4px;
+    background-color: ${bg_dialog};
+}
+
 /* the status bar's small "Update available" button */
 QPushButton#updateButton {
     background-color: ${update_bg};

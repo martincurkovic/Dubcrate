@@ -54,6 +54,9 @@ class SettingsDialog(QDialog):
         self._tone_player: AudioPlayer | None = None
 
         tabs = QTabWidget()
+        tabs.setObjectName("fullWidthTabs")  # its frame is in the stylesheet
+        tabs.setDocumentMode(True)  # lets the tab bar take the whole width...
+        tabs.tabBar().setExpanding(True)  # ...which the tabs then share
         tabs.addTab(self._audio_tab(), "Audio")
         tabs.addTab(self._discs_tab(), "Discs")
         tabs.addTab(self._burning_tab(), "Burning")

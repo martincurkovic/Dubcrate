@@ -14,8 +14,8 @@ uv run ruff check . && uv run ruff format .
 uv run spikes/burn_spike.py doctor       # check tools, drive and media
 ```
 
-Run ruff and pytest before calling work done. The ruff config comes from outside
-the repo; follow whatever it reports.
+Run ruff and pytest before calling work done. The ruff settings are in `pyproject.toml`
+(line length 88, otherwise ruff's own defaults); follow whatever it reports.
 
 ## Layout
 

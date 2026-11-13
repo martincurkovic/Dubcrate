@@ -47,6 +47,11 @@ build = [
     "pillow>=11",
 ]
 
+[tool.ruff]
+# Everything else is ruff's own defaults (a broad rule set as of 0.17), so the dev pin above is what keeps
+# a contributor's results the same as CI's. Python version comes from requires-python.
+line-length = 88
+
 [tool.uv]
 # plain `uv sync` (which the build script runs) installs both groups; CI's test job passes --no-group build
 default-groups = ["dev", "build"]
