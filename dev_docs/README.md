@@ -6,9 +6,9 @@
   hardware, and how to run a hardware check.
 - [rekordbox-analysis.md](rekordbox-analysis.md): what we read from rekordbox's database
   and analysis files, and what was measured.
-- [cdj1000mk3-card.md](cdj1000mk3-card.md): the CDJ-1000MK3 SD card (cues, hot cues, wave
-  data): prior work, what the firmware shows, what is unknown, and the plan for a hardware
-  session.
+- [cdj1000mk3-card.md](cdj1000mk3-card.md): the CDJ-1000MK3 SD card (cues, loops, hot cues,
+  waveform): the format as measured from a real card (the disc ID is the disc's TOC), the
+  experiments, `src/dubcrate/cdj_card.py`, and the gaps and where more testing is indicated.
 - [audio.md](audio.md): miniaudio and the preview player, what was measured.
 - [cross-platform.md](cross-platform.md): Linux and Windows support: what is portable, what
   is macOS-only, the decision to use `cdrdao`, and the phased plan. Read before touching

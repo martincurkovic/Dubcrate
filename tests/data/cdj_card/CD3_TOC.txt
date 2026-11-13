@@ -1,0 +1,30 @@
+drutil toc
+ Vendor   Product           Rev
+ slimtype eSAU108   3       HL09
+
+    First session:             1
+    Last session:              1
+    First track:               1
+    Disc type:                 0 (CD-DA, or CD-ROM with first track in Mode 1)
+    Last track:                20
+    Lead-out:                  78:09.58
+    Session  1, Track  1:      00:02.00  2ch audio, no pre-emphasis, digital copy prohibited
+    Session  1, Track  2:      03:19.03  2ch audio, no pre-emphasis, digital copy prohibited
+    Session  1, Track  3:      09:12.39  2ch audio, no pre-emphasis, digital copy prohibited
+    Session  1, Track  4:      13:38.52  2ch audio, no pre-emphasis, digital copy prohibited
+    Session  1, Track  5:      17:21.39  2ch audio, no pre-emphasis, digital copy prohibited
+    Session  1, Track  6:      20:16.16  2ch audio, no pre-emphasis, digital copy prohibited
+    Session  1, Track  7:      24:38.44  2ch audio, no pre-emphasis, digital copy prohibited
+    Session  1, Track  8:      28:58.61  2ch audio, no pre-emphasis, digital copy prohibited
+    Session  1, Track  9:      32:04.74  2ch audio, no pre-emphasis, digital copy prohibited
+    Session  1, Track 10:      36:17.48  2ch audio, no pre-emphasis, digital copy prohibited
+    Session  1, Track 11:      40:07.52  2ch audio, no pre-emphasis, digital copy prohibited
+    Session  1, Track 12:      45:51.08  2ch audio, no pre-emphasis, digital copy prohibited
+    Session  1, Track 13:      49:25.34  2ch audio, no pre-emphasis, digital copy prohibited
+    Session  1, Track 14:      53:20.11  2ch audio, no pre-emphasis, digital copy prohibited
+    Session  1, Track 15:      57:37.52  2ch audio, no pre-emphasis, digital copy prohibited
+    Session  1, Track 16:      60:56.64  2ch audio, no pre-emphasis, digital copy prohibited
+    Session  1, Track 17:      64:16.49  2ch audio, no pre-emphasis, digital copy prohibited
+    Session  1, Track 18:      67:35.52  2ch audio, no pre-emphasis, digital copy prohibited
+    Session  1, Track 19:      70:51.41  2ch audio, no pre-emphasis, digital copy prohibited
+    Session  1, Track 20:      74:43.65  2ch audio, no pre-emphasis, digital copy prohibited

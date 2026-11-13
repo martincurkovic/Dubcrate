@@ -1,0 +1,22 @@
+drutil toc
+ Vendor   Product           Rev
+ slimtype eSAU108   3       HL09
+
+    First session:             1
+    Last session:              1
+    First track:               1
+    Disc type:                 0 (CD-DA, or CD-ROM with first track in Mode 1)
+    Last track:                12
+    Lead-out:                  80:07.55
+    Session  1, Track  1:      00:02.00  2ch audio, no pre-emphasis, digital copy prohibited
+    Session  1, Track  2:      07:14.00  2ch audio, no pre-emphasis, digital copy prohibited
+    Session  1, Track  3:      14:22.60  2ch audio, no pre-emphasis, digital copy prohibited
+    Session  1, Track  4:      20:21.07  2ch audio, no pre-emphasis, digital copy prohibited
+    Session  1, Track  5:      27:19.45  2ch audio, no pre-emphasis, digital copy prohibited
+    Session  1, Track  6:      32:50.52  2ch audio, no pre-emphasis, digital copy prohibited
+    Session  1, Track  7:      39:46.47  2ch audio, no pre-emphasis, digital copy prohibited
+    Session  1, Track  8:      46:53.40  2ch audio, no pre-emphasis, digital copy prohibited
+    Session  1, Track  9:      53:17.51  2ch audio, no pre-emphasis, digital copy prohibited
+    Session  1, Track 10:      61:08.12  2ch audio, no pre-emphasis, digital copy prohibited
+    Session  1, Track 11:      67:14.24  2ch audio, no pre-emphasis, digital copy prohibited
+    Session  1, Track 12:      74:29.31  2ch audio, no pre-emphasis, digital copy prohibited
