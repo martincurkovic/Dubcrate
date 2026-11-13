@@ -1,5 +1,6 @@
 """What a built app (Nuitka, started from Finder) needs that a run from source does not."""
 
+import gc
 import os
 import subprocess
 import sys
@@ -27,6 +28,22 @@ def test_the_users_own_order_wins_and_nothing_is_added_twice():
     given = os.pathsep.join(["/usr/local/bin", "/usr/bin", "/opt/homebrew/bin"])
     assert app.extend_tool_path(given) == given
     assert app.extend_tool_path("").split(os.pathsep)[0] != ""  # (no empty first entry)
+
+
+# -- the garbage collector and the audio thread ------------------------------------------
+
+
+def test_start_up_objects_are_frozen_out_of_the_garbage_collector():
+    """A full collection holds the GIL for tens of ms, and the audio callback is Python: after
+    start-up the app's long-lived objects must be out of the collector's reach."""
+    kept = [object() for _ in range(1000)]  # (something alive when it happens)
+    before = gc.get_freeze_count()
+    try:
+        frozen = app.freeze_garbage_collector()
+        assert frozen == gc.get_freeze_count() >= before + len(kept)
+        assert gc.isenabled()  # collecting goes on for what is made afterwards
+    finally:
+        gc.unfreeze()  # (the tests share one process)
 
 
 # -- the version and the icon of a built app ---------------------------------------------

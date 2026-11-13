@@ -28,6 +28,23 @@ over from that app's own findings).
   into Python; if the process starts to exit while one runs, macOS kills it. Every
   `AudioPlayer` is registered for an `atexit` shutdown, and `closeEvent` shuts it
   down. Keep both.
+- **Crackles from the garbage collector [measured 2026-11-13, silent track through the real
+  device, offscreen window; NOT heard by ear]:** the audio callback is a Python function
+  (miniaudio's C thread calls `PlaybackDevice._data_callback` through cffi), so it needs the
+  GIL, and anything on the GUI thread that holds the GIL for longer than one buffer lasts is an
+  underrun. `spikes/audio_jitter.py` records when each callback fires. The player alone is
+  steady at any size (worst gap 3.1 ms at 128 frames, 23.1 ms at 1024), but with the window
+  playing, **a full garbage collection of 30 to 45 ms ran about every 6 s inside the zoomed
+  waveform's paint** (the 3-band look builds thousands of `QPointF` objects a frame) and the
+  callbacks were up to 56 ms apart: two buffers at 1024 (23 ms), hence the "very occasional"
+  crackles. `ui/app.py: freeze_garbage_collector` (`gc.collect()` then `gc.freeze()` once the
+  window is up) takes the start-up objects out of every later collection: worst gap 56 ms to 30
+  ms and no late callbacks at 1024, clean at 512, nearly at 256 (2 late callbacks in 15 s).
+  **Still open:** each waveform paint holds the GIL for about 8 ms in one C++ call, so 128
+  frames is not safe (about 130 late callbacks in 15 s with the collector frozen). The next
+  step would be painting the zoomed waveform from a cached image shifted a pixel row at a time
+  (no per-frame Python objects, no long call); below that, only a callback that doesn't need the
+  GIL would do, and `miniaudio` can't give one with our scratching.
 - **Testing:** `render_block(state, frames)` is a pure function over `PlaybackState`;
   the player takes a `device_factory`, so tests drive a fake device and pull blocks
   by hand. `tests/conftest.py` makes every test use a fake device by default.

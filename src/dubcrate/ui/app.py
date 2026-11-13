@@ -1,6 +1,7 @@
 """Application entry point: `dubcrate-gui` or `python -m dubcrate.ui`."""
 
 import argparse
+import gc
 import logging
 import os
 import sys
@@ -36,6 +37,22 @@ def extend_tool_path(path: str) -> str:
 def _is_bundled() -> bool:
     """A built app (not a run from source)."""
     return bool(getattr(sys, "frozen", False)) or "__compiled__" in globals()
+
+
+def freeze_garbage_collector() -> int:
+    """Take everything the app has built so far out of the garbage collector's reach; returns how
+    many objects that was.
+
+    The audio callback is a Python function, so it needs the GIL, and a full collection holds the GIL
+    while it walks every live object: 30 to 45 ms here, and the zoomed waveform's painting (thousands of
+    short-lived objects a frame) triggered one about every 6 seconds. That is longer than a 1024-frame
+    buffer lasts (23 ms), so the preview crackled now and then. Collecting once, then freezing, leaves
+    the window's long-lived objects out of every later collection; what is created after this is still
+    collected as usual. (Measured with the silent-track timing test in dev_docs/audio.md.)
+    """
+    gc.collect()
+    gc.freeze()
+    return gc.get_freeze_count()
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -112,6 +129,9 @@ def _run(args: argparse.Namespace, qt_args: list[str]) -> int:
         window = MainWindow(lib, persist=True, update_check=True)
         window.show()
         splash.finish()
+        log.info(
+            "garbage collector: %d start-up objects frozen", freeze_garbage_collector()
+        )
         if imported is not None and imported.message():
             window.statusBar().showMessage(imported.message(), 15000)
         if missing:
