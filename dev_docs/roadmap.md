@@ -106,8 +106,10 @@
    fails a built app that doesn't bundle both tools or can't render a disc track and encode an MP3 with
    them. Docs updated: README, guide, `BUILDING.md`, `AGENTS.md`, `cross-platform.md`, the notices.
    **Proven:** the arm64 build of the tools, every input format (MP3, WAV, FLAC, AIFF, M4A, Opus, WMA)
-   through `render_track`, `render_mp3` and the preview decoder, and the tests. **Not proven:** the
-   Intel build (needs `nasm`, only the workflow does it), the build in CI, a release `.dmg` on a clean
+   through `render_track`, `render_mp3` and the preview decoder, a local Apple Silicon `scripts/build_macos.sh`
+   (both programs bundled with the executable bit kept, the built app's smoke test passes, `codesign --verify`
+   is clean, the `.dmg` is 95 MB), and the tests. **Not proven:** the
+   Intel build (needs `nasm`, only the workflow does it), the build in CI, the `.dmg` opened on a clean
    Mac (Gatekeeper and quarantine on the nested programs), and the FFmpeg tarball's GPG signature (the
    hash was taken from the first download, not from a signed source).
 
