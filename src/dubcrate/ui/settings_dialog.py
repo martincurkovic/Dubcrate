@@ -305,7 +305,7 @@ class SettingsDialog(QDialog):
             "ffmpeg reads and converts your music and ffprobe reads its tags and lengths."
             " Dubcrate uses the copy it comes with, else one on your PATH."
             + (
-                f" A missing one can be installed with “{tools.INSTALL_COMMAND}”."
+                f" A missing one can be installed with “{tools.install_command()}”."
                 if tools.missing_tools()
                 else ""
             )

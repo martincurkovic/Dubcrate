@@ -400,3 +400,24 @@ def test_cli_text_needs_something_to_change_and_a_real_position(tmp_path, capsys
     capsys.readouterr()
     assert run_cli(tmp_path, "disc", "text", "1", "1") == 2
     assert "give --title and/or --artist" in capsys.readouterr().err
+
+
+def test_cli_export_writes_files_to_burn_elsewhere(tmp_path, capsys):
+    music = tmp_path / "music"
+    for name in ("one", "two"):
+        make_flac(music / f"{name}.flac", 2, title=name, artist="X")
+    run_cli(tmp_path, "import-folder", str(music))
+    run_cli(tmp_path, "disc", "new", "Out", "--minutes", "74")
+    run_cli(tmp_path, "disc", "add", "1", "--node", "1")
+    out = tmp_path / "out"
+    out.mkdir()
+    capsys.readouterr()
+    assert run_cli(tmp_path, "export", "1", str(out)) == 0
+    folder = out / "Out export"
+    assert sorted(p.name for p in folder.iterdir()) == ["01 X - one.wav", "02 X - two.wav", "README.txt", "disc.toc"]  # fmt: skip
+    assert "README.txt" in capsys.readouterr().out
+    # an empty disc, and a folder that isn't there, are said plainly
+    run_cli(tmp_path, "disc", "new", "Empty")
+    assert run_cli(tmp_path, "export", "2", str(out)) == 2
+    assert run_cli(tmp_path, "export", "1", str(tmp_path / "missing")) == 1
+    assert "is not a folder" in capsys.readouterr().err

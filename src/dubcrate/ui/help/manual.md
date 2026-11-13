@@ -293,6 +293,15 @@ Things to know:
 - After a real burn the disc is marked as burned, and it stays open and editable. Ticking the box is needed again before every burn.
 - A failed burn says why in the log, and the disc is not marked. A burn can't be stopped once it has started.
 
+**Exporting instead of burning**
+
+**Export…** (bottom left of the burn window) writes the disc as files, so you can burn it with another program or on another computer, and it needs no drive. It makes a new folder, named after the disc, inside the folder you choose (it never overwrites anything):
+
+- An **audio CD** gives one WAV per track (`01 Artist - Title.wav` and so on, each a whole number of CD sectors, so tracks join exactly), `disc.toc` (a table of contents for the free program [cdrdao](https://cdrdao.sourceforge.net), with the CD-TEXT), and a `README.txt` with the commands.
+- An **MP3 CD** gives the folder that goes on the disc, with a `README.txt` beside it that says how to burn it as a data CD.
+
+On a computer that can't burn from Dubcrate (everything except a Mac so far), the burn window says so and Export… is the way to get a disc. The disc is not marked as burned.
+
 **From the command line**
 
 The command line does the same job. Put the disc number in place of `1` (the number is shown by `dubcrate disc list`).
@@ -308,6 +317,7 @@ dubcrate burn 1 --yes                # really burns
 - **`--speed`** sets the burn speed. The default is 10x. **Burn slowly:** old players read discs burned at a low speed more reliably.
 - Every track is converted to CD quality (16-bit, 44.1 kHz stereo) and the disc gets **CD-TEXT** titles, so the artist and title show on the player.
 - After a successful real burn, Dubcrate marks the disc as burned.
+- `dubcrate export 1 ~/Desktop` does what **Export…** does, into a new folder inside `~/Desktop`.
 
 The full list of command-line options is in the project's developer notes.
 

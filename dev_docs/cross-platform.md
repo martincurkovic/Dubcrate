@@ -66,24 +66,34 @@ until a person with that OS and an optical drive has checked it.
 
 ## Roadmap
 
-### Phase 0: groundwork (no behaviour change, no drive needed)
+### Phase 0: groundwork (no behaviour change, no drive needed): done 2026-11-13
 
-- [ ] `burn/__init__.py`: add `default_backend() -> str` ("discrecording" on macOS, "cdrdao"
-  elsewhere), and use it in `burn_dialog._backend()`, `cli_discs.py` (`--backend`) and the
-  spike. One place decides; callers never test `sys.platform`.
-- [ ] Make the burn window say, in plain words, when no backend can run (no `cdrdao` on
-  `PATH`, no drive), instead of failing inside the worker. `CdrdaoBurner` already raises
-  `BurnError("cdrdao not found on PATH ...")`: surface it before the user ticks the box.
-- [ ] Put per-OS tool lookup in one function (`find_tool(name)`): `PATH`, then a bundled folder
-  next to the app, then (macOS) Homebrew's. `extend_tool_path` and `find_cdrdao` become users of it.
-- [ ] Keep every platform branch in a named helper (as `rekordbox.default_master_db` does),
-  not scattered `sys.platform` tests.
+- [x] `burn.default_backend()` ("discrecording" on macOS, "cdrdao" elsewhere), used by
+  `burn_dialog._backend()` and the CLI's `--backend`. (The spike still asks for `--backend`.)
+- [x] `burn.backend_problem(name)`: the burn window says up front, in plain words, when no
+  backend can run (no `cdrdao`, or DiscRecording off a Mac), never starts a burner, and points
+  at Export. The install hint is per OS (`cdrdao.install_hint`). **[tests]**
+- [x] `tools.find_tool(name)` (bundled folder, then `PATH`; `.exe` on Windows) is used for
+  ffmpeg, ffprobe and `cdrdao`; `tools.install_command()` is per OS. `extend_tool_path` stays,
+  adding Homebrew's folders on macOS only.
+- [x] Drives in the Explorer: `_mac_volumes`, `_linux_volumes` (mount points under
+  `/media/<user>`, `/run/media/<user>`, `/media`, `/mnt`) and `_windows_volumes` (GetLogicalDrives
+  and GetDriveType; no system or CD drives), one helper each. The helpers are tested with fake
+  folders and drive lists; reading the real Linux and Windows lists is **[not tried]**.
 
 ### Phase 1: CI on Linux and Windows (finds problems cheaply)
 
-- [ ] `test.yml`: a matrix of `macos-15`, `ubuntu-latest`, `windows-latest`. Install ffmpeg per
-  OS (`apt-get install ffmpeg`, `choco install ffmpeg`). The suite needs no drive (`conftest.py`
-  blocks drives, discs and the network) and runs Qt offscreen.
+- [x] `test.yml`: a matrix of `macos-15`, `ubuntu-latest`, `windows-latest`, ffmpeg installed per
+  OS (`brew`, `apt-get` with Qt's system libraries, `choco`). **Linux is the default leg** (first,
+  gates the run, runs the lint); macOS gates too (the shipped app is a Mac one). Windows is
+  `experimental` (its failures show but don't fail the run, so can't block a release) until green:
+  then remove the flag. **Written 2026-11-13, not yet run on GitHub.**
+- [x] Linux in Docker: `scripts/test_linux.sh` (Ubuntu 24.04, same system packages as the CI leg;
+  `scripts/linux-test.Dockerfile`) runs the suite on Linux from a Mac. First run (Arm Linux,
+  2026-11-13): 1223 of 1226 passed and 4 skipped; the 3 failures were real portability bugs
+  (a narrow table column opened wider because Qt's minimum header width is larger on Linux; a
+  shortcut search for "space" also matched "Backspace"), fixed. **[tests]** on Linux, **[not tried]**
+  with a display, a sound card or a drive. PySide6's Linux wheels need glibc 2.34 (Intel) or 2.39 (Arm).
 - [ ] Skip the macOS-specific tests off macOS (`test_app_bundle.py`, `test_build_files.py`;
   `test_mp3_discs.py` already skips the DiscRecording test).
 - [ ] Expect some failures on first run (paths, line endings, file locking on Windows,
@@ -91,14 +101,17 @@ until a person with that OS and an optical drive has checked it.
 - [ ] Check what `pyrekordbox` needs on Windows and Linux for SQLCipher (it worked on the Mac).
   It is the known bundling risk in `AGENTS.md`.
 
-### Phase 2: Export (useful on any OS before any burn backend works)
+### Phase 2: Export (useful on any OS before any burn backend works): done 2026-11-13
 
-- [ ] `dubcrate export DISC DIR` and a button in the burn window: for an audio disc, the rendered
-  WAVs (`render_plan`) plus the `cdrdao` TOC file (`build_toc`, which carries the CD-TEXT);
-  for an MP3 disc, the staged folder (`render_plan` already makes it), and an ISO once Phase 3
-  can build one.
-- [ ] Document how to burn the export with `cdrdao write disc.toc`, K3b, Brasero, or Windows'
-  own tools (an MP3 folder can be burned from Explorer as a data disc).
+- [x] `dubcrate export DISC DIR` and **Export…** in the burn window (`export.py`): for an audio
+  disc, numbered ASCII-named WAVs plus `disc.toc` (`build_toc(..., relative_to=folder)`, CD-TEXT
+  included) and a README; for an MP3 disc, the staged folder with the README beside it. A new
+  folder each time, never overwriting; a failed export removes its own half-made folder. **[tests]**
+  Still to do: an ISO for MP3 discs, once Phase 3 can build one.
+- [x] The README says how to burn it with `cdrdao write disc.toc` (from inside the folder, since
+  the TOC's file names are relative: whether cdrdao resolves them against the TOC's folder or the
+  working directory is **[not tried]**, so the README says to run it from the folder, which is right
+  either way), K3b/Brasero, Finder, Explorer and `xorriso`. **None of those steps was run.**
 
 ### Phase 3: Linux (the easiest burn)
 

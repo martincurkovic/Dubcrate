@@ -349,8 +349,12 @@ def test_searching_matches_the_action_the_keys_and_the_menu(window):
         "Beat jump back",
         "Beat jump forward",
     ]
-    dialog.search.setText("space")
-    assert [k for _g, _a, k in dialog.visible_rows()] == ["Space"]
+    dialog.search.setText(
+        "space"
+    )  # (on Linux "Backspace" matches too: keys are searched as written)
+    rows = dialog.visible_rows()
+    assert "Space" in [k for _g, _a, k in rows]
+    assert all("space" in f"{g} {a} {k}".lower() for g, a, k in rows)
     dialog.search.setText("burn")  # an action by name
     assert any(a == "Burn Disc" for _g, a, _k in dialog.visible_rows())
     dialog.search.setText("Track lists")  # a whole group, by its heading

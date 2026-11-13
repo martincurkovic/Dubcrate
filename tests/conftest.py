@@ -163,3 +163,15 @@ def _no_real_printer(monkeypatch):
 
     monkeypatch.setattr("dubcrate.ui.label_dialog.ask_printer", refuse)
     monkeypatch.setattr("dubcrate.ui.label_dialog.ask_pdf_path", refuse)
+
+
+@pytest.fixture(autouse=True)
+def _no_real_export_chooser(monkeypatch):
+    """No test may open the folder chooser of the burn window's Export: patch burn_dialog.ask_export_folder."""
+
+    def refuse(*_a, **_k):
+        raise AssertionError(
+            "a test opened the export folder chooser; patch burn_dialog.ask_export_folder"
+        )
+
+    monkeypatch.setattr("dubcrate.ui.burn_dialog.ask_export_folder", refuse)

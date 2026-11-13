@@ -20,6 +20,7 @@ from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
     QDialog,
+    QFileDialog,
     QFormLayout,
     QHBoxLayout,
     QLabel,
@@ -27,6 +28,7 @@ from PySide6.QtWidgets import (
     QProgressBar,
     QPushButton,
     QVBoxLayout,
+    QWidget,
 )
 
 from dubcrate import settings
@@ -45,9 +47,12 @@ from dubcrate.burn import (
     BurnOptions,
     DataDisc,
     MediaInfo,
+    backend_problem,
+    default_backend,
     get_burner,
 )
 from dubcrate.cd import SECTORS_PER_SECOND, format_clock
+from dubcrate.export import ExportError, ExportResult, export_plan
 from dubcrate.library import Library
 from dubcrate.library.models import DiscKind
 from dubcrate.render import RenderError
@@ -55,6 +60,12 @@ from dubcrate.render import RenderError
 from .tasks import TaskError, run_async
 
 BurnerFactory = Callable[[], Burner]
+
+
+def ask_export_folder(parent: QWidget | None) -> str:
+    """Ask where to put the export; "" if cancelled. (Tests patch this: a real chooser blocks.)"""
+    return QFileDialog.getExistingDirectory(parent, "Export Disc To", str(Path.home()))
+
 
 # (`logger`, since the dialog's own `self.log` is the progress box)
 logger = logging.getLogger(__name__)
@@ -76,7 +87,7 @@ def _expected_failures(fn: Callable) -> Callable:
 
 
 def _backend() -> Burner:
-    return get_burner("discrecording")
+    return get_burner(default_backend())
 
 
 def describe_media(
@@ -121,6 +132,11 @@ class BurnDialog(QDialog):
         self._lib = lib
         self._disc_id = disc_id
         self._burner_factory = burner_factory or _backend
+        # Whether this computer can burn at all (no cdrdao, or not a Mac): said up front, not when
+        # the worker fails. A burner a test hands in is taken as able.
+        self._backend_problem = (
+            "" if burner_factory else (backend_problem(default_backend()) or "")
+        )
         self._burner: Burner | None = None
         self._media: MediaInfo | None = None
         self._media_error = ""
@@ -212,10 +228,18 @@ class BurnDialog(QDialog):
         self.burn_button.setDefault(False)  # Return must not start a burn
         self.burn_button.setAutoDefault(False)
         self.burn_button.clicked.connect(self.start_burn)
+        self.export_button = QPushButton("Export…")
+        self.export_button.setAutoDefault(False)
+        self.export_button.setToolTip(
+            "Write the disc as files (WAVs and a cdrdao table of contents, or the MP3 folder)"
+            " to burn with any other program"
+        )
+        self.export_button.clicked.connect(self.start_export)
         self.close_button = QPushButton("Close")
         self.close_button.setAutoDefault(False)
         self.close_button.clicked.connect(self.reject)
         buttons = QHBoxLayout()
+        buttons.addWidget(self.export_button)
         buttons.addStretch(1)
         buttons.addWidget(self.close_button)
         buttons.addWidget(self.burn_button)
@@ -233,7 +257,7 @@ class BurnDialog(QDialog):
         layout.addLayout(buttons)
 
         self._update()
-        if self._plan is not None:
+        if self._plan is not None and not self._backend_problem:
             self.check_drive()
 
     # -- state ------------------------------------------------------------
@@ -247,6 +271,8 @@ class BurnDialog(QDialog):
 
     def _all_problems(self) -> list[str]:
         problems = list(self._problems)
+        if self._backend_problem:
+            problems.append(self._backend_problem)
         if self._media_error:
             problems.append(self._media_error)
         if self._media is not None:
@@ -277,7 +303,17 @@ class BurnDialog(QDialog):
         ):
             widget.setEnabled(not self._busy and not self._finished)
         self.close_button.setEnabled(not self._busy)
-        if self._plan is None:
+        self.export_button.setEnabled(self._plan is not None and not self._busy)
+        if self._backend_problem:
+            text, level = (
+                (
+                    "Dubcrate can't burn on this computer yet. Export… writes the disc as"
+                    " files that another burning program can burn."
+                ),
+                "critical",
+            )
+            self.check_button.setEnabled(False)
+        elif self._plan is None:
             text, level = (
                 "The drive isn't checked until the disc is ready to burn.",
                 "normal",
@@ -413,6 +449,59 @@ class BurnDialog(QDialog):
             "The burn failed. The disc is not marked as burned.",
             "critical",
         )
+        self._update()
+
+    # -- exporting --------------------------------------------------------
+
+    def start_export(self) -> None:
+        """Write the disc as files for another burning program (see `export.py`)."""
+        if not self.export_button.isEnabled() or self._plan is None:
+            return
+        parent = ask_export_folder(self)
+        if not parent:
+            return
+        plan = self._plan
+        self.log.clear()
+        self._append(f"Exporting “{plan.name}” to {parent}")
+        logger.info("export of disc %s “%s” to %s", self._disc_id, plan.name, parent)
+        self.status_label.setText("")
+        self.progress.setRange(0, 0)
+        self.progress.setVisible(True)
+        self._busy = True
+        self._update()
+        emit = self._log.emit
+
+        def say(text: str) -> None:
+            logger.info("export: %s", text)
+            emit(text)
+
+        def work() -> ExportResult:
+            try:
+                return export_plan(plan, Path(parent), say)
+            except (ExportError, BuildError, RenderError) as exc:
+                raise TaskError(str(exc)) from exc
+
+        run_async(work, self._export_done, self._export_failed)
+
+    def _export_done(self, result: ExportResult) -> None:
+        for (
+            track_id,
+            sectors,
+        ) in result.lengths.items():  # the rendered lengths are exact
+            self._lib.set_cd_sectors(track_id, sectors)
+        self._busy = False
+        self.progress.setVisible(False)
+        self._append(
+            f"Done. Open {result.readme.name} in that folder to see how to burn it."
+        )
+        self._set_level(self.status_label, f"Exported to {result.folder}.", "normal")
+        self._update()
+
+    def _export_failed(self, text: str) -> None:
+        self._busy = False
+        self.progress.setVisible(False)
+        self._append(f"Failed: {text}")
+        self._set_level(self.status_label, "The export failed.", "critical")
         self._update()
 
     # -- closing ----------------------------------------------------------

@@ -46,11 +46,9 @@ class MissingToolsDialog(QDialog):
         self.body.setTextFormat(Qt.TextFormat.RichText)
         layout.addWidget(self.body)
 
-        layout.addWidget(
-            QLabel("With Homebrew, type this in Terminal, then restart Dubcrate:")
-        )
+        layout.addWidget(QLabel("Type this in a terminal, then restart Dubcrate:"))
         row = QHBoxLayout()
-        self.command_field = QLineEdit(tools.INSTALL_COMMAND)
+        self.command_field = QLineEdit(tools.install_command())
         self.command_field.setReadOnly(True)
         row.addWidget(self.command_field, stretch=1)
         self.copy_button = QPushButton("Copy")
@@ -81,4 +79,4 @@ class MissingToolsDialog(QDialog):
         self.setMinimumWidth(480)
 
     def _copy(self) -> None:
-        QApplication.clipboard().setText(tools.INSTALL_COMMAND)
+        QApplication.clipboard().setText(tools.install_command())

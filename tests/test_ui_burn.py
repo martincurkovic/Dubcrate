@@ -444,3 +444,76 @@ def test_a_genuine_bug_is_still_logged_as_an_error(
     assert "a real bug" in dialog.problems_label.text()  # still shown to the user
     assert any(r.levelname == "ERROR" for r in caplog.records)
     dialog.close()
+
+
+def test_a_computer_that_cannot_burn_says_so_up_front(qapp, lib, disc_id, monkeypatch):
+    """No cdrdao (or not a Mac): the window explains it at once, never starts a burner, and
+    can't be talked into burning."""
+    monkeypatch.setattr("dubcrate.ui.burn_dialog.default_backend", lambda: "cdrdao")
+    monkeypatch.setattr(
+        "dubcrate.ui.burn_dialog.backend_problem",
+        lambda name: f"{name} was not found. Install it.",
+    )
+
+    def no_burner(name):
+        raise AssertionError("a burner was made on a computer that can't burn")
+
+    monkeypatch.setattr("dubcrate.ui.burn_dialog.get_burner", no_burner)
+    dialog = BurnDialog(lib, disc_id)
+    try:
+        dialog.confirm_check.setChecked(True)
+        assert not dialog._busy and dialog._media is None
+        assert "cdrdao was not found" in dialog.problems_label.text()
+        assert dialog.drive_label.property("level") == "critical"
+        assert not dialog.check_button.isEnabled()
+        assert not dialog.burn_button.isEnabled()
+        assert (
+            dialog.export_button.isEnabled()
+        )  # the way out: files for another program
+        assert "Export" in dialog.drive_label.text()
+    finally:
+        dialog.close()
+        dialog.deleteLater()
+
+
+def test_export_writes_the_disc_as_files_without_a_drive(make_dialog, wait_for, tmp_path, monkeypatch):  # fmt: skip
+    dialog, burner = make_dialog()
+    out = tmp_path / "out"
+    out.mkdir()
+    monkeypatch.setattr("dubcrate.ui.burn_dialog.ask_export_folder", lambda _parent: str(out))  # fmt: skip
+    assert (
+        dialog.export_button.isEnabled()
+    )  # (no blank CD-R needed, and nothing is burned)
+    dialog.export_button.click()
+    assert wait_for(lambda: not dialog._busy)
+    folder = out / "Friday export"
+    assert sorted(p.name for p in folder.iterdir()) == ["01 Same - Alpha.wav", "02 Same - Beta.wav", "README.txt", "disc.toc"]  # fmt: skip
+    assert "Exported to" in dialog.status_label.text() and str(folder) in dialog.status_label.text()  # fmt: skip
+    assert burner.burned == []
+    assert not dialog._finished  # the disc is not marked as burned
+    assert dialog._lib.disc(dialog._disc_id).last_burned_at is None
+
+
+def test_a_cancelled_export_does_nothing(make_dialog, monkeypatch, tmp_path):
+    dialog, _ = make_dialog()
+    monkeypatch.setattr("dubcrate.ui.burn_dialog.ask_export_folder", lambda _parent: "")
+    dialog.export_button.click()
+    assert not dialog._busy and not list(tmp_path.glob("**/README.txt"))
+
+
+def test_a_failed_export_is_shown_in_the_window(make_dialog, wait_for, tmp_path, monkeypatch, caplog):  # fmt: skip
+    dialog, _ = make_dialog()
+    monkeypatch.setattr("dubcrate.ui.burn_dialog.ask_export_folder", lambda _parent: str(tmp_path / "gone"))  # fmt: skip
+    dialog.export_button.click()
+    assert wait_for(lambda: not dialog._busy)
+    assert "is not a folder" in dialog.log.toPlainText()
+    assert dialog.status_label.property("level") == "critical"
+    assert [
+        r for r in caplog.records if r.levelname == "ERROR"
+    ] == []  # expected, not a crash
+
+
+def test_a_disc_that_cannot_be_burned_cannot_be_exported_either(make_dialog, lib):
+    empty = lib.create_disc("Empty")
+    dialog, _ = make_dialog(disc=empty)
+    assert not dialog.export_button.isEnabled()

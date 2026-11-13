@@ -2,7 +2,7 @@
 
 import os
 import sys
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 
 import pytest
 from PySide6.QtCore import QItemSelectionModel, Qt
@@ -63,7 +63,7 @@ def test_the_roots_are_music_home_and_the_drives_and_not_the_system_disk(
     assert names[:2] == ["Music", "me"]
     for _name, path, drive in explorer_roots():
         assert path.resolve() != Path("/")  # "Macintosh HD" is never offered
-        assert drive == (path.parent == Path("/Volumes"))
+        assert drive == (path in explorer.mounted_volumes())
 
 
 def test_without_a_music_folder_the_roots_start_at_home(tmp_path, monkeypatch):
@@ -72,9 +72,39 @@ def test_without_a_music_folder_the_roots_start_at_home(tmp_path, monkeypatch):
     assert explorer_roots()[0][:2] == ("me", tmp_path / "me")
 
 
-def test_drives_are_only_looked_for_on_a_mac(monkeypatch):
-    monkeypatch.setattr(sys, "platform", "linux")
-    assert explorer.mounted_volumes() == []  # (Linux and Windows are not handled yet)
+def test_each_system_looks_for_its_own_kind_of_drive(monkeypatch):
+    for platform, helper in (("darwin", "_mac_volumes"), ("linux", "_linux_volumes")):
+        monkeypatch.setattr(sys, "platform", platform)
+        monkeypatch.setattr(explorer, helper, lambda: [Path("/the/drive")])
+        assert explorer.mounted_volumes() == [Path("/the/drive")]
+    monkeypatch.setattr(sys, "platform", "win32")
+    monkeypatch.setattr(explorer, "_windows_drives", lambda: [("C", 3), ("D", 2)])
+    monkeypatch.setenv("SystemDrive", "C:")
+    assert explorer.mounted_volumes() == [Path("D:/")]
+
+
+def test_linux_drives_are_mount_points_under_the_media_folders(tmp_path):
+    user_media, mnt = tmp_path / "media" / "me", tmp_path / "mnt"
+    for path in (user_media / "USB STICK", user_media / "plain folder", user_media / ".hidden", mnt / "backup", mnt / "empty"):  # fmt: skip
+        path.mkdir(parents=True)
+    (mnt / "a file").write_text("x")
+    mounts = {user_media / "USB STICK", user_media / ".hidden", mnt / "backup"}
+    found = explorer._linux_volumes([user_media, tmp_path / "gone", mnt], lambda p: p in mounts)  # fmt: skip
+    assert found == [user_media / "USB STICK", mnt / "backup"]
+    # the same drive reached by two folders is listed once
+    assert explorer._linux_volumes([user_media, user_media], lambda p: p in mounts) == [user_media / "USB STICK"]  # fmt: skip
+
+
+def test_windows_drives_leave_out_the_system_drive_and_cd_drives():
+    drives = [("C", 3), ("D", 3), ("E", 5), ("F", 2), ("G", 4), ("H", 1)]
+    found = explorer._windows_volumes(drives, "C:")
+    assert found == [Path("D:/"), Path("F:/"), Path("G:/")]
+    assert explorer._windows_volumes([("c", 3), ("D", 3)], "c:") == [Path("D:/")]
+
+
+def test_a_windows_drive_is_named_by_its_letter():
+    assert explorer.volume_label(Path("/Volumes/Gig Stick")) == "Gig Stick"
+    assert explorer.volume_label(PureWindowsPath("D:/")) == "D:"
 
 
 @pytest.mark.skipif(sys.platform != "darwin", reason="/Volumes is a Mac's")

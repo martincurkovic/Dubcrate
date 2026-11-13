@@ -12,14 +12,23 @@ from dubcrate.build import (
     disc_problems,
     media_notes,
     media_problems,
+    plan_burn,
 )
-from dubcrate.burn import BurnError, BurnOptions, DataDisc, get_burner
+from dubcrate.burn import (
+    BACKENDS,
+    BurnError,
+    BurnOptions,
+    DataDisc,
+    default_backend,
+    get_burner,
+)
 from dubcrate.cd import (
     DISC_74_SECTORS,
     DISC_80_SECTORS,
     SECTORS_PER_SECOND,
     format_msf,
 )
+from dubcrate.export import ExportError, export_plan
 from dubcrate.library import Library
 from dubcrate.library.lengths import measure_tracks
 from dubcrate.library.models import DiscSummary
@@ -303,6 +312,29 @@ def cmd_burn(lib: Library, args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_export(lib: Library, args: argparse.Namespace) -> int:
+    """Write a disc as files for any burning program: WAVs and a cdrdao TOC, or the MP3 folder."""
+    if lib.disc(args.disc).kind == "audio":
+        for problem in measure_tracks(lib, [e.track.id for e in lib.disc_entries(args.disc)]):  # fmt: skip
+            print(f"warning: couldn't measure {problem}", file=sys.stderr)
+    problems = disc_problems(lib, args.disc)
+    if problems:
+        print("can't export this disc yet:", file=sys.stderr)
+        for problem in problems:
+            print(f"  - {problem}", file=sys.stderr)
+        return 2
+    try:
+        result = export_plan(plan_burn(lib, args.disc), Path(args.dir).expanduser(), progress=print)  # fmt: skip
+    except (BuildError, ExportError) as exc:
+        print(f"export failed: {exc}", file=sys.stderr)
+        return 1
+    for track_id, sectors in result.lengths.items():
+        lib.set_cd_sectors(track_id, sectors)
+    print(f"exported to {result.folder}")
+    print(f"read {result.readme.name} there for how to burn it")
+    return 0
+
+
 def _mp3_flags(p: argparse.ArgumentParser) -> None:
     p.add_argument(
         "--mp3", action="store_true", help="an MP3 CD (a data disc of MP3 files)"
@@ -409,10 +441,21 @@ def add_parsers(sub: argparse._SubParsersAction) -> None:
     _mp3_flags(p)
     p.set_defaults(fn=cmd_split)
 
+    p = sub.add_parser(
+        "export",
+        help="write a disc as files to burn with any program (WAVs and a cdrdao TOC, or the MP3 folder)",
+    )
+    p.add_argument("disc", type=int)
+    p.add_argument("dir", help="an existing folder: the export is made in a new folder inside it")  # fmt: skip
+    p.set_defaults(fn=cmd_export)
+
     p = sub.add_parser("burn", help="burn a disc (dry run unless --yes)")
     p.add_argument("disc", type=int)
     p.add_argument(
-        "--backend", choices=["discrecording", "cdrdao"], default="discrecording"
+        "--backend",
+        choices=list(BACKENDS),
+        default=default_backend(),
+        help="default: discrecording on a Mac, cdrdao elsewhere",
     )
     p.add_argument("--speed", type=int, default=10)
     p.add_argument("--device")

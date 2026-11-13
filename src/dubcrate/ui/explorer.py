@@ -29,11 +29,17 @@ VOLUME_ROLE = Qt.ItemDataRole.UserRole + 22  # True on a drive (for its icon)
 def mounted_volumes() -> list[Path]:
     """The drives that are plugged in (not the one the system is on), by name.
 
-    macOS keeps them in /Volumes, where the boot disk is a link to "/". Linux (/media,
-    /run/media, /mnt) and Windows (drive letters) are not handled: NOT tried on those."""
-    if sys.platform != "darwin":
-        return []
-    base = Path("/Volumes")
+    One helper per system, so the branches stay in one place. macOS and Linux are folders
+    where drives are mounted; Windows has drive letters. Linux and Windows: NOT tried."""
+    if sys.platform == "darwin":
+        return _mac_volumes()
+    if sys.platform == "win32":
+        return _windows_volumes(_windows_drives(), os.environ.get("SystemDrive", "C:"))
+    return _linux_volumes()
+
+
+def _mac_volumes(base: Path = Path("/Volumes")) -> list[Path]:
+    """macOS keeps drives in /Volumes, where the boot disk is a link to "/"."""
     volumes = []
     try:
         entries = sorted(base.iterdir(), key=lambda p: p.name.casefold())
@@ -51,6 +57,74 @@ def mounted_volumes() -> list[Path]:
     return volumes
 
 
+def _linux_volumes(
+    bases: list[Path] | None = None, is_mount: Callable[[Path], bool] = os.path.ismount
+) -> list[Path]:
+    """Linux desktops mount a plugged-in drive under /media/<user> or /run/media/<user> (udisks);
+    a drive someone mounted by hand is usually under /mnt. Only real mount points count, since
+    /mnt and /media hold empty folders too. The system disk is "/", which is never offered."""
+    if bases is None:
+        user = os.environ.get("USER") or Path.home().name
+        bases = [
+            Path("/media") / user,
+            Path("/run/media") / user,
+            Path("/media"),
+            Path("/mnt"),
+        ]
+    volumes: list[Path] = []
+    seen: set[Path] = set()
+    for base in bases:
+        try:
+            entries = sorted(base.iterdir(), key=lambda p: p.name.casefold())
+        except OSError:
+            continue
+        for entry in entries:
+            try:
+                if (
+                    entry.name.startswith(".")
+                    or not entry.is_dir()
+                    or not is_mount(entry)
+                ):
+                    continue
+                real = entry.resolve()
+            except OSError:
+                continue
+            if real not in seen:
+                seen.add(real)
+                volumes.append(entry)
+    return volumes
+
+
+# What GetDriveType says (winbase.h): 2 removable, 3 fixed, 4 network. A CD drive (5) holds no folders.
+_WINDOWS_USABLE_DRIVE_TYPES = (2, 3, 4)
+
+
+def _windows_drives() -> list[tuple[str, int]]:
+    """(drive letter, GetDriveType) for each letter in use. Windows only: NOT tried."""
+    import ctypes
+
+    kernel = ctypes.windll.kernel32  # type: ignore[attr-defined]
+    mask = kernel.GetLogicalDrives()
+    letters = [chr(ord("A") + i) for i in range(26) if mask >> i & 1]
+    return [(letter, kernel.GetDriveTypeW(f"{letter}:\\")) for letter in letters]
+
+
+def _windows_volumes(drives: list[tuple[str, int]], system_drive: str) -> list[Path]:
+    """The drives worth showing: removable, fixed and network ones, without the system drive
+    (your home folder, which is on it, is already a root)."""
+    system = system_drive.rstrip(":\\/").upper()
+    return [
+        Path(f"{letter}:/")
+        for letter, kind in drives
+        if kind in _WINDOWS_USABLE_DRIVE_TYPES and letter.upper() != system
+    ]
+
+
+def volume_label(volume: Path) -> str:
+    """A drive's name for the tree: its folder name, or for a Windows drive "D:"."""
+    return volume.name or str(volume).rstrip("\\/")
+
+
 def explorer_roots() -> list[tuple[str, Path, bool]]:
     """(name, folder, is a drive) for each top-level row: Music, home, then the drives."""
     home = Path.home()
@@ -58,7 +132,7 @@ def explorer_roots() -> list[tuple[str, Path, bool]]:
     if (home / "Music").is_dir():
         roots.append(("Music", home / "Music", False))
     roots.append((home.name or "Home", home, False))
-    roots += [(v.name, v, True) for v in mounted_volumes()]
+    roots += [(volume_label(v), v, True) for v in mounted_volumes()]
     return roots
 
 

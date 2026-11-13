@@ -54,6 +54,18 @@ dubcrate disc split --node 44 --name "Pop"    # as many discs as it takes, order
 dubcrate disc delete 1                        # the tracks stay in the library
 ```
 
+## Exporting
+
+```sh
+dubcrate export 1 ~/Desktop     # a new folder "<disc name> export" inside ~/Desktop
+```
+
+For an audio disc: numbered ASCII-named WAVs, `disc.toc` (cdrdao, CD-TEXT, file names relative to
+it) and `README.txt` with the cdrdao commands. For an MP3 disc: the disc's folder, and the README
+beside it. Nothing is overwritten (a second export is `... export 2`), the disc is not marked as
+burned, and no drive is needed. Exit status 2 if the disc can't be exported (as `burn`), 1 if the
+export failed.
+
 ## Burning
 
 ```sh
@@ -62,7 +74,7 @@ dubcrate burn 1 --yes --simulate              # laser-off test write; needs a di
 dubcrate burn 1 --yes                         # really burns; uses up the blank CD-R
 ```
 
-Options: `--backend discrecording|cdrdao` (default `discrecording`), `--speed N`
+Options: `--backend discrecording|cdrdao` (default `discrecording` on a Mac, `cdrdao` elsewhere), `--speed N`
 (default 10, which is the slowest this project's drive offers), `--device`, and
 `--work DIR` to keep the rendered WAVs instead of using a temp folder.
 

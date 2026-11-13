@@ -1,3 +1,4 @@
+import re
 import shutil
 import subprocess
 import wave
@@ -371,7 +372,7 @@ def test_missing_ffmpeg_is_a_clear_error(tmp_path, monkeypatch):
     (tmp_path / "bad.m4a").write_bytes(b"nope")
     monkeypatch.setattr(tools, "BUNDLE_DIR", tmp_path / "no-bundle")
     monkeypatch.setattr(tools.shutil, "which", lambda _name: None)
-    with pytest.raises(DecodeError, match="brew install ffmpeg"):
+    with pytest.raises(DecodeError, match=re.escape(tools.install_command())):
         decode_file(str(tmp_path / "bad.m4a"))
 
 

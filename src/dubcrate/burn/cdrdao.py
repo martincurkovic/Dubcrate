@@ -4,25 +4,44 @@ cdrdao writes in disc-at-once mode from a TOC file, which gives gapless audio
 and CD-TEXT. We generate the TOC and let cdrdao do the burning.
 """
 
+import os
 import re
-import shutil
 import subprocess
+import sys
 import tempfile
 from pathlib import Path
 
 from dubcrate.burn.base import BurnError, BurnOptions, Disc, MediaInfo, Progress
 from dubcrate.cd import cdtext_clean, cdtext_toc_escape, format_msf
+from dubcrate.tools import find_tool
 
 
 def find_cdrdao() -> str | None:
-    return shutil.which("cdrdao")
+    """Where `cdrdao` is (the app's own folder, then `PATH`), or None."""
+    tool = find_tool("cdrdao")
+    return str(tool.path) if tool else None
 
 
-def build_toc(disc: Disc, pregap_sectors: int = 0) -> str:
+def install_hint() -> str:
+    """How to get cdrdao on this computer, in words for the user. NOT tried on Linux or Windows."""
+    if sys.platform == "darwin":
+        return "Install it with “brew install cdrdao” in Terminal"
+    if sys.platform == "win32":
+        return "Windows isn't supported for burning yet"
+    return (
+        "Install it with your package manager, for example “sudo apt install cdrdao”"
+        " (Debian, Ubuntu) or “sudo dnf install cdrdao” (Fedora)"
+    )
+
+
+def build_toc(
+    disc: Disc, pregap_sectors: int = 0, relative_to: Path | None = None
+) -> str:
     """Render `disc` as a cdrdao TOC with CD-TEXT for the disc and each track.
 
     cdrdao is gapless unless told otherwise, so a PREGAP is only emitted for
-    tracks 2 and up when `pregap_sectors` is non-zero.
+    tracks 2 and up when `pregap_sectors` is non-zero. The files are named by full path, or,
+    with `relative_to`, relative to that folder (for a TOC that is exported beside its files).
     """
 
     def text_block(title: str, performer: str) -> list[str]:
@@ -42,7 +61,11 @@ def build_toc(disc: Disc, pregap_sectors: int = 0) -> str:
         lines.append("}")
         if index > 0 and pregap_sectors:
             lines.append(f"PREGAP {format_msf(pregap_sectors)}")
-        lines.append(f'FILE "{cdtext_toc_escape(str(track.wav.resolve()))}" 0')
+        if relative_to is None:
+            name = str(track.wav.resolve())
+        else:  # (forward slashes: cdrdao reads them on every system)
+            name = Path(os.path.relpath(track.wav, relative_to)).as_posix()
+        lines.append(f'FILE "{cdtext_toc_escape(name)}" 0')
     return "\n".join(lines) + "\n"
 
 
@@ -72,7 +95,7 @@ class CdrdaoBurner:
     def burn(self, disc: Disc, options: BurnOptions, progress: Progress) -> None:
         exe = find_cdrdao()
         if not exe:
-            raise BurnError("cdrdao not found on PATH (try: brew install cdrdao)")
+            raise BurnError(f"cdrdao was not found. {install_hint()}.")
         device = options.device
         if device is None:
             found = scan_devices()

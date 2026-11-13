@@ -302,6 +302,9 @@ class MainWindow(QMainWindow):
         header.setSortIndicatorShown(True)
         header.setSortIndicator(-1, Qt.SortOrder.AscendingOrder)
         header.setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
+        # (Qt's default minimum depends on the style and font, and is wider than the narrow marker
+        # column on Linux, which would then open wider than it is meant to be)
+        header.setMinimumSectionSize(min(spec.width for spec in TRACK_COLUMNS))
         for column, spec in enumerate(TRACK_COLUMNS):
             self.track_table.setColumnWidth(column, spec.width)
             if spec.fixed:  # a waveform, a marker, a number: content of one size

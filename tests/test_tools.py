@@ -1,5 +1,6 @@
 """Finding ffmpeg and ffprobe: the bundled copy first, then PATH; the notice when they're gone."""
 
+import re
 import stat
 import sys
 
@@ -76,11 +77,13 @@ def test_a_tool_that_will_not_run_has_no_version(tmp_path):
 def test_the_words_for_a_missing_tool_say_how_to_fix_it():
     text = tools.missing_message("ffprobe")
     assert text.startswith("ffprobe was not found")
-    assert "brew install ffmpeg" in text and "ffmpeg.org" in text
+    assert tools.install_command() in text and "ffmpeg.org" in text
 
 
 def test_running_a_missing_tool_is_an_expected_error(nowhere, tmp_path):
-    with pytest.raises(ToolMissingError, match="brew install ffmpeg") as caught:
+    with pytest.raises(
+        ToolMissingError, match=re.escape(tools.install_command())
+    ) as caught:
         probe(tmp_path / "a.mp3")
     assert isinstance(
         caught.value, RenderError
@@ -99,12 +102,12 @@ def test_a_missing_tool_is_not_reported_as_every_file_being_unreadable(nowhere, 
 def test_the_startup_notice_names_what_is_missing(qapp):
     dialog = MissingToolsDialog(["ffmpeg", "ffprobe"])
     assert "ffmpeg and ffprobe" in dialog.heading.text()
-    assert dialog.command_field.text() == "brew install ffmpeg"
+    assert dialog.command_field.text() == tools.install_command()
     assert "ffmpeg.org" in dialog.link_label.text()
     dialog.copy_button.click()
     from PySide6.QtWidgets import QApplication
 
-    assert QApplication.clipboard().text() == "brew install ffmpeg"
+    assert QApplication.clipboard().text() == tools.install_command()
     dialog.deleteLater()
 
 
@@ -115,3 +118,26 @@ def test_settings_lists_where_each_tool_is(qapp, nowhere):
     assert dialog.tool_labels["ffmpeg"].text() == "ffmpeg: not found"
     assert dialog.tool_labels["ffprobe"].text() == "ffprobe: not found"
     dialog.deleteLater()
+
+
+@pytest.mark.parametrize(
+    ("platform", "command"),
+    [
+        ("darwin", "brew install ffmpeg"),
+        ("linux", "sudo apt install ffmpeg"),
+        ("win32", "winget install Gyan.FFmpeg"),
+    ],
+)
+def test_the_install_command_is_per_platform(monkeypatch, platform, command):
+    monkeypatch.setattr(tools.sys, "platform", platform)
+    assert tools.install_command() == command
+
+
+def test_a_bundled_tool_is_an_exe_on_windows(nowhere, tmp_path, monkeypatch):
+    """(Looked up by name only: the stand-in is a script, and is never run.)"""
+    monkeypatch.setattr(tools.sys, "platform", "win32")
+    monkeypatch.setattr(tools, "BUNDLE_DIR", tmp_path)
+    _fake_tool(tmp_path, "ffmpeg")  # no .exe: not it
+    assert tools.find_tool("ffmpeg") is None
+    exe = _fake_tool(tmp_path, "ffmpeg.exe")
+    assert tools.find_tool("ffmpeg").path == exe

@@ -13,6 +13,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -23,7 +24,6 @@ REQUIRED = ("ffmpeg", "ffprobe")
 
 BUNDLE_DIR = Path(__file__).parent / "bin"
 
-INSTALL_COMMAND = "brew install ffmpeg"
 DOWNLOAD_URL = "https://ffmpeg.org/download.html"
 
 
@@ -38,9 +38,23 @@ class Tool:
         return "bundled with Dubcrate" if self.bundled else "found on your PATH"
 
 
+def install_command() -> str:
+    """The command that installs ffmpeg and ffprobe on this computer (NOT tried on Linux or Windows)."""
+    if sys.platform == "darwin":
+        return "brew install ffmpeg"
+    if sys.platform == "win32":
+        return "winget install Gyan.FFmpeg"
+    return "sudo apt install ffmpeg"
+
+
+def _file_name(name: str) -> str:
+    """The file a bundled tool is stored as (Windows programs end in .exe)."""
+    return f"{name}.exe" if sys.platform == "win32" else name
+
+
 def find_tool(name: str) -> Tool | None:
     """The bundled copy of `name` if there is one, else the first on `PATH`, else `None`."""
-    bundled = BUNDLE_DIR / name
+    bundled = BUNDLE_DIR / _file_name(name)
     if bundled.is_file() and os.access(bundled, os.X_OK):
         return Tool(name, bundled, bundled=True)
     found = shutil.which(name)
@@ -56,7 +70,7 @@ def missing_message(name: str) -> str:
     """The words for an operation that needs `name` and can't find it (an expected error)."""
     return (
         f"{name} was not found. Dubcrate needs ffmpeg and ffprobe to read, play and burn"
-        f" music. Install them with “{INSTALL_COMMAND}” in Terminal (or from"
+        f" music. Install them with “{install_command()}” in a terminal (or from"
         f" {DOWNLOAD_URL}), then restart Dubcrate."
     )
 

@@ -115,8 +115,10 @@ def test_the_tests_run_on_every_push():
     on = TEST_WORKFLOW.split("jobs:")[0]
     assert re.search(r"^  push:\s*(#.*)?$", on, re.MULTILINE)
     assert "branches" not in on.split("pull_request")[0].split("push:")[1]  # any branch
-    assert "uv run pytest" in TEST_WORKFLOW and "ruff" in TEST_WORKFLOW
+    assert "pytest tests/" in TEST_WORKFLOW and "ruff" in TEST_WORKFLOW
     assert "--no-group build" in TEST_WORKFLOW  # the tests don't need Nuitka
+    # ... and `uv run` would put it back, so every uv call after the sync says so too
+    assert TEST_WORKFLOW.count("uv run --no-group build") == 3 and "uv run pytest" not in TEST_WORKFLOW  # fmt: skip
 
 
 def test_the_packaging_tools_are_a_dependency_group_not_a_runtime_dependency():

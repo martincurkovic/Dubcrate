@@ -9,6 +9,7 @@ reference, the burning and hardware notes, and the roadmap.
 ```sh
 uv sync                                  # install deps
 uv run pytest                            # tests (no hardware needed)
+scripts/test_linux.sh                    # the same suite on Linux, in Docker (the CI default leg)
 uv run ruff check . && uv run ruff format .
 uv run spikes/burn_spike.py doctor       # check tools, drive and media
 ```
@@ -23,7 +24,9 @@ the repo; follow whatever it reports.
 - `src/dubcrate/render.py`: ffmpeg decode to 16-bit/44.1k stereo WAV, padded to whole sectors.
 - `src/dubcrate/burn/base.py`: `Disc`, `DiscTrack`, `BurnOptions`, `Burner` protocol.
 - `src/dubcrate/burn/discrecording.py`: macOS backend (PyObjC). Import only on darwin.
-- `src/dubcrate/burn/cdrdao.py`: cdrdao backend, TOC generation.
+- `src/dubcrate/burn/__init__.py`: `default_backend()` (DiscRecording on a Mac, cdrdao elsewhere: the one place that decides, callers never test the platform) and `backend_problem(name)` (why a backend can't run here, in plain words; the burn window shows it up front and never starts a burner then).
+- `src/dubcrate/burn/cdrdao.py`: cdrdao backend, TOC generation (`build_toc(..., relative_to=)` for an exported TOC), `find_cdrdao` (through `tools.find_tool`), `install_hint` per OS.
+- `src/dubcrate/export.py`: `export_plan(plan, parent)` writes a disc as files for any burning program (audio: ASCII-named numbered WAVs, `disc.toc`, README; MP3: the disc's folder with the README beside it) into a NEW folder, never overwriting, removing its own half-made folder on failure. `dubcrate export DISC DIR` and the burn window's Export… use it; the window's chooser is `burn_dialog.ask_export_folder` (`conftest.py` refuses it, patch it).
 - `src/dubcrate/library/`: Dubcrate's own SQLite library.
   - `models.py`: `TrackRecord`/`NodeRecord` (what a source produces) and `Track`/`Node`/`Source` (what the store returns).
   - `store.py`: `Library`. `replace_source` syncs a source in one transaction and keeps track ids stable across re-imports.
@@ -126,7 +129,7 @@ the repo; follow whatever it reports.
 
 ## Cross-platform
 
-Dubcrate runs on macOS only. **Read `dev_docs/cross-platform.md` before touching burners, tool
+Dubcrate burns on macOS only. Linux and Windows have groundwork (a per-OS burner choice, drive lists, CI legs marked `experimental`, Export), all **[not tried]** on those systems. **Read `dev_docs/cross-platform.md` before touching burners, tool
 lookup (`extend_tool_path`), app or log paths, packaging or CI**: it records what is portable, the
 decision to use `cdrdao` for audio discs on Linux and Windows, and the phased plan. Keep platform
 branches in one named helper each (as `rekordbox.default_master_db` does), never scattered

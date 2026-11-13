@@ -11,26 +11,55 @@ concurrency:
 
 jobs:
   test:
-    # macOS, because that is the one platform Dubcrate supports (it burns through Apple's DiscRecording framework)
-    runs-on: macos-15
+    name: test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 30
+    # One leg per OS. Linux is the default: it is the cheapest and fastest runner, it runs the lint, and it is where the suite is
+    # run first (scripts/test_linux.sh runs the same thing in Docker on a Mac). macOS also gates a release, because the app that
+    # ships is a Mac one (it burns through Apple's DiscRecording framework) and a few tests only run there. Windows is being
+    # brought up (dev_docs/cross-platform.md): its result is shown, but a failure does not fail the run. When it is green,
+    # remove its `experimental: true`.
+    continue-on-error: ${{ matrix.experimental }}
+    strategy:
+      fail-fast: false # a failing OS must not hide the result of the others
+      matrix:
+        include:
+          - os: ubuntu-latest
+            experimental: false
+          - os: macos-15
+            experimental: false
+          - os: windows-latest
+            experimental: true
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version-file: ".python-version"
       - uses: astral-sh/setup-uv@v6
-      - name: Install ffmpeg
+      - name: Install ffmpeg (macOS)
         # reading, probing and converting tracks run ffmpeg and ffprobe
+        if: runner.os == 'macOS'
         run: brew install ffmpeg
+      - name: Install ffmpeg and Qt's system libraries (Linux)
+        # the libraries are what PySide6's wheels expect from the system, even for Qt's offscreen platform
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg libegl1 libgl1 libxkbcommon0 libfontconfig1 libdbus-1-3 libglib2.0-0 fonts-dejavu-core
+      - name: Install ffmpeg (Windows)
+        if: runner.os == 'Windows'
+        run: choco install ffmpeg -y --no-progress
       - name: Sync environment
         # the tests don't need the packaging tools (Nuitka, dmgbuild), so skip that dependency group
         run: uv sync --no-group build
       - name: Lint
+        # once, on Linux: the result does not depend on the OS (and Windows checks files out with other line endings).
+        # (`uv run` syncs again with the default groups, so it is told to leave the packaging tools out too)
+        if: runner.os == 'Linux'
         run: |
-          uv run ruff check .
-          uv run ruff format --check .
+          uv run --no-group build ruff check .
+          uv run --no-group build ruff format --check .
       - name: Run tests
         # -v names every test; faulthandler_timeout dumps all thread stacks if one test runs over 90 s (a hang shows where it is stuck).
         # The tests run on Qt's offscreen platform and never touch a drive, an audio device or the network.
-        run: uv run pytest tests/ -v -ra -o faulthandler_timeout=90
+        run: uv run --no-group build pytest tests/ -v -ra -o faulthandler_timeout=90
