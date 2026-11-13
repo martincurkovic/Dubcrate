@@ -59,7 +59,7 @@ until a person with that OS and an optical drive has checked it.
 | `scripts/build_macos.sh`, `scripts/dmg_settings.py`, `assets/dmg/`, `BUILDING.md` | Packaging is a macOS app and a DMG | One build per OS (Phase 5) |
 | `.github/workflows/test.yml` | Runs on `macos-15` only, and says so in a comment | Matrix (Phase 1) |
 | `.github/workflows/build.yml` | macOS arm and Intel builds; the release job is the only Linux one | Add per-OS builds (Phase 5) |
-| `ui/explorer.py: mounted_volumes()` | Finds drives in macOS's `/Volumes` (dropping the boot-disk link); returns none elsewhere, so the Explorer shows only Music and home | Linux (`/media`, `/run/media`, `/mnt`) and Windows (drive letters) **[not tried]**. Plugging a drive in while the app runs is noticed by a `QFileSystemWatcher` on `volume_parents()`: tried on a Mac with a mounted disk image; Linux **[not tried]**; Windows has no folder to watch, so its list is read again when the tab opens |
+| `ui/explorer.py: mounted_volumes()` | Finds drives in macOS's `/Volumes` (dropping the boot-disk link and the system's own `com.apple.*` folders); Linux and Windows have their own helpers | Linux (`/media`, `/run/media`, `/mnt`) and Windows (drive letters) **[not tried]**. Plugging a drive in while the app runs is noticed by a `QFileSystemWatcher` on `volume_parents()`: tried on a Mac with a mounted disk image; Linux **[not tried]**; Windows has no folder to watch, so its list is read again when the tab opens |
 | `ui/smoke_test.py` | Has a `darwin` check (DiscRecording, built-app specifics) | Per-OS smoke test |
 | `ui/help/manual.md`, `README.md`, `CONTRIBUTING.md` | Mention Homebrew, `~/Library/Application Support/Dubcrate/`, macOS-only burning | Say what each OS needs, per OS |
 | `tests/test_app_bundle.py`, `tests/test_build_files.py` | Check the macOS build files | Skip off macOS (Phase 1) |
@@ -117,7 +117,7 @@ was run on a Windows desktop or drive. What they showed:
   OS (`brew`, `apt-get` with Qt's system libraries, `choco`). **Linux is the default leg** (first,
   gates the run, runs the lint); macOS gates too (the shipped app is a Mac one). Windows is
   `experimental` (its failures show but don't fail the run, so can't block a release) until green:
-  then remove the flag. **Written 2026-11-13, not yet run on GitHub.**
+  then remove the flag. **First run 2026-11-13 (see "Windows: the first CI run" below); the Linux and macOS legs are green, the Windows leg's fixes are unseen.**
 - [x] Linux in Docker: `scripts/test_linux.sh` (Ubuntu 24.04, same system packages as the CI leg;
   `scripts/linux-test.Dockerfile`) runs the suite on Linux from a Mac. First run (Arm Linux,
   2026-11-13): 1223 of 1226 passed and 4 skipped; the 3 failures were real portability bugs
@@ -145,7 +145,7 @@ was run on a Windows desktop or drive. What they showed:
   disc, numbered ASCII-named WAVs plus `disc.toc` (`build_toc(..., relative_to=folder)`, CD-TEXT
   included) and a README; for an MP3 disc, the staged folder with the README beside it. A new
   folder each time, never overwriting; a failed export removes its own half-made folder. **[tests]**
-  Still to do: an ISO for MP3 discs, once Phase 3 can build one.
+  Also done since: an MP3 disc's export includes a `disc.iso` (`iso.py`) when an ISO tool is found. **[tests]**
 - [x] The README says how to burn it with `cdrdao write disc.toc` (from inside the folder, since
   the TOC's file names are relative: whether cdrdao resolves them against the TOC's folder or the
   working directory: **checked with cdrdao 1.2.4 in Docker: the working directory**, so running it from
@@ -226,9 +226,11 @@ was run on a Windows desktop or drive. What they showed:
 - Releases: 1.2.5 (2023-02-03), 1.2.6 (2025-12-05).
 
 **From our own code** (not from cdrdao's documentation)
-- No free-space check today, one drive (the first), progress as raw lines, test write via
-  `--simulate`, speed via `--speed`, eject via `--eject`. None of it has been run.
-- It cannot burn MP3 discs yet (`burn_data` raises).
+- Free space and blank-or-not from `cdrdao disk-info` (unknown is never a reason to refuse), the drive
+  chosen through `BurnOptions.device`, progress cut to one line per 10 percent, test write via
+  `--simulate`, speed via `--speed`, eject via `--eject`, plain-language failures. None of it has been run
+  against a drive.
+- MP3 discs: an ISO (`iso.py`) written as one `MODE1` data track by `burn_data`. Not run against a drive.
 
 **Not confirmed**
 - Anything about Windows: whether it needs administrator rights, which drive interface it uses,

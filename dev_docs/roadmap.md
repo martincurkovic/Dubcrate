@@ -19,7 +19,9 @@
    `prune_explorer`; schema v9). **Next, as agreed with the owner:**
    - **Pinned folders**: *Built, not yet looked at on a real Mac.* Right-click a folder in the
      Explorer > Pin Folder gives it a tab below Explorer without leaving the current screen (Unpin Folder on the tab or the tree);
-     the folder, not recursive, is read again each time its tab is opened (no background watching).
+     the tab lists the folders inside it (no row for the folder itself; its own files show when the tab opens or
+     when you click the empty space under the list), and the folder, not recursive, is read again each time its tab is opened (no background watching).
+     The Library tab likewise has no row for a single source: its folders and playlists follow All Tracks directly.
      Tabs reorder by dragging (only pinned ones; Library and Explorer stay first and second) or by
      Move Up / Move Down in the tab's menu, and the strip scrolls (wheel, no scroll bar, edge chevrons,
      the picked tab scrolled into view) when there are more pins than fit. Explorer: opening the tab lists

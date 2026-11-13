@@ -150,7 +150,7 @@ branches in one named helper each (as `rekordbox.default_master_db` does), never
 
 ### Where things stand
 
-*Last updated at the end of the session that built the label printer and the Explorer.*
+*Last updated after the session that added play-through, the normalise presets (incl. peak), the audio crackle fixes, the label picker's folders, flat pinned and Library trees, and the search box's Esc / Return.*
 
 Built: library import (folders and rekordbox), disc planning (fit, split, reorder,
 exact capacity), audio **and MP3 discs** (MP3 folders included), the `dubcrate` command-line
@@ -163,8 +163,12 @@ waveforms and scratching, an update check, a built `.dmg` (Nuitka), and since th
   (box, Ctrl+wheel, trackpad pinch, drag), print or PDF. *Disc > Print Labels…* (⌘P).
 - **Drag-to-change spin boxes** everywhere (`ui/spinbox_drag.py`, ported from AKAISDS).
 - A faint **zero line** in the zoomed waveform.
-- **The left side is two tabs, Library and Explorer** (`ui/source_tabs.py`, `ui/explorer.py`; schema
-  v9). The Explorer browses folders and drives without importing; its tracks live in a hidden source.
+- **The left side is tabs: Library, Explorer and one per pinned folder** (`ui/source_tabs.py`, `ui/explorer.py`; schema
+  v9). The Explorer browses folders and drives without importing (a drive plugged in while the app runs
+  appears by itself); its tracks live in a hidden source. A pinned folder's tab and a single-source Library list
+  what is inside, with no row for the folder or source itself.
+- **Audio:** play-through (a track that ends starts the next), the crackle fixes (`freeze_garbage_collector`,
+  `tune_gil_for_audio`: see `dev_docs/audio.md`), level matching with presets and a peak-to-full-scale choice.
 
 Burning through DiscRecording is proven on the owner's hardware (a disc burned and played on a
 CDJ-1000MK3, CD-TEXT shown); the burn *window*, the gapless fix, the `cdrdao` backend, non-zero gaps,
@@ -175,19 +179,13 @@ whether the Mac print panel keeps the paper size we ask for), trackpad pinch and
 dragging spin boxes, the Explorer on a real Mac (permission prompts for Documents / Downloads / drives,
 a slow or unplugged drive), and whether the built app bundles QtPrintSupport (`scripts/build_macos.sh`).
 
-**Next, in the owner's order** (details and the reasons in `dev_docs/roadmap.md`, item 3):
-1. **Pinned folders**: folders the user pins become their own tabs below Library and Explorer,
-   refreshed whenever the tab is opened (no watching). The owner's use is a folder of misc MP3s that
-   are not in rekordbox. Build it on the Explorer's machinery (a pinned folder is the Explorer rooted
-   there, and shares `sync_directory`); the tab list is in `settings`, and `SourceTabBar` needs a
-   `remove_tab` and a way to reorder.
+**Next** (the owner's `TODO.md` is the live list and is theirs: do not tidy it; `dev_docs/roadmap.md` has the reasons):
+1. Hardware checks of the burn window, an MP3 disc, level matching on a CDJ and the "not tried" list above.
 2. **A tab per app library** (not one merged Library tab), when a second library exists. Only
    rekordbox is used (Engine DJ and Algoriddim djay are backups synced from it with Lexicon, so there
    is nothing to read from them). **Mixxx** is wanted, but the owner uses it on Linux, not on this Mac:
    wait for a real `mixxxdb.sqlite` to check against before writing a reader.
-3. Hardware checks of the burn window and an MP3 disc, and the "not tried" list above.
-4. The owner's `TODO.md` has more (it is theirs: do not tidy it), including cm/in units in the settings
-   and the print dialog.
+3. Release preparation (signing, the README, a changelog), then Linux and Windows.
 
 **Decisions to keep:** no BPM / key / waveform *analysis* of files (loudness is the one measurement taken, at burn time only, cached, never shown as a library column, because it is baked into the audio the CDJ plays) (the CDJ-1000 can't use that data;
 tags are only read, blank when missing; the waveform is drawn from the audio at preview time); the

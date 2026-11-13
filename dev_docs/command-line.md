@@ -1,7 +1,8 @@
 # The `dubcrate` command-line tool
 
-Everything the window does with the library can also be done from a terminal, and
-**burning currently can only be done here**. Run it with `uv run dubcrate ...`.
+Everything the window does with the library can also be done from a terminal, burning and
+exporting included (the window's **Burn…** and **Export…** do the same), which is handy for scripts
+and for trying things. Run it with `uv run dubcrate ...`.
 
 Pass `--library PATH` before the command to use a different library file (handy for
 trying things without touching your real one). By default the library is
