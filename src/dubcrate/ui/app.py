@@ -39,6 +39,18 @@ def _is_bundled() -> bool:
     return bool(getattr(sys, "frozen", False)) or "__compiled__" in globals()
 
 
+# How long a thread may keep the GIL before one that is waiting for it gets it. Python's default is 5 ms,
+# longer than a 128-frame audio buffer (2.9 ms): the audio callback is Python, so with the GUI busy it
+# was late again and again. 0.2 ms: 128 frames, the window playing and a worker busy, 0 late callbacks in
+# 20 s (default: 300), with the worker getting as much done (spikes/audio_jitter.py, dev_docs/audio.md).
+GIL_SWITCH_INTERVAL = 0.0002
+
+
+def tune_gil_for_audio() -> None:
+    """Make the audio callback's wait for the GIL short (see `GIL_SWITCH_INTERVAL`)."""
+    sys.setswitchinterval(GIL_SWITCH_INTERVAL)
+
+
 def freeze_garbage_collector() -> int:
     """Take everything the app has built so far out of the garbage collector's reach; returns how
     many objects that was.
@@ -99,6 +111,7 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def _run(args: argparse.Namespace, qt_args: list[str]) -> int:
+    tune_gil_for_audio()
     app = QApplication([sys.argv[0], *qt_args])
     app.setOrganizationName("Dubcrate")
     app.setApplicationName("Dubcrate")

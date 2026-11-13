@@ -20,7 +20,9 @@ import gc
 import itertools
 import os
 import statistics
+import sys
 import tempfile
+import threading
 import time
 import wave
 from pathlib import Path
@@ -49,7 +51,23 @@ def main() -> None:
         default="default",
         help="freeze: gc.collect() then gc.freeze(), as the app does at start-up",
     )
+    parser.add_argument(
+        "--switch-ms",
+        type=float,
+        default=None,
+        help="sys.setswitchinterval, in ms (Python's default is 5): how long a thread may keep the GIL "
+        "before another one that is waiting gets it",
+    )
+    parser.add_argument(
+        "--worker",
+        action="store_true",
+        help="also run background work (a 3-minute track's waveform, then a plain Python loop, over and"
+        " over), like the decoding and measuring the app does on worker threads, and report how much it"
+        " got done: what a short --switch-ms costs",
+    )
     args = parser.parse_args()
+    if args.switch_ms is not None:
+        sys.setswitchinterval(args.switch_ms / 1000)
 
     scratch = Path(tempfile.mkdtemp(prefix="dubcrate-jitter-"))
     os.environ["DUBCRATE_DATA_DIR"] = str(scratch / "data")
@@ -168,10 +186,31 @@ def main() -> None:
     elif args.gc == "off":
         gc.disable()
 
+    done = {"waveforms": 0, "loops": 0}
+    stop = threading.Event()
+    if args.worker:
+        from dubcrate.waveform import compute_waveform
+
+        noise = (
+            np.random.default_rng(1).standard_normal(44_100 * 180).astype(np.float32)
+        )
+
+        def work() -> None:
+            while not stop.is_set():
+                compute_waveform(noise)  # numpy: mostly outside the GIL
+                done["waveforms"] += 1
+                total = 0
+                for i in range(300_000):  # plain Python: needs the GIL all the time
+                    total += i * i
+                done["loops"] += 1
+
+        threading.Thread(target=work, daemon=True).start()
+
     end = time.time() + args.seconds
     while time.time() < end:
         app.processEvents()
         time.sleep(0.001)
+    stop.set()
     player.shutdown()
 
     gaps = [b - a for a, b in itertools.pairwise(starts)]
@@ -182,9 +221,14 @@ def main() -> None:
     ms = lambda x: f"{x * 1000:.1f}"
     worst = sorted(((g, a - starts[0]) for g, a in zip(gaps, starts, strict=False)), reverse=True)[:6]  # fmt: skip
     print(
-        f"{args.mode}, buffer {args.buffer} frames ({args.buffer / 44.1:.1f} ms), gc {args.gc}"
+        f"{args.mode}, buffer {args.buffer} frames ({args.buffer / 44.1:.1f} ms), gc {args.gc},"
+        f" switch interval {sys.getswitchinterval() * 1000:g} ms"
     )
     print(f"  callbacks {len(starts)}, median gap {ms(period)} ms, p99 {ms(sorted(gaps)[int(len(gaps) * 0.99)])} ms, MAX {ms(max(gaps))} ms")  # fmt: skip
+    if args.worker:
+        print(
+            f"  background work done: {done['waveforms']} waveforms, {done['loops']} Python loops"
+        )
     print(f"  late (over 1.5 x the median): {sum(g > 1.5 * period for g in gaps)}")
     print(f"  worst gaps (ms, s after the first callback): {[(round(g * 1000), round(a, 1)) for g, a in worst]}")  # fmt: skip
     print(f"  callback work: median {statistics.median(durations) * 1000:.3f} ms, max {max(durations) * 1000:.2f} ms")  # fmt: skip

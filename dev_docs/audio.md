@@ -40,11 +40,21 @@ over from that app's own findings).
   crackles. `ui/app.py: freeze_garbage_collector` (`gc.collect()` then `gc.freeze()` once the
   window is up) takes the start-up objects out of every later collection: worst gap 56 ms to 30
   ms and no late callbacks at 1024, clean at 512, nearly at 256 (2 late callbacks in 15 s).
-  **Still open:** each waveform paint holds the GIL for about 8 ms in one C++ call, so 128
-  frames is not safe (about 130 late callbacks in 15 s with the collector frozen). The next
-  step would be painting the zoomed waveform from a cached image shifted a pixel row at a time
-  (no per-frame Python objects, no long call); below that, only a callback that doesn't need the
-  GIL would do, and `miniaudio` can't give one with our scratching.
+  **The GIL's switch interval [measured the same day; applied]:** with the collector frozen, 128
+  frames was still not safe (about 300 late callbacks in 15 s). That was **not** one long call
+  holding the GIL, as first guessed: Python hands the GIL to a waiting thread only every
+  `sys.getswitchinterval()` (5 ms by default), longer than a 128-frame buffer (2.9 ms), so the
+  audio thread waits whenever the GUI thread is running Python. `spikes/audio_jitter.py --switch-ms
+  N` sets it. At 256 frames with a worker thread busy as well (`--worker`): 62 late callbacks in
+  20 s at 5 ms, 5 at 1 ms, 0 at 0.5 and 0.2 ms. At 128 frames, same load: 2 late at 0.5 ms, **0 at
+  0.2 ms** (worst gap 3.7 ms against a 3.0 ms period), 0 at 0.1 ms. The worker (a waveform, then a
+  plain Python loop, repeated) got exactly as much done at every setting (93 rounds in 20 s), so
+  the shorter interval cost it nothing measurable; a thread that does nothing but fight the GUI for
+  the GIL would pay for the extra switches, which was not tried. `ui/app.py: tune_gil_for_audio`
+  sets 0.2 ms at start-up (`GIL_SWITCH_INTERVAL`). **Not heard by ear.** The bigger change
+  (painting the zoomed waveform from a cached image) is only worth doing if 128 still crackles on
+  a real Mac: below that, only a callback that doesn't need the GIL would do, and `miniaudio`
+  can't give one with our scratching.
 - **Testing:** `render_block(state, frames)` is a pure function over `PlaybackState`;
   the player takes a `device_factory`, so tests drive a fake device and pull blocks
   by hand. `tests/conftest.py` makes every test use a fake device by default.

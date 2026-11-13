@@ -7,6 +7,8 @@ import sys
 import types
 from pathlib import Path
 
+import pytest
+
 from dubcrate import tools
 from dubcrate.ui import app, smoke_test, version
 
@@ -44,6 +46,20 @@ def test_start_up_objects_are_frozen_out_of_the_garbage_collector():
         assert gc.isenabled()  # collecting goes on for what is made afterwards
     finally:
         gc.unfreeze()  # (the tests share one process)
+
+
+def test_the_gil_is_handed_over_fast_enough_for_the_smallest_audio_buffer():
+    """The audio callback is Python: with the default 5 ms a 128-frame buffer (2.9 ms) is late
+    whenever the GUI is busy."""
+    before = sys.getswitchinterval()
+    try:
+        app.tune_gil_for_audio()
+        assert sys.getswitchinterval() == pytest.approx(
+            app.GIL_SWITCH_INTERVAL
+        )  # (kept in whole microseconds)
+        assert app.GIL_SWITCH_INTERVAL < 0.0029  # a 128-frame buffer at 44.1 kHz
+    finally:
+        sys.setswitchinterval(before)
 
 
 # -- the version and the icon of a built app ---------------------------------------------
