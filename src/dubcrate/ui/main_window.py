@@ -22,6 +22,7 @@ from PySide6.QtWidgets import (
     QProgressBar,
     QPushButton,
     QStackedWidget,
+    QTableView,
     QTreeView,
     QVBoxLayout,
     QWidget,
@@ -37,7 +38,7 @@ from dubcrate.library.folder import (
     scan_directory,
     scan_folder,
 )
-from dubcrate.library.models import DiscKind
+from dubcrate.library.models import DiscKind, Track
 from dubcrate.library.rekordbox import (
     RekordboxLibrary,
     default_master_db,
@@ -281,6 +282,7 @@ class MainWindow(QMainWindow):
         self.preview.preview_ready.connect(self._on_preview_ready)
         self.player_strip.previous_requested.connect(lambda: self._step_track(-1))
         self.player_strip.next_requested.connect(lambda: self._step_track(1))
+        self.preview.player.finished.connect(self._play_on_after_end)
 
         self.track_model = TrackTableModel(self)
         self.track_table = TrackTable()
@@ -1493,16 +1495,20 @@ class MainWindow(QMainWindow):
     def _on_track_double_clicked(self, index: QModelIndex) -> None:
         self.preview.load(self.track_model.track_at(index.row()))
 
-    def _step_track(self, delta: int) -> None:
-        """Load the track before or after the loaded one in the list (or the selected one)."""
+    def _step_list(self) -> tuple[list[Track], QTableView]:
+        """The tracks Previous / Next walk (the open disc's, in its order, else the track
+        list's) and the table that shows them."""
         if (
             self.center.currentIndex() == 1
         ):  # a disc is open: step through it, in its order
             model = self.disc_view.model
             tracks = [model.entry_at(r).track for r in range(model.rowCount())]
-            table = self.disc_view.table
-        else:
-            tracks, table = self.track_model.tracks(), self.track_table
+            return tracks, self.disc_view.table
+        return self.track_model.tracks(), self.track_table
+
+    def _step_track(self, delta: int) -> None:
+        """Load the track before or after the loaded one in the list (or the selected one)."""
+        tracks, table = self._step_list()
         if not tracks:
             return
         current = (
@@ -1523,6 +1529,24 @@ class MainWindow(QMainWindow):
             row = chosen[0].row() if chosen else (-1 if delta > 0 else len(tracks))
         target = row + delta
         if 0 <= target < len(tracks):
+            table.selectRow(target)
+            self.preview.load(tracks[target])
+
+    def _play_on_after_end(self) -> None:
+        """A track played to its end: go on with the next one in the list, and stop after the
+        last. Only from a track that is in the list on show (so changing lists mid-song never
+        starts something unexpected), skipping files that are missing."""
+        tracks, table = self._step_list()
+        current, requested = self.preview.track, self.preview.requested
+        if current is None or requested is None or requested.id != current.id:
+            return  # the user has already asked for something else
+        row = next((i for i, t in enumerate(tracks) if t.id == current.id), None)
+        if row is None:
+            return
+        target = next(
+            (i for i in range(row + 1, len(tracks)) if not tracks[i].missing), None
+        )
+        if target is not None:
             table.selectRow(target)
             self.preview.load(tracks[target])
 

@@ -147,6 +147,8 @@ For a folder you use all the time (say, MP3s that aren't in rekordbox), **right-
 
 **Double-click** a track to preview it, and press **Space** to play or pause (and **←** and **→** to beat jump). These keys work wherever you are in the window, except where you are typing, so the search box, a title you are editing and a setting you are typing into keep their keys. A slider keeps its own arrows, and in the Library and Discs lists **←** and **→** still close and open folders, but **Space** works there too. The **Preview** column shows the whole track as a waveform.
 
+When a track plays to its end, the next one in the list (or in the open disc, in its order) starts by itself, skipping any file that is missing, and playback stops after the last. Pause, or choose another track, and it stays as you left it.
+
 The two waveforms in the player:
 
 - The **overview** shows the whole track. For rekordbox tracks it also shows the phrases (such as INTRO, CHORUS, DOWN, UP and OUTRO) and any cue points. Click anywhere in it to jump there.

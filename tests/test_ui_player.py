@@ -1,3 +1,4 @@
+import dataclasses
 import wave
 from pathlib import Path
 from types import SimpleNamespace
@@ -788,6 +789,54 @@ def test_previous_and_next_walk_the_track_list(audible, wait_for):
     assert wait_for(lambda: win.preview.track.title == "Song 0")
     win._step_track(-1)  # already at the top: nothing to do
     assert win.preview.track.title == "Song 0"
+
+
+def test_a_track_that_ends_is_followed_by_the_next_one_in_the_list(audible, wait_for):
+    win, _ = audible
+    win._on_track_double_clicked(win.track_model.index(1, 1))
+    assert wait_for(lambda: win.preview.player.playing)
+    win.preview.player.finished.emit()  # what the player says when a track plays out
+    assert wait_for(lambda: win.preview.track.title == "Song 2")
+    assert wait_for(lambda: win.preview.player.playing)
+    assert [i.row() for i in win.track_table.selectionModel().selectedRows()] == [2]
+
+
+def test_playing_on_stops_after_the_last_track(audible, wait_for):
+    win, _ = audible
+    win._on_track_double_clicked(win.track_model.index(3, 1))
+    assert wait_for(lambda: win.preview.track is not None)
+    win.preview.player.finished.emit()
+    assert win.preview.requested.title == "Song 3"  # nothing new was asked for
+
+
+def test_playing_on_leaves_alone_what_the_user_has_just_chosen(audible, wait_for):
+    win, _ = audible
+    win._on_track_double_clicked(win.track_model.index(0, 1))
+    assert wait_for(lambda: win.preview.track is not None)
+    win._on_track_double_clicked(win.track_model.index(3, 1))  # still loading
+    win.preview.player.finished.emit()
+    assert win.preview.requested.title == "Song 3"
+
+
+def test_playing_on_skips_a_missing_file(audible, wait_for):
+    win, _ = audible
+    tracks = win.track_model.tracks()
+    gone = dataclasses.replace(tracks[2], missing=True)
+    win.track_model.tracks = lambda: [tracks[0], tracks[1], gone, tracks[3]]
+    win._on_track_double_clicked(win.track_model.index(1, 1))
+    assert wait_for(lambda: win.preview.track is not None)
+    win.preview.player.finished.emit()
+    assert wait_for(lambda: win.preview.track.title == "Song 3")
+
+
+def test_playing_on_does_not_start_a_track_from_another_list(audible, wait_for):
+    win, _ = audible
+    win._on_track_double_clicked(win.track_model.index(0, 1))
+    assert wait_for(lambda: win.preview.track is not None)
+    tracks = win.track_model.tracks()
+    win.track_model.tracks = lambda: tracks[2:]  # the list now on show lacks Song 0
+    win.preview.player.finished.emit()
+    assert win.preview.requested.title == "Song 0"
 
 
 def test_next_with_nothing_loaded_starts_from_the_selection(audible, wait_for):
