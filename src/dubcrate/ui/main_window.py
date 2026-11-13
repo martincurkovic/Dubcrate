@@ -5,7 +5,7 @@ import logging
 import os
 from pathlib import Path
 
-from PySide6.QtCore import QEvent, QModelIndex, Qt, QTimer, QUrl
+from PySide6.QtCore import QEvent, QModelIndex, Qt, QTimer, QUrl, Signal
 from PySide6.QtGui import QAction, QActionGroup, QDesktopServices, QKeySequence
 from PySide6.QtWidgets import (
     QAbstractItemView,
@@ -99,6 +99,20 @@ def _hours(seconds: float) -> str:
     return (
         f"{minutes // 60}:{minutes % 60:02d} h" if minutes >= 60 else f"{minutes} min"
     )
+
+
+class SearchBox(QLineEdit):
+    """The search box. Escape says it is done (`escape_pressed`), so the keys that play, pause and
+    jump work again without a click elsewhere; what was typed stays."""
+
+    escape_pressed = Signal()
+
+    def keyPressEvent(self, event) -> None:
+        if event.key() == Qt.Key.Key_Escape and not event.modifiers():
+            self.escape_pressed.emit()
+            event.accept()
+            return
+        super().keyPressEvent(event)
 
 
 class MainWindow(QMainWindow):
@@ -266,10 +280,11 @@ class MainWindow(QMainWindow):
         head.addWidget(self.tracks_title)
         head.addStretch(1)
         head.addWidget(self.tracks_count)
-        self.search = QLineEdit()
+        self.search = SearchBox()
         self.search.setPlaceholderText("Search title, artist, album or genre")
         self.search.setClearButtonEnabled(True)
         self.search.textChanged.connect(lambda _text: self._search_timer.start())
+        self.search.escape_pressed.connect(self.leave_search)
 
         self.player_strip = PlayerStrip()
         self.player_strip.settings_requested.connect(self.open_settings)
@@ -631,6 +646,16 @@ class MainWindow(QMainWindow):
             self.center.setCurrentIndex(0)
         self.search.setFocus()
         self.search.selectAll()
+
+    def leave_search(self) -> None:
+        """Escape in the search box: focus goes to the list on show (the tracks, or the open disc),
+        where Space plays and pauses again. The search itself stays as typed."""
+        shown = (
+            self.disc_view.table
+            if self.center.currentIndex() == 1
+            else self.track_table
+        )
+        shown.setFocus()
 
     def show_help(self) -> None:
         show_help_dialog(self)

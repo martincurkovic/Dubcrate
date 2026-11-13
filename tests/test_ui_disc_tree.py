@@ -267,6 +267,57 @@ def test_find_tracks_from_an_open_disc_goes_to_the_library_search(window):
     assert win.center.currentIndex() == 0 and win.focusWidget() is win.search
 
 
+def test_escape_in_the_search_box_moves_focus_to_the_track_list_and_keeps_the_text(
+    window,
+):
+    from PySide6.QtTest import QTest
+
+    from dubcrate.ui.track_table import transport_key_is_taken
+
+    win, _lib = window
+    win.show()
+    win.act_find.trigger()
+    QTest.keyClicks(win.search, "dub")
+    assert win.focusWidget() is win.search
+    assert transport_key_is_taken(
+        win.focusWidget(), "play_pause"
+    )  # (Space types a space)
+    QTest.keyClick(win.search, Qt.Key.Key_Escape)
+    assert win.focusWidget() is win.track_table
+    assert win.search.text() == "dub"  # what was typed stays, and so does the filter
+    assert not transport_key_is_taken(
+        win.focusWidget(), "play_pause"
+    )  # Space plays again
+
+
+def test_escape_with_a_disc_open_focuses_the_disc_list(window):
+    from PySide6.QtTest import QTest
+
+    win, lib = window
+    disc = lib.create_disc("Night")
+    win.refresh_discs()
+    pick(win, ("disc", disc))
+    win.show()
+    win.search.setFocus()  # (clicked into, rather than found with the Find action)
+    assert win.center.currentIndex() == 1
+    QTest.keyClick(win.search, Qt.Key.Key_Escape)
+    assert win.focusWidget() is win.disc_view.table
+    assert win.center.currentIndex() == 1  # nothing else moved
+
+
+def test_other_keys_and_modified_escape_still_belong_to_the_search_box(window):
+    from PySide6.QtTest import QTest
+
+    win, _lib = window
+    win.show()
+    win.search.setFocus()
+    QTest.keyClicks(win.search, "ab")
+    QTest.keyClick(win.search, Qt.Key.Key_Backspace)
+    assert win.search.text() == "a" and win.focusWidget() is win.search
+    QTest.keyClick(win.search, Qt.Key.Key_Escape, Qt.KeyboardModifier.ShiftModifier)
+    assert win.focusWidget() is win.search  # only a plain Escape leaves
+
+
 def test_previous_and_next_step_through_the_open_disc_in_its_order(window):
     win, lib = window
     disc = lib.create_disc("Night")

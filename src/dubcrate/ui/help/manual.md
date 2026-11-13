@@ -88,7 +88,7 @@ Supported music: MP3, WAV, FLAC, AIFF, AAC/M4A, Ogg, Opus and WMA.
 ## Browsing and searching
 
 - Click a source, playlist or folder on the left to list its tracks.
-- Type in the **search box** to filter by title, artist, album or genre. Press **⌘F** from anywhere in the main window to jump to it.
+- Type in the **search box** to filter by title, artist, album or genre. Press **⌘F** from anywhere in the main window to jump to it, and **Esc** to step out of it again (what you typed stays) so that **Space** plays and pauses without a click elsewhere.
 - Click a **column heading** to sort by it, and click again to reverse.
 - The marker, the Preview waveform and the short number and date columns have a **fixed width**, so they stay the same size when the window changes. The text columns can be resized by dragging the edge of their heading.
 - **Drag a column heading** left or right to reorder the columns. The dot column stays first, and your layout is remembered.
@@ -405,6 +405,7 @@ This is the only time Dubcrate uses the network. It asks `github.com` for the li
 | ⇧⌘D | Split the shown tracks across discs |
 | ⌘, | Settings |
 | ⌘F | Find tracks: go to the search box (**View > Find Tracks**) |
+| Esc (in the search box) | Leave the search box for the track list, so Space plays and pauses |
 | ⌘F (in the guide) | Find in the guide |
 
 ---
