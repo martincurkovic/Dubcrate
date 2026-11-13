@@ -36,6 +36,7 @@ INK = QColor(0, 0, 0)
 SOFT_INK = QColor(80, 80, 80)  # artist, BPM and key: there, but the title leads
 OUTLINE_MM = 0.15
 COLUMN_GAP_MM = 3.0  # between a label's columns
+TEXT_GAP = 0.5  # between number, title, artist and the BPM / key / time columns, in text heights
 INLINE_TITLE_SHARE = (
     0.6  # in a one-line row the most the title keeps against a long artist
 )
@@ -97,7 +98,7 @@ def _draw_label(
     fm = QFontMetricsF(text, device)
     pad = PADDING_MM * k
     left, right = rect.left() + pad, rect.right() - pad
-    gap = label.font_mm * 0.7 * k
+    gap = label.font_mm * TEXT_GAP * k
     row_h = label.font_mm * ROW_SPACING * k
     head_h = label.font_mm * HEADING_ROWS * k
 

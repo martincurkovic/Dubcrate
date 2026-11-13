@@ -24,6 +24,7 @@ from dubcrate.audio.devices import BUFFER_SIZES, SAMPLE_RATE, buffer_msec
 from dubcrate.audio.player import AudioPlayer
 
 from . import key_style, theme, wave_style
+from .full_width_tabs import FullWidthTabBar
 
 TONE_SECONDS = 0.8
 TONE_LEVEL = 0.25  # a test tone should never startle anyone
@@ -54,9 +55,7 @@ class SettingsDialog(QDialog):
         self._tone_player: AudioPlayer | None = None
 
         tabs = QTabWidget()
-        tabs.setObjectName("fullWidthTabs")  # its frame is in the stylesheet
-        tabs.setDocumentMode(True)  # lets the tab bar take the whole width...
-        tabs.tabBar().setExpanding(True)  # ...which the tabs then share
+        tabs.setTabBar(FullWidthTabBar(tabs))  # before any tab is added
         tabs.addTab(self._audio_tab(), "Audio")
         tabs.addTab(self._discs_tab(), "Discs")
         tabs.addTab(self._burning_tab(), "Burning")
