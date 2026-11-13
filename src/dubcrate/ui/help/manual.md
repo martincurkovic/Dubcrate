@@ -43,7 +43,7 @@ Dubcrate comes with **ffmpeg** and **ffprobe**, which it uses to read tracks and
 
 ![The main window, dark theme](screenshots/main-window-dark.png "The main window")
 
-- **Library and Explorer** (left): two tabs down the left edge. **Library** is everything you have imported, with its playlists and folders beneath it; click one to see its tracks. **Explorer** browses the folders on your Mac or a drive without importing anything: see [The Explorer](#the-explorer).
+- **Library and Explorer** (left): two tabs down the left edge. **Library** is everything you have imported: **All Tracks** first, then your folders and playlists, as in rekordbox; click one to see its tracks. With a single source imported, it has no row of its own (**All Tracks** is the same set of tracks, and **Re-import Selected Source** and **Remove Selected Source…** act on it); with two or more, each source gets a row, with its folders and playlists beneath it. **Explorer** browses the folders on your Mac or a drive without importing anything: see [The Explorer](#the-explorer).
 - **Tracks** (middle): the tracks of whatever is selected on the left, with a search box above, and the buttons **Add to Disc** and **Fit All to Disc** below. When you open a disc, the middle shows that disc instead.
 - **Player** (across the top): play and pause, previous and next, the title, time, key and BPM of the track you are previewing, a **cog** that opens Settings, a small **volume knob** (drag it up or down, hold Shift to go slowly, double-click to reset it), and two waveforms.
 - **Discs** (right): your burn playlists, filed in folders. See [Your discs](#your-discs).
@@ -121,7 +121,7 @@ The **Explorer** tab (the second tab down the left edge) is for music that isn't
 
 ![The Explorer tab: a folder of music, with a pinned folder's tab below it](screenshots/explorer.png "The Explorer, with a pinned folder")
 
-- The tree starts at your **Music** folder and your **home folder**, and lists any **drives** plugged in (a USB stick or an external disk). It never offers the computer's whole system disk. Folders are read only when you open them.
+- The tree starts at your **Music** folder and your **home folder**, and lists any **drives** plugged in (a USB stick or an external disk). It never offers the computer's whole system disk, nor the system's own folders that sit beside the drives (such as Time Machine's local snapshots). Folders are read only when you open them.
 - Dubcrate reads the tags of the files in a folder when you click it. A folder you have visited shows at once and is then checked again for files that came or went; a file that hasn't changed isn't read again.
 - Only the **files directly inside** the folder you picked show, not those in its sub-folders: open the sub-folder to see them.
 - Tags are just read, never worked out. A file with no BPM or key tag has them blank: Dubcrate doesn't analyse tracks (the CDJ-1000 can't use that data on a disc anyway), and the waveform you see when you preview is drawn from the audio itself.
@@ -133,7 +133,7 @@ The **Explorer** tab (the second tab down the left edge) is for music that isn't
 
 ### Pinned folders
 
-For a folder you use all the time (say, MP3s that aren't in rekordbox), **right-click it in the Explorer and choose Pin Folder**. It gets a tab of its own below Explorer, showing that folder and the folders inside it. Dubcrate stays on the screen you were on and says in the status bar that the folder is pinned; click the new tab when you want it. The folder is read again every time you open its tab, so files you have added since show up.
+For a folder you use all the time (say, MP3s that aren't in rekordbox), **right-click it in the Explorer and choose Pin Folder**. It gets a tab of its own below Explorer, named for the folder. The tab lists the **folders inside it** (not the folder again), and shows the folder's own files when you open it. Click a folder to see its files, and click the empty space under the list to come back to the pinned folder's own files. Dubcrate stays on the screen you were on and says in the status bar that the folder is pinned; click the new tab when you want it. The folder is read again every time you open its tab, so files you have added since show up.
 
 - **Drag a pinned tab up or down** to put your pins in the order you like (or right-click it and choose **Move Up** or **Move Down**). Library and Explorer always stay first and second. The order is remembered.
 - With more pins than fit, the tab strip **scrolls** (mouse wheel or trackpad); a small arrow at the top or bottom shows there are more tabs beyond that edge, and the tab you pick is always scrolled into view.

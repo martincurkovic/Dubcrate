@@ -727,7 +727,10 @@ class MainWindow(QMainWindow):
         tree_header.setStretchLastSection(False)
         tree_header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
         tree_header.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
-        self.tree.expandToDepth(0)
+        if len(self._lib.sources()) != 1:
+            self.tree.expandToDepth(
+                0
+            )  # each source opened; with one, its folders stay shut
         self._restore_expanded(self.tree, expanded)
         index = find_selection(model, target)
         replaced = not index.isValid()  # what was selected is gone (a removed source)
@@ -802,6 +805,7 @@ class MainWindow(QMainWindow):
             self.explorer_tree.refresh_roots()  # (a drive may have been plugged in since)
             path = self._explorer_path or self.explorer_tree.current_path()
         else:  # a pinned folder: its folder (or one inside it) is read again each time
+            self._pin_trees[key].refresh_roots()  # (and a folder made inside it since)
             path = self._pin_trees[key].current_path()
         if path:
             self._show_explorer_folder(path)
@@ -850,9 +854,8 @@ class MainWindow(QMainWindow):
         if key in self._pin_trees:
             return
         name = Path(path).name or path
-        tree = ExplorerTree(roots=lambda: [(name, Path(path), False)])
-        tree.select_path(path)  # (before it is connected: just picks the folder)
-        tree.expand(tree.currentIndex())
+        # (the tab is named for the folder, so the tree lists what is inside it, not the folder again)
+        tree = ExplorerTree(contents_of=Path(path))
         tree.folder_selected.connect(lambda p, k=key: self._on_pinned_folder(k, p))
         tree.pin_requested.connect(self.pin_folder)
         tree.unpin_requested.connect(self.unpin_folder)
@@ -1251,11 +1254,16 @@ class MainWindow(QMainWindow):
         self.burn_current_disc()
 
     def selected_source_id(self) -> int | None:
+        """The source that Re-import and Remove act on: the one the pick is in. With a single
+        source its row is not shown, and "All Tracks" is that source."""
         kind = self._selection[0]
         if kind == "source":
             return self._selection[1]
         if kind == "node":
             return self._selection[2]
+        if kind == "all":
+            sources = self._lib.sources()
+            return sources[0].id if len(sources) == 1 else None
         return None
 
     def _update_source_actions(self) -> None:

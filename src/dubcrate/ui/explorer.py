@@ -41,8 +41,14 @@ def mounted_volumes() -> list[Path]:
     return _linux_volumes()
 
 
+# Folders macOS keeps in /Volumes that are not drives: "com.apple.TimeMachine.localsnapshots" holds the
+# local Time Machine snapshots, and others of the system's own are named the same way.
+_MAC_SYSTEM_PREFIX = "com.apple."
+
+
 def _mac_volumes(base: Path = Path("/Volumes")) -> list[Path]:
-    """macOS keeps drives in /Volumes, where the boot disk is a link to "/"."""
+    """macOS keeps drives in /Volumes, where the boot disk is a link to "/" (left out, as are the
+    system's own folders there, such as Time Machine's local snapshots)."""
     volumes = []
     try:
         entries = sorted(base.iterdir(), key=lambda p: p.name.casefold())
@@ -51,6 +57,8 @@ def _mac_volumes(base: Path = Path("/Volumes")) -> list[Path]:
     for entry in entries:
         try:
             if entry.name.startswith(".") or not entry.is_dir():
+                continue
+            if entry.name.startswith(_MAC_SYSTEM_PREFIX):
                 continue
             if entry.resolve() == Path("/"):
                 continue
@@ -184,9 +192,18 @@ class ExplorerTree(QTreeView):
         parent=None,
         roots: Callable[[], list[tuple[str, Path, bool]]] | None = None,
         watch: list[Path] | None = None,
+        contents_of: Path | None = None,
     ):
-        """`watch`: folders where a drive appears; the rows are listed again when one changes."""
+        """`watch`: folders where a drive appears; the rows are listed again when one changes.
+
+        `contents_of`: show what is inside this folder as the top level, not the folder itself (a
+        pinned folder's tab already says which folder it is). The folder's own files are what is
+        shown while nothing in the tree is picked, so `current_path()` is the folder then, and a click on
+        empty space (or `select_path` of the folder) picks it again."""
         super().__init__(parent)
+        self._contents_of = contents_of
+        if contents_of is not None:
+            roots = lambda: [(p.name, p, False) for p in subfolders(contents_of)]
         self._roots = roots or explorer_roots
         self._pinned: set[str] = set()
         self._syncing = False  # rows are being brought up to date, not picked
@@ -285,6 +302,9 @@ class ExplorerTree(QTreeView):
 
     def refresh_folder(self, path: str) -> None:
         """List a folder's subfolders again (a loaded one: an unopened one reads when opened)."""
+        if self._contents_of is not None and Path(path) == self._contents_of:
+            self.refresh_roots()  # (its subfolders are the top level)
+            return
         item = self._item_for(path)
         if item is not None and item.data(LOADED_ROLE):
             self._sync_children(
@@ -333,9 +353,16 @@ class ExplorerTree(QTreeView):
         self.refresh_folder(path)
         self.refresh_requested.emit(path)
 
-    def _on_context_menu(self, pos: QPoint) -> None:
+    def _menu_path(self, pos: QPoint) -> str | None:
+        """The folder a right-click at `pos` is about: the row there, or on empty space the folder
+        this tree is the contents of (if it is one)."""
         index = self.indexAt(pos)
-        path = index.data(PATH_ROLE) if index.isValid() else None
+        if index.isValid():
+            return index.data(PATH_ROLE)
+        return str(self._contents_of) if self._contents_of is not None else None
+
+    def _on_context_menu(self, pos: QPoint) -> None:
+        path = self._menu_path(pos)
         if path:
             self._pin_menu(path).exec(self.viewport().mapToGlobal(pos))
 
@@ -350,12 +377,33 @@ class ExplorerTree(QTreeView):
 
     def current_path(self) -> str | None:
         index = self.currentIndex()
-        return index.data(PATH_ROLE) if index.isValid() else None
+        if index.isValid():
+            return index.data(PATH_ROLE)
+        return str(self._contents_of) if self._contents_of is not None else None
+
+    def _pick_contents_folder(self) -> None:
+        """Nothing in the tree picked: the folder itself, whose files are shown."""
+        assert self._contents_of is not None
+        self.setCurrentIndex(QModelIndex())
+        self.clearSelection()
+        self.folder_selected.emit(str(self._contents_of))
+
+    def mousePressEvent(self, event) -> None:
+        if (
+            self._contents_of is not None
+            and not self.indexAt(event.position().toPoint()).isValid()
+        ):
+            self._pick_contents_folder()  # a click on empty space goes back to the folder's own files
+            return
+        super().mousePressEvent(event)
 
     def select_path(self, path: str) -> bool:
         """Open the tree down to `path` and pick it (which emits `folder_selected`). False if it
         is not under any of the rows."""
         target = Path(path)
+        if self._contents_of is not None and target == self._contents_of:
+            self._pick_contents_folder()
+            return True
         best: QStandardItem | None = None
         for row in range(self._model.rowCount()):
             item = self._model.item(row)

@@ -99,7 +99,7 @@ def test_the_left_tree_has_only_the_library_not_the_discs(window):
         model.index(r, 0).data(Qt.ItemDataRole.DisplayRole)
         for r in range(model.rowCount())
     ]
-    assert left == ["All Tracks", "Crate"]
+    assert left == ["All Tracks", "Set"]  # (the one source has no row of its own)
     assert [k for _n, k in rows(win)] == [
         ("disc", lib.discs()[0].id)
     ]  # it is on the right

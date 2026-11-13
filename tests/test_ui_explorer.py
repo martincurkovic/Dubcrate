@@ -83,6 +83,22 @@ def test_each_system_looks_for_its_own_kind_of_drive(monkeypatch):
     assert explorer.mounted_volumes() == [Path("D:/")]
 
 
+def test_the_systems_own_folders_in_volumes_are_not_drives(tmp_path):
+    for name in (
+        "USB Stick",
+        "com.apple.TimeMachine.localsnapshots",
+        ".timemachine",
+        "Gig Drive",
+    ):
+        (tmp_path / name).mkdir()
+    (tmp_path / "Macintosh HD").symlink_to("/")
+    (tmp_path / "a file").write_text("x")
+    assert [v.name for v in explorer._mac_volumes(tmp_path)] == [
+        "Gig Drive",
+        "USB Stick",
+    ]
+
+
 def test_linux_drives_are_mount_points_under_the_media_folders(tmp_path):
     user_media, mnt = tmp_path / "media" / "me", tmp_path / "mnt"
     for path in (user_media / "USB STICK", user_media / "plain folder", user_media / ".hidden", mnt / "backup", mnt / "empty"):  # fmt: skip
@@ -258,6 +274,88 @@ def test_taking_out_the_picked_drive_picks_nothing_else(qapp, tmp_path, wait_for
     assert wait_for(lambda: root_names(widget) == ["Boot", "Zed"])
     assert picked == [] and widget.current_path() is None  # not "Zed", picked for you
     widget.close()
+
+
+@pytest.fixture
+def flat(qapp, tmp_path):
+    """A tree that lists what is inside a folder, as a pinned folder's tab does."""
+    base = make_tree(tmp_path / "pinned")
+    widget = ExplorerTree(contents_of=base)
+    widget.resize(300, 400)
+    widget.show()
+    picked = []
+    widget.folder_selected.connect(picked.append)
+    yield widget, base, picked
+    widget.close()
+
+
+def test_a_tree_of_a_folders_contents_has_no_row_for_the_folder_itself(flat):
+    widget, base, picked = flat
+    assert root_names(widget) == ["Dub", "House", "Zed"]  # its subfolders, at the top
+    assert (
+        widget.current_path() == str(base) and picked == []
+    )  # nothing picked: the folder
+    widget.expand(widget._model.item(1).index())
+    assert child_names(widget._model.item(1)) == ["Disco"]  # and they open as usual
+
+
+def test_picking_a_subfolder_and_then_the_folder_itself_by_clicking_empty_space(flat):
+    from PySide6.QtCore import QPoint
+    from PySide6.QtTest import QTest
+
+    widget, base, picked = flat
+    assert widget.select_path(str(base / "House"))
+    assert widget.current_path() == str(base / "House") and picked == [
+        str(base / "House")
+    ]
+    QTest.mouseClick(widget.viewport(), Qt.MouseButton.LeftButton, pos=QPoint(150, 380))
+    assert widget.current_path() == str(base) and picked[-1] == str(base)
+    assert not widget.selectionModel().hasSelection()
+    QTest.mouseClick(widget.viewport(), Qt.MouseButton.LeftButton, pos=QPoint(60, 8))
+    assert picked[-1] == str(base / "Dub")  # a click on a row still picks the row
+
+
+def test_selecting_the_folder_itself_in_a_contents_tree_picks_nothing_in_the_tree(flat):
+    widget, base, picked = flat
+    widget.select_path(str(base / "Dub"))
+    assert widget.select_path(str(base))
+    assert not widget.currentIndex().isValid() and picked[-1] == str(base)
+    assert widget.select_path(
+        str(base / "House" / "Disco")
+    )  # and deeper ones open the way
+    assert widget.current_path() == str(base / "House" / "Disco")
+
+
+def test_a_contents_tree_lists_a_folder_made_inside_it_since_on_refresh(flat):
+    widget, base, _picked = flat
+    (base / "New one").mkdir()
+    widget.refresh_folder(str(base))  # right-click > Refresh on the empty space
+    assert root_names(widget) == ["Dub", "House", "New one", "Zed"]
+
+
+def test_right_clicking_empty_space_in_a_contents_tree_is_about_its_folder(flat):
+    from PySide6.QtCore import QPoint
+
+    widget, base, _picked = flat
+    assert widget._menu_path(QPoint(150, 380)) == str(
+        base
+    )  # empty space: the folder itself
+    row = widget.visualRect(widget._model.item(0).index()).center()
+    assert widget._menu_path(row) == str(base / "Dub")  # a row: that row
+    widget.set_pinned({str(base)})
+    assert [a.text() for a in widget._pin_menu(str(base)).actions()] == ["Unpin Folder", "Refresh"]  # fmt: skip
+
+
+def test_right_clicking_empty_space_in_an_ordinary_tree_is_about_nothing(tree):
+    from PySide6.QtCore import QPoint
+
+    widget, _music = tree
+    assert widget._menu_path(QPoint(150, 380)) is None
+
+
+def test_a_test_tree_without_contents_of_still_lists_its_own_roots(tree):
+    widget, _music = tree  # (the usual tree: the folder is its first row)
+    assert root_names(widget) == ["Music"] and widget.current_path() is None
 
 
 def test_a_watched_folder_that_appears_later_is_watched_from_then_on(qapp, tmp_path, wait_for):  # fmt: skip
@@ -439,24 +537,26 @@ def test_the_explorers_tracks_stay_out_of_the_library(window, wait_for):
 
 def test_going_back_to_the_library_shows_what_was_picked_there(window, wait_for):
     win, lib, music = window
-    lib.replace_source("folder", "/real", "Real", [])
-    from dubcrate.library import TrackRecord
+    from dubcrate.library import NodeRecord, TrackRecord
 
     lib.replace_source(
         "folder", "/real", "Real",
         [TrackRecord(ext_id="/real/r.mp3", path="/real/r.mp3", title="Real Track", duration=5)],
+        [NodeRecord("/real", None, "Real", True, ("/real/r.mp3",))],
     )  # fmt: skip
     win.refresh_sources()
     [source] = lib.sources()
+    node = lib.nodes(source.id)[0]
     from dubcrate.ui.models import find_selection
 
-    win.tree.setCurrentIndex(find_selection(win.tree.model(), ("source", source.id)))
+    pick = ("node", node.id, source.id)
+    win.tree.setCurrentIndex(find_selection(win.tree.model(), pick))
     assert titles(win) == ["Real Track"]
     win.source_tabs.set_current("explorer")
     open_folder(win, wait_for, music / "dub", ["a", "b", "c"])
     win.source_tabs.set_current("library")
     assert titles(win) == ["Real Track"] and win.tracks_title.text() == "Real"
-    assert win._selection == ("source", source.id)
+    assert win._selection == pick
     win.source_tabs.set_current("explorer")
     assert titles(win) == ["a", "b", "c"] and win.tracks_title.text() == "dub"
 
@@ -758,6 +858,35 @@ def test_a_pinned_tab_browses_the_folders_inside_it(window, wait_for):
     win.source_tabs.set_current("explorer")
     win.source_tabs.set_current("pin:" + str(music))
     assert wait_for(lambda: titles(win) == ["x"]), titles(win)  # it kept its own pick
+
+
+def test_a_pinned_tab_lists_what_is_inside_its_folder_not_the_folder(window, wait_for):
+    win, _lib, music = window
+    win.pin_folder(str(music))
+    key = "pin:" + str(music)
+    tree = win._pin_trees[key]
+    assert root_names(tree) == ["dub", "empty", "house"]  # no row called "music"
+    win.source_tabs.set_current(key)
+    assert wait_for(
+        lambda: win.tracks_title.text() == "music"
+    )  # its own files, at once
+    tree.select_path(str(music / "house"))
+    assert wait_for(lambda: titles(win) == ["x"]), titles(win)
+    assert win.tracks_title.text() == "house"
+    tree.select_path(str(music))  # (a click on empty space does the same)
+    assert win.tracks_title.text() == "music"
+    assert not tree.currentIndex().isValid()
+
+
+def test_opening_a_pinned_tab_lists_a_folder_made_inside_it_since(window, wait_for):
+    win, _lib, music = window
+    win.pin_folder(str(music))
+    key = "pin:" + str(music)
+    win.source_tabs.set_current(key)
+    (music / "later").mkdir()
+    win.source_tabs.set_current("library")
+    win.source_tabs.set_current(key)
+    assert "later" in root_names(win._pin_trees[key])
 
 
 def test_unpinning_removes_the_tab_and_goes_back_to_the_library(window):

@@ -656,7 +656,10 @@ def _disc_tooltip(disc) -> str:
 def build_source_model(lib: Library) -> QStandardItemModel:
     """The tree of sources with their folders and playlists beneath them.
 
-    Two columns: the name, and the number of tracks in it, right-aligned.
+    Two columns: the name, and the number of tracks in it, right-aligned. With a single source
+    its own row is left out: its folders and playlists come straight after "All Tracks" (which
+    is the same set of tracks), as they do in rekordbox. With several, each keeps its row, to
+    tell them apart.
     """
     model = QStandardItemModel()
     root = model.invisibleRootItem()
@@ -667,14 +670,18 @@ def build_source_model(lib: Library) -> QStandardItemModel:
     everything.setEditable(False)
     root.appendRow([everything, _count_item(lib.count_tracks())])
 
-    for source in lib.sources():
-        item = QStandardItem(source.name)
-        item.setData(("source", source.id), SELECTION_ROLE)
-        item.setData(source.name, NAME_ROLE)
-        item.setIcon(_source_icon())
-        item.setEditable(False)
-        item.setToolTip(source.path)
-        root.appendRow([item, _count_item(source.track_count)])
+    sources = lib.sources()
+    for source in sources:
+        if len(sources) == 1:
+            item = root  # no row of its own: what is in it goes at the top level
+        else:
+            item = QStandardItem(source.name)
+            item.setData(("source", source.id), SELECTION_ROLE)
+            item.setData(source.name, NAME_ROLE)
+            item.setIcon(_source_icon())
+            item.setEditable(False)
+            item.setToolTip(source.path)
+            root.appendRow([item, _count_item(source.track_count)])
         parents: dict[int | None, QStandardItem] = {None: item}
         for node in lib.nodes(source.id):
             child = QStandardItem(node.name)

@@ -189,19 +189,43 @@ def test_source_tree_nests_nodes_under_their_source_with_counts(qapp):
     lib = make_lib()
     model = build_source_model(lib)
     root = model.invisibleRootItem()
+    assert (
+        [root.child(r).text() for r in range(root.rowCount())]
+        == [
+            "All Tracks",
+            "Folder",  # (the one source has no row of its own: its folders come straight after)
+        ]
+    )
+    assert model.item(0, 1).text() == "4"
+    folder = root.child(1)
+    assert folder.child(0).text() == "Playlist"
+    assert folder.child(0, 1).text() == "4"
+    assert model.item(1, 1).text() == ""  # a folder holds no tracks of its own
+    assert folder.child(0).data(NAME_ROLE) == "Playlist"
+    lib.close()
+
+
+def make_second_source(lib):
+    lib.replace_source(
+        "folder", "/other", "Other", [TrackRecord(ext_id="o", path="/other/o.mp3", title="O")], []
+    )  # fmt: skip
+
+
+def test_with_several_sources_each_keeps_a_row_of_its_own(qapp):
+    lib = make_lib()
+    make_second_source(lib)
+    model = build_source_model(lib)
+    root = model.invisibleRootItem()
     assert [root.child(r).text() for r in range(root.rowCount())] == [
         "All Tracks",
         "My rekordbox",
+        "Other",
     ]
-    assert model.item(0, 1).text() == "4"
-    source = root.child(1)
-    assert (
-        source.child(0).text() == "Folder"
-        and source.child(0).child(0).text() == "Playlist"
-    )
-    assert source.child(0).child(0, 1).text() == "4"
-    assert source.child(0, 1).text() == ""  # a folder holds no tracks of its own
-    assert source.child(0).child(0).data(NAME_ROLE) == "Playlist"
+    rekordbox = root.child(1)
+    assert rekordbox.child(0).text() == "Folder"
+    assert rekordbox.child(0).child(0).text() == "Playlist"
+    assert rekordbox.data(SELECTION_ROLE) == ("source", lib.sources()[0].id)
+    assert not rekordbox.icon().isNull()
     lib.close()
 
 
@@ -216,8 +240,10 @@ def test_find_selection_locates_nested_items(qapp):
         node.id,
         source.id,
     )
-    assert find_selection(model, ("source", source.id)).isValid()
+    assert not find_selection(model, ("source", source.id)).isValid()  # (no row for it)
     assert not find_selection(model, ("node", 999, source.id)).isValid()
+    make_second_source(lib)
+    assert find_selection(build_source_model(lib), ("source", source.id)).isValid()
     lib.close()
 
 
@@ -336,10 +362,13 @@ def icon_image(item):
 def test_playlists_get_their_own_icon_so_their_text_lines_up_with_folders(qapp):
     lib = make_lib()
     model = build_source_model(lib)  # keep it: the items belong to the model
-    source = model.invisibleRootItem().child(1)
-    folder, playlist = source.child(0), source.child(0).child(0)
+    folder = model.invisibleRootItem().child(1)
+    playlist = folder.child(0)
     assert not playlist.icon().isNull() and not folder.icon().isNull()
     assert icon_image(playlist) != icon_image(folder)
+    make_second_source(lib)
+    several = build_source_model(lib)  # keep it: the items belong to the model
+    source = several.invisibleRootItem().child(1)
     assert icon_image(playlist) != icon_image(source)
     lib.close()
 
@@ -356,7 +385,7 @@ def test_every_row_of_a_folder_source_is_a_folder(qapp):
     ]
     lib.replace_source("folder", "/m", "Music", records, nodes)
     model = build_source_model(lib)
-    top = model.invisibleRootItem().child(1).child(0)
+    top = model.invisibleRootItem().child(1)
     leaf = top.child(0)
     assert not leaf.icon().isNull()
     assert icon_image(leaf) == icon_image(top)  # a directory, not a playlist
@@ -370,7 +399,7 @@ def test_the_playlist_icon_exists_in_every_theme(qapp):
         theme.set_theme_preference(preference)
         lib = make_lib()
         model = build_source_model(lib)
-        playlist = model.invisibleRootItem().child(1).child(0).child(0)
+        playlist = model.invisibleRootItem().child(1).child(0)
         assert not playlist.icon().isNull(), preference
         lib.close()
 

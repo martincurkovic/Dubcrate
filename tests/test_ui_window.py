@@ -153,6 +153,15 @@ def test_clicking_a_header_sorts_and_the_marker_column_restores_the_natural_orde
 
 def test_source_actions_need_a_source_selected(window):
     win, lib = window
+    # one source: it has no row of its own, "All Tracks" is it
+    assert win.act_reimport.isEnabled() and win.act_remove_source.isEnabled()
+    select_node(win, lib, "Set")
+    assert win.act_reimport.isEnabled() and win.act_remove_source.isEnabled()
+    lib.replace_source(
+        "folder", "/other", "Other", [TrackRecord(ext_id="o", path="/o.mp3", title="O")], []
+    )  # fmt: skip
+    win.refresh_sources(select=("all",))
+    assert win.selected_source_id() is None  # two: "All Tracks" is neither
     assert not win.act_reimport.isEnabled() and not win.act_remove_source.isEnabled()
     select_node(win, lib, "Set")
     assert win.act_reimport.isEnabled() and win.act_remove_source.isEnabled()
