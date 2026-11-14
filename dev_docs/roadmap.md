@@ -114,13 +114,13 @@
    Intel build (needs `nasm`, only the workflow does it), the build in CI, the `.dmg` opened on a clean
    Mac (Gatekeeper and quarantine on the nested programs), and the FFmpeg tarball's GPG signature (the
    hash was taken from the first download, not from a signed source).
-7. **Card sync** (the CDJ-1000MK3's SD card). *The format is decoded; the reader/writer, the cue mapping and merge, and
-   `dubcrate card show | backup | sync` are built and tested (`cdj_card.py`, `card_sync.py`, `cli_card.py`); the Sync tab is
-   not, and no written file has been tried in a player.* A **Sync**
+7. **Card sync** (the CDJ-1000MK3's SD card). *The format is decoded; the reader/writer, the cue mapping and merge, `dubcrate card show | backup | toc | sync` and the
+   **Sync tab** (writing on, with eject) are built, and a CDJ-1000MK3 showed the cues of files they wrote (2026-11-14).
+   Left: waveform pre-writing (a test disc is made: [wave-test-disc.md](wave-test-disc.md)), and the tab itself on a real card.* A **Sync**
    tab, pinned at the bottom of the tab strip, writes a Dubcrate audio disc's rekordbox cues to the card as
    memory cues. Plan, decisions, hardware checklist and phases in [card-sync.md](card-sync.md); the format and
-   its gaps in [cdj1000mk3-card.md](cdj1000mk3-card.md). **The first thing is the write test on the player**
-   (Phase 0: two test images are made, the checklist is in the plan), then the tab, then waveform pre-writing.
+   its gaps in [cdj1000mk3-card.md](cdj1000mk3-card.md). **The write test passed**
+   (Phase 0), the tab is built, and waveform pre-writing is next.
 
 ## Later
 
@@ -347,9 +347,9 @@
 - Mouse drag-and-drop in the window (the drop handling is tested directly, not with a
   real drag).
 - Everything in [burning.md](burning.md) marked **[not tried]**.
-- **Card sync on a real player**: no file written by Dubcrate has been loaded by a CDJ; the cue kinds in
-  rekordbox's database (`Kind` 0 / 1, 2, 3 / 5) were read off one library; a disc's TOC is computed, not read
-  from a burned disc; the player's firmware version is not recorded. See [card-sync.md](card-sync.md) (Handover)
+- **Card sync**: proven on one player (both CDJ-1000MK3s are on firmware 2.20) with a 2 GB card; not yet the Sync tab itself on a real card;
+  a disc's TOC is computed, not yet compared with a burned disc's (the burn window now checks it); the first card stopped being
+  detected after a write, unexplained (a second identical card is fine). See [card-sync.md](card-sync.md) (Handover)
   and [cdj1000mk3-card.md](cdj1000mk3-card.md) (Gaps).
 
 ## Before making the repository public

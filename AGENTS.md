@@ -154,7 +154,7 @@ branches in one named helper each (as `rekordbox.default_master_db` does), never
 
 ### Where things stand
 
-*Last updated after the session (2026-11-13) that reverse-engineered the CDJ-1000MK3's SD card and built card sync's core and command line (below); before that: play-through, the normalise presets (incl. peak), the audio crackle fixes, the label picker's folders, flat pinned and Library trees, and the search box's Esc / Return.*
+*Last updated after the session (2026-11-14) that proved card sync on the owner's CDJ-1000MK3 and built the Sync tab (writing on, eject after syncing, a card list that notices cards), the post-burn TOC check, rekordbox cues in the preview, the waveform test disc, `wheel_guard` and the print window closing; before that (2026-11-13): the card's format reverse-engineered and card sync's core.*
 
 Built: library import (folders and rekordbox), disc planning (fit, split, reorder,
 exact capacity), audio **and MP3 discs** (MP3 folders included), the `dubcrate` command-line
@@ -176,22 +176,26 @@ waveforms and scratching, an update check, a built `.dmg` (Nuitka), and since th
 - **The CDJ-1000MK3's SD card is decoded and card sync's core is built** (`cdj_card.py`, `card_sync.py`,
   `card_discs.py`, `card_report.py`, `cli_card.py`: `dubcrate card show | backup | sync`; layout bullets above).
   A disc's ID on the card is its TOC; cues are absolute frames; every rekordbox cue becomes a memory cue and the
-  hot cue slots are never touched. **A written file has never been loaded by a player**, there is no Sync tab,
-  and rekordbox's cues turned out to live in the database, not the analysis files. **Read
+  hot cue slots are never touched. **Files our writer made have been loaded by a CDJ-1000MK3** (firmware 2.20: a replaced
+  cue set, a file made from nothing, a disc new to the card, and a whole `dubcrate card sync --yes`), the **Sync tab is built
+  with writing on**, and rekordbox's cues live in its database, not the analysis files. **Read
   `dev_docs/card-sync.md` (its "Handover" section first) before touching any of it.**
+- **Also 2026-11-14:** `burn_check.py` (an audio burn on a Mac is checked against the plan by reading the disc's TOC, then ejected),
+  rekordbox cues drawn in the preview (`ui/cue_cache.py`), the **waveform test disc** (`wavetest.py`, `wavefit.py`,
+  `spikes/wave_test_disc.py`, `dev_docs/wave-test-disc.md`: made, waiting to be burned and played), `ui/wheel_guard.py`.
 
 Burning through DiscRecording is proven on the owner's hardware (a disc burned and played on a
 CDJ-1000MK3, CD-TEXT shown); the burn *window*, the gapless fix, the `cdrdao` backend, non-zero gaps,
 MP3 discs and **everything below are not proven on hardware or a real display**.
 
-**Not tried by hand (tests and offscreen renders only):** card sync on a real player (writing a card the CDJ then reads: Phase 0 of `dev_docs/card-sync.md`), printing on a real printer or paper (and
+**Not tried by hand (tests and offscreen renders only):** the Sync tab itself on a real card (the command line is proven), the post-burn TOC check on a real burn, the waveform test disc, the card list noticing a real card being plugged in, printing on a real printer or paper (and
 whether the Mac print panel keeps the paper size we ask for), trackpad pinch and the feel of
 dragging spin boxes, the Explorer on a real Mac (permission prompts for Documents / Downloads / drives,
 a slow or unplugged drive), and whether the built app bundles QtPrintSupport (`scripts/build_macos.sh`).
 
-**Next** (the owner's `TODO.md` is the live list and is theirs: do not tidy it; `dev_docs/roadmap.md` has the reasons):
+**Next** (the owner's `TODO.md` is the live list and is theirs: do not tidy it, but tick items off when they are done, which they have asked for; `dev_docs/roadmap.md` has the reasons):
 1. Hardware checks of the burn window, an MP3 disc, level matching on a CDJ and the "not tried" list above.
-2. **Card sync** (roadmap item 7): the owner runs the write test on the player (two test images are ready), then the Sync tab, then waveform pre-writing. Plan, decisions, hardware checklist and handover in `dev_docs/card-sync.md`.
+2. **Waveform pre-writing** (roadmap item 7): the owner burns and plays the waveform test disc (`dev_docs/wave-test-disc.md`) and runs its `fit`; then the scale can be written into Sync. Also try the Sync tab itself on a real card. Plan, decisions and handover in `dev_docs/card-sync.md`.
 3. **A tab per app library** (not one merged Library tab), when a second library exists. Only
    rekordbox is used (Engine DJ and Algoriddim djay are backups synced from it with Lexicon, so there
    is nothing to read from them). **Mixxx** is wanted, but the owner uses it on Linux, not on this Mac:

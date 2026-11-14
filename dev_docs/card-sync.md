@@ -4,21 +4,25 @@ Goal: a **Sync** tab that writes a Dubcrate disc's cues onto the CDJ-1000MK3's S
 disc loads in the player with its rekordbox cues already set. The card format is in
 [cdj1000mk3-card.md](cdj1000mk3-card.md) (read that first: what is measured, and its
 **"Gaps, and where more testing is indicated"**). The module that reads and writes it is
-`src/dubcrate/cdj_card.py`. **Status 2026-11-13: Phases 1 and 2's core are built and tested; the Sync tab is not; nothing has been tried
-on a player.** Built: `cdj_card.py` (the format, `write_card`, `backup_card`), `card_sync.py` (cue
+`src/dubcrate/cdj_card.py`. **Status 2026-11-14: Phases 0 to 3 are done: the core, the command line and the Sync tab are built, and a CDJ-1000MK3 showed the
+cues of files our writer produced (details in the Handover below). Waveform pre-writing (Phase 4) is not started: it needs the
+amplitude scale, for which a test disc is made and waiting (`wave-test-disc.md`).** Built: `cdj_card.py` (the format, `write_card`, `backup_card`), `card_sync.py` (cue
 mapping, merge, plan), `card_discs.py` (a Dubcrate disc's TOC and rekordbox cues), `card_report.py`,
 `cli_card.py` (`dubcrate card show | backup | toc | sync`, a dry run unless `--yes`), `drive_toc.py` (the TOC of the
 audio CD in the drive, macOS), and the Phase 0 tooling
-(`spikes/cdj_card_testimage.py`, `cdj_card_restore.sh`, with two test images made). No file written by
-any of it has been loaded by a player.
+(`spikes/cdj_card_testimage.py`, `cdj_card_restore.sh`, with test images made). **Files written by it have been loaded by a
+player** (2026-11-14, firmware 2.20).
 
 ## Handover (end of 2026-11-13, with 2026-11-14's additions: read this first)
 
-**State.** Committed by the owner: the card format and its reader/writer (`cdj_card.py`), the cue mapping,
+**State (2026-11-14, end of day).** Built: the card format and its reader/writer (`cdj_card.py`), the cue mapping,
 merge and plan (`card_sync.py`), the library glue (`card_discs.py`), reports (`card_report.py`), the command line
-(`dubcrate card show | backup | sync`), reading rekordbox's cues from its database (`library/rekordbox.py:
-read_cues`), and the spikes. The suite passed (1,438 tests, ruff clean). **Nothing here has been tried on a
-player**, there is **no Sync tab**, and the owner's `TODO.md` is theirs (untouched).
+(`dubcrate card show | backup | toc | sync`), `card_apply.py` (the shared write), `drive_toc.py`, `eject.py`,
+`burn_check.py`, the Sync tab (`ui/sync_view.py`, with its writing **switched on**), reading rekordbox's cues from its
+database and drawing them in the preview, and the waveform test disc (`wavetest.py`, `wavefit.py`). **The player has
+accepted our files in every case tried** (t1 to t4 below and in `cdj1000mk3-card.md`). Still unproven on hardware: the
+Sync tab itself on a real card (the command line is), the post-burn TOC check on a real burn, and the test disc. The owner
+has asked for finished items in `TODO.md` to be ticked off (done 2026-11-14).
 
 **Answered by the owner (2026-11-14)**, both from rekordbox:
 1. *Which cues are which*: on *The Booth*, *Blessings (Original Mix)* and *I Could Be The One (Original Mix)* the
@@ -48,15 +52,14 @@ TOC), `dubcrate card sync DISC --from-drive` (one disc: the ID and cue positions
 measured lengths needed, and it warns if the disc differs from the plan), and `card_discs.toc_differences`;
 (4) rekordbox's **database** cues are now drawn in the preview's overview and zoomed waveform and in the track
 list's Preview column (`ui/cue_cache.py`: the database is read once on a worker and again when `master.db` or
-its `-wal` changes in size or date; a failure is one status message and the track plays on). (5) **the Sync tab, read-only** (`ui/sync_view.py`, a fixed
+its `-wal` changes in size or date; a failure is one status message and the track plays on). (5) **the Sync tab** (`ui/sync_view.py`, a fixed
 bottom tab laid out after rbxport's Sync Manager, the owner's reference): the card panel (a card is found by
 its `PIONEER/CDJ` folder when the tab opens or on Refresh, or a folder is chosen by hand), the audio discs in
 their folders with a status each (`card_discs.survey_discs`) and the dry run for the one picked, tick boxes,
-Measure Lengths, and a **Sync button that is off** (`sync_view.WRITING_ENABLED = False`: flip it only after the
-write test passes on the player). Behind that switch the whole write is built: the question (`confirmation_text`),
+Measure Lengths, and a Sync button (**`sync_view.WRITING_ENABLED = True` since the write test passed on the player**, later the same day). Behind it the whole write is built: the question (`confirmation_text`),
 then `card_apply.apply_sync` on a worker (the card read and planned fresh, its files copied to `card-backups`
-first, `write_card` with its read-back; `card sync --yes` uses it too). The guide's section and picture are done (the picture is staged: invented cues, a pretend card). **Still to do**, best first: eject,
-and `Measure Lengths`, the list and the write tried against a real card (Phase 0 first); (3) the waveform scale (**tried 2026-11-14, not found by the firmware route: see `cdj1000mk3-card.md`, "The waveform"; the plan now is a disc of known test tones, made and waiting to be burned and played: `wave-test-disc.md`**): Ghidra and `openjdk@25` are installed by Homebrew (`analyzeHeadless` is not on `PATH`: look in
+first, `write_card` with its read-back; `card sync --yes` uses it too). The guide's section and picture are done (the picture is staged: invented cues, a pretend card). Eject after syncing was built later the same day. **Still to do**, best first:
+`Measure Lengths`, the list and the tab's write tried against a real card; (3) the waveform scale (**tried 2026-11-14, not found by the firmware route: see `cdj1000mk3-card.md`, "The waveform"; the plan now is a disc of known test tones, made and waiting to be burned and played: `wave-test-disc.md`**): Ghidra and `openjdk@25` are installed by Homebrew (`analyzeHeadless` is not on `PATH`: look in
 the Caskroom) and the firmware is still `~/Downloads/CDJ1000MK3_061023.EXE`, the `/tmp` extraction is gone
 (`dev_docs/cdj1000mk3-card.md`, "Reproducing the analysis"); or fit it from the card's five waveform records
 against the audio, which needs the owner to copy the tracks.
@@ -231,23 +234,23 @@ Do these in order; each is an image in `~/cdj-card/` and a row in the doc's expe
 6. For the waveform, **copy the audio** of the played tracks off the CDs (macOS mounts an audio CD
    as AIFF files): CD 1 tracks 1 to 3, and track 1 of CD 2 and of CD 3. Kept locally, never added.
 
-### Phase 1: the pure core and the command line: **built**
+### Phase 1: the pure core and the command line: **built, and proven on a player**
 
 `card_sync.py` (cue mapping, merge, plan), `card_discs.py` (the library half), `card_report.py`, and
 `dubcrate card show | backup | sync`, with tests on the real card files (`tests/test_card_sync.py`,
-`test_card_discs.py`, `test_cli_card.py`). Nothing here is trustworthy until Phase 0 step 2 says the
-player takes our file, and the rekordbox cue reading is checked on real cues (step 3).
+`test_card_discs.py`, `test_cli_card.py`). Phase 0 step 2 said the player takes our file (2026-11-14), and the
+rekordbox cue kinds were checked on real cues (step 3).
 
-### Phase 2: writing: **the core is built; what is left**
+### Phase 2: writing: **built**
 
-`card sync --yes` already backs up, writes (files, then the index), and reads back. Still to do:
-eject afterwards, a card with no `PIONEER/CDJ` yet (`write_card(create=True)` exists and is **untried on
-a player**), reading the TOC from the disc in the drive instead of computing it, and whatever the write
-test shows the player needs.
+`card sync --yes` (and the tab, through `card_apply.apply_sync`) backs up, writes (files, then the index), flushes and reads back;
+`--from-drive` reads the TOC from the disc in the drive; the tab can eject. Left: a card with no `PIONEER/CDJ` yet
+(`write_card(create=True)` exists and is **untried on a player**: the player has to set a card up first, as it did for the
+second card), and the TOC of a disc **Dubcrate burned** compared with the computed one (the burn window now checks it).
 
-### Phase 3: the Sync tab
+### Phase 3: the Sync tab: **built**
 
-The pinned tab, the status column, dry run and confirmation, the user guide page and its
+The fixed bottom tab, the status column, dry run and confirmation, the user guide page and its
 screenshots (`scripts/make_screenshots.py`), `manual.md`.
 
 ### Phase 4: waveform pre-writing

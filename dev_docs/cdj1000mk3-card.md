@@ -369,8 +369,8 @@ detected after one of our writes, stop and treat the write as the cause.
 - a file **built from nothing equals the player's own** one-cue file and waveform-only file,
   checksum included.
 
-So the format is understood well enough to write. **Not yet shown**: that the player accepts a
-file written here. Nothing in the app uses the module yet.
+So the format is understood well enough to write. **Shown on 2026-11-14** (firmware 2.20): a CDJ-1000MK3 accepts files
+written here (the experiments table's `t1` to `t4`), and the Sync tab and `dubcrate card sync` use the module.
 
 ## Gaps, and where more testing is indicated
 
