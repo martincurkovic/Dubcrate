@@ -226,6 +226,9 @@ class SourceTabBar(QWidget):
     always scrolled into view."""
 
     current_changed = Signal(str)
+    tab_clicked = Signal(
+        str
+    )  # a tab was clicked, the one already picked included (which is no change for `current_changed`)
     context_menu_requested = Signal(
         str, QPoint
     )  # (a tab's key, where, in screen pixels)
@@ -303,6 +306,7 @@ class SourceTabBar(QWidget):
             self._layout.insertWidget(self._layout.count() - 1, button)
             self._buttons[key] = button
         button.toggled.connect(lambda on, k=key: self._picked(k) if on else None)
+        button.clicked.connect(lambda _checked=False, k=key: self.tab_clicked.emit(k))
         button.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         button.customContextMenuRequested.connect(
             lambda pos, k=key, b=button: self.context_menu_requested.emit(

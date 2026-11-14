@@ -19,6 +19,7 @@ Dubcrate helps you put music from your rekordbox library (or any folder) onto au
 - [Checking tracks you already used](#checking-tracks-you-already-used)
 - [Burning a disc](#burning-a-disc)
 - [Printing labels](#printing-labels)
+- [Syncing cues to the card](#syncing-cues-to-the-card)
 - [Settings](#settings)
 - [Updates, and what Dubcrate sends](#updates-and-what-dubcrate-sends)
 - [Keyboard shortcuts](#keyboard-shortcuts)
@@ -43,7 +44,7 @@ Dubcrate comes with **ffmpeg** and **ffprobe**, which it uses to read tracks and
 
 ![The main window, dark theme](screenshots/main-window-dark.png "The main window")
 
-- **Library and Explorer** (left): two tabs down the left edge. **Library** is everything you have imported: **All Tracks** first, then your folders and playlists, as in rekordbox; click one to see its tracks. With a single source imported, it has no row of its own (**All Tracks** is the same set of tracks, and **Re-import Selected Source** and **Remove Selected Source…** act on it); with two or more, each source gets a row, with its folders and playlists beneath it. **Explorer** browses the folders on your Mac or a drive without importing anything: see [The Explorer](#the-explorer).
+- **Library, Explorer and Sync** (left): tabs down the left edge. **Library** is everything you have imported: **All Tracks** first, then your folders and playlists, as in rekordbox; click one to see its tracks. With a single source imported, it has no row of its own (**All Tracks** is the same set of tracks, and **Re-import Selected Source** and **Remove Selected Source…** act on it); with two or more, each source gets a row, with its folders and playlists beneath it. **Explorer** browses the folders on your Mac or a drive without importing anything: see [The Explorer](#the-explorer). **Sync**, fixed at the bottom of the strip, is for the CDJ's SD card: see [Syncing cues to the card](#syncing-cues-to-the-card).
 - **Tracks** (middle): the tracks of whatever is selected on the left, with a search box above, and the buttons **Add to Disc** and **Fit All to Disc** below. When you open a disc, the middle shows that disc instead.
 - **Player** (across the top): play and pause, previous and next, the title, time, key and BPM of the track you are previewing, a **cog** that opens Settings, a small **volume knob** (drag it up or down, hold Shift to go slowly, double-click to reset it), and two waveforms.
 - **Discs** (right): your burn playlists, filed in folders. See [Your discs](#your-discs).
@@ -352,6 +353,37 @@ What is on a label: for each track, its **number**, **title** and **artist**, an
 The labels of every ticked disc are laid out one after another, left to right and top to bottom, so **several discs share a page** and little sticker paper is wasted. The preview shows each page, with **◀** and **▶** to turn them. The **Zoom** box, **pinching** on a trackpad, or Ctrl and the mouse wheel zoom in to check the small print, sharp at any size, around the point you zoom on; drag the page to move it when zoomed in. A pinch can stop between the box's sizes, and the box then shows the size it reached. If a list is too long for the label's height (at a size you chose, or too small to read on Auto), a red note under the settings says which disc and suggests what to change (it has its own space, so it never moves the controls): a taller label, more columns, more labels, or a lower font size. A label that doesn't fit the paper with those margins can't be printed. **Draw a thin outline to cut along** draws a hairline round each label, which you can turn off if you cut exactly.
 
 Your choices are remembered for next time.
+
+---
+
+## Syncing cues to the card
+
+The CDJ-1000MK3 keeps the cue points you set on the player on its **SD card**, one file per disc, and it recognises a disc by its table of contents (how many tracks it has and where each begins). So a disc you burned with Dubcrate can load in the player with your **rekordbox cues** already on it, if those cues are put on the card. That is what the **Sync** tab is for: the last tab on the left, fixed below the others.
+
+> **Sync does not write to the card yet.** The **Sync** button is switched off until a card file written by Dubcrate has been tried in a real player (nothing has been loaded by one so far). Everything else in the tab only *looks*: it reads the card and your discs and tells you what a sync would do. Nothing on the card is changed.
+
+![The Sync tab: the card on the left, the audio discs in the middle with what a sync would do for each](screenshots/sync.png "The Sync tab")
+
+1. **The card** (left). Put the player's SD card into your Mac and open the tab: a card is found by the **PIONEER** folder on it. Click **Refresh** if you plugged it in after opening the tab. For a copy of a card's folder, or a disk image of one, use **Choose Folder…**.
+2. **Your discs** (middle). Every **audio** disc you have made is listed, in the folders you filed it in, with a **Status**:
+   - **Not on the card: 12 cues to add**: the player has never seen this disc, or has no file for it yet.
+   - **12 cues to add**: the disc is on the card, and these cues are not.
+   - **In sync**: the card already has them all.
+   - **No rekordbox cues**: nothing to put on the card. Only tracks that are in rekordbox have cues (a file elsewhere that is the same file as one in rekordbox counts).
+   - **Can't sync**: the reason is in the box below; see the next point.
+3. **Pick a disc** to read what a sync would add, track by track, with any warnings, in the box under the list. Hover over a status to see the same text.
+4. **Measure Lengths.** A disc's entry on the card is its table of contents, which needs every track's exact length on the CD. A burn measures them; a disc you haven't burned yet may say *Can't sync: tracks have no measured length*. **Measure Lengths** reads those files (it changes nothing in them) and the list updates.
+5. **Tick the discs** to sync (a folder ticks the discs inside it); the line at the bottom adds up what it would do.
+
+The rules it follows:
+
+- **Every rekordbox cue becomes a memory cue** on the card: memory cues, hot cues (their letters and colours are dropped; the card has no place for them) and loops (as memory loops). The player's own three hot cue buttons are never written or touched.
+- **What is already on the card is kept**: cues you set on the player, its hot cues, its waveforms. Cues are only added, and one that is already there (within a fraction of a second) is skipped. The player holds **100 cues per disc**; if more would be added, the list says how many don't fit.
+- **Only audio CDs** are listed. MP3 discs, and discs that came from somewhere else, are not.
+- **A disc's ID is worked out from its tracks' lengths**, so a disc you changed after burning it no longer matches the one in the drive; the list warns when a disc isn't marked as burned. Reading the ID from the disc in the drive is available on the command line (`dubcrate card toc` and `dubcrate card sync --from-drive`), which is where to look if the player doesn't show the cues; see the developer notes for the options.
+- When writing is switched on, **Sync asks first**, saying what will be added, then copies the card's files to a `card-backups` folder next to your library, writes, and reads everything back to check it. If anything goes wrong, the old files can be put back from that folder.
+
+Two discs whose tracks are exactly the same lengths would look like the same disc to the player, and so would share their cues.
 
 ---
 

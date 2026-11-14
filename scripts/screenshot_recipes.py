@@ -393,6 +393,61 @@ def _burn(ctx):
     return dialog
 
 
+@shot(
+    "sync",
+    "the Sync tab: a CDJ card on the left, the audio discs and what a sync would do for each",
+)
+def _sync(ctx):
+    """Staged: the made-up tracks are not in rekordbox, so they are given invented cues; the card is an empty
+    folder of the right shape, with Saturday Peak already written to it so one disc says "In sync"."""
+    from unittest import mock
+
+    from PySide6.QtCore import Qt
+
+    from dubcrate import cdj_card as cc
+    from dubcrate.analysis import Cue
+    from dubcrate.card_apply import apply_sync
+    from dubcrate.card_discs import RekordboxCues, prepare_disc
+    from dubcrate.ui import sync_view
+
+    def invented(self, track):
+        if track.id % 3 == 0:  # a few tracks have none, as in a real library
+            return ()
+        d = track.duration
+        return [
+            Cue("memory", 0.1),
+            Cue("hot", d * 0.12, slot=1),
+            Cue("hot", d * 0.4, slot=2),
+            Cue("hot", d * 0.7, slot=3),
+            Cue("loop", d * 0.55, end=d * 0.55 + 4.0, slot=4),
+        ]
+
+    patches = ExitStack()
+    patches.enter_context(mock.patch.object(RekordboxCues, "for_track", invented))
+    ctx.on_cleanup(patches.close)
+    work = ctx.demo.home.parent.parent
+    card = work / "volumes" / "CDJ-CARD"
+    folder = card / "PIONEER" / "CDJ"
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / cc.INDEX_NAME).write_bytes(cc.IndexFile().to_bytes())
+    peak = prepare_disc(ctx.lib, ctx.demo.discs["peak"], RekordboxCues(ctx.lib))
+    apply_sync(card, [peak.request], work / "card-backups")
+    patches.enter_context(
+        mock.patch("dubcrate.ui.sync_view.mounted_volumes", return_value=[card])
+    )
+
+    window = _main(ctx)
+    window.source_tabs.set_current("sync")
+    ctx.settle(8)
+    view = window.sync_view
+    warm = next(i for i in view._disc_items() if "Warm" in i.text(0))
+    warm.setCheckState(sync_view.COL_TICK, Qt.CheckState.Checked)
+    view.tree.setCurrentItem(warm)
+    view.tree.setFocus()  # (not the search box, whose focus ring would draw the eye)
+    ctx.settle(8)
+    return window
+
+
 @shot("settings", "Settings…: the Audio tab")
 def _settings(ctx):
     from dubcrate.ui.settings_dialog import SettingsDialog

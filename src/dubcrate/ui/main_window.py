@@ -289,6 +289,7 @@ class MainWindow(QMainWindow):
             bottom=True,
         )
         self.source_tabs.current_changed.connect(self._on_left_tab)
+        self.source_tabs.tab_clicked.connect(self._on_tab_clicked)
         self.source_tabs.context_menu_requested.connect(self._on_tab_menu)
         self.source_tabs.tabs_reordered.connect(self._on_tabs_dragged)
         left = QWidget()
@@ -852,6 +853,14 @@ class MainWindow(QMainWindow):
             self.center.setCurrentIndex(0)
 
     # -- the left tabs ----------------------------------------------------
+
+    def _on_tab_clicked(self, key: str) -> None:
+        """Clicking the tab you are on brings its middle pane back (with a disc open there, the tab
+        was no change for Qt): Sync's view, or the track list."""
+        if key == self.source_tabs.current():
+            self.center.setCurrentWidget(
+                self.sync_view if key == "sync" else self.center.widget(0)
+            )
 
     def _on_left_tab(self, key: str) -> None:
         """The Library tab shows the library tree's pick in the track list; the Explorer shows

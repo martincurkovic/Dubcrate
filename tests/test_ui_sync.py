@@ -546,3 +546,25 @@ def test_the_sync_tab_is_not_the_one_the_app_comes_back_to(qapp, tmp_path):
     win.close()
     win.deleteLater()
     lib.close()
+
+
+def test_clicking_the_tab_you_are_on_brings_its_middle_pane_back_from_an_open_disc(
+    qapp, tmp_path
+):
+    lib = Library.open(":memory:")
+    disc_id = lib.create_disc("D")
+    win = MainWindow(lib)
+    win.source_tabs.set_current("sync")
+    assert win.center.currentWidget() is win.sync_view
+    win.open_disc(disc_id)
+    assert win.center.currentWidget() is win.disc_view
+    win.source_tabs._bottom["sync"].click()
+    assert win.center.currentWidget() is win.sync_view
+    win.source_tabs.set_current("library")
+    win.open_disc(disc_id)
+    assert win.center.currentIndex() == 1
+    win.source_tabs._buttons["library"].click()  # (the same for the tabs that scroll)
+    assert win.center.currentIndex() == 0
+    win.close()
+    win.deleteLater()
+    lib.close()
