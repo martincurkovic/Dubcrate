@@ -22,10 +22,14 @@
 - [x] Screenshot staging
   - [ ] Maybe use some real songs, not fake ones
 - [ ] Clean up user facing docs (readme, user guide)
-- [ ] SD card waveform, hotcue, memory cue, loop point reverse engineering
-- [ ] SD card sync metadata tab
+- [x] SD card waveform, hotcue, memory cue, loop point reverse engineering
+  - [ ] The waveform's 0 to 15 amplitude scale is still unknown (the firmware route found nothing: a disc of known test tones is the plan, dev_docs/cdj1000mk3-card.md)
+- [x] SD card sync metadata tab
+  - [ ] Try the Sync tab itself on a real card (the command line is proven on hardware; the tab shares its write)
+  - [ ] Waveform pre-writing (needs the amplitude scale)
 - [ ] Clean up long text labels in settings and add cm/in units (maybe in print dialog too)
-  - [ ] Check on real paper (and say if the vertical line spacing should shrink too)
+  - [x] Check on real paper (and say if the vertical line spacing should shrink too)
+  - [ ] Make print dialog close when print (and resulting system print dialog is pressed)
 
 ## More from the roadmap and dev_docs
 
@@ -78,7 +82,7 @@
 - [ ] Finish the logging follow-ups: a Settings switch for verbose logging, logging in the store and the CLI, and a dialog for an uncaught exception ([roadmap.md](dev_docs/roadmap.md)).
 - [ ] Add rekordbox XML export as an import path with no SQLCipher dependency ([roadmap.md](dev_docs/roadmap.md)).
 - [ ] Read rekordbox's `PWV3` and `PWV5` directly for exact waveform matches on rekordbox tracks ([rekordbox-analysis.md](dev_docs/rekordbox-analysis.md)).
-- [ ] Verify the CDJ card format notes (chunk layout and checksum) against a real card file ([cdj1000mk3-card.md](dev_docs/cdj1000mk3-card.md)).
+- [x] Verify the CDJ card format notes (chunk layout and checksum) against a real card file ([cdj1000mk3-card.md](dev_docs/cdj1000mk3-card.md)).
 - [ ] Delete `spikes/burn_spike.py` once nothing needs it, since the window and CLI now do what it does ([roadmap.md](dev_docs/roadmap.md)).
 - [ ] Refresh dev notes that have gone stale, such as `command-line.md` saying burning is CLI-only ([command-line.md](dev_docs/command-line.md)).
 

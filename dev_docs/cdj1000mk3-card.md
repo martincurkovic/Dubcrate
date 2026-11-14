@@ -318,6 +318,13 @@ a track **played only part of the way has the columns reached so far filled and 
 rewritten. Records so far came in track-number order, which was also the order played. The
 firmware's `TEXT_WAVE_MODE` suggests this is the waveform the display shows **[inferred]**.
 
+**What the firmware says about it (2026-11-14, a first pass; the amplitude scale is still not found):**
+
+- The card file is built in a **RAM image** (at `0xCC26A2D4`): `INFO`, `DID `, `CN11` from `+0x28`, `HC11` at `+0x804`, **`W001` at `+0x848`** and **`W002` at `+0x1DF8`**, each a 4-byte tag, a length and then **56-byte records** (`u16` track, 4 bytes, 50 bytes), room for 99 tracks. `0xAC0E4F7A` stores one track's two 50-byte buffers into those records (a track number in `r14`, the buffers in `r4` and `r5`); `0xAC0E4DBA` counts the used records and the code at `0xAC0E4E40` to `0xAC0E4F70` packs them to the front. **Nothing calls the setter by address or pool word**: it is reached through a dispatch Ghidra does not follow, so where the 50 amplitudes **come from** was not found.
+- The program is a set of **named RTOS tasks**, each in a descriptor `entry, priority, stack size, stack address, name` (`0xAC00F95C` is `MDSPBPM`'s, `0xAC00B2D0` is `CDTIWAVE`'s). `MDSPWAVE` (entry `0xAC100FB6`) and `CDTIWAVE` (`0xAC0D4A5C`) **are not the waveform**: they handle disc timing (track numbers capped at 99, frame counts times 75, a ring of 24-byte time records) despite their names. There is also an `MDSPBPM` task, so the BPM counter is a separate DSP-fed task (nothing of it is written to the card).
+- **Threshold tables, unproven.** Two groups of ascending tables sit in the data area near the MP3 decoder's error strings. At `0xAC010B60`, twelve tables of 15 values (so 16 levels, the width of a 0 to 15 amplitude), in six variants twice over (steps of 8 up to 64 then 16 to 160, and five wider ones): **[inferred]** these are the six *auto cue level* settings, which would make them silence thresholds, not the waveform. At `0xAC016814`, nine pairs of a 23-value and a 14-value table (log-like, up to 576 and 192): **[inferred]** display level-meter scales. **No code that uses either was found** (no pointer to them exists in the image, so they are reached through a base register), so neither is shown to be the waveform scale.
+- **Dead end, and a better route.** Following the producer through function-pointer code is slow, and the amplitudes may come from the DSP, whose code is not in this file (`G11.UPD` is a different image). The reliable way is empirical: a **disc of known test tones** (a staircase of levels, one level per column of a track exactly 50 columns long, plus pulses and noise to tell peak from mean) played on the CDJ, then the player's records read back against the known levels. That needs one CD-RW and the player, and gives the scale exactly.
+
 ### When the player writes what
 
 - **Loading a disc** adds its entry to the index (disc 2 of `09`: an entry, **no file**).
@@ -482,6 +489,11 @@ nothing about a rarely used field (a second loop, hot cue C) is more than a gues
 Add each new thing to the table of experiments above, with its image name.
 
 ## Reproducing the analysis
+
+(2026-11-14: Ghidra is installed as a Homebrew *formula*, so `analyzeHeadless` is at
+`/opt/homebrew/Cellar/ghidra/12.2/libexec/support/analyzeHeadless`; `spikes/ghidra/RefsTo.java ADDR...`
+lists every reference Ghidra knows to an address, calls and data. The import with `SeedFunctions.java` takes
+a few minutes. A script's output is the lines containing `<ScriptName>.java>` in the headless log.)
 
 ```sh
 mkdir -p /tmp/cdj-fw && cp ~/Downloads/CDJ1000MK3_061023.EXE /tmp/cdj-fw/

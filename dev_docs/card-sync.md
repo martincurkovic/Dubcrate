@@ -56,7 +56,7 @@ Measure Lengths, and a **Sync button that is off** (`sync_view.WRITING_ENABLED =
 write test passes on the player). Behind that switch the whole write is built: the question (`confirmation_text`),
 then `card_apply.apply_sync` on a worker (the card read and planned fresh, its files copied to `card-backups`
 first, `write_card` with its read-back; `card sync --yes` uses it too). The guide's section and picture are done (the picture is staged: invented cues, a pretend card). **Still to do**, best first: eject,
-and `Measure Lengths`, the list and the write tried against a real card (Phase 0 first); (3) the waveform scale: Ghidra and `openjdk@25` are installed by Homebrew (`analyzeHeadless` is not on `PATH`: look in
+and `Measure Lengths`, the list and the write tried against a real card (Phase 0 first); (3) the waveform scale (**tried 2026-11-14, not found by the firmware route: see `cdj1000mk3-card.md`, "The waveform"; the plan now is a disc of known test tones**): Ghidra and `openjdk@25` are installed by Homebrew (`analyzeHeadless` is not on `PATH`: look in
 the Caskroom) and the firmware is still `~/Downloads/CDJ1000MK3_061023.EXE`, the `/tmp` extraction is gone
 (`dev_docs/cdj1000mk3-card.md`, "Reproducing the analysis"); or fit it from the card's five waveform records
 against the audio, which needs the owner to copy the tracks.
