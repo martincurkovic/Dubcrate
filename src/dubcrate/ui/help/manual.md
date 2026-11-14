@@ -365,7 +365,7 @@ The CDJ-1000MK3 keeps the cue points you set on the player on its **SD card**, o
 
 ![The Sync tab: the card on the left, the audio discs in the middle with what a sync would do for each](screenshots/sync.png "The Sync tab")
 
-1. **The card** (left). Put the player's SD card into your Mac and open the tab: a card is found by the **PIONEER** folder on it. Click **Refresh** if you plugged it in after opening the tab. For a copy of a card's folder, or a disk image of one, use **Choose Folder…**.
+1. **The card** (left). Put the player's SD card into your Mac: it appears in the list by itself a moment later (and goes when you take it out), found by the **PIONEER** folder on it. Each card shows its name, size and how many discs the player has put on it, with an **eject** button on the right that ejects it. Click **Refresh** if a card doesn't show up. For a copy of a card's folder, or a disk image of one, use **Choose Folder…**: it is listed with a **×** that takes it off the list again (the folder itself isn't touched).
 2. **Your discs** (middle). Every **audio** disc you have made is listed, in the folders you filed it in, with a **Status**:
    - **Not on the card: 12 cues to add**: the player has never seen this disc, or has no file for it yet.
    - **12 cues to add**: the disc is on the card, and these cues are not.

@@ -122,7 +122,10 @@ def test_a_folder_chosen_by_hand_is_listed_and_picked(qapp, tmp_path, monkeypatc
     monkeypatch.setattr(sync_view, "ask_card_folder", lambda _parent: str(copy))
     panel.choose_folder()
     assert panel.current_card() == copy and told[-1] == copy
-    assert panel.cards.item(0).text().endswith("(folder)")
+    assert (
+        panel.row_for(copy).by_hand
+        and panel.row_for(copy).title.text() == "copy-of-card"
+    )
     panel.refresh()  # (kept through a refresh)
     assert panel.current_card() == copy
 
@@ -684,3 +687,209 @@ def test_the_main_window_lets_go_of_a_card_that_was_ejected(
     win.close()
     win.deleteLater()
     lib.close()
+
+
+# -- the card list: rows, eject, drives coming and going -----------------------------------------
+
+
+@pytest.fixture
+def plugged(tmp_path, monkeypatch):
+    """A folder standing for /Volumes, with a `volumes()` that lists the cards in it, and a quick settle."""
+    monkeypatch.setattr(sync_view, "CARD_SETTLE_MS", 20)
+    monkeypatch.setattr(sync_view, "card_capacity", lambda _path: 2_013_265_920)
+    root = tmp_path / "Volumes"
+    root.mkdir()
+
+    class Plugged:
+        folder = root
+
+        @staticmethod
+        def volumes():
+            return sorted(p for p in root.iterdir() if p.is_dir())
+
+        @staticmethod
+        def insert(name="CARD"):
+            return card_folder(root, name)
+
+    return Plugged
+
+
+def test_a_card_row_has_an_icon_its_name_its_size_and_discs_and_an_eject_button(
+    qapp, plugged
+):
+    card = plugged.insert("DISK_IMG")
+    panel = CardPanel(volumes=plugged.volumes)
+    panel.refresh()
+    row = panel.row_for(card)
+    assert row.title.text() == "DISK_IMG"
+    assert row.detail.text() == "2.0 GB · 1 disc"  # (index_one_disc: one disc)
+    assert row.icon is not None and not row.by_hand
+    assert row.button.toolTip() == "Eject “DISK_IMG”" and row.button.isEnabled()
+    assert panel.cards.item(0).sizeHint().height() == sync_view.ROW_HEIGHT
+
+
+def test_a_card_that_is_plugged_in_appears_by_itself_and_one_taken_out_goes(
+    qapp, plugged, wait_for
+):
+    panel = CardPanel(volumes=plugged.volumes, watch=[plugged.folder])
+    told = []
+    panel.card_changed.connect(told.append)
+    card = plugged.insert("CARD")
+    assert wait_for(lambda: panel.row_for(card) is not None)  # (no Refresh)
+    assert panel.current_card() == card and told == [card]
+    assert panel.subtitle.text() == "1 card found"
+    import shutil
+
+    shutil.rmtree(card)
+    assert wait_for(lambda: panel.current_card() is None)
+    assert told == [card, None] and panel.hint.isVisibleTo(panel)
+
+
+def test_a_second_card_joins_the_list_and_the_picked_one_stays_picked(
+    qapp, plugged, wait_for
+):
+    first = plugged.insert("A")
+    panel = CardPanel(volumes=plugged.volumes, watch=[plugged.folder])
+    panel.refresh()
+    second = plugged.insert("B")
+    assert wait_for(lambda: panel.row_for(second) is not None)
+    assert panel.current_card() == first and panel.subtitle.text() == "2 cards found"
+
+
+def test_the_picked_row_is_drawn_as_picked_and_the_others_are_not(qapp, plugged):
+    first, second = plugged.insert("A"), plugged.insert("B")
+    panel = CardPanel(volumes=plugged.volumes)
+    panel.refresh()
+    assert panel.row_for(first)._selected and not panel.row_for(second)._selected
+    panel.cards.setCurrentRow(1)
+    assert not panel.row_for(first)._selected and panel.row_for(second)._selected
+
+
+def test_the_eject_button_ejects_that_card_says_so_and_the_list_lets_go_of_it(
+    qapp, plugged, monkeypatch, wait_for
+):
+    card = plugged.insert("CARD")
+    panel = CardPanel(volumes=plugged.volumes)
+    panel.refresh()
+    ejected, said, told = [], [], []
+    panel.message.connect(said.append)
+    panel.card_changed.connect(told.append)
+
+    def eject(path):
+        ejected.append(path)
+        import shutil
+
+        shutil.rmtree(path)  # (the system takes it away)
+
+    monkeypatch.setattr(sync_view, "eject_card", eject)
+    panel.row_for(card).button.click()
+    assert not panel.row_for(card).button.isEnabled()  # (while it works)
+    assert wait_for(lambda: panel.current_card() is None)
+    assert ejected == [card] and told == [None]
+    assert said == ["Ejected “CARD”: it is safe to take out."]
+
+
+def test_an_eject_that_fails_says_to_do_it_in_finder_and_the_card_stays(
+    qapp, plugged, monkeypatch, wait_for
+):
+    from dubcrate.eject import EjectError
+
+    card = plugged.insert("CARD")
+    panel = CardPanel(volumes=plugged.volumes)
+    panel.refresh()
+    said = []
+    panel.message.connect(said.append)
+
+    def busy(_path):
+        raise EjectError("The system couldn't eject “CARD”: disk is busy")
+
+    monkeypatch.setattr(sync_view, "eject_card", busy)
+    panel.row_for(card).button.click()
+    assert wait_for(lambda: said)
+    assert "disk is busy" in said[0] and "Eject it in Finder" in said[0]
+    assert panel.current_card() == card and panel.row_for(card).button.isEnabled()
+
+
+def test_nothing_is_ejected_while_a_sync_is_writing(qapp, plugged, monkeypatch):
+    card = plugged.insert("CARD")
+    panel = CardPanel(volumes=plugged.volumes)
+    panel.refresh()
+    ejected = []
+    monkeypatch.setattr(sync_view, "eject_card", ejected.append)
+    panel.set_busy(True)
+    assert not panel.row_for(card).button.isEnabled()
+    panel._eject(card)  # (even if something asks)
+    assert ejected == []
+    panel.set_busy(False)
+    assert panel.row_for(card).button.isEnabled()
+
+
+def test_a_folder_chosen_by_hand_has_a_button_that_takes_it_off_the_list_and_nothing_else(
+    qapp, tmp_path, monkeypatch
+):
+    copy = card_folder(tmp_path, "copy-of-card")
+    panel = CardPanel(volumes=list)
+    monkeypatch.setattr(sync_view, "ask_card_folder", lambda _parent: str(copy))
+    told = []
+    panel.card_changed.connect(told.append)
+    panel.choose_folder()
+    row = panel.row_for(copy)
+    assert row.button.toolTip() == "Take this folder off the list"
+    assert "Folder ·" in row.detail.text()
+    before = {p.name: p.read_bytes() for p in (copy / "PIONEER" / "CDJ").iterdir()}
+    row.button.click()
+    assert (
+        panel.row_for(copy) is None
+        and panel.current_card() is None
+        and told[-1] is None
+    )
+    assert {
+        p.name: p.read_bytes() for p in (copy / "PIONEER" / "CDJ").iterdir()
+    } == before
+
+
+def test_the_sizes_are_in_gigabytes_or_megabytes():
+    assert sync_view._size_text(2_013_265_920) == "2.0 GB"
+    assert sync_view._size_text(64_000_000) == "64 MB"
+
+
+def test_the_sync_view_says_when_it_is_writing_so_the_card_is_left_alone(writing):
+    states = []
+    writing.view.busy_changed.connect(states.append)
+    writing.view.sync_button.click()
+    assert states[0] is True
+    assert writing.finished()
+    assert states[-1] is False
+
+
+def test_the_main_window_keeps_the_card_list_still_while_a_sync_writes(
+    qapp, tmp_path, monkeypatch
+):
+    monkeypatch.setattr(sync_view, "mounted_volumes", lambda: [card_folder(tmp_path)])
+    lib = Library.open(":memory:")
+    win = MainWindow(lib)
+    win.source_tabs.set_current("sync")
+    win.sync_view.busy_changed.emit(True)
+    assert win.card_panel._busy
+    win.sync_view.busy_changed.emit(False)
+    assert not win.card_panel._busy
+    win.close()
+    win.deleteLater()
+    lib.close()
+
+
+def test_a_card_rows_text_is_shortened_with_an_ellipsis_not_cut_off(qapp, plugged):
+    card = plugged.insert("A very long volume name for a card")
+    panel = CardPanel(volumes=plugged.volumes)
+    panel.resize(200, 400)
+    panel.show()
+    panel.refresh()
+    qapp.processEvents()
+    row = panel.row_for(card)
+    assert (
+        row.title.text().endswith("…")
+        and "very long volume name" in row.title.toolTip()
+    )
+    panel.resize(600, 400)
+    qapp.processEvents()
+    assert row.title.text() == "A very long volume name for a card"

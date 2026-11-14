@@ -435,6 +435,9 @@ def _sync(ctx):
     patches.enter_context(
         mock.patch("dubcrate.ui.sync_view.mounted_volumes", return_value=[card])
     )
+    patches.enter_context(  # (the pretend card is a folder on the Mac's disk: say it is a 2 GB card)
+        mock.patch("dubcrate.ui.sync_view.card_capacity", return_value=2_013_265_920)
+    )
 
     window = _main(ctx)
     window.source_tabs.set_current("sync")

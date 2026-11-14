@@ -13,10 +13,11 @@ The library belongs to the GUI thread, so reading rekordbox's database and probi
 """
 
 import logging
+import shutil
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import QFileSystemWatcher, QSize, Qt, QTimer, Signal
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QCheckBox,
@@ -30,6 +31,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QPlainTextEdit,
     QPushButton,
+    QSizePolicy,
     QTreeWidget,
     QTreeWidgetItem,
     QVBoxLayout,
@@ -47,9 +49,12 @@ from dubcrate.library.lengths import needs_measuring, probe_lengths
 from dubcrate.library.models import Track
 from dubcrate.library.rekordbox import RekordboxError, read_cues
 
+from . import theme
 from .explorer import mounted_volumes
+from .glyph_widgets import GlyphButton, GlyphIcon, close_glyph, eject_glyph, ink
 from .label_dialog import disc_paths
 from .models import _disc_icon, _folder_icon
+from .source_tabs import explorer_glyph, sd_card_glyph
 from .tasks import TaskError, run_async
 
 log = logging.getLogger(__name__)
@@ -122,20 +127,130 @@ def confirmation_text(
     return "\n".join(lines)
 
 
+CARD_SETTLE_MS = (
+    800  # after a change in /Volumes, a moment for the card to finish mounting
+)
+ROW_HEIGHT = 62
+
+
+def card_capacity(path: Path) -> int | None:
+    """The size of the volume `path` is on, in bytes (None if it can't be asked). Tests stand it in."""
+    try:
+        return shutil.disk_usage(path).total
+    except OSError:
+        return None
+
+
+def _size_text(size: int) -> str:
+    return f"{size / 1e9:.1f} GB" if size >= 1e9 else f"{size / 1e6:.0f} MB"
+
+
+class _ElidedLabel(QLabel):
+    """A label that shortens its text with “…” when it is narrower than the text, rather than
+    being cut off (a long name, or the wide System 6 font, beside the eject button)."""
+
+    def __init__(self, text: str = "", parent: QWidget | None = None):
+        super().__init__(parent)
+        self._full = text
+        self.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+        self.setMinimumWidth(10)
+        self.setText(text)
+
+    def setText(self, text: str) -> None:
+        self._full = text
+        self._fit()
+
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        self._fit()
+
+    def _fit(self) -> None:
+        shown = self.fontMetrics().elidedText(
+            self._full, Qt.TextElideMode.ElideRight, max(self.width(), 10)
+        )
+        super().setText(shown)
+        self.setToolTip(self._full if shown != self._full else "")
+
+
+class CardRow(QWidget):
+    """One card in the list: an icon, its name, its size and how many discs it holds, and a button
+    to eject it (for a folder chosen by hand, one that takes it off the list instead)."""
+
+    eject_requested = Signal(object)  # the card's path
+    remove_requested = Signal(object)
+
+    def __init__(
+        self, path: Path, by_hand: bool, detail: str, parent: QWidget | None = None
+    ):
+        super().__init__(parent)
+        self.path, self.by_hand = path, by_hand
+        self._selected = False
+        name = path.name or str(path)
+        self.icon = GlyphIcon(explorer_glyph if by_hand else sd_card_glyph, 36)
+        self.title = _ElidedLabel(name)
+        font = self.title.font()
+        font.setBold(True)
+        self.title.setFont(font)
+        self.detail = _ElidedLabel(detail)
+        words = QVBoxLayout()
+        words.setSpacing(1)
+        words.addStretch(1)
+        words.addWidget(self.title)
+        words.addWidget(self.detail)
+        words.addStretch(1)
+        self.button = GlyphButton(
+            close_glyph if by_hand else eject_glyph,
+            "Take this folder off the list" if by_hand else f"Eject “{name}”",
+        )
+        self.button.clicked.connect(
+            lambda: (self.remove_requested if by_hand else self.eject_requested).emit(
+                path
+            )
+        )
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(10, 6, 8, 6)
+        layout.setSpacing(10)
+        layout.addWidget(self.icon)
+        layout.addLayout(words, 1)
+        layout.addWidget(self.button)
+        self.setToolTip(str(path))
+        theme.notifier.changed.connect(self._restyle)
+        self._restyle()
+
+    def set_selected(self, selected: bool) -> None:
+        """A picked row has the list's selection colour behind it: text and glyphs follow."""
+        self._selected = selected
+        self.icon.set_selected(selected)
+        self.button.set_selected(selected)
+        self._restyle()
+
+    def _restyle(self) -> None:
+        self.title.setStyleSheet(f"color: {ink(self._selected).name()};")
+        muted = ink(self._selected) if self._selected else ink(enabled=False)
+        self.detail.setStyleSheet(f"color: {muted.name()};")
+
+
 class CardPanel(QWidget):
-    """The left side: the cards that are plugged in (and folders chosen by hand), one picked."""
+    """The left side: the cards that are plugged in (and folders chosen by hand), one picked.
+
+    A card plugged in or taken out shows up (or goes) by itself a moment later: the folders where
+    drives appear are watched, as the Explorer does. **Refresh** is for when that misses one."""
 
     card_changed = Signal(object)  # the card's folder (a Path), or None
+    message = Signal(str)  # for the status bar
 
     def __init__(
         self,
         volumes: Callable[[], list[Path]] | None = None,
         parent: QWidget | None = None,
+        watch: Sequence[Path] = (),
     ):
         super().__init__(parent)
         self._volumes = volumes  # None: the drives that are plugged in
         self._chosen: list[Path] = []  # folders picked by hand, kept for the session
         self._found: list[Path] = []  # the cards plugged in, as last looked for
+        self._busy = False  # a sync is writing: nothing is ejected under it
+        self._ejecting = False
         layout = QVBoxLayout(self)
         layout.setContentsMargins(12, 12, 12, 12)
         layout.setSpacing(8)
@@ -153,12 +268,14 @@ class CardPanel(QWidget):
         self.subtitle.setObjectName("mutedLabel")
         layout.addWidget(self.subtitle)
         self.cards = QListWidget()
+        self.cards.setVerticalScrollMode(QListWidget.ScrollMode.ScrollPerPixel)
         self.cards.currentItemChanged.connect(self._picked)
+        self.cards.itemSelectionChanged.connect(self._restyle_rows)
         layout.addWidget(self.cards, 1)
         self.hint = QLabel(
-            "Plug the CDJ's SD card into this Mac, then click Refresh: it is found by its "
-            "PIONEER folder.\n\nA copy of a card's folder, or a disk image of a card, can be "
-            "chosen by hand."
+            "Plug the CDJ's SD card into this Mac: it appears here by itself, found by its "
+            "PIONEER folder (click Refresh if it doesn't).\n\nA copy of a card's folder, or a "
+            "disk image of a card, can be chosen by hand."
         )
         self.hint.setObjectName("mutedLabel")
         self.hint.setWordWrap(True)
@@ -168,7 +285,30 @@ class CardPanel(QWidget):
         layout.addWidget(self.choose_button)
         self.subtitle.setText(
             "No card found"
-        )  # (the drives are looked at when the tab opens)
+        )  # (the drives are looked at when the tab opens, and whenever one comes or goes)
+        self._watch = list(watch)
+        self._watcher = QFileSystemWatcher(self)
+        self._watcher.directoryChanged.connect(lambda _path: self._settle.start())
+        self._settle = QTimer(
+            self
+        )  # one look for a burst of changes, and a moment for the
+        self._settle.setSingleShot(True)  # card to finish mounting
+        self._settle.setInterval(CARD_SETTLE_MS)
+        self._settle.timeout.connect(self._drives_changed)
+        self._watch_folders()
+
+    # -- finding cards -------------------------------------------------------------
+
+    def _watch_folders(self) -> None:
+        """Watch the folders that exist (one that appears later is picked up on the next change)."""
+        have = set(self._watcher.directories())
+        new = [str(p) for p in self._watch if str(p) not in have and p.is_dir()]
+        if new:
+            self._watcher.addPaths(new)
+
+    def _drives_changed(self) -> None:
+        self._watch_folders()
+        self.refresh()
 
     def is_volume(self, path: Path) -> bool:
         """Whether `path` is a card that is plugged in (and so can be ejected), not a folder chosen by hand."""
@@ -177,6 +317,26 @@ class CardPanel(QWidget):
     def current_card(self) -> Path | None:
         item = self.cards.currentItem()
         return None if item is None else Path(item.data(Qt.ItemDataRole.UserRole))
+
+    def row_for(self, path: Path) -> CardRow | None:
+        for number in range(self.cards.count()):
+            item = self.cards.item(number)
+            if item.data(Qt.ItemDataRole.UserRole) == str(path):
+                return self.cards.itemWidget(item)
+        return None
+
+    def _detail(self, path: Path, by_hand: bool) -> str:
+        if by_hand:
+            return f"Folder · {path.parent}"
+        parts = []
+        if (size := card_capacity(path)) is not None:
+            parts.append(_size_text(size))
+        try:
+            discs = len(cc.read_card(path)[0].entries)
+            parts.append(f"{discs} disc{'s' if discs != 1 else ''}")
+        except (cc.CardFormatError, OSError):
+            pass
+        return " · ".join(parts)
 
     def refresh(self, announce: bool = True) -> None:
         """Look again for cards. `card_changed` is emitted if the picked card changed (and only
@@ -189,17 +349,20 @@ class CardPanel(QWidget):
         self.cards.clear()
         for path in shown:
             by_hand = path not in found
-            item = QListWidgetItem(
-                f"{path.name or path}  (folder)" if by_hand else path.name or str(path)
-            )
+            row = CardRow(path, by_hand, self._detail(path, by_hand))
+            row.eject_requested.connect(self._eject)
+            row.remove_requested.connect(self._remove)
+            item = QListWidgetItem()
             item.setData(Qt.ItemDataRole.UserRole, str(path))
-            item.setToolTip(str(path))
+            item.setSizeHint(QSize(0, ROW_HEIGHT))
             self.cards.addItem(item)
+            self.cards.setItemWidget(item, row)
             if path == before:
                 self.cards.setCurrentItem(item)
         if self.cards.currentItem() is None and shown:
             self.cards.setCurrentRow(0)
         self.cards.blockSignals(False)
+        self._restyle_rows()
         n = len(found)
         self.subtitle.setText(
             "No card found" if not n else f"{n} card{'s' if n != 1 else ''} found"
@@ -207,6 +370,54 @@ class CardPanel(QWidget):
         self.hint.setVisible(not shown)
         if announce and self.current_card() != before:
             self.card_changed.emit(self.current_card())
+
+    def _restyle_rows(self) -> None:
+        for number in range(self.cards.count()):
+            item = self.cards.item(number)
+            row = self.cards.itemWidget(item)
+            if row is not None:
+                row.set_selected(item.isSelected())
+                row.button.setEnabled(not (self._busy or self._ejecting))
+
+    # -- ejecting and removing -----------------------------------------------------
+
+    def set_busy(self, busy: bool) -> None:
+        """A sync is writing to the card: its eject button waits."""
+        self._busy = busy
+        self._restyle_rows()
+
+    def _eject(self, path: Path) -> None:
+        if self._busy or self._ejecting:
+            return
+        self._ejecting = True
+        self._restyle_rows()
+        name = path.name or str(path)
+
+        def work() -> None:
+            try:
+                eject_card(path)
+            except EjectError as exc:
+                raise TaskError(str(exc)) from exc
+
+        def done(_result) -> None:
+            self._ejecting = False
+            self.message.emit(f"Ejected “{name}”: it is safe to take out.")
+            self.refresh()  # (it has gone, and so has the card the tab was showing)
+
+        def failed(text: str) -> None:
+            self._ejecting = False
+            self.message.emit(f"{text} Eject it in Finder before taking it out.")
+            self.refresh()
+
+        run_async(work, done, failed)
+
+    def _remove(self, path: Path) -> None:
+        """Take a folder chosen by hand off the list (the folder itself is not touched)."""
+        if path in self._chosen:
+            self._chosen.remove(path)
+        self.refresh()
+
+    # -- choosing by hand ----------------------------------------------------------
 
     def choose_folder(self) -> None:
         folder = ask_card_folder(self)
@@ -226,6 +437,7 @@ class CardPanel(QWidget):
             if self.cards.item(row).data(Qt.ItemDataRole.UserRole) == str(path):
                 self.cards.setCurrentRow(row)
         self.cards.blockSignals(False)
+        self._restyle_rows()
         self.card_changed.emit(self.current_card())
 
     def _picked(self, *_: object) -> None:
@@ -250,6 +462,7 @@ class SyncView(QWidget):
     card_ejected = (
         Signal()
     )  # the card was ejected after a sync: it is gone from the Mac
+    busy_changed = Signal(bool)  # a sync is writing (or ejecting): leave the card alone
 
     def __init__(
         self,
@@ -642,6 +855,11 @@ class SyncView(QWidget):
             else "Only a card that is plugged in can be ejected, not a folder you chose."
         )
 
+    def _set_writing(self, writing: bool) -> None:
+        """A sync is (or is no longer) writing and ejecting: the card list must leave the card alone."""
+        self._writing = writing
+        self.busy_changed.emit(writing)
+
     def _on_sync(self) -> None:
         """Ask, then plan the card fresh, copy its files aside and write (on a worker); then, if
         asked, eject the card."""
@@ -659,7 +877,7 @@ class SyncView(QWidget):
             return
         requests = [s.input.request for s in surveys if s.input.request is not None]
         backup_dir = self._backup_dir
-        self._writing = True
+        self._set_writing(True)
         self.subtitle.setText("Writing to the card…")
         self._update_buttons()
 
@@ -681,12 +899,12 @@ class SyncView(QWidget):
             if eject:
                 self._eject_card(card, said)
                 return
-            self._writing = False
+            self._set_writing(False)
             self.message.emit(f"{said} Eject the card before taking it out.")
             self.refresh()  # (the card as it is now, so the list says "In sync")
 
         def failed(text: str) -> None:
-            self._writing = False
+            self._set_writing(False)
             self.message.emit(text)
             show_problem(
                 self,
@@ -709,12 +927,12 @@ class SyncView(QWidget):
                 raise TaskError(str(exc)) from exc
 
         def done(_result) -> None:
-            self._writing = False
+            self._set_writing(False)
             self.message.emit(f"{said} Ejected “{card.name}”: it is safe to take out.")
             self.card_ejected.emit()
 
         def failed(text: str) -> None:
-            self._writing = False
+            self._set_writing(False)
             self.message.emit(f"{said} {text} Eject it in Finder before taking it out.")
             self.refresh()
 

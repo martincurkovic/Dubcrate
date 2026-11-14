@@ -252,10 +252,16 @@ class MainWindow(QMainWindow):
         self.explorer_tree.refresh_requested.connect(self._on_refresh_folder)
 
         # Sync: the CDJ's card on the left, the discs and what a sync would do in the middle
-        self.card_panel = CardPanel()
+        self.card_panel = CardPanel(
+            watch=volume_parents()
+        )  # (a card shows up by itself)
         self.sync_view = SyncView(self._lib, can_eject=self.card_panel.is_volume)
         self.card_panel.card_changed.connect(self.sync_view.set_card)
         self.sync_view.card_ejected.connect(self.card_panel.refresh)  # (it has gone)
+        self.sync_view.busy_changed.connect(self.card_panel.set_busy)
+        self.card_panel.message.connect(
+            lambda text: self.statusBar().showMessage(text, 8000)
+        )
         self.sync_view.message.connect(
             lambda text: self.statusBar().showMessage(text, 8000)
         )
