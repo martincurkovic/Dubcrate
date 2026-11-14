@@ -1,10 +1,12 @@
 """The Sync tab: the CDJ-1000MK3's SD card on the left, your audio discs in the middle.
 
-Read-only so far. It finds the card, lists Dubcrate's audio discs with what a sync would do for
+It finds the card, lists Dubcrate's audio discs with what a sync would do for
 each (`card_discs.survey_discs`: not on the card, cues to add, in sync, or why it can't be synced),
-and shows that dry run in words for the disc you pick. Ticking discs sums up what Sync would do;
-**the Sync button is there but off** (`WRITING_ENABLED`): no card file written by Dubcrate has been
-loaded by a player yet (`dev_docs/card-sync.md`, Phase 0). Nothing here writes to a card.
+and shows that dry run in words for the disc you pick. Ticking discs sums up what Sync would do.
+**The Sync button is off** (`WRITING_ENABLED`): no card file written by Dubcrate has been loaded by
+a player yet (`dev_docs/card-sync.md`, Phase 0). With it on, Sync asks first (what will be added,
+where the card's files are copied), then `card_apply.apply_sync` plans the card fresh, copies its
+files aside, writes and reads back, on a worker.
 
 The library belongs to the GUI thread, so reading rekordbox's database and probing track lengths
 (the only slow parts) run on workers and the discs are looked at on the GUI thread afterwards.
@@ -24,6 +26,7 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QListWidget,
     QListWidgetItem,
+    QMessageBox,
     QPlainTextEdit,
     QPushButton,
     QTreeWidget,
@@ -34,6 +37,7 @@ from PySide6.QtWidgets import (
 
 from dubcrate import cdj_card as cc
 from dubcrate.analysis import Cue
+from dubcrate.card_apply import apply_sync, default_backup_dir
 from dubcrate.card_discs import DiscSurvey, RekordboxCues, survey_discs
 from dubcrate.library import Library
 from dubcrate.library.lengths import needs_measuring, probe_lengths
@@ -43,7 +47,7 @@ from dubcrate.library.rekordbox import RekordboxError, read_cues
 from .explorer import mounted_volumes
 from .label_dialog import disc_paths
 from .models import _disc_icon, _folder_icon
-from .tasks import run_async
+from .tasks import TaskError, run_async
 
 log = logging.getLogger(__name__)
 
@@ -63,6 +67,50 @@ def ask_card_folder(parent: QWidget | None) -> str:
     return QFileDialog.getExistingDirectory(
         parent, "Choose the Card or a Copy of Its Folder", str(Path.home())
     )
+
+
+def ask_sync_confirmation(parent: QWidget | None, text: str) -> bool:
+    """Ask whether to write; False if declined (the default button). (Tests patch this.)"""
+    box = QMessageBox(parent)
+    box.setIcon(QMessageBox.Icon.Question)
+    box.setWindowTitle("Sync to the Card")
+    box.setText(text)
+    write = box.addButton("Write to Card", QMessageBox.ButtonRole.AcceptRole)
+    cancel = box.addButton(QMessageBox.StandardButton.Cancel)
+    box.setDefaultButton(cancel)
+    box.exec()
+    return box.clickedButton() is write
+
+
+def show_problem(parent: QWidget | None, title: str, text: str) -> None:
+    """Tell the user a sync failed. (Tests patch this.)"""
+    QMessageBox.warning(parent, title, text)
+
+
+def confirmation_text(
+    surveys: Sequence[DiscSurvey], card_name: str, backup_dir: Path
+) -> str:
+    """What the question before a write says: each disc and what it adds, what is kept, the backup."""
+    cues = sum(s.to_add for s in surveys)
+    added = f"{cues} cue{'s' if cues != 1 else ''} will be added as memory cues."
+    lines = [f"Write rekordbox cues to “{card_name}”?", ""]
+    lines += [f"  {s.disc.name}: {s.status[0].lower()}{s.status[1:]}" for s in surveys]
+    lines += [
+        "",
+        f"{added} The cues already on the card, its hot cues and its waveforms are kept.",
+        f"The card's files are copied to {backup_dir} first.",
+    ]
+    if left_out := sum(len(s.plan.overflow) for s in surveys if s.plan):
+        lines.append(
+            f"{left_out} cue{'s' if left_out != 1 else ''} won't fit (the player holds "
+            f"{cc.MAX_CUES} per disc) and will be left out."
+        )
+    if warned := sum(bool(s.input.warnings) for s in surveys):
+        lines.append(
+            f"{warned} disc{'s have' if warned != 1 else ' has'} a warning in the list: "
+            "worth reading before you write."
+        )
+    return "\n".join(lines)
 
 
 class CardPanel(QWidget):
@@ -184,11 +232,17 @@ class SyncView(QWidget):
     """The middle: the discs, what a sync would do for each, and the dry run for the one picked."""
 
     message = Signal(str)  # for the status bar
-    sync_requested = Signal(list)  # disc ids ticked (only while `WRITING_ENABLED`)
 
-    def __init__(self, lib: Library, parent: QWidget | None = None):
+    def __init__(
+        self,
+        lib: Library,
+        parent: QWidget | None = None,
+        backup_dir: Path | None = None,
+    ):
         super().__init__(parent)
         self._lib = lib
+        self._backup_dir = backup_dir or default_backup_dir()
+        self._writing = False
         self._card_path: Path | None = None
         self._card: tuple[cc.IndexFile, Mapping[str, cc.TrackFile | None]] | None = None
         self._card_note = ""  # why the card couldn't be read, if it couldn't
@@ -520,14 +574,15 @@ class SyncView(QWidget):
     def _update_buttons(self) -> None:
         writable = [s for s in self._surveys.values() if s.writable]
         ticked = [self._surveys[i] for i in self.ticked_ids()]
-        if not self._measuring:  # (which has its own progress to show)
+        if not self._measuring and not self._writing:  # (which have their own to show)
             self.subtitle.setText(
                 f"{len(ticked)} of {len(writable)} disc{'s' if len(writable) != 1 else ''} selected"
                 if self._surveys
                 else "No audio discs"
             )
         self.clear_button.setEnabled(bool(ticked))
-        self.measure_button.setEnabled(bool(self._unmeasured) and not self._measuring)
+        busy = self._measuring or self._writing
+        self.measure_button.setEnabled(bool(self._unmeasured) and not busy)
         card = self._card_path.name if self._card_path else ""
         if self._card is None:
             self.footer_title.setText("No card")
@@ -543,13 +598,60 @@ class SyncView(QWidget):
                 else "Tick the discs to sync."
             )
         self.sync_button.setEnabled(
-            WRITING_ENABLED and bool(ticked) and self._card is not None
+            WRITING_ENABLED
+            and bool(ticked)
+            and self._card is not None
+            and not self._writing
         )
         self.sync_button.setToolTip("" if WRITING_ENABLED else WAITING_NOTE)
 
     def _on_sync(self) -> None:
-        if WRITING_ENABLED:
-            self.sync_requested.emit(self.ticked_ids())
+        """Ask, then plan the card fresh, copy its files aside and write (on a worker)."""
+        card = self._card_path
+        if not WRITING_ENABLED or self._writing or card is None or self._card is None:
+            return
+        surveys = [self._surveys[i] for i in self.ticked_ids()]
+        if not surveys:
+            return
+        text = confirmation_text(surveys, card.name or str(card), self._backup_dir)
+        if not ask_sync_confirmation(self, text):
+            return
+        requests = [s.input.request for s in surveys if s.input.request is not None]
+        backup_dir = self._backup_dir
+        self._writing = True
+        self.subtitle.setText("Writing to the card…")
+        self._update_buttons()
+
+        def work():
+            try:
+                return apply_sync(card, requests, backup_dir)
+            except cc.CardFormatError as exc:
+                raise TaskError(str(exc)) from exc
+
+        def done(outcome) -> None:
+            self._writing = False
+            if outcome.wrote:
+                n = len(outcome.written)
+                self.message.emit(
+                    f"Wrote {n} disc file{'s' if n != 1 else ''} to “{card.name}”; its old files "
+                    f"are copied to {outcome.backup}"
+                )
+            else:
+                self.message.emit("Nothing to write: the card already has these cues.")
+            self.refresh()  # (the card as it is now, so the list says "In sync")
+
+        def failed(text: str) -> None:
+            self._writing = False
+            self.message.emit(text)
+            show_problem(
+                self,
+                "Couldn't Sync to the Card",
+                f"{text}\n\nThe card's files are copied to {backup_dir} before anything is "
+                "written, so the old ones can be put back from there.",
+            )
+            self.refresh()  # (the card may have changed)
+
+        run_async(work, done, failed)
 
     # -- measuring lengths -------------------------------------------------------------
 

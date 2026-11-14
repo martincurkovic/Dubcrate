@@ -54,9 +54,11 @@ bottom tab laid out after rbxport's Sync Manager, the owner's reference): the ca
 its `PIONEER/CDJ` folder when the tab opens or on Refresh, or a folder is chosen by hand), the audio discs in
 their folders with a status each (`card_discs.survey_discs`) and the dry run for the one picked, tick boxes,
 Measure Lengths, and a **Sync button that is off** (`sync_view.WRITING_ENABLED = False`: flip it only after the
-write test passes on the player). **Still to do**, best first: finish the tab (a backup, the confirmation and
-the write behind that button, the read-back and eject, the guide's section and screenshots, and `Measure
-Lengths` and the list tried against a real card); (3) the waveform scale: Ghidra and `openjdk@25` are installed by Homebrew (`analyzeHeadless` is not on `PATH`: look in
+write test passes on the player). Behind that switch the whole write is built: the question (`confirmation_text`),
+then `card_apply.apply_sync` on a worker (the card read and planned fresh, its files copied to `card-backups`
+first, `write_card` with its read-back; `card sync --yes` uses it too). **Still to do**, best first: eject, the
+guide's section and screenshots, and `Measure Lengths`, the list and the write tried against a real card
+(Phase 0 first); (3) the waveform scale: Ghidra and `openjdk@25` are installed by Homebrew (`analyzeHeadless` is not on `PATH`: look in
 the Caskroom) and the firmware is still `~/Downloads/CDJ1000MK3_061023.EXE`, the `/tmp` extraction is gone
 (`dev_docs/cdj1000mk3-card.md`, "Reproducing the analysis"); or fit it from the card's five waveform records
 against the audio, which needs the owner to copy the tracks.

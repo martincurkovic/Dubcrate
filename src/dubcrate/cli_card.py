@@ -12,6 +12,7 @@ import sys
 from pathlib import Path
 
 from dubcrate import cdj_card as cc
+from dubcrate.card_apply import apply_sync, default_backup_dir
 from dubcrate.card_discs import (
     RekordboxCues,
     disc_toc,
@@ -23,7 +24,6 @@ from dubcrate.card_sync import plan_card
 from dubcrate.drive_toc import DriveTocError, read_drive_toc
 from dubcrate.library import Library
 from dubcrate.library.lengths import measure_tracks
-from dubcrate.library.paths import default_library_path
 from dubcrate.library.rekordbox import RekordboxError
 
 
@@ -40,7 +40,7 @@ def cmd_show(_: Library, args: argparse.Namespace) -> int:
 def _backup_dir(args: argparse.Namespace) -> Path:
     if args.backup_dir:
         return Path(args.backup_dir).expanduser()
-    return default_library_path().parent / "card-backups"
+    return default_backup_dir()
 
 
 def cmd_backup(_: Library, args: argparse.Namespace) -> int:
@@ -138,12 +138,15 @@ def cmd_sync(lib: Library, args: argparse.Namespace) -> int:
         print("re-run with --yes to write (the card's files are copied aside first).")
         return 0
     try:
-        backup = cc.backup_card(card, _backup_dir(args))
-        cc.write_card(card, plan.index, plan.writes())
+        outcome = apply_sync(
+            card, [i.request for i in runnable if i.request], _backup_dir(args)
+        )
     except cc.CardFormatError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
-    print(f"\nwrote {len(plan.writes())} file(s); the card's old files are in {backup}")
+    print(
+        f"\nwrote {len(outcome.written)} file(s); the card's old files are in {outcome.backup}"
+    )
     return 0
 
 

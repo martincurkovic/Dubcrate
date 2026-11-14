@@ -39,7 +39,7 @@ def lib():
         yield library
 
 
-def add_disc(lib, name, *, source="rekordbox", folder=None, measured=True):
+def add_disc(lib, name, *, source="rekordbox", folder=None, measured=True, longer=0):
     """An audio disc of CD 2's twelve tracks, each in the rekordbox source (so cues can be looked up)."""
     n = len(lib.sources())
     lib.replace_source(
@@ -48,7 +48,11 @@ def add_disc(lib, name, *, source="rekordbox", folder=None, measured=True):
     )  # fmt: skip
     ids = [t.id for t in lib.tracks(sort="path") if t.ext_id.startswith(f"{name}-")]
     if measured:
-        for track_id, sectors in zip(ids, cd2_lengths(), strict=True):
+        lengths = cd2_lengths()
+        lengths[0] += (
+            longer  # (discs with the same lengths share a card ID, and its cues)
+        )
+        for track_id, sectors in zip(ids, lengths, strict=True):
             lib.set_cd_sectors(track_id, sectors)
     disc_id = lib.create_disc(name, folder_id=folder)
     lib.add_to_disc(disc_id, ids)
@@ -61,11 +65,11 @@ def shown(view: SyncView) -> list[tuple[str, str]]:
 
 
 @pytest.fixture
-def cue_view(qapp, lib, monkeypatch, wait_for):
+def cue_view(qapp, lib, tmp_path, monkeypatch, wait_for):
     """A Sync view over a library with rekordbox's cues stood in for."""
     cues = {}
     monkeypatch.setattr(sync_view, "read_cues", lambda _path: cues)
-    view = SyncView(lib)
+    view = SyncView(lib, backup_dir=tmp_path / "bk")
     view.cues = cues
 
     def look(card=None):
@@ -251,29 +255,193 @@ def test_a_search_hides_the_discs_that_do_not_match_and_the_folders_that_empty(
     assert not any(i.isHidden() for i in cue_view._walk())
 
 
-def test_the_sync_button_is_there_but_off_and_says_why(
-    cue_view, lib, tmp_path, monkeypatch
-):
+def test_the_sync_button_is_there_but_off_and_says_why(cue_view, lib, tmp_path):
     add_disc(lib, "A")
     cue_view.cues["A-0"] = [Cue("memory", 5.0)]
-    cue_view.look(card_folder(tmp_path))
+    card = card_folder(tmp_path)
+    cue_view.look(card)
     cue_view._disc_items()[0].setCheckState(COL_TICK, Qt.CheckState.Checked)
     assert not cue_view.sync_button.isEnabled()
     assert (
         "no card file written by Dubcrate has been loaded"
         in cue_view.sync_button.toolTip()
     )
+    before = {p.name: p.read_bytes() for p in (card / "PIONEER" / "CDJ").iterdir()}
+    cue_view._on_sync()  # off means off, even if something calls it: no question, no write
+    assert {
+        p.name: p.read_bytes() for p in (card / "PIONEER" / "CDJ").iterdir()
+    } == before
+    assert not (tmp_path / "bk").exists()
+
+
+# -- writing (with the switch on) -------------------------------------------------------------------
+
+
+@pytest.fixture
+def writing(cue_view, lib, tmp_path, monkeypatch, wait_for):
+    """A card, a disc with cues ticked, the switch on, and the question answered `yes`."""
+    monkeypatch.setattr(sync_view, "WRITING_ENABLED", True)
+    add_disc(lib, "A")
+    add_disc(lib, "B", longer=75)
+    cue_view.cues.update(
+        {
+            "A-0": [Cue("memory", 15.0), Cue("hot", 40.0, slot=1)],
+            "B-2": [Cue("loop", 20.0, end=24.0)],
+        }
+    )
+    card = card_folder(tmp_path)
+    cue_view.look(card)
+    cue_view._tick_all(Qt.CheckState.Checked)
     asked = []
-    cue_view.sync_requested.connect(asked.append)
-    cue_view._on_sync()
-    assert asked == []  # off means off, even if something calls it
+    answer = {"yes": True}
     monkeypatch.setattr(
-        sync_view, "WRITING_ENABLED", True
-    )  # (the day it is switched on)
-    cue_view._update_buttons()
-    assert cue_view.sync_button.isEnabled()
-    cue_view._on_sync()
-    assert asked == [cue_view.ticked_ids()]
+        sync_view,
+        "ask_sync_confirmation",
+        lambda _parent, text: asked.append(text) or answer["yes"],
+    )
+    problems, said = [], []
+    monkeypatch.setattr(
+        sync_view,
+        "show_problem",
+        lambda _p, title, text: problems.append((title, text)),
+    )
+    cue_view.message.connect(said.append)
+
+    def finished():
+        return wait_for(lambda: not cue_view._writing)
+
+    from types import SimpleNamespace
+
+    return SimpleNamespace(
+        view=cue_view, card=card, asked=asked, answer=answer, problems=problems, said=said,
+        backup=tmp_path / "bk", finished=finished, lib=lib,
+    )  # fmt: skip
+
+
+def card_files(card):
+    return {
+        p.name: p.read_bytes() for p in sorted((card / "PIONEER" / "CDJ").iterdir())
+    }
+
+
+def test_the_sync_button_is_on_when_the_switch_is_and_discs_are_ticked(writing):
+    assert (
+        writing.view.sync_button.isEnabled()
+        and writing.view.sync_button.toolTip() == ""
+    )
+
+
+def test_the_question_names_each_disc_what_is_kept_and_where_the_backup_goes(writing):
+    writing.view.sync_button.click()
+    (text,) = writing.asked
+    assert "Write rekordbox cues to “CARD”?" in text
+    assert (
+        "A: not on the card: 2 cues to add" in text
+        and "B: not on the card: 1 cue to add" in text
+    )
+    assert "3 cues will be added as memory cues" in text
+    assert "hot cues and its waveforms are kept" in text
+    assert str(writing.backup) in text
+    assert writing.finished()
+
+
+def test_yes_copies_the_card_aside_writes_and_the_list_then_says_in_sync(writing):
+    before = card_files(writing.card)
+    writing.view.sync_button.click()
+    assert (
+        not writing.view.sync_button.isEnabled()
+        and not writing.view.measure_button.isEnabled()
+    )
+    assert writing.finished()
+    (backup,) = list(writing.backup.iterdir())
+    assert {p.name: p.read_bytes() for p in backup.iterdir()} == before
+    _, files = cc.read_card(writing.card)
+    assert sorted(len(f.cues) for f in files.values() if f is not None and f.cues) == [
+        1,
+        2,
+    ]
+    assert (
+        "Wrote 2 disc files to “CARD”" in writing.said[-1]
+        and str(backup) in writing.said[-1]
+    )
+    assert wait_until(
+        writing.view, lambda: all(s == "In sync" for _n, s in shown(writing.view))
+    )
+    assert writing.view.ticked_ids() == [] and not writing.view.sync_button.isEnabled()
+
+
+def wait_until(view, predicate, timeout=20.0):
+    import time
+
+    from PySide6.QtWidgets import QApplication
+
+    end = time.monotonic() + timeout
+    while time.monotonic() < end:
+        QApplication.processEvents()
+        if predicate():
+            return True
+        time.sleep(0.01)
+    return False
+
+
+def test_no_changes_nothing_is_written_and_nothing_is_copied(writing):
+    before = card_files(writing.card)
+    writing.answer["yes"] = False
+    writing.view.sync_button.click()
+    assert not writing.view._writing
+    assert card_files(writing.card) == before and not writing.backup.exists()
+    assert writing.view.sync_button.isEnabled()  # (and the ticks are still there)
+
+
+def test_a_write_that_fails_is_said_in_a_box_and_the_status_bar_and_the_view_recovers(
+    writing, monkeypatch
+):
+    def full(*_a, **_k):
+        raise cc.CardFormatError("The card couldn't be read or written: no space")
+
+    monkeypatch.setattr(sync_view, "apply_sync", full)
+    writing.view.sync_button.click()
+    assert writing.finished()
+    ((title, text),) = writing.problems
+    assert title == "Couldn't Sync to the Card" and "no space" in text
+    assert str(writing.backup) in text  # where the old files are put back from
+    assert "no space" in writing.said[-1]
+    assert not writing.view._writing
+    # (once the card has been read again)
+    assert wait_until(writing.view, writing.view.sync_button.isEnabled)
+
+
+def test_a_second_click_while_writing_does_nothing(writing):
+    writing.view.sync_button.click()
+    writing.view._on_sync()  # (as a double click could)
+    assert len(writing.asked) == 1
+    assert writing.finished()
+
+
+def test_the_question_says_when_cues_wont_fit_and_when_a_disc_has_a_warning(
+    cue_view, lib, tmp_path
+):
+    from dubcrate.card_discs import DiscInput, DiscSurvey
+    from dubcrate.card_sync import DiscPlan, Status, WantedCue
+
+    summary = lib.disc(add_disc(lib, "A"))
+    plan = DiscPlan(
+        Status.NEW_DISC,
+        cc.DiscId(2, 0, 9, 5, 7),
+        "CDJ00002",
+        None,
+        [],
+        0,
+        0,
+        [WantedCue(1, 5)],
+        [],
+    )
+    found = DiscSurvey(
+        summary, "A", DiscInput(summary.id, "A", warnings=["not burned"]), plan
+    )
+    text = sync_view.confirmation_text([found], "CARD", tmp_path / "bk")
+    assert "1 cue won't fit (the player holds 100 per disc)" in text
+    assert "1 disc has a warning in the list" in text
 
 
 def test_a_rekordbox_database_that_cant_be_read_is_said_per_disc(

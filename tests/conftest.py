@@ -194,6 +194,14 @@ def _no_real_card_search(monkeypatch):
         )
 
     monkeypatch.setattr("dubcrate.ui.sync_view.ask_card_folder", refuse)
+
+    def refuse_write(*_a, **_k):
+        raise AssertionError(
+            "a test opened a sync question or warning; patch sync_view.ask_sync_confirmation / show_problem"
+        )
+
+    monkeypatch.setattr("dubcrate.ui.sync_view.ask_sync_confirmation", refuse_write)
+    monkeypatch.setattr("dubcrate.ui.sync_view.show_problem", refuse_write)
     monkeypatch.setattr("dubcrate.ui.sync_view.mounted_volumes", list)
 
 
