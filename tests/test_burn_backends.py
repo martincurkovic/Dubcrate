@@ -1,5 +1,7 @@
 """Which burn backend a computer uses, and what it says when it can't burn at all."""
 
+import sys
+
 import pytest
 
 from dubcrate import burn, tools
@@ -62,3 +64,48 @@ def test_burning_without_cdrdao_says_how_to_get_it(no_cdrdao, tmp_path):
 
     with pytest.raises(BurnError, match="cdrdao was not found"):
         cdrdao.CdrdaoBurner().burn(Disc(title="t", performer="p"), BurnOptions(), print)
+
+
+# -- what the macOS burner asks DiscRecording to do when the burn ends -----------------------------------------
+
+
+@pytest.mark.skipif(sys.platform != "darwin", reason="DiscRecording is macOS only")
+@pytest.mark.parametrize("eject,expected", [(True, "eject"), (False, "mount")])
+def test_the_burner_says_whether_to_eject_or_leave_the_disc_in_the_drive(
+    monkeypatch, eject, expected
+):
+    from types import SimpleNamespace
+
+    from dubcrate.burn import discrecording
+    from dubcrate.burn.base import BurnOptions
+
+    seen = {}
+
+    class FakeBurn:
+        @classmethod
+        def burnForDevice_(cls, device):
+            return cls()
+
+        def setProperties_(self, props):
+            seen.update(props)
+
+        def writeLayout_(self, layout):
+            pass
+
+        def status(self):
+            return {"state": "done"}
+
+    fake = SimpleNamespace(
+        DRBurn=FakeBurn, DRDeviceBurnSpeedMax=0, DRDeviceBurnSpeedCD1x=1,
+        DRBurnRequestedSpeedKey="speed", DRBurnUnderrunProtectionKey="underrun", DRBurnVerifyDiscKey="verify",
+        DRBurnTestingKey="testing", DRBurnAppendableKey="appendable", DRBurnCompletionActionKey="action",
+        DRBurnCompletionActionEject="eject", DRBurnCompletionActionMount="mount",
+        DRStatusStateKey="state", DRStatusPercentCompleteKey="percent", DRStatusStateDone="done",
+        DRStatusStateFailed="failed",
+    )  # fmt: skip
+    monkeypatch.setattr(discrecording, "DR", fake)
+    monkeypatch.setattr(discrecording, "_pump", lambda _s: None)
+    discrecording.DiscRecordingBurner()._run(
+        object(), BurnOptions(eject=eject), {}, [], lambda _t: None
+    )
+    assert seen["action"] == expected

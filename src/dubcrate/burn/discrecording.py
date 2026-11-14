@@ -194,8 +194,13 @@ class DiscRecordingBurner:
             DR.DRBurnAppendableKey: False,
             **extra,
         }
-        if options.eject:
-            props[DR.DRBurnCompletionActionKey] = DR.DRBurnCompletionActionEject
+        # Said either way: DiscRecording ejects when it is not told otherwise, and a burn that is going to
+        # check the disc (`burn_check`) needs it left in the drive.
+        props[DR.DRBurnCompletionActionKey] = (
+            DR.DRBurnCompletionActionEject
+            if options.eject
+            else DR.DRBurnCompletionActionMount
+        )
         burn.setProperties_(props)
         burn.writeLayout_(layout)
 

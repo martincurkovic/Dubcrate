@@ -7,6 +7,8 @@ the disc in the drive (`BurnOptions.eject=False`), asks the drive for the disc's
 
 **This must never turn a good burn into a failure**: every problem is said in the log and carried on
 from, and the disc is ejected whatever happened. A Mac only (`drive_toc.can_read_toc`).
+The DiscRecording burner says so explicitly (`DRBurnCompletionActionMount` instead of eject: it ejects when not told
+otherwise), which also lets macOS mount the audio disc, so **Music may offer to open it** if the system is set to.
 **Not run on a real burn yet**: the first one will say whether gapless discs match the plan.
 """
 
