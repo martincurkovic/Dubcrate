@@ -466,10 +466,10 @@ the writer can leave `W001`/`W002` out.
   the firmware and not on the card seen: the player can copy cues between its internal memory
   and the card, there may be several folders of cues, and `.BAK` may be a backup written
   somewhere. A copy to the card and a second folder were never made.
-- **Firmware version and hardware**: the owner's player's firmware version was **not recorded**;
-  the disassembly was of 2.20 (build 20061021). A different version or a CDJ-1000MK2 may lay the
-  file out differently. Record the player's version (its display shows it on start-up; AGENTS.md's
-  hardware notes are where it belongs) before the next session.
+- **Firmware version and hardware**: **both of the owner's players are on 2.20** (read off the display by
+  holding RELOOP/EXIT for 10 seconds with the player on, 2026-11-14), the version disassembled here (build
+  20061021). Pioneer also lists a **2.30** update that these players do not have; nothing here has been
+  seen on it, and a different version or a CDJ-1000MK2 may lay the file out differently.
 - **Cards**: one 2 GB card, formatted by the player. SDHC and larger sizes, cards formatted
   elsewhere (cdjmerge says the player will not accept them), and a card with other files on it
   were not tried.
