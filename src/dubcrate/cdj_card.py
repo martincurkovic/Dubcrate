@@ -474,7 +474,8 @@ def write_card(
     so an entry never points at a file that was not written (an entry with no file is a state the
     player makes itself). Everything is read back and compared. `create` makes `PIONEER/CDJ` on a
     card that has none: **the player has not been shown a folder made this way**.
-    Only these files in that folder are touched.
+    Only these files in that folder are touched. **The card must still be ejected through the system
+    before it is pulled** (a FAT card pulled early can be left unreadable): the callers say so.
     """
     try:
         folder = card_dir(path)
@@ -491,6 +492,8 @@ def write_card(
     for name, file in files.items():
         _replace(folder / f"{name}.PDJ", file.to_bytes())
     _replace(folder / INDEX_NAME, index.to_bytes())
+    if hasattr(os, "sync"):
+        os.sync()  # (a file's fsync leaves the card's directory and FAT in the cache: flush those too)
 
 
 def _replace(target: Path, data: bytes) -> None:

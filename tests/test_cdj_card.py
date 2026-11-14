@@ -331,3 +331,15 @@ def test_find_cards_keeps_the_volumes_that_hold_a_card_in_order(tmp_path):
     (other / "PIONEER" / "CDJ").mkdir(parents=True)  # (no index: not a card)
     gone = tmp_path / "Unplugged"
     assert cc.find_cards([plain, card, other, gone]) == [card]
+
+
+def test_a_write_asks_the_system_to_flush_the_card_before_it_returns(
+    tmp_path, monkeypatch
+):
+    folder = tmp_path / "PIONEER" / "CDJ"
+    folder.mkdir(parents=True)
+    (folder / cc.INDEX_NAME).write_bytes(cc.IndexFile().to_bytes())
+    flushed = []
+    monkeypatch.setattr(cc.os, "sync", lambda: flushed.append(1), raising=False)
+    cc.write_card(tmp_path, cc.IndexFile(), {})
+    assert flushed == [1]

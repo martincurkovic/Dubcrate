@@ -52,7 +52,9 @@ from dubcrate.burn import (
     default_backend,
     get_burner,
 )
+from dubcrate.burn_check import check_burn
 from dubcrate.cd import SECTORS_PER_SECOND, format_clock
+from dubcrate.drive_toc import can_read_toc
 from dubcrate.export import ExportError, ExportResult, export_plan
 from dubcrate.library import Library
 from dubcrate.library.levels import measure_loudness, needs_loudness, store_loudness
@@ -489,8 +491,14 @@ class BurnDialog(QDialog):
         media = self._media
         speed = self.speed_combo.currentData()
         simulate = self.simulate_check.isChecked()
+        # an audio burn keeps the disc in the drive so its table of contents can be checked against the
+        # plan (burn_check), and ejects it itself afterwards
+        check = not simulate and plan.kind != "mp3" and can_read_toc()
         options = BurnOptions(
-            speed=speed, simulate=simulate, pregap_sectors=plan.pregap_sectors
+            speed=speed,
+            simulate=simulate,
+            pregap_sectors=plan.pregap_sectors,
+            eject=not check,
         )
         self.log.clear()
         self._append(
@@ -529,6 +537,12 @@ class BurnDialog(QDialog):
                     burner.burn_data(rendered.disc, options, say)
                 else:
                     burner.burn(rendered.disc, options, say)
+                    if check:  # (never raises: a good burn stays a good burn)
+                        check_burn(
+                            [t.sectors for t in rendered.disc.tracks],
+                            plan.pregap_sectors,
+                            say,
+                        )
             return rendered.lengths
 
         run_async(

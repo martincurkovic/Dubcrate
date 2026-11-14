@@ -255,7 +255,10 @@ def test_a_search_hides_the_discs_that_do_not_match_and_the_folders_that_empty(
     assert not any(i.isHidden() for i in cue_view._walk())
 
 
-def test_the_sync_button_is_there_but_off_and_says_why(cue_view, lib, tmp_path):
+def test_with_the_switch_off_the_sync_button_is_off_and_says_why(
+    cue_view, lib, tmp_path, monkeypatch
+):
+    monkeypatch.setattr(sync_view, "WRITING_ENABLED", False)
     add_disc(lib, "A")
     cue_view.cues["A-0"] = [Cue("memory", 5.0)]
     card = card_folder(tmp_path)
@@ -272,6 +275,12 @@ def test_the_sync_button_is_there_but_off_and_says_why(cue_view, lib, tmp_path):
         p.name: p.read_bytes() for p in (card / "PIONEER" / "CDJ").iterdir()
     } == before
     assert not (tmp_path / "bk").exists()
+
+
+def test_the_switch_is_on(cue_view, lib, tmp_path):
+    assert (
+        sync_view.WRITING_ENABLED is True
+    )  # (the player showed the cues of a file we wrote)
 
 
 # -- writing (with the switch on) -------------------------------------------------------------------
@@ -565,6 +574,113 @@ def test_clicking_the_tab_you_are_on_brings_its_middle_pane_back_from_an_open_di
     assert win.center.currentIndex() == 1
     win.source_tabs._buttons["library"].click()  # (the same for the tabs that scroll)
     assert win.center.currentIndex() == 0
+    win.close()
+    win.deleteLater()
+    lib.close()
+
+
+# -- ejecting the card after a sync ------------------------------------------------------------
+
+
+@pytest.fixture
+def ejecting(writing, monkeypatch):
+    """The writing rig with a card that can be ejected, and the eject stood in for."""
+    from types import SimpleNamespace
+
+    writing.view._can_eject = lambda _path: True
+    writing.view._update_buttons()
+    ejected, gone = [], []
+    monkeypatch.setattr(sync_view, "eject_card", lambda path: ejected.append(path))
+    writing.view.card_ejected.connect(lambda: gone.append(1))
+    return SimpleNamespace(**vars(writing), ejected=ejected, gone=gone)
+
+
+def test_ejecting_after_syncing_is_on_by_default_and_remembered(qapp, lib):
+    from dubcrate import settings
+
+    assert SyncView(lib).eject_check.isChecked()
+    settings.set_sync_eject(False)
+    view = SyncView(lib)
+    assert not view.eject_check.isChecked()
+    view.eject_check.setChecked(True)
+    assert settings.get_sync_eject() is True
+
+
+def test_a_folder_that_is_not_a_plugged_in_card_cannot_be_ejected(writing):
+    view = writing.view  # (no `can_eject`: as for a folder chosen by hand)
+    assert not view.eject_check.isEnabled()
+    assert "not a folder you chose" in view.eject_check.toolTip()
+
+
+def test_a_card_that_is_plugged_in_can_be_ejected(ejecting):
+    assert ejecting.view.eject_check.isEnabled()
+
+
+def test_the_question_says_the_card_will_be_ejected(ejecting):
+    ejecting.view.sync_button.click()
+    assert "will be ejected afterwards" in ejecting.asked[0]
+    assert ejecting.finished()
+
+
+def test_after_writing_the_card_is_ejected_and_the_view_says_it_is_safe_to_take_out(
+    ejecting,
+):
+    ejecting.view.sync_button.click()
+    assert ejecting.finished()
+    assert ejecting.ejected == [ejecting.card]
+    assert ejecting.gone == [1]
+    assert "Ejected “CARD”: it is safe to take out." in ejecting.said[-1]
+    assert not ejecting.view._writing
+
+
+def test_the_buttons_stay_off_until_the_eject_has_finished(ejecting):
+    ejecting.view.sync_button.click()
+    assert not ejecting.view.sync_button.isEnabled()
+    assert not ejecting.view.eject_check.isEnabled()
+    assert ejecting.finished()
+
+
+def test_an_eject_that_fails_says_to_eject_by_hand_and_the_card_is_read_again(
+    ejecting, monkeypatch
+):
+    from dubcrate.eject import EjectError
+
+    def busy(_path):
+        raise EjectError("The system couldn't eject “CARD”: disk is busy")
+
+    monkeypatch.setattr(sync_view, "eject_card", busy)
+    ejecting.view.sync_button.click()
+    assert ejecting.finished()
+    assert "disk is busy" in ejecting.said[-1]
+    assert "Eject it in Finder before taking it out." in ejecting.said[-1]
+    assert ejecting.gone == []
+    assert wait_until(ejecting.view, lambda: shown(ejecting.view)[0][1] == "In sync")
+
+
+def test_with_eject_unticked_the_card_is_not_ejected_and_the_view_says_to_do_it(
+    ejecting,
+):
+    ejecting.view.eject_check.setChecked(False)
+    ejecting.view.sync_button.click()
+    assert ejecting.finished()
+    assert ejecting.ejected == [] and ejecting.gone == []
+    assert "Eject the card before taking it out." in ejecting.said[-1]
+    assert "will be ejected" not in ejecting.asked[0]
+
+
+def test_the_main_window_lets_go_of_a_card_that_was_ejected(
+    qapp, tmp_path, monkeypatch
+):
+    card = card_folder(tmp_path)
+    here = [card]
+    monkeypatch.setattr(sync_view, "mounted_volumes", lambda: here)
+    lib = Library.open(":memory:")
+    win = MainWindow(lib)
+    win.source_tabs.set_current("sync")
+    assert win.card_panel.is_volume(card) and win.sync_view._card_path == card
+    here.clear()  # (the system has ejected it)
+    win.sync_view.card_ejected.emit()
+    assert win.card_panel.current_card() is None and win.sync_view._card_path is None
     win.close()
     win.deleteLater()
     lib.close()

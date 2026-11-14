@@ -240,6 +240,10 @@ CD 1 is 12 tracks, CD 2 is 12 tracks, CD 3 is 20.
 | `08-loop-track1-approx40-42sec` | + a loop, by ear, about 40 to 42 s, track 1 | loop = a `CN11` entry, kind `0x20` |
 | `09-second-cd-nothing-set` | CD 2 loaded, nothing set | an index entry, no file |
 | `10-third-cd-20-tracks` | CD 3 loaded (and, **[inferred]** from the files, track 1 of CD 2 and 3 played) | files for 2 and 3; 20-track ID |
+| `t4` (no image: **`dubcrate card sync 4 --card /Volumes/DISK_IMG --from-drive --yes`** run by the owner, 2026-11-14, on a **second card** (see below) the player had set up with CD 1) | **the whole path, by our own command**: a throwaway Dubcrate audio disc of 20 tracks (rekordbox cues, 81 of them) synced to a commercial 20-track CD in the Mac's drive, whose real TOC `--from-drive` read; a new index entry and a new file, written after a backup, flushed, then ejected | **accepted: all 81 cues showed** on the player. The files copied back off the card (`~/cdj-card/t4-post-cdj`): our index entry unchanged (72 bytes, two discs), `CDJ00002.PDJ` rewritten by the player from our file to 4,006 bytes: **all 81 cues kept** in our order, hot cues empty (as intended), and waveform records for the three tracks played (1, 2 and 20; the slots between are empty, track 0), so slots are indeed made **up to the highest track played**. Our parser round-trips the player's file byte for byte |
+| `t3-new-disc` (same tooling and day; `CD4 TOC.txt` is the `drutil toc` of a fourth audio CD the card had never seen) | **a disc not in the index at all**: we added its index entry **and** its file (memory cues at 20 s in track 1 and 45.5 s in track 2, a loop 50 to 52 s in track 1), on top of the three-disc image `10-third-cd-20-tracks` | **accepted** (owner, on the player): the cue at 20 s and the loop in track 1, and the cue in track 2 at "45 s 37 frames" (45.5 s is 45 s and 37.5 frames). The files copied back off the card (`~/cdj-card/t3-post-cdj`): the index (120 bytes) and CD 1 to 3's files are **byte for byte the image's**, so the player left our new index entry alone; `CDJ00004.PDJ` grew from 206 to 430 bytes by **one `W001` and one `W002` record for each of the two tracks played** (tracks 1 and 2), our three cues unchanged |
+| `t2-cd2-file-from-scratch` (same tooling and day) | **a file made from nothing** for CD 2, which had an index entry and no file: three memory cues (15 s in track 1, 20 s in track 2, 30 s in track 12), **no waveform records** | **accepted**: the three cues were where expected. The files copied back off the card (`~/cdj-card/t2-post-cdj`): our three cues and the index are **kept exactly**, but the player **rewrote `CDJ00002.PDJ` from 206 to 1,550 bytes**: it added **12 `W001` and 12 `W002` records**: slots for every track **up to the highest one played** (an unplayed slot has track 0 and no data), filled for the tracks that were played (track 1, 38 of 50 columns; track 12, 3 columns, after jumping to its cue). In `t3` only tracks 1 and 2 were played, and only two records of each kind were added, which fits (**[inferred]** from these two, not tested on its own). `cdj_card` parses the player's file and writes it back **byte for byte** |
+| `t1-cues-swapped-cd1` (written by `spikes/cdj_card_testimage.py`, put on the card with `cdj_card_restore.sh`; 2026-11-14, firmware 2.20) | **our writer's file**: CD 1's cues replaced (memory cues at 20 s and 30 s in track 1, 45 s in track 2, 10 s in track 3, a loop 50 to 52 s); hot cues A, B and the waveforms kept | **accepted**: the owner loaded CD 1 and the new cues and the loop were there, no card error. The files copied back off the card afterwards (`~/cdj-card/t1-post-cdj`) are **byte for byte what was written**: the player rewrote nothing, though a track was played (its waveform already existed) |
 
 ### Files and chunks
 
@@ -317,6 +321,10 @@ firmware's `TEXT_WAVE_MODE` suggests this is the waveform the display shows **[i
 ### When the player writes what
 
 - **Loading a disc** adds its entry to the index (disc 2 of `09`: an entry, **no file**).
+- **A file we write with cues only is taken and then grown** (`t2`, `t3`): the player keeps the cues and the order,
+  and rewrites the file with `W001` and `W002` records for the tracks played: slots up to the highest track
+  played (12 of each after a jump to track 12, track 0 in a slot not played), or just the two tracks played in `t3`. So a file written by Dubcrate does not stay the file Dubcrate wrote; merging
+  must (and does) keep every record it finds.
 - A disc's **file is created once a waveform record is first recorded** (played long enough);
   until then the disc has no file. A file with no cues has `CN11` with length 0 and no count.
 - **Cues, loops and hot cues** are appended to the file as they are set. Not seen: a file
@@ -324,6 +332,21 @@ firmware's `TEXT_WAVE_MODE` suggests this is the waveform the display shows **[i
 - **BPM is not on the card**: the chunks are only `INFO`, `DID `, `CN11`, `HC11`, `W001`, `W002`,
   `CSUM`, every byte of them is accounted for, and tracks played at length (so the BPM counter
   had run) added nothing but waveform. The firmware's tag table has no BPM chunk either.
+
+### The first card stopped being detected (unexplained)
+
+After the first `card sync --yes` onto the owner's original 2 GB card (the one every image above came from), **neither CDJ registered the card at all** (no card error: no card), though it mounted and read fine on the Mac
+(`diskutil verifyVolume`: clean, exit 0; the files and the 144-byte, five-entry index were well formed). A full
+restore of `t3-new-disc` onto it (the image the player had read an hour before) and a format on the Mac did
+not bring it back. A **second card, the same brand and size**, was registered at once, was started off by the
+player (CD 1 in its index) and then took the same write and showed every cue.
+
+Not explained. Suspects, none shown: the card or its adapter wore out or was damaged (a full-size SD card pulled
+mid-write can be left with a bad flash controller that a Mac still reads); the first write was done **before
+`write_card` flushed the card** (`os.sync()`, added after) and the owner may have pulled the card without
+ejecting it (not confirmed). The second write was flushed and ejected properly. **Rule since: eject the card
+through the system before pulling it**; the command and the tab say so. If a second card ever stops being
+detected after one of our writes, stop and treat the write as the cause.
 
 ## The code
 
@@ -347,8 +370,16 @@ Roughly in the order I would do them. Each row is a gap, why it matters, and the
 
 ### 1. Does the player accept a file we write? (the one that matters)
 
-Everything above is reading. Until a CDJ loads cues from a file written by `cdj_card.py`, the
-writer is a hypothesis that happens to reproduce the player's bytes.
+**(c) is answered too, 2026-11-14: yes** (`t3`: a fourth disc, new to the card, given an index entry and a file by our writer: its cues and loop showed at the right places). **(b) is answered too, 2026-11-14: yes** (`t2`: a disc with an index entry and no file, given a cues-only file with
+no waveform: the cues showed, and the player then grew the file to hold waveform slots for every track and kept
+our cues as they were; see the table). Still open: **(d) a disc Dubcrate burned** (which also checks `toc_from_lengths`): the burn window now checks it by itself (`burn_check.py`: it reads the burned disc's TOC and says in the log whether it matches the plan), so the next real audio burn on a Mac answers it. The whole path run by `dubcrate card sync` itself was done (`t4`). **(a) is answered, 2026-11-14 (firmware 2.20): yes.** A CDJ-1000MK3 loaded `CDJ00001.PDJ` as written by
+`cdj_card.py` with its cues replaced: every memory cue and the loop showed, there was no `CARD ERROR` or
+`UNFORMAT`, and the file was left byte for byte as written. (The image's files were macOS-dated and had macOS's
+`._` sidecar files beside them, and the player ignored all that, so that confound is out for (a).) (b), (c) and
+(d) below are still open. Until (b) and (d) are answered too, "a CDJ loads our files" is shown for an existing
+file only.
+
+Everything before 2026-11-14 was reading: the writer was a hypothesis that happens to reproduce the player's bytes.
 
 - **Test, least risky first**, always on a *copy* of an image, written back to the card with
   `dd` (so the card only ever sees exact bytes and no Spotlight files; writing into the image file

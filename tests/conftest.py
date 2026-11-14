@@ -185,6 +185,14 @@ def _no_real_printer(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _no_real_burn_check(monkeypatch):
+    """A burn must not ask a real drive for its disc's table of contents or open its tray: the check
+    is off by default (a test that wants it patches burn_dialog.can_read_toc and check_burn)."""
+    monkeypatch.setattr("dubcrate.ui.burn_dialog.can_read_toc", lambda: False)
+    monkeypatch.setattr("dubcrate.ui.burn_dialog.check_burn", lambda *a, **k: None)
+
+
+@pytest.fixture(autouse=True)
 def _no_real_card_search(monkeypatch):
     """No test may look at the real drives for a CDJ card or open the card folder chooser."""
 
@@ -200,6 +208,10 @@ def _no_real_card_search(monkeypatch):
             "a test opened a sync question or warning; patch sync_view.ask_sync_confirmation / show_problem"
         )
 
+    def refuse_eject(*_a, **_k):
+        raise AssertionError("a test ejected a card; patch sync_view.eject_card")
+
+    monkeypatch.setattr("dubcrate.ui.sync_view.eject_card", refuse_eject)
     monkeypatch.setattr("dubcrate.ui.sync_view.ask_sync_confirmation", refuse_write)
     monkeypatch.setattr("dubcrate.ui.sync_view.show_problem", refuse_write)
     monkeypatch.setattr("dubcrate.ui.sync_view.mounted_volumes", list)

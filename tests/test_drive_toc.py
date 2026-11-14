@@ -49,12 +49,12 @@ def test_no_disc_says_what_drutil_said(on_a_mac):
         return finished("", "drutil: Please insert a disc.", code=1)
 
     with pytest.raises(DriveTocError, match="no readable disc.*Please insert a disc"):
-        read_drive_toc(run)
+        read_drive_toc(run, sleep=lambda _s: None)
 
 
 def test_no_output_at_all_is_still_a_plain_message(on_a_mac):
     with pytest.raises(DriveTocError, match="drutil printed nothing"):
-        read_drive_toc(lambda *a, **kw: finished())
+        read_drive_toc(lambda *a, **kw: finished(), sleep=lambda _s: None)
 
 
 def test_a_disc_that_is_not_plain_audio_is_refused(on_a_mac):
@@ -86,3 +86,46 @@ def test_other_systems_say_it_is_not_done_and_run_nothing(monkeypatch):
 
     with pytest.raises(DriveTocError, match="only done on a Mac"):
         read_drive_toc(run)
+
+
+def test_a_drive_that_prints_only_its_own_name_is_reported_as_having_no_disc(on_a_mac):
+    header = " Vendor   Product           Rev \n slimtype eSAU108   3       HL09\n"  # (seen, with no disc)
+    with pytest.raises(
+        DriveTocError, match=r"no readable disc.*the drive reported no disc"
+    ):
+        read_drive_toc(lambda *a, **kw: finished(header), sleep=lambda _s: None)
+
+
+def test_a_read_that_finds_no_disc_is_tried_again_and_a_later_answer_is_used(on_a_mac):
+    answers = [
+        finished("", "No media, please insert a CD to read its TOC/ATIP."),
+        finished(saved()),
+    ]
+    slept = []
+    result = read_drive_toc(lambda *a, **kw: answers.pop(0), sleep=slept.append)
+    assert result == cc.toc_from_drutil(saved()) and slept == [drive_toc.RETRY_SECONDS]
+
+
+def test_a_drive_that_keeps_saying_no_media_gives_up_after_a_few_tries(on_a_mac):
+    calls = []
+
+    def empty(*a, **kw):
+        calls.append(1)
+        return finished("", "No media, please insert a CD to read its TOC/ATIP.")
+
+    with pytest.raises(DriveTocError, match="No media, please insert a CD"):
+        read_drive_toc(empty, sleep=lambda _s: None)
+    assert len(calls) == drive_toc.ATTEMPTS
+
+
+def test_a_disc_that_is_not_audio_is_refused_at_once_not_tried_again(on_a_mac):
+    calls = []
+    data_disc = saved().replace("2ch audio", "data", 1)
+
+    def data(*a, **kw):
+        calls.append(1)
+        return finished(data_disc)
+
+    with pytest.raises(DriveTocError, match="isn't a plain audio CD"):
+        read_drive_toc(data, sleep=lambda _s: None)
+    assert calls == [1]

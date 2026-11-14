@@ -158,6 +158,60 @@ def test_the_default_speed_is_10x(make_dialog):
 # -- burning ------------------------------------------------------------------
 
 
+def test_by_default_a_burn_ejects_the_disc_itself_and_checks_nothing(
+    make_dialog, wait_for
+):
+    dialog, burner = make_dialog()
+    burn(dialog, wait_for)
+    [(_disc, options)] = burner.burned
+    assert options.eject is True
+
+
+def test_with_a_readable_drive_an_audio_burn_keeps_the_disc_in_and_checks_its_toc(
+    make_dialog, wait_for, monkeypatch
+):
+    checks = []
+    monkeypatch.setattr("dubcrate.ui.burn_dialog.can_read_toc", lambda: True)
+    monkeypatch.setattr(
+        "dubcrate.ui.burn_dialog.check_burn",
+        lambda sectors, gap, say: checks.append((list(sectors), gap)),
+    )
+    dialog, burner = make_dialog()
+    burn(dialog, wait_for)
+    [(_disc, options)] = burner.burned
+    assert options.eject is False  # (the check opens the tray itself)
+    assert checks == [([150, 225], 0)]  # the burned tracks' lengths, and the gap
+
+
+def test_a_test_burn_is_never_checked_and_still_ejects(
+    make_dialog, wait_for, monkeypatch
+):
+    checks = []
+    monkeypatch.setattr("dubcrate.ui.burn_dialog.can_read_toc", lambda: True)
+    monkeypatch.setattr(
+        "dubcrate.ui.burn_dialog.check_burn", lambda *a: checks.append(1)
+    )
+    dialog, burner = make_dialog()
+    dialog.simulate_check.setChecked(True)
+    burn(dialog, wait_for)
+    [(_disc, options)] = burner.burned
+    assert options.simulate and options.eject is True and checks == []
+
+
+def test_a_check_that_says_something_puts_it_in_the_burn_log(
+    make_dialog, wait_for, monkeypatch
+):
+    monkeypatch.setattr("dubcrate.ui.burn_dialog.can_read_toc", lambda: True)
+    monkeypatch.setattr(
+        "dubcrate.ui.burn_dialog.check_burn",
+        lambda sectors, gap, say: say("Checked: as planned."),
+    )
+    dialog, _burner = make_dialog()
+    burn(dialog, wait_for)
+    assert "Checked: as planned." in dialog.log.toPlainText()
+    assert "marked as burned" in dialog.log.toPlainText()
+
+
 def test_a_burn_renders_burns_stores_lengths_and_marks_the_disc_burned(
     lib, disc_id, make_dialog, wait_for
 ):

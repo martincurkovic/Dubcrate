@@ -187,6 +187,16 @@ def set_levels_enabled(on: bool) -> None:
     _qs().setValue("levels/enabled", bool(on))
 
 
+def get_sync_eject() -> bool:
+    """Whether Sync ejects the card when it has written (on unless switched off: a FAT card pulled
+    before it is ejected can be left unreadable)."""
+    return _as_bool(_qs().value("sync/eject", True), True)
+
+
+def set_sync_eject(on: bool) -> None:
+    _qs().setValue("sync/eject", bool(on))
+
+
 def get_levels_choice() -> str:
     """The key of the chosen `loudness.PRESETS` entry (club, -10 LUFS, unless changed). A target saved
     before there were presets (`levels/target`, any LUFS) becomes the nearest preset."""

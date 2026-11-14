@@ -146,6 +146,8 @@ def cmd_sync(lib: Library, args: argparse.Namespace) -> int:
         return 1
     print(
         f"\nwrote {len(outcome.written)} file(s); the card's old files are in {outcome.backup}"
+        "\nEject the card (Finder, or `diskutil eject`) before taking it out: a card pulled early "
+        "can be left unreadable."
     )
     return 0
 

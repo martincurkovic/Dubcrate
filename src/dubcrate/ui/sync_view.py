@@ -19,6 +19,7 @@ from pathlib import Path
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QAbstractItemView,
+    QCheckBox,
     QFileDialog,
     QHBoxLayout,
     QHeaderView,
@@ -36,9 +37,11 @@ from PySide6.QtWidgets import (
 )
 
 from dubcrate import cdj_card as cc
+from dubcrate import settings
 from dubcrate.analysis import Cue
 from dubcrate.card_apply import apply_sync, default_backup_dir
 from dubcrate.card_discs import DiscSurvey, RekordboxCues, survey_discs
+from dubcrate.eject import EjectError, eject_card
 from dubcrate.library import Library
 from dubcrate.library.lengths import needs_measuring, probe_lengths
 from dubcrate.library.models import Track
@@ -51,8 +54,9 @@ from .tasks import TaskError, run_async
 
 log = logging.getLogger(__name__)
 
-# Flip this once the player has loaded a card file we wrote (dev_docs/card-sync.md, Phase 0).
-WRITING_ENABLED = False
+# Off until the player had loaded a card file we wrote; on since 2026-11-14 (dev_docs/card-sync.md,
+# Phase 0: a CDJ-1000MK3, firmware 2.20, showed the cues of files written by `dubcrate card sync`).
+WRITING_ENABLED = True
 WAITING_NOTE = (
     "Waiting on the player test: no card file written by Dubcrate has been loaded by a "
     "CDJ yet. `dubcrate card sync` is the way to try it, on an imaged card."
@@ -88,7 +92,10 @@ def show_problem(parent: QWidget | None, title: str, text: str) -> None:
 
 
 def confirmation_text(
-    surveys: Sequence[DiscSurvey], card_name: str, backup_dir: Path
+    surveys: Sequence[DiscSurvey],
+    card_name: str,
+    backup_dir: Path,
+    eject: bool = False,
 ) -> str:
     """What the question before a write says: each disc and what it adds, what is kept, the backup."""
     cues = sum(s.to_add for s in surveys)
@@ -100,6 +107,8 @@ def confirmation_text(
         f"{added} The cues already on the card, its hot cues and its waveforms are kept.",
         f"The card's files are copied to {backup_dir} first.",
     ]
+    if eject:
+        lines.append("The card will be ejected afterwards, so it is safe to take out.")
     if left_out := sum(len(s.plan.overflow) for s in surveys if s.plan):
         lines.append(
             f"{left_out} cue{'s' if left_out != 1 else ''} won't fit (the player holds "
@@ -126,6 +135,7 @@ class CardPanel(QWidget):
         super().__init__(parent)
         self._volumes = volumes  # None: the drives that are plugged in
         self._chosen: list[Path] = []  # folders picked by hand, kept for the session
+        self._found: list[Path] = []  # the cards plugged in, as last looked for
         layout = QVBoxLayout(self)
         layout.setContentsMargins(12, 12, 12, 12)
         layout.setSpacing(8)
@@ -160,6 +170,10 @@ class CardPanel(QWidget):
             "No card found"
         )  # (the drives are looked at when the tab opens)
 
+    def is_volume(self, path: Path) -> bool:
+        """Whether `path` is a card that is plugged in (and so can be ejected), not a folder chosen by hand."""
+        return path in self._found
+
     def current_card(self) -> Path | None:
         item = self.cards.currentItem()
         return None if item is None else Path(item.data(Qt.ItemDataRole.UserRole))
@@ -169,6 +183,7 @@ class CardPanel(QWidget):
         then), unless `announce` is False and the caller asks `current_card()` itself."""
         before = self.current_card()
         found = cc.find_cards((self._volumes or mounted_volumes)())
+        self._found = found
         shown = [*found, *(p for p in self._chosen if p not in found)]
         self.cards.blockSignals(True)
         self.cards.clear()
@@ -232,16 +247,23 @@ class SyncView(QWidget):
     """The middle: the discs, what a sync would do for each, and the dry run for the one picked."""
 
     message = Signal(str)  # for the status bar
+    card_ejected = (
+        Signal()
+    )  # the card was ejected after a sync: it is gone from the Mac
 
     def __init__(
         self,
         lib: Library,
         parent: QWidget | None = None,
         backup_dir: Path | None = None,
+        can_eject: Callable[[Path], bool] | None = None,
     ):
         super().__init__(parent)
         self._lib = lib
         self._backup_dir = backup_dir or default_backup_dir()
+        self._can_eject = can_eject or (
+            lambda _path: False
+        )  # (a card plugged in, not a folder)
         self._writing = False
         self._card_path: Path | None = None
         self._card: tuple[cc.IndexFile, Mapping[str, cc.TrackFile | None]] | None = None
@@ -315,8 +337,12 @@ class SyncView(QWidget):
         self.measure_button.clicked.connect(self.measure_lengths)
         self.sync_button = QPushButton("Sync")
         self.sync_button.clicked.connect(self._on_sync)
+        self.eject_check = QCheckBox("Eject after syncing")
+        self.eject_check.setChecked(settings.get_sync_eject())
+        self.eject_check.toggled.connect(settings.set_sync_eject)
         foot = QHBoxLayout()
         foot.addLayout(words, 1)
+        foot.addWidget(self.eject_check)
         foot.addWidget(self.measure_button)
         foot.addWidget(self.sync_button)
         layout.addLayout(foot)
@@ -604,16 +630,31 @@ class SyncView(QWidget):
             and not self._writing
         )
         self.sync_button.setToolTip("" if WRITING_ENABLED else WAITING_NOTE)
+        can_eject = (
+            self._card_path is not None
+            and self._can_eject(self._card_path)
+            and not self._writing
+        )
+        self.eject_check.setEnabled(can_eject)
+        self.eject_check.setToolTip(
+            "Eject the card once it is written, so it is safe to take out."
+            if can_eject or self._writing
+            else "Only a card that is plugged in can be ejected, not a folder you chose."
+        )
 
     def _on_sync(self) -> None:
-        """Ask, then plan the card fresh, copy its files aside and write (on a worker)."""
+        """Ask, then plan the card fresh, copy its files aside and write (on a worker); then, if
+        asked, eject the card."""
         card = self._card_path
         if not WRITING_ENABLED or self._writing or card is None or self._card is None:
             return
         surveys = [self._surveys[i] for i in self.ticked_ids()]
         if not surveys:
             return
-        text = confirmation_text(surveys, card.name or str(card), self._backup_dir)
+        eject = self.eject_check.isChecked() and self.eject_check.isEnabled()
+        text = confirmation_text(
+            surveys, card.name or str(card), self._backup_dir, eject
+        )
         if not ask_sync_confirmation(self, text):
             return
         requests = [s.input.request for s in surveys if s.input.request is not None]
@@ -629,15 +670,19 @@ class SyncView(QWidget):
                 raise TaskError(str(exc)) from exc
 
         def done(outcome) -> None:
-            self._writing = False
             if outcome.wrote:
                 n = len(outcome.written)
-                self.message.emit(
+                said = (
                     f"Wrote {n} disc file{'s' if n != 1 else ''} to “{card.name}”; its old files "
-                    f"are copied to {outcome.backup}"
+                    f"are copied to {outcome.backup}."
                 )
             else:
-                self.message.emit("Nothing to write: the card already has these cues.")
+                said = "Nothing to write: the card already has these cues."
+            if eject:
+                self._eject_card(card, said)
+                return
+            self._writing = False
+            self.message.emit(f"{said} Eject the card before taking it out.")
             self.refresh()  # (the card as it is now, so the list says "In sync")
 
         def failed(text: str) -> None:
@@ -650,6 +695,28 @@ class SyncView(QWidget):
                 "written, so the old ones can be put back from there.",
             )
             self.refresh()  # (the card may have changed)
+
+        run_async(work, done, failed)
+
+    def _eject_card(self, card: Path, said: str) -> None:
+        """Eject the card that was just written (on a worker: macOS flushes it first)."""
+        self.subtitle.setText("Ejecting the card…")
+
+        def work() -> None:
+            try:
+                eject_card(card)
+            except EjectError as exc:
+                raise TaskError(str(exc)) from exc
+
+        def done(_result) -> None:
+            self._writing = False
+            self.message.emit(f"{said} Ejected “{card.name}”: it is safe to take out.")
+            self.card_ejected.emit()
+
+        def failed(text: str) -> None:
+            self._writing = False
+            self.message.emit(f"{said} {text} Eject it in Finder before taking it out.")
+            self.refresh()
 
         run_async(work, done, failed)
 
