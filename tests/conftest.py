@@ -185,6 +185,19 @@ def _no_real_printer(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _no_real_card_search(monkeypatch):
+    """No test may look at the real drives for a CDJ card or open the card folder chooser."""
+
+    def refuse(*_a, **_k):
+        raise AssertionError(
+            "a test opened the card folder chooser; patch sync_view.ask_card_folder"
+        )
+
+    monkeypatch.setattr("dubcrate.ui.sync_view.ask_card_folder", refuse)
+    monkeypatch.setattr("dubcrate.ui.sync_view.mounted_volumes", list)
+
+
+@pytest.fixture(autouse=True)
 def _no_real_export_chooser(monkeypatch):
     """No test may open the folder chooser of the burn window's Export: patch burn_dialog.ask_export_folder."""
 

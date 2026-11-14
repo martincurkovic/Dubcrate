@@ -30,7 +30,7 @@ import re
 import shutil
 import struct
 import time
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 
@@ -430,6 +430,18 @@ def card_dir(path: Path) -> Path:
     raise CardFormatError(
         f"No {INDEX_NAME} found at {path}: is this the player's card?"
     )
+
+
+def find_cards(volumes: Iterable[Path]) -> list[Path]:
+    """The volumes that hold a CDJ card (a `PIONEER/CDJ` folder with its index), in the order given."""
+    found = []
+    for volume in volumes:
+        try:
+            card_dir(volume)
+        except (CardFormatError, OSError):
+            continue
+        found.append(volume)
+    return found
 
 
 def read_card(path: Path) -> tuple[IndexFile, dict[str, TrackFile | None]]:

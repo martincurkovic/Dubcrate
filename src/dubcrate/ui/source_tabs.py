@@ -66,6 +66,22 @@ def pinned_glyph(p: QPainter, box: QRectF, colour: QColor) -> None:
     p.drawEllipse(QPointF(box.left() + 13 * u, box.top() + 3.5 * u), 2.2 * u, 2.2 * u)
 
 
+def sd_card_glyph(p: QPainter, box: QRectF, colour: QColor) -> None:
+    """An SD card: a rectangle with a cut corner and a row of contacts."""
+    u = box.width() / 16
+    p.setPen(_pen(colour, 1.5))
+    p.setBrush(Qt.BrushStyle.NoBrush)
+    points = ((3.5, 1.5), (10.5, 1.5), (13, 4), (13, 14.5), (3.5, 14.5))
+    p.drawPolygon(
+        QPolygonF([QPointF(box.left() + x * u, box.top() + y * u) for x, y in points])
+    )
+    for x in (5.5, 7.5, 9.5, 11.5):
+        p.drawLine(
+            QPointF(box.left() + x * u, box.top() + 3.5 * u),
+            QPointF(box.left() + x * u, box.top() + 6.5 * u),
+        )
+
+
 class _TabButton(QAbstractButton):
     drag_moved = Signal(
         QPoint
@@ -220,7 +236,10 @@ class SourceTabBar(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setFixedWidth(TAB_WIDTH + 1)  # (and a line down its right edge)
-        self._buttons: dict[str, _TabButton] = {}
+        self._buttons: dict[str, _TabButton] = {}  # the scrolling tabs, top to bottom
+        self._bottom: dict[
+            str, _TabButton
+        ] = {}  # the tabs fixed below them, always in view
         self._current = ""
         self._group = QButtonGroup(self)
         self._group.setExclusive(True)
@@ -245,7 +264,12 @@ class SourceTabBar(QWidget):
         self._area.setWidget(inner)
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 1, 0)
+        outer.setSpacing(0)
         outer.addWidget(self._area)
+        self._fixed = QVBoxLayout()  # (the bottom tabs: outside the scroll area)
+        self._fixed.setContentsMargins(0, 2, 0, 4)
+        self._fixed.setSpacing(2)
+        outer.addLayout(self._fixed)
         self._hints = _EdgeHints(self._area, self)
         theme.notifier.changed.connect(self.update)
 
@@ -261,17 +285,23 @@ class SourceTabBar(QWidget):
         glyph: Glyph,
         tooltip: str = "",
         movable: bool = False,
+        bottom: bool = False,
     ) -> None:
-        """Add a tab at the bottom. A `movable` tab can be dragged, but only among the movable
-        ones, which stay below the tabs that are not (so those keep their places)."""
-        button = _TabButton(key, text, glyph, movable=movable)
-        if movable:
+        """Add a tab at the bottom of the scrolling ones. A `movable` tab can be dragged, but only
+        among the movable ones, which stay below the tabs that are not (so those keep their
+        places). A `bottom` tab is fixed under all of them and never scrolls away."""
+        button = _TabButton(key, text, glyph, movable=movable and not bottom)
+        if button.movable:
             button.drag_moved.connect(lambda pos, b=button: self._drag_to(b, pos))
             button.drag_finished.connect(self._drag_done)
         button.setToolTip(tooltip or text)
         self._group.addButton(button)
-        self._layout.insertWidget(self._layout.count() - 1, button)
-        self._buttons[key] = button
+        if bottom:
+            self._fixed.addWidget(button)
+            self._bottom[key] = button
+        else:
+            self._layout.insertWidget(self._layout.count() - 1, button)
+            self._buttons[key] = button
         button.toggled.connect(lambda on, k=key: self._picked(k) if on else None)
         button.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         button.customContextMenuRequested.connect(
@@ -279,7 +309,7 @@ class SourceTabBar(QWidget):
                 k, b.mapToGlobal(pos)
             )
         )
-        if len(self._buttons) == 1:
+        if len(self._buttons) + len(self._bottom) == 1:
             button.setChecked(True)
 
     def _movable_keys(self) -> list[str]:
@@ -333,19 +363,25 @@ class SourceTabBar(QWidget):
 
     def remove_tab(self, key: str) -> None:
         """Take a tab away. If it was the picked one, the first tab is picked instead."""
-        button = self._buttons.pop(key, None)
+        button = self._buttons.pop(key, None) or self._bottom.pop(key, None)
         if button is None:
             return
         was_current = self._current == key
         self._group.removeButton(button)
         self._layout.removeWidget(button)
+        self._fixed.removeWidget(button)
         button.hide()
         button.deleteLater()
         if was_current and self._buttons:
             self.set_current(next(iter(self._buttons)))
 
     def keys(self) -> list[str]:
+        """The scrolling tabs, top to bottom."""
         return list(self._buttons)
+
+    def bottom_keys(self) -> list[str]:
+        """The tabs fixed below them."""
+        return list(self._bottom)
 
     def _picked(self, key: str) -> None:
         self._current = key  # (before saying so: a listener asks `current()`)
@@ -359,8 +395,9 @@ class SourceTabBar(QWidget):
         return self._current
 
     def set_current(self, key: str) -> None:
-        if key in self._buttons:
-            self._buttons[key].setChecked(True)  # (emits current_changed if it changed)
+        button = self._buttons.get(key) or self._bottom.get(key)
+        if button is not None:
+            button.setChecked(True)  # (emits current_changed if it changed)
 
     def paintEvent(self, _event) -> None:
         painter = QPainter(self)
@@ -368,3 +405,6 @@ class SourceTabBar(QWidget):
         painter.fillRect(self.rect(), QColor(palette["bg_statusbar"]))
         painter.setPen(QColor(palette["border_list"]))
         painter.drawLine(self.width() - 1, 0, self.width() - 1, self.height())
+        if self._bottom:  # a line between the scrolling tabs and the fixed ones
+            y = self._area.geometry().bottom() + 1
+            painter.drawLine(6, y, self.width() - 8, y)

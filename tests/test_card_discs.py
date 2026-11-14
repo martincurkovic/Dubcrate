@@ -208,3 +208,84 @@ def test_a_track_with_no_rekordbox_twin_has_no_cues_and_rekordbox_is_not_read(li
     cues = card_discs.RekordboxCues(lib, load=lambda _p: pytest.fail("not asked"))
     result = card_discs.prepare_disc(lib, disc_id, cues)
     assert result.request.wanted == [] and result.cue_tracks == 0
+
+
+# -- looking at every disc against a card (the Sync tab's list) -------------------------------------
+
+
+def empty_card():
+    return cc.IndexFile([], 1), {}
+
+
+def survey(lib, disc_id=None, card="empty", cues=None):
+    cues = cues or (lambda _path: {})
+    paths = {d.id: d.name for d in lib.discs()}
+    return card_discs.survey_discs(
+        lib,
+        empty_card() if card == "empty" else card,
+        card_discs.RekordboxCues(lib, load=cues),
+        paths,
+    )
+
+
+def test_no_card_means_no_plan_and_a_status_that_says_to_choose_one(lib):
+    cd2_disc(lib)
+    (found,) = survey(lib, card=None)
+    assert found.plan is None and found.status == "Choose a card" and not found.writable
+
+
+def test_a_disc_with_rekordbox_cues_is_new_on_an_empty_card_with_its_cues_counted(lib):
+    disc_id = cd2_disc(lib, source="rekordbox")
+    entries = lib.disc_entries(disc_id)
+    cues = keyed(entries, {0: [Cue("memory", 15.0), Cue("hot", 40.0, slot=2)]})
+    (found,) = survey(lib, cues=lambda _p: cues)
+    assert found.status == "Not on the card: 2 cues to add"
+    assert found.writable and found.to_add == 2
+    text = "\n".join(found.detail())
+    assert "rekordbox cues found on 1 of 12 tracks" in text
+    assert "+ cue  track 1 at 0:17.00" in text  # 15 s in, after the 2 s lead-in
+
+
+def test_a_disc_whose_cues_are_all_on_the_card_is_in_sync(lib):
+    disc_id = cd2_disc(lib, source="rekordbox")
+    cues = keyed(lib.disc_entries(disc_id), {0: [Cue("memory", 15.0)]})
+    (first,) = survey(lib, cues=lambda _p: cues)
+    plan = card_sync.plan_card(*empty_card(), [first.input.request])
+    card = (plan.index, plan.writes())
+    (again,) = survey(lib, card=card, cues=lambda _p: cues)
+    assert again.status == "In sync" and not again.writable
+
+
+def test_a_disc_with_no_rekordbox_cues_has_nothing_to_write(lib):
+    cd2_disc(lib)
+    (found,) = survey(lib)
+    assert found.status == "No rekordbox cues" and not found.writable
+
+
+def test_a_disc_that_cant_be_synced_says_so_in_the_list_and_why_in_the_detail(lib):
+    disc_id = cd2_disc(lib)
+    first = lib.disc_entries(disc_id)[0].track.id
+    lib._conn.execute("UPDATE track SET cd_sectors = NULL WHERE id = ?", (first,))
+    (found,) = survey(lib)
+    assert found.status == "Can't sync" and found.plan is None
+    assert "can't sync: 1 of 12 tracks have no measured length" in "\n".join(
+        found.detail()
+    )
+
+
+def test_only_audio_discs_with_tracks_are_listed(lib):
+    cd2_disc(lib)
+    make_disc(lib, [1000, 1000, 1000], kind="mp3")
+    lib.create_disc("Empty")
+    assert [f.disc.name for f in survey(lib)] == ["D"]
+
+
+def test_an_unreadable_rekordbox_database_is_said_for_each_disc_not_raised(lib):
+    cd2_disc(lib, source="rekordbox")
+
+    def broken(_path):
+        raise card_discs.RekordboxError("it is locked")
+
+    (found,) = survey(lib, cues=broken)
+    assert found.status == "Can't sync"
+    assert "Couldn't read rekordbox's cues: it is locked" in found.input.problems[0]

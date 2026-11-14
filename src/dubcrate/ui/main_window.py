@@ -68,9 +68,16 @@ from .player_strip import PlayerStrip
 from .preview import PreviewController
 from .settings_dialog import SettingsDialog
 from .shortcuts_dialog import ShortcutsDialog
-from .source_tabs import SourceTabBar, explorer_glyph, library_glyph, pinned_glyph
+from .source_tabs import (
+    SourceTabBar,
+    explorer_glyph,
+    library_glyph,
+    pinned_glyph,
+    sd_card_glyph,
+)
 from .splitter import Splitter
 from .status_bar import AppStatusBar
+from .sync_view import CardPanel, SyncView
 from .tasks import TaskError, run_async
 from .track_table import (
     ROW_HEIGHT,
@@ -198,7 +205,9 @@ class MainWindow(QMainWindow):
             self._save_pins()
             tab = settings.get_left_tab()
             known_tabs = self.source_tabs.keys()
-            if tab != "library" and tab in known_tabs:
+            if (
+                tab not in ("library", "sync") and tab in known_tabs
+            ):  # (Sync reads a card: not at start-up)
                 self.source_tabs.set_current(tab)
 
     # -- layout -----------------------------------------------------------
@@ -242,12 +251,22 @@ class MainWindow(QMainWindow):
         self.explorer_tree.unpin_requested.connect(self.unpin_folder)
         self.explorer_tree.refresh_requested.connect(self._on_refresh_folder)
 
+        # Sync: the CDJ's card on the left, the discs and what a sync would do in the middle
+        self.card_panel = CardPanel()
+        self.sync_view = SyncView(self._lib)
+        self.card_panel.card_changed.connect(self.sync_view.set_card)
+        self.sync_view.message.connect(
+            lambda text: self.statusBar().showMessage(text, 8000)
+        )
+
         self.source_pages = QStackedWidget()
         self.source_pages.addWidget(library_page)
         self.source_pages.addWidget(explorer_page)
+        self.source_pages.addWidget(self.card_panel)
         self._left_pages: dict[str, QWidget] = {
             "library": library_page,
             "explorer": explorer_page,
+            "sync": self.card_panel,
         }
         self.source_tabs = SourceTabBar()
         self.source_tabs.add_tab(
@@ -261,6 +280,13 @@ class MainWindow(QMainWindow):
             "Explorer",
             explorer_glyph,
             "Browse folders on this Mac, or a drive, without importing them",
+        )
+        self.source_tabs.add_tab(
+            "sync",
+            "Sync",
+            sd_card_glyph,
+            "Put your discs' rekordbox cues on the CDJ's SD card",
+            bottom=True,
         )
         self.source_tabs.current_changed.connect(self._on_left_tab)
         self.source_tabs.context_menu_requested.connect(self._on_tab_menu)
@@ -406,6 +432,7 @@ class MainWindow(QMainWindow):
         self.center = QStackedWidget()  # the library's tracks, or the open disc
         self.center.addWidget(middle)
         self.center.addWidget(self.disc_view)
+        self.center.addWidget(self.sync_view)
 
         # your discs: burn playlists, filed in folders. Click one to open it in the middle;
         # drag tracks onto one to add them; drag discs and folders about to file them.
@@ -832,6 +859,13 @@ class MainWindow(QMainWindow):
         self.source_pages.setCurrentWidget(self._left_pages[key])
         if self._persist:
             settings.set_left_tab(key)
+        if key == "sync":
+            self.card_panel.refresh(
+                announce=False
+            )  # (a card may have been plugged in since)
+            self.center.setCurrentWidget(self.sync_view)
+            self.sync_view.set_card(self.card_panel.current_card())
+            return
         if key == "library":
             current = self.tree.currentIndex()
             if current.isValid():

@@ -19,11 +19,11 @@ from pathlib import Path
 
 from dubcrate import cdj_card as cc
 from dubcrate.analysis import Cue
-from dubcrate.card_report import msf
-from dubcrate.card_sync import DiscRequest, map_cues
+from dubcrate.card_report import describe_plan, msf
+from dubcrate.card_sync import DiscPlan, DiscRequest, Status, map_cues, plan_card
 from dubcrate.library import Library
-from dubcrate.library.models import DiscEntry, Track
-from dubcrate.library.rekordbox import read_cues
+from dubcrate.library.models import DiscEntry, DiscSummary, Track
+from dubcrate.library.rekordbox import RekordboxError, read_cues
 
 
 @dataclass
@@ -172,3 +172,89 @@ def prepare_disc(
             "This disc isn't marked as burned. The card entry matches the disc as planned now."
         )
     return result
+
+
+@dataclass
+class DiscSurvey:
+    """One audio disc looked at against a card: what could be synced, and what that would do.
+
+    `plan` is for this disc alone, on the card as it is (a sync of several discs plans them one
+    after the other); None when the disc can't be synced or there is no card to compare with.
+    """
+
+    disc: DiscSummary
+    path: str  # "Folder / Disc", as the label window names it
+    input: DiscInput
+    plan: DiscPlan | None
+
+    @property
+    def to_add(self) -> int:
+        return len(self.plan.added) if self.plan else 0
+
+    @property
+    def writable(self) -> bool:
+        """Whether a sync would write something for this disc."""
+        return self.plan is not None and self.plan.status in (
+            Status.NEW_DISC,
+            Status.NEW_FILE,
+            Status.UPDATE,
+        )
+
+    @property
+    def status(self) -> str:
+        """A short line for a list; `detail` has all of it."""
+        if self.input.problems:
+            return "Can't sync"
+        if self.plan is None:
+            return "Choose a card"
+        n = f"{self.to_add} cue{'s' if self.to_add != 1 else ''} to add"
+        match self.plan.status:
+            case Status.NEW_DISC:
+                return f"Not on the card: {n}"
+            case Status.NEW_FILE:
+                return f"On the card, no file yet: {n}"
+            case Status.UPDATE:
+                return n
+            case Status.IN_SYNC:
+                return "In sync"
+            case _:
+                return "No rekordbox cues"
+
+    def detail(self, tracks: int | None = None) -> list[str]:
+        """The dry run in words: why it can't be synced, warnings, and what would be added."""
+        count = tracks if tracks is not None else self.disc.track_count
+        out = [self.path]
+        out += [f"  can't sync: {p}" for p in self.input.problems]
+        out += [f"  warning: {w}" for w in self.input.warnings]
+        if not self.input.problems:
+            out.append(
+                f"  rekordbox cues found on {self.input.cue_tracks} of {count} tracks"
+            )
+        if self.plan is not None:
+            out += describe_plan(self.plan)
+        return out
+
+
+def survey_discs(
+    lib: Library,
+    card: tuple[cc.IndexFile, Mapping[str, cc.TrackFile | None]] | None,
+    cues: RekordboxCues,
+    paths: Mapping[int, str],
+) -> list[DiscSurvey]:
+    """Every audio disc with a track, looked at against `card` (as `cdj_card.read_card` gives it;
+    None: no card yet, so no plan). `paths` names each disc with its folders."""
+    surveys = []
+    for disc in lib.discs():
+        if disc.kind != "audio" or disc.track_count == 0:
+            continue  # (only Dubcrate's own audio discs are synced)
+        try:
+            found = prepare_disc(lib, disc.id, cues)
+        except RekordboxError as exc:
+            found = DiscInput(
+                disc.id, disc.name, problems=[f"Couldn't read rekordbox's cues: {exc}"]
+            )
+        plan = None
+        if card is not None and found.request is not None:
+            plan = plan_card(card[0], card[1], [found.request]).discs[0]
+        surveys.append(DiscSurvey(disc, paths.get(disc.id, disc.name), found, plan))
+    return surveys

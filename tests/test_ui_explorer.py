@@ -809,7 +809,7 @@ def test_pinning_a_folder_adds_a_tab_and_leaves_you_where_you_are(window, wait_f
     assert win.source_pages.currentIndex() == 0
     assert "Pinned" in win.statusBar().currentMessage()
     win.source_tabs.set_current(key)  # (opening it shows the folder)
-    assert win.source_pages.currentIndex() == 2
+    assert win.source_pages.currentWidget() is win._left_pages[key]
     assert wait_for(lambda: titles(win) == ["a", "b", "c"]), titles(win)
     assert win.tracks_title.text() == "dub"
 
@@ -900,7 +900,9 @@ def test_unpinning_removes_the_tab_and_goes_back_to_the_library(window):
         "pin:" + str(music / "dub"),
     ]
     assert win.source_tabs.current() == "library"
-    assert win.source_pages.count() == 3 and win._pins == [str(music / "dub")]
+    assert win.source_pages.count() == 4 and win._pins == [
+        str(music / "dub")
+    ]  # (and Sync's)
     assert (music / "house" / "x.mp3").exists()  # (the folder is left alone)
     win.unpin_folder(str(music / "house"))  # (already gone: nothing happens)
 

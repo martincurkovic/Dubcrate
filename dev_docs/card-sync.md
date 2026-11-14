@@ -12,7 +12,7 @@ audio CD in the drive, macOS), and the Phase 0 tooling
 (`spikes/cdj_card_testimage.py`, `cdj_card_restore.sh`, with two test images made). No file written by
 any of it has been loaded by a player.
 
-## Handover (end of 2026-11-13: read this first)
+## Handover (end of 2026-11-13, with 2026-11-14's additions: read this first)
 
 **State.** Committed by the owner: the card format and its reader/writer (`cdj_card.py`), the cue mapping,
 merge and plan (`card_sync.py`), the library glue (`card_discs.py`), reports (`card_report.py`), the command line
@@ -49,10 +49,14 @@ TOC), `dubcrate card sync DISC --from-drive` (one disc: the ID and cue positions
 measured lengths needed, and it warns if the disc differs from the plan), and `card_discs.toc_differences`;
 (4) rekordbox's **database** cues are now drawn in the preview's overview and zoomed waveform and in the track
 list's Preview column (`ui/cue_cache.py`: the database is read once on a worker and again when `master.db` or
-its `-wal` changes in size or date; a failure is one status message and the track plays on). **Still to do**, best first: (2) the Sync tab (the pinned bottom tab
-in `ui/source_tabs.py`, a middle pane, status per disc from `card_sync.Status`, a dry-run list and a
-confirmation before writing, offscreen renders in all three looks, then `manual.md` and screenshots); (3) the
-waveform scale: Ghidra and `openjdk@25` are installed by Homebrew (`analyzeHeadless` is not on `PATH`: look in
+its `-wal` changes in size or date; a failure is one status message and the track plays on). (5) **the Sync tab, read-only** (`ui/sync_view.py`, a fixed
+bottom tab laid out after rbxport's Sync Manager, the owner's reference): the card panel (a card is found by
+its `PIONEER/CDJ` folder when the tab opens or on Refresh, or a folder is chosen by hand), the audio discs in
+their folders with a status each (`card_discs.survey_discs`) and the dry run for the one picked, tick boxes,
+Measure Lengths, and a **Sync button that is off** (`sync_view.WRITING_ENABLED = False`: flip it only after the
+write test passes on the player). **Still to do**, best first: finish the tab (a backup, the confirmation and
+the write behind that button, the read-back and eject, the guide's section and screenshots, and `Measure
+Lengths` and the list tried against a real card); (3) the waveform scale: Ghidra and `openjdk@25` are installed by Homebrew (`analyzeHeadless` is not on `PATH`: look in
 the Caskroom) and the firmware is still `~/Downloads/CDJ1000MK3_061023.EXE`, the `/tmp` extraction is gone
 (`dev_docs/cdj1000mk3-card.md`, "Reproducing the analysis"); or fit it from the card's five waveform records
 against the audio, which needs the owner to copy the tracks.
