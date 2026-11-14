@@ -11,6 +11,8 @@
   experiments, `src/dubcrate/cdj_card.py`, and the gaps and where more testing is indicated.
 - [card-sync.md](card-sync.md): the plan for a Sync tab that writes cues to the CDJ-1000MK3's card: the
   owner's decisions, how a cue is mapped and merged, the hardware checklist and the phases.
+- [wave-test-disc.md](wave-test-disc.md): the disc of test signals that finds the CDJ's waveform scale: how to
+  burn and play it, what each of its 20 tracks answers, and how `wavefit.py` reads the result.
 - [audio.md](audio.md): miniaudio and the preview player, what was measured.
 - [cross-platform.md](cross-platform.md): Linux and Windows support: what is portable, what
   is macOS-only, the decision to use `cdrdao`, and the phased plan. Read before touching

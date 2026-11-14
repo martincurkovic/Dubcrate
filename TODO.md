@@ -23,7 +23,7 @@
   - [ ] Maybe use some real songs, not fake ones
 - [ ] Clean up user facing docs (readme, user guide)
 - [x] SD card waveform, hotcue, memory cue, loop point reverse engineering
-  - [ ] The waveform's 0 to 15 amplitude scale is still unknown (the firmware route found nothing: a disc of known test tones is the plan, dev_docs/cdj1000mk3-card.md)
+  - [ ] The waveform's 0 to 15 amplitude scale is still unknown: burn and play the test disc (made, in ~/cdj-card/wave-test-disc; dev_docs/wave-test-disc.md), then run its `fit`
 - [x] SD card sync metadata tab
   - [ ] Try the Sync tab itself on a real card (the command line is proven on hardware; the tab shares its write)
   - [ ] Waveform pre-writing (needs the amplitude scale)
