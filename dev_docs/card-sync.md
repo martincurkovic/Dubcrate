@@ -7,7 +7,8 @@ disc loads in the player with its rekordbox cues already set. The card format is
 `src/dubcrate/cdj_card.py`. **Status 2026-11-13: Phases 1 and 2's core are built and tested; the Sync tab is not; nothing has been tried
 on a player.** Built: `cdj_card.py` (the format, `write_card`, `backup_card`), `card_sync.py` (cue
 mapping, merge, plan), `card_discs.py` (a Dubcrate disc's TOC and rekordbox cues), `card_report.py`,
-`cli_card.py` (`dubcrate card show | backup | sync`, a dry run unless `--yes`), and the Phase 0 tooling
+`cli_card.py` (`dubcrate card show | backup | toc | sync`, a dry run unless `--yes`), `drive_toc.py` (the TOC of the
+audio CD in the drive, macOS), and the Phase 0 tooling
 (`spikes/cdj_card_testimage.py`, `cdj_card_restore.sh`, with two test images made). No file written by
 any of it has been loaded by a player.
 
@@ -19,33 +20,42 @@ merge and plan (`card_sync.py`), the library glue (`card_discs.py`), reports (`c
 read_cues`), and the spikes. The suite passed (1,438 tests, ruff clean). **Nothing here has been tried on a
 player**, there is **no Sync tab**, and the owner's `TODO.md` is theirs (untouched).
 
-**Waiting on the owner** (they have rekordbox; the agent doesn't):
-1. *Which of rekordbox's cues are which*: for *The Booth*, *Blessings (Original Mix)* and *I Could Be The One
-   (Original Mix)* the database times are in Phase 0 step 3 below. Not answered yet. The mapping `Kind` 0 =
-   memory, 1, 2, 3 = hot A, B, C was read off the library, not documented, and `Kind` 5 (427 tracks, the two
-   loops, often 2 ms from hot C) is not understood. (`cue_from_row` says so.)
-2. *Skip memory cues in the first second of a track?* Most tracks have a `Kind` 0 cue within 0.2 s (the
-   automatic cue point?). The agent's recommendation was to skip them, **after** the answer to 1. Not built.
+**Answered by the owner (2026-11-14)**, both from rekordbox:
+1. *Which cues are which*: on *The Booth*, *Blessings (Original Mix)* and *I Could Be The One (Original Mix)* the
+   owner read hot A, B, C off rekordbox and they match `Kind` 1, 2, 3 to within the owner's "approximately"
+   (Booth's B: database 1:25.8, remembered as 1:28). On Blessings, C and D overlap at 4:25: **`Kind` 5 is hot
+   cue D**. The distribution agrees (`Kind` 1, 2, 3, 5, 6, 7 = 1,048, 1,010, 947, 428, 2, 1 rows; no 4), so
+   `library/rekordbox.py: hot_slot` maps 1, 2, 3 to A, B, C and 5 to 9 to D to H (G and H inferred, never seen);
+   a `Kind` 4 would be kept as a memory cue. The two loops are hot D saved as loops. Hot D is often 2 ms from
+   C on the owner's tracks, so the 2-frame merge folds the pair into one memory cue.
+2. *Skip memory cues in the first second?* **No: keep them all.** They are the track's start, useful when
+   mixing a track in from the beginning on a CDJ. Nothing to build.
 
 **The hardware session (the owner, Phase 0 below)**, in order: note the player's **firmware version**; the write
 test with the two images already in `~/cdj-card/` (`t1-cues-swapped-cd1`, `t2-cd2-file-from-scratch`, each
-made from a copy; `cdj_card_restore.sh` writes one to the card, the owner runs it: it needs `sudo`); `drutil toc`
-of a small Dubcrate burn; copy the audio of CD 1 tracks 1 to 3 and CD 2 and 3 track 1 for the waveform fit.
+made from a copy; `cdj_card_restore.sh` writes one to the card, the owner runs it: it needs `sudo`); with a small
+Dubcrate burn in the drive, `dubcrate card toc DISC` (it says whether the computed TOC is the real one, which
+checks `toc_from_lengths`, and shows the drive's actual output if `drutil` words anything differently); copy the audio of CD 1 tracks 1 to 3 and CD 2 and 3 track 1 for the waveform fit.
 **Until the write test says the player takes our file, treat every `card sync --yes` as an experiment on an
 imaged card, and do not build the tab on the assumption that it does.** After it: image the card
 (`cdj_card_snap.sh 11-after-t1 /dev/diskN`) and `cdj_card_dump.py dump/diff` to see what the player did to
 our file.
 
-**What an agent can do without hardware**, best first: (1) read a disc's TOC from the drive (`drutil toc` through
-`cdj_card.toc_from_drutil`, a mockable subprocess in one macOS-only helper; then `card sync` can use the real
-TOC instead of computing it, which covers a disc edited after its burn); (2) the Sync tab (the pinned bottom tab
+**Done 2026-11-14, without hardware** (none of it tried on a drive): (1) the disc's TOC from the drive:
+`drive_toc.read_drive_toc` (`drutil toc`, macOS only, the runner injectable; it was only ever seen printing an
+audio CD's TOC, so what it prints for no disc, a blank or a data disc is a guess: those are refused with its own
+first line quoted), `dubcrate card toc [DISC]` (prints it, and says whether the disc as planned has the same
+TOC), `dubcrate card sync DISC --from-drive` (one disc: the ID and cue positions come from the real disc, no
+measured lengths needed, and it warns if the disc differs from the plan), and `card_discs.toc_differences`;
+(4) rekordbox's **database** cues are now drawn in the preview's overview and zoomed waveform and in the track
+list's Preview column (`ui/cue_cache.py`: the database is read once on a worker and again when `master.db` or
+its `-wal` changes in size or date; a failure is one status message and the track plays on). **Still to do**, best first: (2) the Sync tab (the pinned bottom tab
 in `ui/source_tabs.py`, a middle pane, status per disc from `card_sync.Status`, a dry-run list and a
 confirmation before writing, offscreen renders in all three looks, then `manual.md` and screenshots); (3) the
 waveform scale: Ghidra and `openjdk@25` are installed by Homebrew (`analyzeHeadless` is not on `PATH`: look in
 the Caskroom) and the firmware is still `~/Downloads/CDJ1000MK3_061023.EXE`, the `/tmp` extraction is gone
 (`dev_docs/cdj1000mk3-card.md`, "Reproducing the analysis"); or fit it from the card's five waveform records
-against the audio, which needs the owner to copy the tracks; (4) make the preview's waveform show the
-**database** cues (it reads the analysis files, so shows none): small, separate, not asked for yet.
+against the audio, which needs the owner to copy the tracks.
 
 **Guesses in the code, each to be checked and none a measurement**: `DUPLICATE_FRAMES = 2`;
 `toc_from_lengths` for a disc with gaps (and `pregap_sectors`' unit: `burning.md`); `IndexFile.next_name`
@@ -101,10 +111,10 @@ disc TOC ──────────────┘                          
 - **Where rekordbox's cues are**: its database (`djmdCue`), not the analysis files (those have none for a
   local library: 4,310 cues over 1,061 of 1,065 tracks in the owner's). Read from a snapshot copy at sync
   time (`library/rekordbox.py: read_cues`), never stored in Dubcrate's library. `Kind` 0 is a memory cue and
-  1, 2, 3 hot cues A, B, C, **read off the owner's library**; `Kind` 5 (on 427 tracks, and the two loops,
-  often 2 ms from hot cue C) is not understood; two cues within 2 frames merge, which absorbs that
-  near-copy. **Open question for the owner**: most tracks have a `Kind` 0 cue within the first 0.2 s (the
-  track's automatic cue point?): wanted as a memory cue on the card, or skipped?
+  1, 2, 3, 5, 6, 7 hot cues A to F (`hot_slot`: **read off the owner's library, confirmed by them on three
+  tracks**; `Kind` 5 is hot D, usually 2 ms from hot C, so the 2-frame merge folds the pair into one cue).
+  The `Kind` 0 cue within the first 0.2 s that most tracks have is **kept**: the owner wants it (a track's
+  start, for mixing in from the beginning).
 - **Only tracks that are in rekordbox give any**: a track from the Explorer or a plain folder has none
   unless it is the same file as a rekordbox track (`Library.rekordbox_twin`).
 
@@ -156,11 +166,11 @@ Two different discs with the same track lengths share an ID and so their cues.
 | Piece | Where | Needs |
 |---|---|---|
 | Card files, disc ID | `src/dubcrate/cdj_card.py` | **done** (read, write, round trip) |
-| rekordbox cues to card entries, merge, plan | `src/dubcrate/card_sync.py` (**done**, pure, no Qt; 24 tests on the real card files) | the `Kind` meanings confirmed by the owner (see below) |
+| rekordbox cues to card entries, merge, plan | `src/dubcrate/card_sync.py` (**done**, pure, no Qt; 24 tests on the real card files) | nothing (the `Kind` meanings were confirmed by the owner, 2026-11-14) |
 | Backup, write, verify, eject | same, with a thin I/O layer | the write test |
 | Command line | `dubcrate card show / backup / sync DISC... --card PATH [--dry-run] [--yes]` | the above |
 | Sync tab | `ui/`: a tab **pinned at the bottom** of `source_tabs.py`'s strip (it has Library, Explorer and pins now, all added "at the bottom": a fixed bottom group needs a small change), a middle pane with the discs and the card | the above |
-| TOC from the drive | the burn backends (`media_info` already asks the drive about its disc) | `drutil toc` equivalent in DiscRecording |
+| TOC from the drive | `src/dubcrate/drive_toc.py` (**done**: `drutil toc`, macOS; `card toc [DISC]`, `card sync DISC --from-drive`) | a disc in the drive to try it on |
 
 The tab: a card picker (mounted volumes that look like a card), then the Dubcrate audio discs with a
 tick box, track count, **cues found in rekordbox**, and a status per disc: not on the card, on the
@@ -256,7 +266,7 @@ track plays (cdj1000mk3-card.md). Writing needs what a column means and the scal
 
 1. **The player may not accept a written file.** Phase 0 step 2 decides it; everything is on
    hold until then. A rejected card is reformatted in the player and restored from images.
-2. **The cue kinds are read off one library, not documented** (see Phase 0 step 3), and so is whether a cue's time lines
+2. **The cue kinds are read off one library, confirmed by the owner on three tracks, not documented**, and so is whether a cue's time lines
    up with the rendered audio: an MP3's encoder delay can shift the player's idea of time against
    rekordbox's by a few tens of milliseconds, more than a frame.
 3. **A computed ID that does not match the burned disc** (burn gaps, an edit after the burn):

@@ -96,6 +96,9 @@ dubcrate card show ~/cdj-card/files/X --waveforms
 dubcrate card backup /Volumes/DISK_IMG        # copy the card's few kilobytes aside
 dubcrate card sync 3 4 --card /Volumes/DISK_IMG          # dry run: what would be written
 dubcrate card sync 3 4 --card /Volumes/DISK_IMG --yes    # back up, write, read back
+dubcrate card toc                              # the TOC of the audio CD in the drive (macOS) and its card ID
+dubcrate card toc 3                            # ... and whether disc 3 as planned has exactly that TOC
+dubcrate card sync 3 --card /Volumes/DISK_IMG --from-drive   # one disc: its ID from the CD in the drive
 ```
 
 The card argument is the card's root, its `PIONEER` folder, or `PIONEER/CDJ` (a mounted card or a copy
@@ -106,6 +109,9 @@ entry is the disc's TOC), skips and names a disc it can't sync (MP3, one track, 
 measured), warns when a disc isn't marked as burned or has gaps, and is a **dry run unless `--yes`**.
 With `--yes` it copies the card's files to `--backup-dir` (default `card-backups` next to the
 library) before writing, writes the disc files and then the index, and reads them back.
+`card toc` runs `drutil toc` (a Mac only; **not tried on a drive yet**). `--from-drive` takes the card entry's
+ID and the cue positions from the disc in the drive instead of computing them from the tracks, so it works for
+a disc edited after its burn, needs no measured lengths, and warns if the disc differs from the plan.
 
 **No file written this way has been loaded by a player yet.** Read [card-sync.md](card-sync.md) (the
 plan and what to test first) and [cdj1000mk3-card.md](cdj1000mk3-card.md) before using `--yes` on a

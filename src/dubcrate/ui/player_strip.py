@@ -9,7 +9,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from dubcrate.analysis import Analysis
+from dubcrate.analysis import Analysis, Cue
 from dubcrate.library.models import Track
 from dubcrate.waveform import Waveform
 
@@ -171,9 +171,16 @@ class PlayerStrip(QWidget):
         self._duration = duration
         analysis = analysis or Analysis()
         self.overview.set_track(duration, waveform, analysis.phrases, analysis.cues)
-        self.detail.set_track(waveform, analysis.beat_times, analysis.beat_numbers)
+        self.detail.set_track(
+            waveform, analysis.beat_times, analysis.beat_numbers, cues=analysis.cues
+        )
         self.set_position(0.0)
         self._enable(True)
+
+    def show_cues(self, cues: tuple[Cue, ...]) -> None:
+        """The cues of the track on show, when they are found after it loaded."""
+        self.overview.set_cues(cues)
+        self.detail.set_cues(cues)
 
     def show_error(self, message: str) -> None:
         self.overview.clear()

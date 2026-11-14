@@ -1,6 +1,8 @@
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
 from dubcrate.library import rekordbox as rb
 
 
@@ -175,7 +177,16 @@ def test_a_cue_row_is_a_memory_cue_a_hot_cue_or_a_loop():
     hot = rb.cue_from_row(cue_row(Kind=2, InMsec=85832, Comment="drop"))
     assert (hot.kind, hot.time, hot.slot, hot.label) == ("hot", 85.832, 2, "drop")
     loop = rb.cue_from_row(cue_row(Kind=5, InMsec=243801, OutMsec=303801))
-    assert (loop.kind, loop.time, loop.end, loop.slot) == ("loop", 243.801, 303.801, 5)
+    assert (loop.kind, loop.time, loop.end, loop.slot) == ("loop", 243.801, 303.801, 4)
+
+
+def test_hot_cue_kinds_run_a_b_c_then_skip_four_to_d_e_f():
+    slots = {k: rb.cue_from_row(cue_row(Kind=k)).slot for k in range(8)}
+    assert slots == {0: None, 1: 1, 2: 2, 3: 3, 4: None, 5: 4, 6: 5, 7: 6}
+    assert rb.cue_from_row(cue_row(Kind=5)).kind == "hot"  # hot cue D, on hot cue C
+    assert (
+        rb.cue_from_row(cue_row(Kind=4)).kind == "memory"
+    )  # never seen: kept, as a memory cue
 
 
 def test_a_cue_with_no_usable_time_or_a_deleted_one_is_skipped():
@@ -197,3 +208,28 @@ def test_cues_are_grouped_by_track_in_time_order():
     grouped = rb.cues_by_content(rows)
     assert [c.time for c in grouped["1"]] == [30.0, 90.0]
     assert [c.time for c in grouped["2"]] == [5.0]
+
+
+def test_reading_cues_from_a_database_with_no_cue_table_is_a_plain_error(
+    tmp_path, monkeypatch
+):
+    import sys
+    from types import ModuleType
+
+    class NoCueTable:
+        def __init__(self, path):
+            pass
+
+        def get_cue(self):
+            raise RuntimeError("no such table: djmdCue")
+
+        def close(self):
+            pass
+
+    fake = ModuleType("pyrekordbox.masterdb")
+    fake.MasterDatabase = NoCueTable
+    monkeypatch.setitem(sys.modules, "pyrekordbox.masterdb", fake)
+    database = tmp_path / "master.db"
+    database.write_bytes(b"x")
+    with pytest.raises(rb.RekordboxError, match="could not read the cues.*djmdCue"):
+        rb.read_cues(database)

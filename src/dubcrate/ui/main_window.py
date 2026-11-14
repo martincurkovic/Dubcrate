@@ -296,6 +296,7 @@ class MainWindow(QMainWindow):
             lambda text: self.statusBar().showMessage(text, 8000)
         )
         self.preview.preview_ready.connect(self._on_preview_ready)
+        self.preview.cues.changed.connect(self._on_cues_changed)
         self.player_strip.previous_requested.connect(lambda: self._step_track(-1))
         self.player_strip.next_requested.connect(lambda: self._step_track(1))
         self.preview.player.finished.connect(self._play_on_after_end)
@@ -1596,6 +1597,11 @@ class MainWindow(QMainWindow):
     def _on_preview_ready(self, track_id: int, waveform) -> None:
         self.track_model.set_preview(track_id, waveform)
 
+    def _on_cues_changed(self) -> None:
+        """rekordbox's cues were read (again): mark them on the rows on show."""
+        self.track_model.clear_cues()
+        self._request_previews()
+
     def _request_previews(self) -> None:
         """Read the stored waveform for the rows on screen (rekordbox tracks: 0.4 ms each)."""
         model = self.track_model
@@ -1614,6 +1620,12 @@ class MainWindow(QMainWindow):
             min(model.rowCount(), last + PREVIEW_ROWS_AROUND + 1),
         ):
             track = model.track_at(row)
+            if not model.has_cues(track.id):
+                found = self.preview.cues.cues_for(
+                    track, announce=False
+                )  # None: still being read
+                if found is not None:
+                    model.set_cues(track, found)
             if (
                 track.analysis_path
                 and track.source_id in roots

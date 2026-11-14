@@ -3,7 +3,8 @@
 `card sync` is a dry run unless `--yes`, like `burn`: it shows what would change, and with `--yes`
 copies the card's files aside first, writes, and reads back. Rules (dev_docs/card-sync.md): every
 rekordbox cue becomes a memory cue, the card's hot cues are never touched, cues already on the card
-are kept. **No file written this way has been loaded by a player yet.**
+are kept. `card toc` reads the TOC of the disc in the drive (macOS), and `card sync --from-drive` uses
+it for the card entry instead of computing it. **No file written this way has been loaded by a player yet.**
 """
 
 import argparse
@@ -11,9 +12,15 @@ import sys
 from pathlib import Path
 
 from dubcrate import cdj_card as cc
-from dubcrate.card_discs import RekordboxCues, prepare_disc
-from dubcrate.card_report import describe_card, describe_plan
+from dubcrate.card_discs import (
+    RekordboxCues,
+    disc_toc,
+    prepare_disc,
+    toc_differences,
+)
+from dubcrate.card_report import describe_card, describe_id, describe_plan, msf
 from dubcrate.card_sync import plan_card
+from dubcrate.drive_toc import DriveTocError, read_drive_toc
 from dubcrate.library import Library
 from dubcrate.library.lengths import measure_tracks
 from dubcrate.library.paths import default_library_path
@@ -46,11 +53,52 @@ def cmd_backup(_: Library, args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_toc(lib: Library, args: argparse.Namespace) -> int:
+    """Print the disc in the drive's TOC and its ID; with a disc, whether the plan computes the same."""
+    try:
+        starts, lead_out = read_drive_toc()
+    except DriveTocError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    ends = [*starts[1:], lead_out]
+    for n, (start, end) in enumerate(zip(starts, ends, strict=True), 1):
+        print(f"track {n:>2}: starts {msf(start)}, {end - start} frames long")
+    print(f"lead-out: {msf(lead_out)}")
+    if len(starts) > 1:
+        print(describe_id(cc.DiscId.from_toc(starts, lead_out)))
+    if args.disc is None:
+        return 0
+    if lib.disc(args.disc).kind != "audio":
+        print("error: that is not an audio disc.", file=sys.stderr)
+        return 1
+    entries = lib.disc_entries(args.disc)
+    for problem in measure_tracks(lib, [e.track.id for e in entries]):
+        print(f"warning: couldn't measure {problem}", file=sys.stderr)
+    entries = lib.disc_entries(args.disc)
+    if unmeasured := [e for e in entries if not e.track.length_exact]:
+        print(f"{len(unmeasured)} tracks have no measured length: can't compare.")
+        return 1
+    planned = disc_toc(entries, lib.disc(args.disc).pregap_sectors)
+    if differences := toc_differences(planned, (starts, lead_out)):
+        print(f"\nDisc {args.disc} as planned now is NOT the disc in the drive:")
+        print("\n".join(f"  {d}" for d in differences))
+        return 1
+    print(f"\nDisc {args.disc} as planned now has exactly this TOC.")
+    return 0
+
+
 def cmd_sync(lib: Library, args: argparse.Namespace) -> int:
     card = Path(args.card).expanduser()
+    if args.from_drive and len(args.disc) != 1:
+        print(
+            "error: --from-drive is for one disc: the one in the drive.",
+            file=sys.stderr,
+        )
+        return 1
     try:
         index, files = cc.read_card(card)
-    except cc.CardFormatError as exc:
+        drive = read_drive_toc() if args.from_drive else None
+    except (cc.CardFormatError, DriveTocError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
 
@@ -60,11 +108,11 @@ def cmd_sync(lib: Library, args: argparse.Namespace) -> int:
     )  # rekordbox's database is read once, when first needed
     try:
         for disc_id in args.disc:
-            if lib.disc(disc_id).kind == "audio":
+            if lib.disc(disc_id).kind == "audio" and drive is None:
                 ids = [e.track.id for e in lib.disc_entries(disc_id)]
                 for problem in measure_tracks(lib, ids):
                     print(f"warning: couldn't measure {problem}", file=sys.stderr)
-            inputs.append(prepare_disc(lib, disc_id, rekordbox))
+            inputs.append(prepare_disc(lib, disc_id, rekordbox, drive))
     except RekordboxError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
@@ -120,6 +168,15 @@ def add_parsers(sub: argparse._SubParsersAction) -> None:
     p.set_defaults(fn=cmd_backup)
 
     p = card.add_parser(
+        "toc",
+        help="the TOC of the audio CD in the drive (macOS), and with a disc id, whether it matches",
+    )
+    p.add_argument(
+        "disc", type=int, nargs="?", help="an audio disc id to compare it with"
+    )
+    p.set_defaults(fn=cmd_toc)
+
+    p = card.add_parser(
         "sync",
         help="add discs' rekordbox cues to the card as memory cues (dry run unless --yes)",
     )
@@ -128,5 +185,10 @@ def add_parsers(sub: argparse._SubParsersAction) -> None:
     )
     p.add_argument("--card", required=True, help=where)
     p.add_argument("--backup-dir", help="default: card-backups next to the library")
+    p.add_argument(
+        "--from-drive",
+        action="store_true",
+        help="take the disc's ID from the CD in the drive (one disc), not from its tracks",
+    )
     p.add_argument("--yes", action="store_true", help="really write to the card")
     p.set_defaults(fn=cmd_sync)

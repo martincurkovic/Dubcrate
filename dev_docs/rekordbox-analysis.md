@@ -78,10 +78,11 @@ read-only: Dubcrate never writes to rekordbox.
   tracks**. Columns used: `ContentID` (a track's `ext_id`), `InMsec`, `OutMsec` (-1: none), `Kind`,
   `Comment`. Read by `library/rekordbox.py: read_cues` (a snapshot copy, like the import). **Kind**, as
   read off this library and not from documentation: `0` memory cue (880 rows, most within the first
-  0.2 s of a track: **[unknown]** whether those are user memory cues or the track's automatic cue
-  point), `1`, `2`, `3` hot cues A, B, C (about 1,000 each), `5` on 427 tracks and on the two loops
-  (`OutMsec` set), often 2 ms from hot cue C (**[unknown]** what it is), `6` and `7` on three rows. No
-  `4`. So the preview's cue markers (which read the analysis files) have shown none for a local library.
+  0.2 s of a track: the owner keeps them, as the track's start), `1`, `2`, `3` hot cues A, B, C (about 1,000
+  each: **checked** by the owner on three tracks), `5` hot cue D (on 427 tracks and on the two loops, `OutMsec`
+  set; **confirmed** on *Blessings*, where it sits 2 ms from hot C), `6` and `7` hot E and F (three rows, by the
+  counts, not checked), no `4`. (`library/rekordbox.py: hot_slot`.) The preview's overview now draws these
+  database cues (it used to read the analysis files and show none for a local library).
 - **Speed:** a full `.EXT` parse is about 54 ms with pyrekordbox; `read_analysis` for a
   track is about 57 ms (fine on a worker thread); reading just the preview from
   `.2EX` is about 0.4 ms, which is why the Preview column can be filled for the rows on

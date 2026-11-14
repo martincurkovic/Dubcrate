@@ -1,12 +1,13 @@
-"""`dubcrate card show | backup | sync` (a temporary folder is the card; no ffmpeg, no drive)."""
+"""`dubcrate card show | backup | toc | sync` (a temporary folder is the card; no ffmpeg, no drive)."""
 
 from pathlib import Path
 
 import pytest
 
-from dubcrate import card_discs, cli
+from dubcrate import card_discs, cli, cli_card
 from dubcrate import cdj_card as cc
 from dubcrate.analysis import Cue
+from dubcrate.drive_toc import DriveTocError
 from dubcrate.library import Library, TrackRecord
 from dubcrate.library.rekordbox import RekordboxError
 
@@ -210,3 +211,96 @@ def test_a_rekordbox_database_that_cant_be_read_is_a_plain_error_and_nothing_is_
     )
     assert "could not open /rb/master.db" in capsys.readouterr().err
     assert card_bytes(card) == before
+
+
+# -- the disc in the drive ------------------------------------------------------------------------------
+
+
+def drive(monkeypatch, name="CD2_TOC.txt", edit=None):
+    """A stand-in for the drive: the TOC saved from a real disc, optionally altered."""
+    starts, lead_out = cc.toc_from_drutil((DATA / name).read_text(encoding="utf-8"))
+    if edit:
+        starts, lead_out = edit(starts, lead_out)
+    monkeypatch.setattr(cli_card, "read_drive_toc", lambda: (starts, lead_out))
+
+
+def no_drive(monkeypatch):
+    def refuse():
+        raise DriveTocError("There's no readable disc in the drive (nothing).")
+
+    monkeypatch.setattr(cli_card, "read_drive_toc", refuse)
+
+
+def test_toc_prints_the_disc_in_the_drive_and_its_id(db, monkeypatch, capsys):
+    drive(monkeypatch)
+    assert run(db, "card", "toc") == 0
+    out = capsys.readouterr().out
+    assert "track  1: starts 0:02.00" in out
+    assert "lead-out: " in out and "12 tracks" in out
+
+
+def test_toc_with_a_disc_says_when_the_plan_has_exactly_that_toc(
+    db, monkeypatch, capsys
+):
+    drive(monkeypatch)
+    assert run(db, "card", "toc", 1) == 0
+    assert "has exactly this TOC" in capsys.readouterr().out
+
+
+def test_toc_with_a_disc_lists_what_differs(db, monkeypatch, capsys):
+    drive(monkeypatch, edit=lambda s, e: ([*s[:-1], s[-1] + 75], e + 75))
+    assert run(db, "card", "toc", 1) == 1
+    out = capsys.readouterr().out
+    assert "NOT the disc in the drive" in out and "track 12 starts at" in out
+
+
+def test_toc_with_no_disc_in_the_drive_is_a_plain_error(db, monkeypatch, capsys):
+    no_drive(monkeypatch)
+    assert run(db, "card", "toc") == 1
+    assert "no readable disc" in capsys.readouterr().err
+
+
+def test_toc_refuses_a_data_disc_id(db, monkeypatch, capsys):
+    drive(monkeypatch)
+    with Library.open(db) as lib:
+        data = lib.create_disc("Data", kind="mp3")
+    assert run(db, "card", "toc", data) == 1
+    assert "not an audio disc" in capsys.readouterr().err
+
+
+def test_sync_from_drive_writes_the_entry_for_the_drives_toc(
+    db, card, tmp_path, monkeypatch, capsys
+):
+    starts, lead_out = cc.toc_from_drutil(
+        (DATA / "CD2_TOC.txt").read_text(encoding="utf-8")
+    )
+    edited = ([*starts[:-1], starts[-1] + 75], lead_out + 75)
+    drive(monkeypatch, edit=lambda *_: edited)
+    argv = ("card", "sync", 1, "--card", card, "--backup-dir", tmp_path / "bk")
+    assert run(db, *argv, "--from-drive", "--yes") == 0
+    assert (
+        "isn't the disc as planned" in capsys.readouterr().out
+    )  # and it follows the drive
+    index, _ = cc.read_card(card)
+    assert cc.DiscId.from_toc(*edited) in [entry.disc_id for entry in index.entries]
+
+
+def test_sync_from_drive_is_for_one_disc_and_needs_a_disc(
+    db, card, monkeypatch, capsys
+):
+    drive(monkeypatch)
+    assert run(db, "card", "sync", 1, 2, "--card", card, "--from-drive") == 1
+    assert "one disc" in capsys.readouterr().err
+    no_drive(monkeypatch)
+    before = card_bytes(card)
+    assert run(db, "card", "sync", 1, "--card", card, "--from-drive", "--yes") == 1
+    assert "no readable disc" in capsys.readouterr().err
+    assert card_bytes(card) == before
+
+
+def test_sync_without_the_flag_never_asks_the_drive(db, card, monkeypatch):
+    def refuse():
+        raise AssertionError("must not read the drive")
+
+    monkeypatch.setattr(cli_card, "read_drive_toc", refuse)
+    assert run(db, "card", "sync", 1, "--card", card) == 0

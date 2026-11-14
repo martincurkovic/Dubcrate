@@ -14,6 +14,7 @@ from dubcrate.library import Library
 from dubcrate.library.models import Track
 from dubcrate.waveform import PREVIEW_COLUMNS, Waveform, compute_waveform
 
+from .cue_cache import RekordboxCueCache
 from .player_strip import PlayerStrip
 from .tasks import run_async
 
@@ -61,6 +62,7 @@ class PreviewController(QObject):
         strip: PlayerStrip,
         player: AudioPlayer | None = None,
         parent=None,
+        cues: RekordboxCueCache | None = None,
     ):
         super().__init__(parent)
         self._lib = lib
@@ -72,6 +74,10 @@ class PreviewController(QObject):
         self._requested: Track | None = (
             None  # the latest one asked for, which may still be loading
         )
+        # rekordbox's cues come from its database, not the analysis files; the track list draws them too
+        self.cues = cues or RekordboxCueCache(lib, self)
+        self.cues.message.connect(self.message)
+        self.cues.changed.connect(self._show_cues)
 
         self.player.position_changed.connect(strip.set_position)
         self.player.state_changed.connect(strip.set_playing)
@@ -149,6 +155,13 @@ class PreviewController(QObject):
             else None
         )
 
+    def _show_cues(self) -> None:
+        """Put the loaded track's rekordbox cues on the waveforms (the database may still be being read)."""
+        if self._track is None or self._track is not self._requested:
+            return  # nothing loaded, or another track is on its way
+        if found := self.cues.cues_for(self._track):
+            self._strip.show_cues(tuple(found))
+
     def load(self, track: Track, *, play: bool = True) -> None:
         """Load `track` for preview, and start it if `play`."""
         if (
@@ -182,6 +195,7 @@ class PreviewController(QObject):
             self._analysis = media.analysis
             self._strip.show_media(media.audio.duration, media.waveform, media.analysis)
             self.player.load(media.audio, autoplay=play)
+            self._show_cues()
             self.preview_ready.emit(
                 track.id, media.waveform.resampled(PREVIEW_COLUMNS, how="mean")
             )

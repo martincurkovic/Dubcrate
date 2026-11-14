@@ -151,10 +151,10 @@ When a track plays to its end, the next one in the list (or in the open disc, in
 
 The two waveforms in the player:
 
-- The **overview** shows the whole track. For rekordbox tracks it also shows the phrases (such as INTRO, CHORUS, DOWN, UP and OUTRO) and any cue points. Click anywhere in it to jump there.
-- The **detail view** is zoomed in and scrolls past a fixed playhead, with the beat grid drawn on it. Use the mouse wheel to zoom, and drag it to scratch (below).
+- The **overview** shows the whole track. For rekordbox tracks it also shows the phrases (such as INTRO, CHORUS, DOWN, UP and OUTRO) and your cue points. Click anywhere in it to jump there.
+- The **detail view** is zoomed in and scrolls past a fixed playhead, with the beat grid and, for rekordbox tracks, your cues drawn on it. Use the mouse wheel to zoom, and drag it to scratch (below).
 
-For rekordbox tracks the waveforms, beat grid, phrases and cues come from rekordbox's own analysis. For other music Dubcrate draws the waveform itself. Beat grids and cues are only shown for your planning: **they do not go on the CD.**
+For rekordbox tracks the waveforms, beat grid and phrases come from rekordbox's own analysis, and the cues from its library (read when you first play one of its tracks, and again if rekordbox has changed them). Hot cues show their letter and colour, memory cues are red, and a loop is a tinted stretch. The **Preview** column in the track list flags the hot cues too, as small lettered boxes along the top of each strip (as in rekordbox). For other music Dubcrate draws the waveform itself. Beat grids and cues are only shown for your planning: **they do not go on the CD.**
 
 **Scratching.** Grab the zoomed waveform and drag it, as you would a CDJ's jog wheel. The waveform sticks to your pointer, and you hear the track move with it: drag right to take it back, left to move it forward, faster for a higher pitch, and hold still for silence. While your hand is on it, a playing track is held, and it carries on from wherever you let go. A paused track stays paused after you let go, so you can use this to find a spot. Clicking without dragging doesn't jump anywhere: to jump, click the overview.
 

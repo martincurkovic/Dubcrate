@@ -93,6 +93,66 @@ def test_only_audio_discs_with_two_tracks_and_measured_lengths_can_be_synced(lib
     assert result.request is None
 
 
+def test_toc_differences_name_each_track_that_moved_and_the_end():
+    planned = ([150, 1000, 2000], 3000)
+    assert card_discs.toc_differences(planned, planned) == []
+    assert card_discs.toc_differences(planned, ([150, 1010, 2000], 3075)) == [
+        "track 2 starts at 0:13.35, planned 0:13.25",
+        "it ends at 0:41.00, planned 0:40.00",
+    ]
+    assert (
+        "has 2 tracks, this disc 3"
+        in (card_discs.toc_differences(planned, ([150, 1000], 2000))[0])
+    )
+
+
+def test_a_disc_in_the_drive_gives_the_id_even_with_no_measured_lengths(lib):
+    disc_id = cd2_disc(lib)
+    first = lib.disc_entries(disc_id)[0].track.id
+    lib._conn.execute("UPDATE track SET cd_sectors = NULL WHERE id = ?", (first,))
+    result = card_discs.prepare_disc(lib, disc_id, toc=cd2())
+    assert result.problems == [] and result.from_drive
+    assert result.request.disc_id == cc.DiscId.from_toc(*cd2())
+    assert (
+        result.warnings == []
+    )  # (nothing to compare with, and not "not burned" either)
+
+
+def test_a_disc_in_the_drive_that_matches_the_plan_has_no_warnings(lib):
+    result = card_discs.prepare_disc(lib, cd2_disc(lib), toc=cd2())
+    assert (
+        result.warnings == []
+    )  # not marked as burned doesn't matter: the disc is here
+
+
+def test_a_disc_in_the_drive_that_differs_from_the_plan_uses_the_drive_and_says_so(lib):
+    starts, lead_out = cd2()
+    edited = ([*starts[:-1], starts[-1] + 75], lead_out + 75)
+    result = card_discs.prepare_disc(lib, cd2_disc(lib), toc=edited)
+    assert result.request.disc_id == cc.DiscId.from_toc(*edited)
+    assert "isn't the disc as planned" in result.warnings[0]
+    assert "follows the disc in the drive" in result.warnings[0]
+
+
+def test_cues_land_on_the_drives_positions_not_the_planned_ones(lib):
+    disc_id = cd2_disc(lib, source="rekordbox")
+    entries = lib.disc_entries(disc_id)
+    cues = keyed(entries, {1: [Cue("memory", 10.0)]})
+    starts, lead_out = cd2()
+    moved = ([starts[0], starts[1] + 300, *starts[2:]], lead_out)
+    result = card_discs.prepare_disc(
+        lib, disc_id, card_discs.RekordboxCues(lib, load=lambda _p: cues), toc=moved
+    )
+    assert result.request.wanted == [card_sync.WantedCue(2, starts[1] + 300 + 750)]
+
+
+def test_a_drive_disc_with_another_track_count_is_refused(lib):
+    starts, lead_out = cd2()
+    result = card_discs.prepare_disc(lib, cd2_disc(lib), toc=(starts[:-1], lead_out))
+    assert result.request is None
+    assert "11 tracks and this one 12" in result.problems[0]
+
+
 def keyed(entries, cues_by_index):
     """What rekordbox's database would hold: cues by the track's content ID (its ext_id)."""
     return {entries[i].track.ext_id: cues for i, cues in cues_by_index.items()}

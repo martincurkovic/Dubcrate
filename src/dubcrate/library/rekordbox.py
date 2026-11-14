@@ -221,14 +221,29 @@ def read_master_db(
     return library
 
 
+def hot_slot(kind: int) -> int | None:
+    """A hot cue's slot (1 = A) from a `djmdCue` `Kind`, None for a `Kind` that isn't one.
+
+    `Kind` 1, 2, 3 are hot cues A, B, C and 5, 6, 7 are D, E, F (so 8, 9 are taken to be G, H, never
+    seen): there is no 4. The owner's library has 1,048, 1,010, 947, 428, 2 and 1 rows of them in that
+    order, and for *Blessings* they confirmed `Kind` 5 as the hot cue D that sits on hot cue C (2 ms
+    away). The two loops are hot cue D saved as loops.
+    """
+    if 1 <= kind <= 3:
+        return kind
+    if 5 <= kind <= 9:
+        return kind - 1
+    return None
+
+
 def cue_from_row(row: Any) -> Cue | None:
     """A `Cue` from a `djmdCue` row; None for a row that can't be used (no time, or deleted).
 
     rekordbox 6 and 7 keep cues **in the database**, not in the analysis files (those only carry
     them in a USB export): so the preview's cue markers, which read the analysis files, have shown
-    none for a local library. `Kind` 0 is a memory cue and 1, 2, 3 ... a hot cue by number (A, B, C
-    ...), **which was read off a real library and not from any documentation**, and `Kind` 5
-    turned up on loops and as a near-copy of hot cue C: not understood. A row with an `OutMsec`
+    none for a local library. `Kind` 0 is a memory cue and the rest hot cues (`hot_slot`): **read
+    off a real library and confirmed by its owner on three tracks, not from any documentation**.
+    A `Kind` that is no hot cue's (4, never seen) is kept as a memory cue. A row with an `OutMsec`
     after its `InMsec` is a loop, whatever its kind.
     """
     if getattr(row, "rb_local_deleted", 0):
@@ -237,13 +252,14 @@ def cue_from_row(row: Any) -> Cue | None:
     if start is None or start < 0:
         return None
     number = _int_or_none(getattr(row, "Kind", 0)) or 0
+    slot = hot_slot(number)
     stop = _int_or_none(getattr(row, "OutMsec", None))
     is_loop = stop is not None and stop > start
     return Cue(
-        kind="loop" if is_loop else ("hot" if number else "memory"),
+        kind="loop" if is_loop else ("hot" if slot else "memory"),
         time=start / 1000.0,
         end=stop / 1000.0 if is_loop and stop is not None else None,
-        slot=number or None,
+        slot=slot,
         label=str(getattr(row, "Comment", "") or ""),
     )
 
@@ -276,5 +292,7 @@ def read_cues(path: Path | None = None) -> dict[str, list[Cue]]:
             raise RekordboxError(f"could not open {source}: {exc}") from exc
         try:
             return cues_by_content(db.get_cue())
+        except Exception as exc:  # e.g. a database with no cue table
+            raise RekordboxError(f"could not read the cues in {source}: {exc}") from exc
         finally:
             db.close()

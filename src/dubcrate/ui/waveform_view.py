@@ -36,6 +36,39 @@ ZOOMS = (4.0, 8.0, 16.0, 32.0)  # seconds the detail view shows
 DEFAULT_ZOOM = 8.0
 
 
+FLAG_WIDTH = 10  # a hot cue's lettered flag
+MEMORY_COLOR = "#dd0907"
+LOOP_COLOR = "#e8922b"
+
+
+def flag_lefts(xs: list[float], width: float = FLAG_WIDTH) -> list[float]:
+    """Left edges for flags `width` wide at `xs` (in order), pushed right so a flag never covers the
+    one before: hot cues C and D can be milliseconds apart."""
+    lefts: list[float] = []
+    edge = -math.inf
+    for x in xs:
+        lefts.append(max(x, edge))
+        edge = lefts[-1] + width + 1
+    return lefts
+
+
+def _draw_flag(
+    p: QPainter, left: float, top: float, height: float, fill: QColor, letter: str = ""
+) -> None:
+    flag = QRectF(left, top, FLAG_WIDTH, height)
+    p.fillRect(flag, fill)
+    if letter:
+        p.setPen(QColor("#ffffff"))
+        p.drawText(flag, Qt.AlignmentFlag.AlignCenter, letter)
+
+
+def _cue_color(cue: Cue) -> QColor:
+    """A cue's colour: its hot cue's, else red for a memory cue and orange for a loop."""
+    if cue.slot:
+        return hot_cue_color(cue.slot)
+    return QColor(MEMORY_COLOR if cue.kind == "memory" else LOOP_COLOR)
+
+
 def _seconds_at(x: float, width: int, duration: float) -> float:
     return 0.0 if width <= 0 else max(0.0, min(1.0, x / width)) * duration
 
@@ -78,6 +111,11 @@ class OverviewView(QWidget):
             cues,
         )
         self._position = 0.0
+        self._invalidate()
+
+    def set_cues(self, cues: tuple[Cue, ...]) -> None:
+        """Replace the cues of the track on show (they can arrive after the track)."""
+        self._cues = cues
         self._invalidate()
 
     def clear(self) -> None:
@@ -165,21 +203,27 @@ class OverviewView(QWidget):
         font.setPixelSize(9)
         font.setBold(True)
         p.setFont(font)
-        for cue in self._cues:
+        cues = sorted(self._cues, key=lambda c: c.time)
+        flagged = [c for c in cues if c.slot]
+        lefts = flag_lefts([round(c.time / self._duration * width) for c in flagged])
+        for cue, left in zip(flagged, lefts, strict=True):
+            _draw_flag(
+                p,
+                left,
+                0,
+                CUE_STRIP - 2,
+                hot_cue_color(cue.slot),
+                chr(ord("A") + cue.slot - 1),
+            )
+        for cue in cues:
+            if cue.slot:
+                continue
             x = round(cue.time / self._duration * width)
-            if cue.kind == "hot" and cue.slot:
-                flag = QRectF(x, 0, 10, CUE_STRIP - 2)
-                p.fillRect(flag, hot_cue_color(cue.slot))
-                p.setPen(QColor("#ffffff"))
-                p.drawText(
-                    flag, Qt.AlignmentFlag.AlignCenter, chr(ord("A") + cue.slot - 1)
-                )
-            else:  # memory cues and loops: a small marker
-                p.setPen(Qt.PenStyle.NoPen)
-                p.setBrush(QColor("#dd0907" if cue.kind == "memory" else "#e8922b"))
-                p.drawPolygon(
-                    QPolygonF([QPointF(x - 3, 0), QPointF(x + 3, 0), QPointF(x, 7)])
-                )
+            p.setPen(Qt.PenStyle.NoPen)  # memory cues and loops: a small marker
+            p.setBrush(_cue_color(cue))
+            p.drawPolygon(
+                QPolygonF([QPointF(x - 3, 0), QPointF(x + 3, 0), QPointF(x, 7)])
+            )
 
     def paintEvent(self, _event) -> None:
         width = self.width()
@@ -232,6 +276,7 @@ class DetailView(QWidget):
         self._waveform: Waveform | None = None
         self._beat_times = np.zeros(0)
         self._beat_numbers = np.zeros(0, dtype=np.int8)
+        self._cues: tuple[Cue, ...] = ()
         self._position = 0.0
         self._window = DEFAULT_ZOOM
         self._message = ""
@@ -252,8 +297,10 @@ class DetailView(QWidget):
         beat_times=None,
         beat_numbers=None,
         message: str = "",
+        cues: tuple[Cue, ...] = (),
     ) -> None:
         self._waveform = waveform
+        self._cues = tuple(sorted(cues, key=lambda c: c.time))
         self._beat_times = np.zeros(0) if beat_times is None else np.asarray(beat_times)
         self._beat_numbers = (
             np.zeros(0, dtype=np.int8)
@@ -264,6 +311,11 @@ class DetailView(QWidget):
         self._position = 0.0
         self._dragging = False  # a new track: whatever was being dragged is gone
         self.setCursor(Qt.CursorShape.OpenHandCursor)
+        self.update()
+
+    def set_cues(self, cues: tuple[Cue, ...]) -> None:
+        """Replace the cues of the track on show (they can arrive after the track)."""
+        self._cues = tuple(sorted(cues, key=lambda c: c.time))
         self.update()
 
     def clear(self, message: str = "") -> None:
@@ -321,6 +373,7 @@ class DetailView(QWidget):
         else:
             self._paint_columns(p, w, h, centre, per_second)
         self._paint_beats(p, w, h, centre, per_second)
+        self._paint_cues(p, w, h, centre, per_second)
         p.fillRect(QRectF(centre - 1, 0, 2, h), color("wave_playhead"))
 
     def _paint_zero_line(self, p: QPainter, width: int, middle: float) -> None:
@@ -419,6 +472,54 @@ class DetailView(QWidget):
             else:
                 p.setPen(QPen(faint, 1))
                 p.drawLine(QPointF(x, 0), QPointF(x, height))
+
+    def _paint_cues(
+        self, p: QPainter, width: int, height: int, centre: float, per_second: float
+    ) -> None:
+        """Memory cues, hot cues and loops that are in view: a line each, hot cues with their
+        lettered flag at the top and memory cues with a plain one at the bottom (the beat grid's bar
+        markers use the corners), a loop as a tinted span."""
+        if not self._cues:
+            return
+        reach = (
+            FLAG_WIDTH + 2
+        ) / per_second  # a flag sticks out to the right of its line
+        low = self._position - self._window / 2
+        high = low + self._window
+        seen = [
+            c for c in self._cues if c.time <= high and (c.end or c.time + reach) >= low
+        ]
+
+        def x_of(seconds: float) -> float:
+            return centre + (seconds - self._position) * per_second
+
+        for cue in seen:  # the loops go under the lines
+            if cue.end:
+                span = _cue_color(cue)
+                span.setAlpha(55)
+                p.fillRect(
+                    QRectF(
+                        x_of(cue.time), 0, (cue.end - cue.time) * per_second, height
+                    ),
+                    span,
+                )
+        font = QFont(p.font())
+        font.setPixelSize(9)
+        font.setBold(True)
+        p.setFont(font)
+        for cue in seen:
+            p.setPen(QPen(_cue_color(cue), 1.5 if cue.slot else 1))
+            for t in (cue.time, cue.end) if cue.end else (cue.time,):
+                p.drawLine(QPointF(x_of(t), 0), QPointF(x_of(t), height))
+        flagged = [c for c in seen if c.slot]
+        lefts = flag_lefts([x_of(c.time) for c in flagged])
+        for cue, left in zip(flagged, lefts, strict=True):
+            _draw_flag(
+                p, left, 6, 12, hot_cue_color(cue.slot), chr(ord("A") + cue.slot - 1)
+            )
+        for cue in seen:  # plain red flags for the memory cues
+            if cue.kind == "memory":
+                _draw_flag(p, x_of(cue.time), height - 16, 8, _cue_color(cue))
 
     # -- interaction ------------------------------------------------------
 

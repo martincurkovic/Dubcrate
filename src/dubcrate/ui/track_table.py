@@ -1,7 +1,7 @@
 """The track table: keyboard shortcuts and the whole-track waveform column."""
 
-from PySide6.QtCore import QModelIndex, QPointF, QRect, QSize, Qt, Signal
-from PySide6.QtGui import QColor, QPainter, QPen, QPixmap
+from PySide6.QtCore import QModelIndex, QPointF, QRect, QRectF, QSize, Qt, Signal
+from PySide6.QtGui import QColor, QFont, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import (
     QAbstractSlider,
     QAbstractSpinBox,
@@ -19,15 +19,17 @@ from PySide6.QtWidgets import (
 from dubcrate.waveform import BAND_HIGH, BAND_LOW, BAND_MID, STYLE_BANDS, Waveform
 
 from . import theme
-from .models import PREVIEW_ROLE
+from .models import PREVIEW_CUES_ROLE, PREVIEW_ROLE, PreviewCues
 from .wave_style import (
     cache_token,
     color,
     current_style,
+    hot_cue_color,
     normalized,
     render_columns,
 )
 from .wave_style import notifier as wave_notifier
+from .waveform_view import flag_lefts
 
 _BANDS = ((BAND_LOW, "wave_low"), (BAND_MID, "wave_mid"), (BAND_HIGH, "wave_high"))
 PREVIEW_WIDTH = 150
@@ -98,10 +100,58 @@ class TrackTable(QTableView):
         super().keyPressEvent(event)
 
 
+CUE_FLAG = 9  # a hot cue's lettered flag in the Preview column, as in rbxport
+
+
+def _paint_cue_marks(
+    pixmap: QPixmap, cues: PreviewCues, width: int, height: int
+) -> None:
+    """Mark the hot cues on a strip as small lettered flags along its top, as rbxport does, pushed
+    apart where they would cover each other (hot C and D can be milliseconds apart). A hot cue saved
+    as a loop is a hot cue here. Memory cues and plain loops are left out: a strip this small can't
+    carry them (the overview and the zoomed waveform show them)."""
+    flagged = sorted((c for c in cues.cues if c.slot), key=lambda c: c.time)
+    if cues.duration <= 0 or not flagged:
+        return
+    p = QPainter(pixmap)
+    p.setRenderHint(QPainter.RenderHint.Antialiasing, False)
+    font = QFont(p.font())
+    font.setPixelSize(CUE_FLAG - 2)
+    font.setBold(True)
+    p.setFont(font)
+    outline = color("wave_bg")
+    lefts = flag_lefts(
+        [c.time / cues.duration * (width - CUE_FLAG) for c in flagged], CUE_FLAG
+    )
+    for cue, left in zip(flagged, lefts, strict=True):
+        box = QRectF(min(left, width - CUE_FLAG), 0, CUE_FLAG, CUE_FLAG)
+        p.fillRect(
+            box.adjusted(-1, -1, 1, 1), outline
+        )  # keeps it legible over the waveform
+        p.fillRect(box, hot_cue_color(cue.slot))
+        p.setPen(QColor("#ffffff"))
+        p.drawText(box, Qt.AlignmentFlag.AlignCenter, chr(ord("A") + cue.slot - 1))
+    p.end()
+
+
 def render_preview(
-    waveform: Waveform, width: int, height: int, dpr: float = 1.0
+    waveform: Waveform,
+    width: int,
+    height: int,
+    dpr: float = 1.0,
+    cues: PreviewCues | None = None,
 ) -> QPixmap:
-    """The whole track as a small bottom-aligned 3-band strip, scaled so quiet tracks stay visible."""
+    """The whole track as a small bottom-aligned 3-band strip, scaled so quiet tracks stay visible.
+
+    With `cues`, rekordbox's cues are marked on it (see `_paint_cue_marks`).
+    """
+    pixmap = _render_strip(waveform, width, height, dpr)
+    if cues is not None:
+        _paint_cue_marks(pixmap, cues, width, height)
+    return pixmap
+
+
+def _render_strip(waveform: Waveform, width: int, height: int, dpr: float) -> QPixmap:
     pixmap = QPixmap(round(width * dpr), round(height * dpr))
     pixmap.setDevicePixelRatio(dpr)
     pixmap.fill(color("wave_bg"))
@@ -151,6 +201,7 @@ class PreviewDelegate(QStyledItemDelegate):
         waveform = index.data(PREVIEW_ROLE)
         if waveform is None:
             return
+        cues = index.data(PREVIEW_CUES_ROLE)
         rect = option.rect.adjusted(2, 3, -2, -3)
         if rect.width() <= 0 or rect.height() <= 0:
             return
@@ -161,13 +212,14 @@ class PreviewDelegate(QStyledItemDelegate):
             rect.height(),
             dpr,
             cache_token(),
+            cues,
         )
         pixmap = self._cache.get(key)
         if pixmap is None:
             if len(self._cache) > 600:
                 self._cache.clear()
             pixmap = self._cache[key] = render_preview(
-                waveform, rect.width(), rect.height(), dpr
+                waveform, rect.width(), rect.height(), dpr, cues
             )
         painter.drawPixmap(QRect(rect.topLeft(), rect.size()), pixmap)
         painter.setPen(QColor(theme.current_palette()["border_item"]))

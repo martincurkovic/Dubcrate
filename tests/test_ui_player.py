@@ -17,18 +17,21 @@ from dubcrate.audio.decode import DecodedAudio
 from dubcrate.audio.player import AudioPlayer
 from dubcrate.library import Library, TrackRecord
 from dubcrate.library.models import Track
-from dubcrate.ui import main_window, preview, theme
+from dubcrate.ui import cue_cache, main_window, preview, theme
 from dubcrate.ui.main_window import MainWindow
 from dubcrate.ui.models import (
     PREVIEW_COLUMN,
+    PREVIEW_CUES_ROLE,
     PREVIEW_ROLE,
     TRACK_COLUMNS,
+    PreviewCues,
     TrackTableModel,
 )
 from dubcrate.ui.player_strip import IDLE_HINT, PlayerStrip, clock
 from dubcrate.ui.preview import PreviewController, load_media
 from dubcrate.ui.settings_dialog import SettingsDialog
 from dubcrate.ui.track_table import PreviewDelegate, TrackTable, render_preview
+from dubcrate.ui.wave_style import hot_cue_color
 from dubcrate.ui.waveform_view import ZOOMS, DetailView, OverviewView
 from dubcrate.waveform import Waveform
 
@@ -377,6 +380,67 @@ def test_the_model_keeps_previews_and_announces_the_row_that_gained_one(qapp):
     assert model.data(model.index(1, PREVIEW_COLUMN)) == ""  # drawn, not written
 
 
+def test_the_model_keeps_cues_and_only_redraws_a_row_that_has_some(qapp):
+    model = TrackTableModel()
+    tracks = [make_track(id=i, ext_id=str(i), duration=100.0) for i in (1, 2)]
+    model.set_tracks(tracks)
+    changed = []
+    model.dataChanged.connect(lambda top, _b: changed.append(top.row()))
+    cue = Cue("hot", 50.0, slot=1)
+    assert not model.has_cues(1)
+    model.set_cues(tracks[0], [cue])
+    model.set_cues(tracks[1], [])  # no cues is an answer too: not asked again
+    assert model.has_cues(1) and model.has_cues(2)
+    assert model.data(model.index(0, PREVIEW_COLUMN), PREVIEW_CUES_ROLE) == (
+        PreviewCues(100.0, (cue,))
+    )
+    assert changed == [0]  # row 2 has nothing new to draw
+    model.clear_cues()
+    assert not model.has_cues(1) and changed == [0, 0]
+    assert model.data(model.index(0, PREVIEW_COLUMN), PREVIEW_CUES_ROLE) is None
+
+
+def test_a_preview_strip_flags_the_hot_cues_where_they_fall(qapp):
+    from dubcrate.ui.track_table import CUE_FLAG
+
+    wf = sample_waveform()
+    plain = render_preview(wf, 150, 22).toImage()
+    cues = PreviewCues(
+        100.0,
+        (
+            Cue("hot", 50.0, slot=2),
+            Cue("memory", 10.0),
+            Cue("loop", 70.0, end=80.0),
+        ),
+    )
+    marked = render_preview(wf, 150, 22, cues=cues).toImage()
+    left = round(50.0 / 100.0 * (150 - CUE_FLAG))
+    colour = hot_cue_color(2)
+    assert (
+        marked.pixelColor(left, 1) == colour or marked.pixelColor(left + 1, 1) == colour
+    )
+    assert marked.pixelColor(left + 2, CUE_FLAG - 1) != plain.pixelColor(
+        left + 2, CUE_FLAG - 1
+    )
+    # flags only: nothing for the memory cue or the plain loop, nothing below the flag
+    x = round(10.0 / 100.0 * 150)
+    assert marked.pixelColor(x, 1) == plain.pixelColor(x, 1)
+    assert marked.pixelColor(110, 1) == plain.pixelColor(110, 1)
+    assert marked.pixelColor(left + 2, 18) == plain.pixelColor(left + 2, 18)
+    assert render_preview(wf, 150, 22, cues=PreviewCues(100.0, ())).toImage() == plain
+
+
+def test_hot_cue_flags_in_a_preview_strip_never_cover_each_other(qapp):
+    from dubcrate.ui.track_table import CUE_FLAG
+
+    wf = sample_waveform()
+    both = PreviewCues(100.0, (Cue("hot", 60.0, slot=3), Cue("hot", 60.002, slot=4)))
+    image = render_preview(wf, 150, 22, cues=both).toImage()
+    row = [image.pixelColor(x, 2) for x in range(150)]
+    assert hot_cue_color(3) in row and hot_cue_color(4) in row  # both are visible
+    assert row.index(hot_cue_color(4)) - row.index(hot_cue_color(3)) >= CUE_FLAG - 2
+
+
 def test_old_previews_are_forgotten_in_a_huge_library(qapp, monkeypatch):
     from dubcrate.ui import models
 
@@ -625,6 +689,210 @@ def test_only_rekordbox_sources_have_an_analysis_folder(qapp, tmp_path):
     )
     controller.shutdown()
     lib.close()
+
+
+# -- rekordbox's cues in the overview ---------------------------------------------------------------------
+
+
+@pytest.fixture
+def cue_rig(qapp, tmp_path, monkeypatch):
+    """Two rekordbox tracks (and one folder track) with real audio, and a stand-in for the database read."""
+    lib = Library.open(":memory:")
+    database = tmp_path / "master.db"
+    database.write_bytes(b"x")
+    lib.replace_source(
+        "rekordbox",
+        str(database),
+        "rb",
+        [
+            TrackRecord(
+                ext_id=n,
+                path=write_wav(tmp_path / f"{n}.wav"),
+                title=n.title(),
+                duration=1.5,
+            )
+            for n in ("a", "b")
+        ],
+    )
+    lib.replace_source(
+        "folder",
+        str(tmp_path),
+        "Crate",
+        [
+            TrackRecord(
+                ext_id="f",
+                path=write_wav(tmp_path / "f.wav"),
+                title="F",
+                duration=1.5,
+            )
+        ],
+    )
+    reads = []
+    cues = {
+        "a": [Cue("memory", 0.5), Cue("hot", 1.0, slot=2)],
+        "b": [Cue("loop", 0.2, end=0.6)],
+    }
+
+    def fake_read(path):
+        reads.append(path)
+        return cues
+
+    monkeypatch.setattr(cue_cache, "read_cues", fake_read)
+    strip = PlayerStrip()
+    controller = PreviewController(lib, strip, AudioPlayer())
+    yield SimpleNamespace(
+        lib=lib,
+        strip=strip,
+        controller=controller,
+        database=database,
+        reads=reads,
+        by_title={t.title: t for t in lib.tracks()},
+        cues=cues,
+    )
+    controller.shutdown()
+    lib.close()
+
+
+def test_a_rekordbox_tracks_cues_from_the_database_appear_in_the_overview(
+    cue_rig, wait_for
+):
+    cue_rig.controller.load(cue_rig.by_title["A"], play=False)
+    assert wait_for(lambda: cue_rig.strip.overview._cues)
+    assert cue_rig.strip.overview._cues == tuple(cue_rig.cues["a"])
+
+
+def test_the_database_is_read_once_for_all_its_tracks(cue_rig, wait_for):
+    cue_rig.controller.load(cue_rig.by_title["A"], play=False)
+    assert wait_for(lambda: cue_rig.strip.overview._cues)
+    cue_rig.controller.load(cue_rig.by_title["B"], play=False)
+    assert wait_for(lambda: cue_rig.strip.overview._cues == tuple(cue_rig.cues["b"]))
+    assert cue_rig.reads == [cue_rig.database]
+
+
+def test_the_database_is_read_again_when_it_changes(cue_rig, wait_for):
+    cue_rig.controller.load(cue_rig.by_title["A"], play=False)
+    assert wait_for(lambda: cue_rig.strip.overview._cues)
+    cue_rig.database.write_bytes(b"changed")
+    cue_rig.controller.load(cue_rig.by_title["B"], play=False)
+    assert wait_for(lambda: len(cue_rig.reads) == 2)
+
+
+def test_a_track_with_no_cues_and_a_folder_track_show_none_and_read_nothing_for_a_folder(
+    cue_rig, wait_for
+):
+    cue_rig.cues.clear()
+    cue_rig.controller.load(cue_rig.by_title["A"], play=False)
+    assert wait_for(lambda: cue_rig.reads)
+    assert wait_for(lambda: cue_rig.controller.track is not None)
+    assert cue_rig.strip.overview._cues == ()
+    cue_rig.reads.clear()
+    cue_rig.controller.load(cue_rig.by_title["F"], play=False)
+    assert wait_for(lambda: cue_rig.controller.track.title == "F")
+    assert cue_rig.reads == []
+
+
+def test_a_file_that_is_also_in_rekordbox_takes_its_cues(cue_rig, wait_for, tmp_path):
+    shared = write_wav(tmp_path / "shared.wav")
+    cue_rig.lib.replace_source(
+        "rekordbox",
+        str(cue_rig.database),
+        "rb",
+        [
+            TrackRecord(ext_id="a", path=str(tmp_path / "a.wav"), duration=1.5),
+            TrackRecord(ext_id="s", path=shared, title="S", duration=1.5),
+        ],
+    )
+    cue_rig.cues["s"] = [Cue("memory", 0.7)]
+    cue_rig.lib.replace_source(
+        "folder",
+        str(tmp_path / "explorer"),
+        "x",
+        [TrackRecord(ext_id=shared, path=shared, title="Twin", duration=1.5)],
+    )
+    twin = next(t for t in cue_rig.lib.tracks() if t.title == "Twin")
+    cue_rig.controller.load(twin, play=False)
+    assert wait_for(lambda: cue_rig.strip.overview._cues == (Cue("memory", 0.7),))
+
+
+def test_a_database_that_cannot_be_read_says_so_once_and_the_track_still_loads(
+    cue_rig, wait_for, monkeypatch
+):
+    attempts = []
+
+    def broken(path):
+        attempts.append(path)
+        raise cue_cache.RekordboxError("it is locked")
+
+    monkeypatch.setattr(cue_cache, "read_cues", broken)
+    messages = []
+    cue_rig.controller.message.connect(messages.append)
+    cue_rig.controller.load(cue_rig.by_title["A"], play=False)
+    assert wait_for(lambda: messages)
+    assert "rekordbox's cues" in messages[0] and "it is locked" in messages[0]
+    assert cue_rig.controller.track.title == "A"
+    cue_rig.controller.load(cue_rig.by_title["B"], play=False)
+    assert wait_for(lambda: cue_rig.controller.track.title == "B")
+    assert len(attempts) == 1  # not retried until the database changes
+
+
+def test_the_zoomed_waveform_gets_the_cues_too(cue_rig, wait_for):
+    cue_rig.controller.load(cue_rig.by_title["A"], play=False)
+    assert wait_for(lambda: cue_rig.strip.detail._cues)
+    assert cue_rig.strip.detail._cues == tuple(cue_rig.cues["a"])
+
+
+def test_cues_arriving_for_a_track_that_is_no_longer_the_one_on_show_are_not_drawn(
+    cue_rig, wait_for
+):
+    cue_rig.controller.load(cue_rig.by_title["A"], play=False)
+    assert wait_for(lambda: cue_rig.strip.overview._cues)
+    cue_rig.controller.load(
+        cue_rig.by_title["F"], play=False
+    )  # loading: A is gone from view
+    cue_rig.controller.cues.changed.emit()
+    assert cue_rig.strip.overview._cues == () and cue_rig.strip.detail._cues == ()
+
+
+def test_flags_that_would_cover_each_other_are_pushed_apart():
+    from dubcrate.ui.waveform_view import FLAG_WIDTH, flag_lefts
+
+    lefts = flag_lefts([100.0, 100.4, 300.0])
+    assert lefts[0] == 100.0 and lefts[1] >= 100.0 + FLAG_WIDTH
+    assert lefts[2] == 300.0
+
+
+def detail_with(cues, position=10.0):
+    view = DetailView()
+    view.resize(800, DetailView.HEIGHT)
+    view.set_track(sample_waveform(columns=3000), cues=tuple(cues))
+    view.set_position(position)
+    return view
+
+
+def red_pixels(view):
+    image = pixels(view)
+    return sum(
+        1
+        for x in range(image.width())
+        for y in range(image.height())
+        if image.pixelColor(x, y) == QColor("#dd0907")
+    )
+
+
+def test_the_zoomed_waveform_draws_a_cue_only_while_it_is_in_view(qapp):
+    in_view = detail_with([Cue("memory", 11.0)])  # 8 s window around 10 s
+    out_of_view = detail_with([Cue("memory", 60.0)])
+    assert red_pixels(in_view) > 0
+    assert red_pixels(out_of_view) == red_pixels(detail_with([]))
+
+
+def test_a_hot_cue_and_a_loop_are_drawn_in_the_zoomed_waveform(qapp):
+    bare = pixels(detail_with([]))
+    hot = pixels(detail_with([Cue("hot", 11.0, slot=1)]))
+    loop = pixels(detail_with([Cue("loop", 9.0, end=12.0)]))
+    assert hot != bare and loop != bare
+    # a loop that began before the window and ends inside it is still shown
+    assert pixels(detail_with([Cue("loop", 1.0, end=8.0)], position=10.0)) != bare
 
 
 # -- the settings dialog --------------------------------------------------------------------------------
@@ -893,6 +1161,81 @@ def test_previews_are_read_only_for_rows_on_screen_and_only_once(
     assert not win.track_model.has_preview(
         next(t.id for t in win.track_model.tracks() if t.title == "No analysis")
     )
+    win.close()
+    win.deleteLater()
+    lib.close()
+
+
+def test_a_cue_read_that_fails_for_the_track_list_does_not_talk_over_the_status_bar(
+    qapp, tmp_path, monkeypatch, wait_for
+):
+    lib = Library.open(":memory:")
+    database = tmp_path / "master.db"
+    database.write_bytes(b"x")
+    lib.replace_source(
+        "rekordbox", str(database), "rb", [TrackRecord(ext_id="1", path="/x/1.mp3")]
+    )
+
+    def broken(path):
+        raise cue_cache.RekordboxError("no cue table")
+
+    monkeypatch.setattr(cue_cache, "read_cues", broken)
+    cache = cue_cache.RekordboxCueCache(lib)
+    messages, changes = [], []
+    cache.message.connect(messages.append)
+    cache.changed.connect(lambda: changes.append(1))
+    track = lib.tracks()[0]
+    assert cache.cues_for(track, announce=False) is None
+    assert wait_for(lambda: changes)
+    assert (
+        messages == [] and cache.cues_for(track) == ()
+    )  # answered: none, and not retried
+    lib.close()
+
+
+def test_rows_on_screen_get_their_rekordbox_cues_once_the_database_is_read(
+    qapp, tmp_path, monkeypatch, wait_for
+):
+    lib = Library.open(":memory:")
+    database = tmp_path / "master.db"
+    database.write_bytes(b"x")
+    lib.replace_source(
+        "rekordbox",
+        str(database),
+        "rb",
+        [
+            TrackRecord(
+                ext_id=str(i),
+                path=f"/nowhere/{i}.mp3",
+                title=f"T{i}",
+                duration=200.0,
+                analysis_path=f"/PIONEER/{i}/ANLZ0000.DAT",
+            )
+            for i in range(5)
+        ],
+    )
+    reads = []
+
+    def fake_read(path):
+        reads.append(path)
+        return {"2": [Cue("hot", 60.0, slot=1)]}
+
+    monkeypatch.setattr(cue_cache, "read_cues", fake_read)
+    monkeypatch.setattr(main_window, "read_preview", lambda *a: sample_waveform())
+    win = MainWindow(lib)
+    win.show()
+    win._request_previews()  # the database is not read yet: asked of a worker
+    by_title = {t.title: t for t in win.track_model.tracks()}
+    assert wait_for(lambda: win.track_model.has_cues(by_title["T2"].id))
+    row = win.track_model.tracks().index(by_title["T2"])
+    assert win.track_model.data(
+        win.track_model.index(row, PREVIEW_COLUMN), PREVIEW_CUES_ROLE
+    ) == PreviewCues(200.0, (Cue("hot", 60.0, slot=1),))
+    other = win.track_model.index(
+        win.track_model.tracks().index(by_title["T3"]), PREVIEW_COLUMN
+    )
+    assert win.track_model.data(other, PREVIEW_CUES_ROLE).cues == ()
+    assert reads == [database]  # one read for the whole list
     win.close()
     win.deleteLater()
     lib.close()

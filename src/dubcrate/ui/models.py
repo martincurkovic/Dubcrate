@@ -22,6 +22,7 @@ from PySide6.QtGui import (
 )
 from PySide6.QtWidgets import QApplication, QStyle
 
+from dubcrate.analysis import Cue
 from dubcrate.cd import format_clock
 from dubcrate.library import Library
 from dubcrate.library.models import DiscEntry, Track
@@ -34,6 +35,9 @@ from .track_colors import swatch_icon
 PREVIEW_ROLE = (
     Qt.ItemDataRole.UserRole + 10
 )  # the track's whole-track Waveform, if known
+PREVIEW_CUES_ROLE = (
+    Qt.ItemDataRole.UserRole + 11
+)  # a `PreviewCues`: the track's length and its rekordbox cues, if known
 TRACK_MIME = "application/x-dubcrate-tracks"  # track ids dragged from the track table
 DISC_ROWS_MIME = (
     "application/x-dubcrate-disc-rows"  # positions dragged inside the disc list
@@ -94,6 +98,13 @@ TRACK_COLUMNS = (
     TrackColumn("Format", None, shown=False, width=56, fixed=True),
     TrackColumn("Path", "path", shown=False, width=260),
 )
+
+
+class PreviewCues(NamedTuple):
+    """What the Preview column needs to mark cues: where the whole-track strip ends, and the cues."""
+
+    duration: float  # seconds
+    cues: tuple[Cue, ...]
 
 
 PREVIEW_COLUMN = next(i for i, c in enumerate(TRACK_COLUMNS) if c.title == "Preview")
@@ -164,6 +175,7 @@ class TrackTableModel(QAbstractTableModel):
         self._on_disc: set[int] = set()  # on the open disc: a filled dot
         self._on_other: set[int] = set()  # on another disc only: an outline
         self._previews: dict[int, Waveform] = {}
+        self._cues: dict[int, PreviewCues] = {}
         self._rows: dict[int, int] = {}
         key_style.notifier.changed.connect(self._keys_changed)
 
@@ -195,6 +207,31 @@ class TrackTableModel(QAbstractTableModel):
 
     def has_preview(self, track_id: int) -> bool:
         return track_id in self._previews
+
+    def set_cues(self, track: Track, cues: Sequence[Cue]) -> None:
+        """Remember a track's rekordbox cues (none is an answer too) and redraw its row's preview."""
+        self._cues[track.id] = PreviewCues(track.duration, tuple(cues))
+        while len(self._cues) > MAX_PREVIEWS:
+            self._cues.pop(next(iter(self._cues)))
+        row = self._rows.get(track.id)
+        if cues and row is not None:
+            index = self.index(row, PREVIEW_COLUMN)
+            self.dataChanged.emit(index, index)
+
+    def has_cues(self, track_id: int) -> bool:
+        return track_id in self._cues
+
+    def clear_cues(self) -> None:
+        """The cues were read again: forget what was held (the next request asks for them anew)."""
+        shown = [
+            self._rows[i]
+            for i, found in self._cues.items()
+            if found.cues and i in self._rows
+        ]
+        self._cues.clear()
+        for row in shown:
+            index = self.index(row, PREVIEW_COLUMN)
+            self.dataChanged.emit(index, index)
 
     def set_on_disc(
         self, track_ids: set[int], on_other: set[int] = frozenset()
@@ -252,6 +289,8 @@ class TrackTableModel(QAbstractTableModel):
             return track.id
         if role == PREVIEW_ROLE:
             return self._previews.get(track.id)
+        if role == PREVIEW_CUES_ROLE:
+            return self._cues.get(track.id)
         return None
 
     def flags(self, index: QModelIndex) -> Qt.ItemFlag:
