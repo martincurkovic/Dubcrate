@@ -29,7 +29,7 @@
   - [ ] Waveform pre-writing (needs the amplitude scale)
 - [ ] Clean up long text labels in settings and add cm/in units (maybe in print dialog too)
   - [x] Check on real paper (and say if the vertical line spacing should shrink too)
-  - [ ] Make print dialog close when print (and resulting system print dialog is pressed)
+  - [x] Make print dialog close when print (and resulting system print dialog is pressed)
 
 ## More from the roadmap and dev_docs
 
@@ -78,7 +78,7 @@
 - [ ] Cache computed waveforms in SQLite so folder tracks keep their Preview strip across sessions ([roadmap.md](dev_docs/roadmap.md)).
 - [ ] Make imports and loudness measuring cancellable and show per-file progress ([roadmap.md](dev_docs/roadmap.md)).
 - [ ] Try `tinytag` as a faster folder scan, since `ffprobe` per file manages about 120 files a second ([roadmap.md](dev_docs/roadmap.md)).
-- [ ] Port AKAISDS's `wheel_guard` so scrolling over a spin box can't change it ([roadmap.md](dev_docs/roadmap.md)).
+- [x] Port AKAISDS's `wheel_guard` so scrolling over a spin box can't change it ([roadmap.md](dev_docs/roadmap.md)).
 - [ ] Finish the logging follow-ups: a Settings switch for verbose logging, logging in the store and the CLI, and a dialog for an uncaught exception ([roadmap.md](dev_docs/roadmap.md)).
 - [ ] Add rekordbox XML export as an import path with no SQLCipher dependency ([roadmap.md](dev_docs/roadmap.md)).
 - [ ] Read rekordbox's `PWV3` and `PWV5` directly for exact waveform matches on rekordbox tracks ([rekordbox-analysis.md](dev_docs/rekordbox-analysis.md)).

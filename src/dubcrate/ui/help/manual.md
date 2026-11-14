@@ -345,7 +345,7 @@ Old players have no screen for a track list, so Dubcrate can print one for the c
 6. **Columns (up to)** (1, 2 or 3) lets a long list run in columns on a label, so fewer labels are needed. Each row then reads *Title – Artist* on one line, so long names are cut short with “…”, and the BPM, key and duration columns are smaller. A disc uses as few columns as will do, so a short disc stays in one column even when you allow three. On a 10 × 5 cm label, 60 tracks need about four labels in one column, or two labels in two columns.
 7. **Copies of each** prints every disc's labels again for each copy you burned: burn a disc twice and set 2.
 8. **Page margin** keeps clear of the edge your printer can't print to (10 mm suits most), and **Gap between labels** leaves room to cut.
-9. Press **Print…**, or **Save PDF…** to get a file.
+9. Press **Print…**, or **Save PDF…** to get a file. The window closes once the printer has the job; **Save PDF…** leaves it open, in case you want to print as well.
 
 What is on a label: for each track, its **number**, **title** and **artist**, and, each with a box of its own, the track's **BPM** (**Show BPM**, rounded to a whole number), **key** (**Show key**) and **duration** (**Show duration**, minutes:seconds, as in the track list's Time column). BPM and key start ticked; duration is off until you tick it. The BPM and key come from your rekordbox library, so a track from a plain folder has neither and those columns stay empty. The key is written the way **Settings > Appearance > Key notation** says. The title and artist are the ones written on the CD, including any edits you made for this disc. For a crowded MP3 disc you may prefer to untick **Show BPM** and **Show key** (and leave **Show duration** off), which gives the titles more room.
 
@@ -463,6 +463,7 @@ This is the only time Dubcrate uses the network. It asks `github.com` for the li
 
 ## Good to know
 
+- **Scrolling never changes a control by accident.** The mouse wheel or a trackpad swipe over a number box, drop-down or slider scrolls the page past it: click one first, and a thin outline (dashed in the black-and-white look) shows that it will now answer the wheel. Click anywhere else and it goes back to ignoring it.
 - **Number boxes work like knobs.** Press on one and drag up or down to change it (hold Shift for fine steps), or click it once to select the whole number and type a new one (Return applies). The little arrows and the arrow keys still work.
 - **Titles use CD-TEXT**, which handles Western European characters. Other characters are simplified, or become a question mark, on the disc.
 - **The disc holds only audio and titles.** Cue points, beat grids and rekordbox analysis can't go on an audio CD.

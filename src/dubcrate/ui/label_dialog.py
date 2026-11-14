@@ -629,6 +629,7 @@ class LabelDialog(QDialog):
             return
         self._remember()
         logger.info("printed %d page(s) of labels", len(self._pages))
+        self.accept()  # the job is with the system's printer: the window has done its work
 
     def done(self, result: int) -> None:
         self._remember()

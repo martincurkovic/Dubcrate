@@ -321,3 +321,13 @@ QSlider::sub-page:horizontal {
 QSlider::handle:horizontal:hover {
     background: ${text_bright};
 }
+
+/* clicked, so the wheel changes it now (ui/wheel_guard.py): no accent in black and white, so a dashed outline
+   (the same width, so nothing moves) */
+QComboBox[armed="true"], QSpinBox[armed="true"], QDoubleSpinBox[armed="true"] {
+    border-style: dashed;
+}
+
+QSlider[armed="true"]::handle:horizontal {
+    border-style: dashed;
+}

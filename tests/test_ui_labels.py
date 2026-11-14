@@ -3,7 +3,7 @@
 import pytest
 from PySide6.QtCore import QSettings, Qt
 from PySide6.QtGui import QPdfWriter
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QMessageBox
 
 from dubcrate import labels, settings
 from dubcrate.library import Library, TrackRecord
@@ -319,6 +319,43 @@ def test_cancelling_the_print_panel_prints_nothing(qapp, lib, discs, monkeypatch
     monkeypatch.setattr(label_paint, "write_pages", lambda *a: written.append(a))
     dialog.print_labels()
     assert len(asked) == 1 and written == []
+
+
+def test_the_label_window_closes_when_the_print_job_has_started(
+    qapp, lib, discs, monkeypatch
+):
+    dialog = LabelDialog(lib)
+    dialog.show()
+    tick(dialog, discs[0])
+    monkeypatch.setattr(label_dialog, "ask_printer", lambda printer, parent: True)
+    monkeypatch.setattr(label_paint, "write_pages", lambda *a: True)
+    done = []
+    dialog.finished.connect(done.append)
+    dialog.print_labels()
+    assert done == [dialog.DialogCode.Accepted] and not dialog.isVisible()
+
+
+def test_the_label_window_stays_open_when_printing_is_cancelled_or_fails_or_for_a_pdf(
+    qapp, lib, discs, monkeypatch, tmp_path
+):
+    dialog = LabelDialog(lib)
+    dialog.show()
+    tick(dialog, discs[0])
+    warned = []
+    monkeypatch.setattr(QMessageBox, "warning", lambda *a, **k: warned.append(a))
+    monkeypatch.setattr(label_dialog, "ask_printer", lambda printer, parent: False)
+    dialog.print_labels()  # cancelled in the system's print panel
+    assert dialog.isVisible()
+    monkeypatch.setattr(label_dialog, "ask_printer", lambda printer, parent: True)
+    monkeypatch.setattr(label_paint, "write_pages", lambda *a: False)
+    dialog.print_labels()  # the printer won't start the job
+    assert dialog.isVisible() and len(warned) == 1
+    monkeypatch.undo()
+    monkeypatch.setattr(
+        label_dialog, "ask_pdf_path", lambda parent: str(tmp_path / "x.pdf")
+    )
+    dialog.save_pdf()  # a PDF can be followed by a print, so the window stays
+    assert dialog.isVisible() and (tmp_path / "x.pdf").is_file()
 
 
 @pytest.mark.parametrize(

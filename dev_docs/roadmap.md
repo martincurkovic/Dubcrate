@@ -267,8 +267,8 @@
 - The same song in rekordbox and in an Explorer folder is two track rows, tied together only by
   their path (`path_key`). A copy of the file in another folder, or a rekordbox library that points at
   another drive's path, is not recognised.
-- AKAISDS's `wheel_guard` (a control answers the wheel only after a click) was not ported with the
-  drag-to-change spin boxes, so scrolling over a spin box in a scrolling page can still change it.
+- AKAISDS's `wheel_guard` (a control answers the wheel only after a click) is ported (`ui/wheel_guard.py`),
+  but **not felt by hand yet** (how it feels on a trackpad, and the armed outline in each look).
 
 - Imports and measuring can't be cancelled, and there is no per-file progress detail.
 - A folder scan runs at about 120 files a second (ffprobe per file), so 50,000 files

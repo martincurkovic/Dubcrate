@@ -738,6 +738,15 @@ QLabel#emptyState {
    Dubcrate additions
    ============================================================ */
 
+/* clicked, so the mouse wheel changes it now (ui/wheel_guard.py; System 6 draws it dashed) */
+QComboBox[armed="true"], QSpinBox[armed="true"], QDoubleSpinBox[armed="true"] {
+    border-color: ${accent};
+}
+
+QSlider[armed="true"]::handle:horizontal {
+    border-color: ${accent};
+}
+
 /* the status bar's small "Update available" button */
 QPushButton#updateButton {
     background-color: ${update_bg};

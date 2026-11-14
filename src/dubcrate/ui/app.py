@@ -12,7 +12,7 @@ from PySide6.QtWidgets import QApplication
 from dubcrate import logsetup, tools
 from dubcrate.library import Library
 
-from . import dialog_log, spinbox_drag, theme
+from . import dialog_log, spinbox_drag, theme, wheel_guard
 from .main_window import MainWindow
 from .splash import StartupSplash
 from .startup import maybe_refresh
@@ -131,6 +131,9 @@ def _run(args: argparse.Namespace, qt_args: list[str]) -> int:
     spinbox_drag.install(
         app
     )  # every spin box drags like a knob (one filter, remove this line to undo)
+    wheel_guard.install(
+        app
+    )  # scrolling a page never changes a control; only a clicked one answers the wheel
     dialog_log.install()
 
     with Library.open(args.library) as lib:
