@@ -461,13 +461,13 @@ def _sync(ctx):
 
 @shot(
     "sync-waveforms",
-    "the Sync tab's Waveforms tab: each track's waveform as the CDJ will draw it",
+    "the Sync tab with a track picked: its waveform at the bottom as the CDJ will draw it",
 )
 def _sync_waveforms(ctx):
-    """The same staged Sync tab, with the picked disc's Waveforms tab showing (made-up music, real analysis)."""
+    """The same staged Sync tab, with the fourth track of the picked disc picked (made-up music, real analysis)."""
     window = _sync(ctx)
-    view = window.sync_view
-    view.detail_tabs.setCurrentIndex(1)
+    table = window.sync_view.browser.table
+    table.setCurrentItem(table.topLevelItem(3))
     ctx.settle(8)
     return window
 

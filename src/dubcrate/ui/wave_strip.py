@@ -1,10 +1,14 @@
-"""A CDJ-1000MK3 waveform drawn as the player draws it: 100 columns, 16 levels (the Sync tab's preview).
+"""A CDJ-1000MK3 waveform drawn as the player's display draws it (the Sync tab's track browser).
 
-One track's `wave_model` values (1 to 15, one per column) as bars. Custom painted from the theme's palette
-(`theme.current_palette()`), so it can't disagree with the stylesheet, and it has four looks for what the
-Sync tab knows about a track: **will be written** (the theme's accent), **already on the card** (muted: the
-card's own, which the player draws), **not analysed yet** (a dashed line: Sync works it out first) and
-**none** (no file to analyse: nothing is drawn).
+The display's waveform is a dot matrix: **100 columns, 7 rows, growing up from the bottom** (the
+origin is the bottom edge; a louder column lights more rows), seen on the player's face in the
+owner's photo of it. One track's `wave_model` values (1 to 15, one per column) become 0 to 7 lit
+rows (`rows_for`: **that mapping is a guess**, 15 levels onto 7 rows, rounded and never fewer than
+one for a column that has a value). Custom painted from the theme's palette (`theme.current_palette()`),
+so it can't disagree with the stylesheet, with four looks for what the Sync tab knows about a track:
+**will be written** (the theme's accent), **already on the card** (muted: the card's own, which the
+player draws), **not analysed yet** (a dashed line along the bottom: Sync works it out first) and
+**none** (no file to analyse: only the unlit dots).
 """
 
 from collections.abc import Sequence
@@ -18,11 +22,18 @@ from dubcrate.wave_model import COLUMNS, MAX_VALUE
 from . import theme
 
 WRITE, CARD, PENDING, NONE = "write", "card", "pending", "none"
-STRIP_HEIGHT = 26
+ROWS = 7  # the display's height in dots
+STRIP_HEIGHT = 96
+
+
+def rows_for(value: int) -> int:
+    """How many of the 7 rows a value (0 to 15) lights: none for 0, else at least one."""
+    value = min(max(int(value), 0), MAX_VALUE)
+    return 0 if value == 0 else max(1, round(value * ROWS / MAX_VALUE))
 
 
 class CdjWaveStrip(QWidget):
-    """One track's waveform as bars across the width, loudest column the full height."""
+    """One track's waveform as a 100 by 7 dot matrix, the loudest column the full height."""
 
     def __init__(
         self,
@@ -34,7 +45,7 @@ class CdjWaveStrip(QWidget):
         self._values: list[int] = []
         self._state = state
         self.setFixedHeight(STRIP_HEIGHT)
-        self.setMinimumWidth(120)
+        self.setMinimumWidth(240)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self.set_values(values, state)
 
@@ -51,9 +62,9 @@ class CdjWaveStrip(QWidget):
         self._state = state
         self.update()
 
-    def bar_heights(self, height: float) -> list[float]:
-        """The height of each column's bar in a strip `height` pixels tall: a value of 15 is all of it."""
-        return [min(max(v, 0), MAX_VALUE) / MAX_VALUE * height for v in self._values]
+    def lit_rows(self) -> list[int]:
+        """For each column, how many dots are lit from the bottom (0 to 7)."""
+        return [rows_for(v) for v in self._values]
 
     def paintEvent(self, _event) -> None:
         palette = theme.current_palette()
@@ -63,27 +74,34 @@ class CdjWaveStrip(QWidget):
             painter.setPen(QPen(QColor(palette["border_list"]), 1))
             painter.setBrush(QColor(palette["bg_input"]))
             painter.drawRoundedRect(area, 3, 3)
-            inner = area.adjusted(2, 2, -2, -2)
-            if self._state == PENDING or (not self._values and self._state != NONE):
+            inner = area.adjusted(6, 6, -6, -6)
+            cell_w = inner.width() / COLUMNS
+            cell_h = inner.height() / ROWS
+            gap = max(1.0, min(cell_w, cell_h) * 0.18)
+            lit = self.lit_rows()
+            if self._state == PENDING or (not lit and self._state != NONE):
                 pen = QPen(QColor(palette["text_disabled"]), 1, Qt.PenStyle.DashLine)
                 painter.setPen(pen)
-                y = inner.center().y()
+                y = inner.bottom() - cell_h / 2
                 painter.drawLine(inner.left(), y, inner.right(), y)
                 return
-            if not self._values:
-                return
-            colour = QColor(
+            on = QColor(
                 palette["accent"] if self._state == WRITE else palette["text_disabled"]
             )
+            off = QColor(palette["border_list"])
+            off.setAlphaF(0.35)
             painter.setPen(Qt.PenStyle.NoPen)
-            painter.setBrush(colour)
-            columns = len(self._values)
-            width = inner.width() / max(columns, COLUMNS)
-            for i, h in enumerate(self.bar_heights(inner.height())):
-                if h <= 0:
-                    continue
-                # a bar grows from the middle, as a waveform does
-                bar = QRectF(inner.left() + i * width, inner.center().y() - h / 2, max(width - 0.5, 0.5), h)  # fmt: skip
-                painter.drawRect(bar)
+            for column in range(COLUMNS):
+                height = lit[column] if column < len(lit) else 0
+                for row in range(ROWS):  # row 0 is the bottom one
+                    painter.setBrush(on if row < height else off)
+                    painter.drawRect(
+                        QRectF(
+                            inner.left() + column * cell_w + gap / 2,
+                            inner.bottom() - (row + 1) * cell_h + gap / 2,
+                            max(cell_w - gap, 0.5),
+                            max(cell_h - gap, 0.5),
+                        )
+                    )
         finally:
             painter.end()

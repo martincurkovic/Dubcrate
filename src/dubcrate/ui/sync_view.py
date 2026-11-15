@@ -30,11 +30,8 @@ from PySide6.QtWidgets import (
     QListWidgetItem,
     QMenu,
     QMessageBox,
-    QPlainTextEdit,
     QPushButton,
-    QScrollArea,
     QSizePolicy,
-    QTabWidget,
     QTreeWidget,
     QTreeWidgetItem,
     QVBoxLayout,
@@ -49,7 +46,6 @@ from dubcrate.card_apply import apply_sync, default_backup_dir
 from dubcrate.card_discs import (
     DiscSurvey,
     RekordboxCues,
-    WaveRow,
     survey_discs,
     wave_rows,
 )
@@ -68,7 +64,7 @@ from .label_dialog import disc_paths
 from .models import _disc_icon, _folder_icon
 from .source_tabs import explorer_glyph, sd_card_glyph
 from .tasks import TaskError, run_async
-from .wave_strip import CdjWaveStrip
+from .track_browser import TrackBrowser
 
 log = logging.getLogger(__name__)
 
@@ -558,64 +554,6 @@ def _read_all(paths: Sequence[Path]) -> dict[Path, Mapping[str, Sequence[Cue]] |
     return found
 
 
-class WaveRows(QScrollArea):
-    """The **Waveforms** tab: a strip for each track of the picked disc, as the CDJ will draw it."""
-
-    def __init__(self, parent: QWidget | None = None):
-        super().__init__(parent)
-        self.setWidgetResizable(True)
-        self.setFrameShape(QScrollArea.Shape.NoFrame)
-        self._body = QWidget()
-        self._layout = QVBoxLayout(self._body)
-        self._layout.setContentsMargins(4, 4, 4, 4)
-        self._layout.setSpacing(6)
-        self.setWidget(self._body)
-        self.message = QLabel()
-        self.message.setObjectName("mutedLabel")
-        self.message.setWordWrap(True)
-        self.strips: list[CdjWaveStrip] = []
-        self.rows: list[WaveRow] = []
-        self.show_message(
-            "Pick a disc to see the waveform of each track as the player will draw it."
-        )
-
-    def _clear(self) -> None:
-        while self._layout.count():
-            item = self._layout.takeAt(0)
-            if (w := item.widget()) is not None and w is not self.message:
-                w.deleteLater()
-        self.strips, self.rows = [], []
-
-    def show_message(self, text: str) -> None:
-        self._clear()
-        self.message.setText(text)
-        self._layout.addWidget(self.message)
-        self._layout.addStretch(1)
-
-    def show_rows(self, rows: list[WaveRow]) -> None:
-        self._clear()
-        self.rows = list(rows)
-        self.message.setParent(None)
-        for row in rows:
-            line = QWidget()
-            box = QVBoxLayout(line)
-            box.setContentsMargins(0, 0, 0, 0)
-            box.setSpacing(1)
-            head = QHBoxLayout()
-            title = _ElidedLabel(f"{row.number}.  {row.title}")
-            note = QLabel(row.note)
-            note.setObjectName("mutedLabel")
-            head.addWidget(title, 1)
-            head.addWidget(note)
-            box.addLayout(head)
-            strip = CdjWaveStrip(row.values or None, row.state)
-            strip.setToolTip(f"{row.title}\n{row.note}")
-            box.addWidget(strip)
-            self.strips.append(strip)
-            self._layout.addWidget(line)
-        self._layout.addStretch(1)
-
-
 class SyncView(QWidget):
     """The middle: the discs, what a sync would do for each, and the dry run for the one picked."""
 
@@ -653,10 +591,13 @@ class SyncView(QWidget):
         )
         self._ticking = False
 
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(12, 12, 12, 12)
-        layout.setSpacing(8)
-        title = QLabel("Dubcrate CDs")
+        # The right-hand side of the window while the Sync tab is on (the window puts `disc_panel` there, in place
+        # of the Discs list): the discs, each with a tick to say what to sync, and what to do with the ticked ones.
+        self.disc_panel = QWidget()
+        panel = QVBoxLayout(self.disc_panel)
+        panel.setContentsMargins(12, 12, 12, 12)
+        panel.setSpacing(8)
+        title = QLabel("Discs to sync")
         title.setObjectName("panelTitle")
         self.clear_button = QPushButton("Clear selection")
         self.clear_button.setFlat(True)
@@ -667,15 +608,15 @@ class SyncView(QWidget):
         head.addWidget(title)
         head.addStretch(1)
         head.addWidget(self.clear_button)
-        layout.addLayout(head)
+        panel.addLayout(head)
         self.subtitle = QLabel()
         self.subtitle.setObjectName("mutedLabel")
-        layout.addWidget(self.subtitle)
+        panel.addWidget(self.subtitle)
         self.search = QLineEdit()
         self.search.setPlaceholderText("Search discs")
         self.search.setClearButtonEnabled(True)
         self.search.textChanged.connect(self._filter)
-        layout.addWidget(self.search)
+        panel.addWidget(self.search)
 
         self.tree = QTreeWidget()
         self.tree.setColumnCount(4)
@@ -687,49 +628,20 @@ class SyncView(QWidget):
         header.setStretchLastSection(False)
         header.setSectionResizeMode(COL_NAME, QHeaderView.ResizeMode.Stretch)
         header.setSectionResizeMode(COL_TRACKS, QHeaderView.ResizeMode.ResizeToContents)
-        header.setSectionResizeMode(COL_STATUS, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(COL_STATUS, QHeaderView.ResizeMode.Interactive)
         header.setSectionResizeMode(COL_TICK, QHeaderView.ResizeMode.Fixed)
+        self.tree.setColumnWidth(COL_STATUS, 150)
         self.tree.setColumnWidth(COL_TICK, 40)
         self.tree.itemChanged.connect(self._on_item_changed)
         self.tree.currentItemChanged.connect(lambda *_: self._show_detail())
-        layout.addWidget(self.tree, 1)
-
-        self.detail = QPlainTextEdit()
-        self.detail.setReadOnly(True)
-        self.waves = WaveRows()
-        self.analyse_note = QLabel()
-        self.analyse_note.setObjectName("mutedLabel")
-        self.analyse_button = QPushButton("Analyse Waveforms")
-        self.analyse_button.setToolTip(
-            "Work out the waveform of each track of this disc that has none yet, from the music "
-            "files, and keep it. Writes nothing to the card; a sync (or a burn) would do the same."
-        )
-        self.analyse_button.clicked.connect(self.analyse_waveforms)
-        waves_head = QHBoxLayout()
-        waves_head.setContentsMargins(4, 4, 4, 0)
-        waves_head.addWidget(self.analyse_note, 1)
-        waves_head.addWidget(self.analyse_button)
-        waves_page = QWidget()
-        waves_box = QVBoxLayout(waves_page)
-        waves_box.setContentsMargins(0, 0, 0, 0)
-        waves_box.setSpacing(0)
-        waves_box.addLayout(waves_head)
-        waves_box.addWidget(self.waves, 1)
-        self.detail_tabs = QTabWidget()
-        self.detail_tabs.addTab(self.detail, "What a sync does")
-        self.detail_tabs.addTab(waves_page, "Waveforms")
-        self.detail_tabs.setMinimumHeight(190)
-        self.detail_tabs.setMaximumHeight(280)
-        layout.addWidget(self.detail_tabs)
+        panel.addWidget(self.tree, 1)
 
         self.footer_title = QLabel()
         self.footer_note = QLabel()
         self.footer_note.setObjectName("mutedLabel")
         self.footer_note.setWordWrap(True)
-        words = QVBoxLayout()
-        words.setSpacing(0)
-        words.addWidget(self.footer_title)
-        words.addWidget(self.footer_note)
+        panel.addWidget(self.footer_title)
+        panel.addWidget(self.footer_note)
         self.measure_button = QPushButton("Measure Lengths")
         self.measure_button.setToolTip(
             "A card entry is the disc's table of contents, which needs every track's exact length "
@@ -754,14 +666,30 @@ class SyncView(QWidget):
             "when the disc loads. A track that already has a waveform on the card keeps it."
         )
         self.waves_check.toggled.connect(self._waves_toggled)
-        foot = QHBoxLayout()
-        foot.addLayout(words, 1)
-        foot.addWidget(self.waves_check)
-        foot.addWidget(self.eject_check)
-        foot.addWidget(self.cancel_button)
-        foot.addWidget(self.measure_button)
-        foot.addWidget(self.sync_button)
-        layout.addLayout(foot)
+        checks = QHBoxLayout()
+        checks.addWidget(self.waves_check)
+        checks.addWidget(self.eject_check)
+        checks.addStretch(1)
+        panel.addLayout(checks)
+        buttons = QHBoxLayout()
+        buttons.addWidget(self.measure_button)
+        buttons.addStretch(1)
+        buttons.addWidget(self.cancel_button)
+        buttons.addWidget(self.sync_button)
+        panel.addLayout(buttons)
+
+        # The middle: the picked disc's tracks, and the picked track's waveform at the bottom.
+        self.browser = TrackBrowser()
+        self.waves = (
+            self.browser
+        )  # (its rows and message, as the tests and callers look)
+        self.detail = self.browser.detail
+        self.analyse_note = self.browser.analyse_note
+        self.analyse_button = self.browser.analyse_button
+        self.analyse_button.clicked.connect(self.analyse_waveforms)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.addWidget(self.browser)
         self._update_buttons()
         self._show_detail()
 
@@ -890,6 +818,8 @@ class SyncView(QWidget):
                     )
 
         self._ticking = True
+        # (clearing the list is not the user picking nothing: that would forget which track was picked)
+        self.tree.blockSignals(True)
         self.tree.clear()
         fill(self.tree, None)
         self.tree.expandAll()
@@ -900,6 +830,7 @@ class SyncView(QWidget):
             item = next((i for i in self._disc_items() if self._id(i) == current), None)
             if item is not None:
                 self.tree.setCurrentItem(item)
+        self.tree.blockSignals(False)
         self._filter(self.search.text())
         self._update_buttons()
         self._show_detail()
@@ -1003,42 +934,43 @@ class SyncView(QWidget):
 
     # -- the words -------------------------------------------------------------------
 
-    def _show_waves(self, survey: DiscSurvey | None) -> None:
-        """The Waveforms tab for the picked disc."""
-        if survey is None:
-            self.waves.show_message(
-                "Pick a disc to see the waveform of each track as the player will draw it."
-            )
-        elif survey.input.problems:
-            self.waves.show_message(
-                "This disc can't be synced: " + survey.input.problems[0]
-            )
-        else:
-            entries = self._lib.disc_entries(survey.disc.id)
-            self.waves.show_rows(
-                wave_rows(survey, entries, self.waves_check.isChecked())
-            )
-
     def _show_detail(self) -> None:
+        """The middle for the disc picked on the right: its tracks and the picked track's waveform."""
         survey = self._surveys.get(self._current_disc_id() or -1)
-        self._show_waves(survey)
-        self._update_analyse(self._measuring or self._writing or self._analysing)
-        if survey is not None:
-            self.detail.setPlainText("\n".join(survey.detail()))
-            return
-        if not self._surveys:
+        if survey is None:
+            self.browser.show_message(
+                "No audio discs yet. Make one, or open the Library, and it is listed on the right."
+                if not self._surveys
+                else "Pick a disc on the right to look through its tracks and see what a sync would do for it."
+            )
             self.detail.setPlainText(
                 "No audio discs yet. Make one, or open the Library, and it is listed here."
-            )
-        else:
-            self.detail.setPlainText(
-                "Pick a disc to see what a sync would do for it.\n\n"
+                if not self._surveys
+                else "Pick a disc to see what a sync would do for it.\n\n"
                 "Every rekordbox cue (memory cues, hot cues and loops) becomes a memory cue on the "
                 "card. The player's hot cues A, B and C are never touched, and cues already on "
                 "the card are kept. With “Write waveforms” ticked, each track also gets its "
                 "waveform on the card (the player then doesn't analyse it), unless the card "
                 "already has one for it."
             )
+        elif survey.input.problems:
+            self.browser.show_message(
+                "This disc can't be synced: " + survey.input.problems[0],
+                title=survey.disc.name,
+            )
+            self.detail.setPlainText("\n".join(survey.detail()))
+        else:
+            entries = self._lib.disc_entries(survey.disc.id)
+            plan = survey.plan
+            self.browser.show_disc(
+                survey.disc.id,
+                survey.disc.name,
+                f"{survey.disc.track_count} tracks · {survey.status}",
+                wave_rows(survey, entries, self.waves_check.isChecked()),
+                warnings=[*survey.input.warnings, *(plan.notes if plan else [])],
+                detail="\n".join(survey.detail()),
+            )
+        self._update_analyse(self._measuring or self._writing or self._analysing)
 
     def _update_buttons(self) -> None:
         writable = [s for s in self._surveys.values() if s.writable]

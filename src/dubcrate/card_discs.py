@@ -13,8 +13,9 @@ disc edited after its burn is told apart by `toc_differences`. **A disc with gap
 with gaps lays the TOC out has not been checked on a drive.
 """
 
+from collections import Counter
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 from dubcrate import cdj_card as cc
@@ -282,6 +283,11 @@ class WaveRow:
     state: str  # WAVE_WRITE | WAVE_CARD | WAVE_PENDING | WAVE_NONE
     values: tuple[int, ...] = ()  # the 100 columns to draw (empty: nothing to draw)
     note: str = ""
+    # for the track browser: the track's own parts, its length on the disc and what a sync does with its cues
+    name: str = ""
+    artist: str = ""
+    seconds: float = 0.0
+    cues: str = ""
 
 
 def wave_rows(
@@ -293,6 +299,9 @@ def wave_rows(
     With no card to compare with (`survey.plan` is None) a track shows its own analysed waveform."""
     plan = survey.plan
     rows = []
+    request = survey.input.request
+    wanted = Counter(c.track for c in request.wanted) if request else Counter()
+    added = Counter(c.track for c in plan.added) if plan else Counter()
     for entry in entries:
         number = entry.position + 1
         title = " – ".join(p for p in (entry.artist, entry.title) if p) or "Untitled"
@@ -322,7 +331,23 @@ def wave_rows(
         else:
             why = "its file is missing" if entry.track.missing else "nothing to write"
             row = WaveRow(number, title, WAVE_NONE, note=why)
-        rows.append(row)
+        if survey.input.problems or request is None:
+            cues = ""
+        elif plan is None:
+            cues = f"{wanted[number]}" if wanted[number] else "–"
+        elif added[number]:
+            cues = f"{added[number]} to add"
+        else:
+            cues = "on the card" if wanted[number] else "–"
+        rows.append(
+            replace(
+                row,
+                name=entry.title,
+                artist=entry.artist,
+                seconds=entry.track.length_sectors / cc.FRAMES_PER_SECOND,
+                cues=cues,
+            )
+        )
     return rows
 
 

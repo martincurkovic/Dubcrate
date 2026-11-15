@@ -49,7 +49,7 @@ The first release: macOS (Apple Silicon and Intel) and, new, Linux (an AppImage)
   waveforms written this way. The Sync tab's own waveform writing has not yet been tried on a card in a player.*
 - **Format a Card** sets up a blank SD card from scratch (FAT16, the PIONEER folder), so a card can be prepared at home, on a Mac,
   Linux or Windows. *Not yet shown to a player, and the Linux and Windows ways have not been tried on a real card.* Only plain SD cards of 2 GB or less work in the player.
-- The Sync tab has a **Waveforms** tab showing the waveform each track will get, with an **Analyse Waveforms** button to work them out without writing to a card. **Format a Card…** and **Eject** are in the card list's right-click menu.
+- The Sync tab: the card on the left, a **browser of the picked disc's tracks** in the middle (cues and waveform state for each, and the picked track's waveform drawn at the bottom as the player's display draws it, with an **Analyse Waveforms** button to work them out without writing to a card), and the **discs to tick** on the right, so a disc can be looked through without leaving Sync. **Format a Card…** and **Eject** are in the card list's right-click menu.
 
 ### Under the hood
 

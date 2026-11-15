@@ -7,7 +7,15 @@ from dubcrate import card_discs, wave_model
 from dubcrate import cdj_card as cc
 from dubcrate.library import Library, TrackRecord
 from dubcrate.ui import theme
-from dubcrate.ui.wave_strip import CARD, NONE, PENDING, WRITE, CdjWaveStrip
+from dubcrate.ui.wave_strip import (
+    CARD,
+    NONE,
+    PENDING,
+    ROWS,
+    WRITE,
+    CdjWaveStrip,
+    rows_for,
+)
 
 
 def saw(shift=0):
@@ -17,11 +25,44 @@ def saw(shift=0):
 # -- the widget -------------------------------------------------------------------------------------
 
 
-def test_a_value_of_fifteen_is_the_full_height_and_zero_is_nothing(qapp):
+def test_fifteen_lights_all_seven_rows_zero_none_and_anything_audible_at_least_one():
+    assert [rows_for(v) for v in (0, 1, 2, 3, 8, 14, 15)] == [0, 1, 1, 1, 4, 7, 7]
+    assert (
+        rows_for(-3) == 0 and rows_for(99) == 7
+    )  # (out of range is held to the range)
+    assert ROWS == 7
     strip = CdjWaveStrip([15, 0, 5, 99, -3] + [1] * 95)
-    heights = strip.bar_heights(30)
-    assert heights[0] == 30 and heights[1] == 0 and heights[2] == pytest.approx(10)
-    assert heights[3] == 30 and heights[4] == 0  # (out of range is held to the range)
+    assert strip.lit_rows()[:5] == [7, 0, 2, 7, 0]
+
+
+def test_the_display_is_a_hundred_columns_and_the_bars_grow_from_the_bottom(qapp):
+    palette = theme.current_palette()
+    strip = CdjWaveStrip([15] + [0] * 99, WRITE)
+    strip.resize(400, 96)
+    image = strip.grab().toImage()
+    accent = QColor(palette["accent"]).name()
+    lit = [
+        (x, y)
+        for x in range(image.width())
+        for y in range(image.height())
+        if QColor(image.pixel(x, y)).name() == accent
+    ]
+    assert lit  # (the first column, full height)
+    xs = {x for x, _ in lit}
+    assert max(xs) < 6 + (400 - 12) / 100 + 2  # only the first column is lit
+    assert (
+        max(y for _, y in lit) > 96 - 12 and min(y for _, y in lit) < 14
+    )  # bottom to top
+    short = CdjWaveStrip([2] + [0] * 99, WRITE)
+    short.resize(400, 96)
+    image = short.grab().toImage()
+    ys = [
+        y
+        for x in range(image.width())
+        for y in range(image.height())
+        if QColor(image.pixel(x, y)).name() == accent
+    ]
+    assert min(ys) > 96 / 2  # a quiet column lights only the bottom rows
 
 
 def colours(strip):
@@ -36,9 +77,9 @@ def colours(strip):
 def test_a_waveform_to_write_is_drawn_in_the_accent_and_one_on_the_card_muted(qapp):
     palette = theme.current_palette()
     write = CdjWaveStrip(saw(), WRITE)
-    write.resize(400, 26)
+    write.resize(400, 96)
     card = CdjWaveStrip(saw(), CARD)
-    card.resize(400, 26)
+    card.resize(400, 96)
     assert QColor(palette["accent"]).name() in colours(write)
     assert QColor(palette["accent"]).name() not in colours(card)
     assert QColor(palette["text_disabled"]).name() in colours(card)
@@ -47,10 +88,10 @@ def test_a_waveform_to_write_is_drawn_in_the_accent_and_one_on_the_card_muted(qa
 def test_an_unanalysed_track_is_a_dashed_line_and_a_track_with_none_is_empty(qapp):
     palette = theme.current_palette()
     pending = CdjWaveStrip(None, PENDING)
-    pending.resize(400, 26)
+    pending.resize(400, 96)
     assert QColor(palette["text_disabled"]).name() in colours(pending)
     none = CdjWaveStrip(None, NONE)
-    none.resize(400, 26)
+    none.resize(400, 96)
     assert QColor(palette["accent"]).name() not in colours(none)
     assert QColor(palette["text_disabled"]).name() not in colours(none)
 

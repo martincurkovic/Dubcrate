@@ -98,6 +98,8 @@ PREVIEW_DELAY_MS = 40
 UPDATE_CHECK_DELAY_MS = (
     2000  # the start-up update check waits until the window has settled
 )
+SYNC_RIGHT_WIDTH = 480  # the Sync tab's disc list needs more room than the Discs list
+SYNC_CENTER_MIN = 420  # ... but not at the cost of the track browser
 PREVIEW_ROWS_AROUND = 8  # also read this many rows above and below what is visible
 MAX_NOTE_LINES = 12
 
@@ -483,10 +485,17 @@ class MainWindow(QMainWindow):
         right_layout.addWidget(self.disc_tree, 1)
         right_layout.addLayout(disc_buttons)
 
+        # the right-hand side is the Discs list, except on the Sync tab, where it is the list of discs to tick
+        # and sync (so a disc can be looked at without leaving Sync)
+        self._discs_page = right
+        self.right_stack = QStackedWidget()
+        self.right_stack.addWidget(right)
+        self.right_stack.addWidget(self.sync_view.disc_panel)
+        self._sizes_before_sync: list[int] | None = None
         self.splitter = Splitter(Qt.Orientation.Horizontal)
         self.splitter.addWidget(left)
         self.splitter.addWidget(self.center)
-        self.splitter.addWidget(right)
+        self.splitter.addWidget(self.right_stack)
         self.splitter.setStretchFactor(0, 0)
         self.splitter.setStretchFactor(1, 1)
         self.splitter.setStretchFactor(2, 0)
@@ -895,10 +904,27 @@ class MainWindow(QMainWindow):
                 self.sync_view if key == "sync" else self.center.widget(0)
             )
 
+    def _show_sync_panes(self, on: bool) -> None:
+        """The Sync tab swaps the Discs list on the right for its own list of discs, and gives it the
+        room its status column needs (the sizes come back when another tab is picked)."""
+        self.right_stack.setCurrentWidget(
+            self.sync_view.disc_panel if on else self._discs_page
+        )
+        sizes = self.splitter.sizes()
+        if on and self._sizes_before_sync is None and len(sizes) == 3:
+            wanted = SYNC_RIGHT_WIDTH - sizes[2]
+            if wanted > 0 and sizes[1] - wanted >= SYNC_CENTER_MIN:
+                self._sizes_before_sync = sizes
+                self.splitter.setSizes([sizes[0], sizes[1] - wanted, SYNC_RIGHT_WIDTH])
+        elif not on and self._sizes_before_sync is not None:
+            self.splitter.setSizes(self._sizes_before_sync)
+            self._sizes_before_sync = None
+
     def _on_left_tab(self, key: str) -> None:
         """The Library tab shows the library tree's pick in the track list; the Explorer shows
         the folder picked in its own tree."""
         self.source_pages.setCurrentWidget(self._left_pages[key])
+        self._show_sync_panes(key == "sync")
         if self._persist:
             settings.set_left_tab(key)
         if key == "sync":

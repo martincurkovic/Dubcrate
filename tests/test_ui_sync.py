@@ -10,7 +10,7 @@ from dubcrate import card_format
 from dubcrate import cdj_card as cc
 from dubcrate.analysis import Cue
 from dubcrate.library import Library, TrackRecord
-from dubcrate.ui import sync_view
+from dubcrate.ui import main_window, sync_view
 from dubcrate.ui.main_window import MainWindow
 from dubcrate.ui.source_tabs import SourceTabBar, sd_card_glyph
 from dubcrate.ui.sync_view import COL_STATUS, COL_TICK, CardPanel, SyncView
@@ -1016,8 +1016,8 @@ def test_the_waveforms_tab_shows_a_strip_per_track_as_the_player_will_draw_it(wr
     item = next(i for i in view._disc_items() if i.text(0) == "A")
     view.tree.setCurrentItem(item)
     assert [r.state for r in view.waves.rows] == ["write"] * 12
-    assert len(view.waves.strips) == 12 and view.waves.strips[0].values == saw()
-    assert view.detail_tabs.tabText(1) == "Waveforms"
+    assert view.browser.strip.values == saw()  # (the picked track's: the first)
+    assert view.browser.caption.text().startswith("1.")
     view.waves_check.setChecked(False)
     assert {r.state for r in view.waves.rows} == {"none"} and view.waves.rows[0].note == "Write waveforms is off"  # fmt: skip
 
@@ -1086,7 +1086,7 @@ def test_the_cancel_button_stops_the_analysis_keeps_what_was_done_and_writes_not
     before = card_files(writing.card)
     writing.view.sync_button.click()
     assert wait_until(writing.view, lambda: bool(started))
-    assert writing.view.cancel_button.isVisibleTo(writing.view) and writing.view.cancel_button.isEnabled()  # fmt: skip
+    assert writing.view.cancel_button.isVisibleTo(writing.view.disc_panel) and writing.view.cancel_button.isEnabled()  # fmt: skip
     assert not writing.view.sync_button.isEnabled()
     writing.view.cancel_button.click()
     assert writing.view.subtitle.text() == "Cancelling…" and not writing.view.cancel_button.isEnabled()  # fmt: skip
@@ -1101,7 +1101,7 @@ def test_the_cancel_button_stops_the_analysis_keeps_what_was_done_and_writes_not
     assert card_files(writing.card) == before
     kept = [t for t in writing.lib.tracks() if t.waveform is not None]
     assert len(kept) == 3  # what was worked out stays: the next sync only does the rest
-    assert not writing.view.cancel_button.isVisibleTo(writing.view)
+    assert not writing.view.cancel_button.isVisibleTo(writing.view.disc_panel)
 
 
 def test_the_cancel_button_stops_measuring_lengths_and_keeps_the_ones_measured(cue_view, lib, tmp_path, monkeypatch, wait_for):  # fmt: skip
@@ -1125,16 +1125,16 @@ def test_the_cancel_button_stops_measuring_lengths_and_keeps_the_ones_measured(c
 
     monkeypatch.setattr(sync_view, "probe_lengths", slow)
     cue_view.measure_button.click()
-    assert wait_until(cue_view, lambda: bool(started)) and cue_view.cancel_button.isVisibleTo(cue_view)  # fmt: skip
+    assert wait_until(cue_view, lambda: bool(started)) and cue_view.cancel_button.isVisibleTo(cue_view.disc_panel)  # fmt: skip
     cue_view.cancel_button.click()
     assert wait_until(cue_view, lambda: not cue_view._measuring)
     assert "Cancelled: 2 of 12 tracks measured, kept." in said[-1]
     assert sum(t.cd_sectors is not None for t in lib.tracks()) == 2
-    assert not cue_view.cancel_button.isVisibleTo(cue_view)
+    assert not cue_view.cancel_button.isVisibleTo(cue_view.disc_panel)
 
 
 def test_the_cancel_button_is_hidden_when_nothing_is_running(cue_view):
-    assert not cue_view.cancel_button.isVisibleTo(cue_view)
+    assert not cue_view.cancel_button.isVisibleTo(cue_view.disc_panel)
 
 
 def test_the_waveforms_tab_has_a_button_that_analyses_the_picked_disc_and_writes_nothing(writing, monkeypatch, tmp_path):  # fmt: skip
@@ -1206,7 +1206,7 @@ def test_the_analyse_button_can_be_cancelled_like_a_sync(writing, monkeypatch, t
     view.tree.setCurrentItem(next(i for i in view._disc_items() if i.text(0) == "A"))
     view.analyse_button.click()
     assert wait_until(view, lambda: bool(started))
-    assert view.cancel_button.isVisibleTo(view)
+    assert view.cancel_button.isVisibleTo(view.disc_panel)
     view.cancel_button.click()
     assert wait_until(view, lambda: not view._analysing)
     assert "Cancelled: 3 of 12" in writing.said[-1]
@@ -1233,3 +1233,101 @@ def test_a_polling_card_panel_looks_only_while_shown_and_finds_a_card_that_appea
 
 def test_a_card_panel_that_can_watch_folders_does_not_poll(qapp):
     assert CardPanel(volumes=list)._poller is None
+
+
+# -- the track browser in the middle, and the disc list on the right -----------------------------
+
+
+def pick_disc(view, name="A"):
+    view.tree.setCurrentItem(next(i for i in view._disc_items() if i.text(0) == name))
+
+
+def test_the_middle_lists_the_picked_discs_tracks_with_what_a_sync_does_for_each(writing):  # fmt: skip
+    analyse_everything(writing.lib)
+    look_again(writing, "waveforms")
+    view = writing.view
+    assert "Pick a disc" in view.browser.message.text()
+    assert view.browser.table.topLevelItemCount() == 0
+    pick_disc(view)
+    table = view.browser.table
+    assert table.topLevelItemCount() == 12
+    first = [table.topLevelItem(0).text(c) for c in range(table.columnCount())]
+    assert first[0] == "1" and first[1].startswith("A0") and first[3].count(":") == 1
+    assert first[4] == "2 to add"  # (A-0 has a memory cue and a hot cue)
+    assert first[5] == "Will be written"
+    assert table.topLevelItem(1).text(4) == "–"  # (no cues on track 2)
+    assert (
+        view.browser.title.text() == "A" and "12 tracks" in view.browser.message.text()
+    )
+
+
+def test_only_the_picked_tracks_waveform_is_drawn_at_the_bottom(writing):
+    analyse_everything(writing.lib)
+    shifted = [1 + (k + 5) % 15 for k in range(100)]
+    writing.lib.set_waveform(writing.lib.tracks(sort="path")[1].id, shifted)
+    look_again(writing, "waveforms")
+    view = writing.view
+    pick_disc(view)
+    browser = view.browser
+    assert browser.strip.values == saw() and browser.caption.text().startswith("1.")
+    browser.table.setCurrentItem(browser.table.topLevelItem(1))
+    assert browser.strip.values == shifted and browser.caption.text().startswith("2.")
+    assert browser.wave_note.text() == "will be written"
+    assert not hasattr(browser, "strips")  # (one strip, not one for each track)
+
+
+def test_the_picked_track_stays_picked_when_the_disc_is_looked_at_again(writing):
+    analyse_everything(writing.lib)
+    look_again(writing, "waveforms")
+    view = writing.view
+    pick_disc(view)
+    view.browser.table.setCurrentItem(view.browser.table.topLevelItem(4))
+    view._waves_toggled(True)  # (looks at every disc again)
+    assert view.browser.selected_row().number == 5
+    pick_disc(view, "B")  # a different disc starts at its first track
+    assert view.browser.selected_row().number == 1
+
+
+def test_a_track_not_analysed_yet_shows_a_dashed_line_and_says_so(writing, monkeypatch, tmp_path):  # fmt: skip
+    real_files(writing, tmp_path)
+    look_again(writing, "waveforms")
+    view = writing.view
+    pick_disc(view)
+    assert view.browser.strip.state == "pending"
+    assert view.browser.table.topLevelItem(0).text(5) == "Not analysed"
+
+
+def test_details_are_behind_a_button_and_a_disc_that_cannot_be_synced_says_why(writing):  # fmt: skip
+    look_again(writing, "cue")
+    view = writing.view
+    pick_disc(view)
+    assert not view.detail.isVisibleTo(view.browser)
+    view.browser.details_button.click()
+    assert view.detail.isVisibleTo(view.browser) and "cues" in view.detail.toPlainText()
+    view.browser.details_button.click()
+    assert not view.detail.isVisibleTo(view.browser)
+
+
+def test_the_sync_tab_swaps_the_right_hand_list_and_a_disc_click_stays_on_sync(qapp, tmp_path, monkeypatch):  # fmt: skip
+    card = card_folder(tmp_path)
+    monkeypatch.setattr(sync_view, "mounted_volumes", lambda: [card])
+    lib = Library.open(":memory:")
+    add_disc(lib, "A")
+    win = MainWindow(lib)
+    win.resize(1500, 900)
+    win.show()
+    assert win.right_stack.currentWidget() is win._discs_page
+    before = win.splitter.sizes()
+    win.source_tabs.set_current("sync")
+    assert win.right_stack.currentWidget() is win.sync_view.disc_panel
+    assert win.splitter.sizes()[2] >= main_window.SYNC_RIGHT_WIDTH - 2
+    assert wait_until(win.sync_view, lambda: bool(win.sync_view._disc_items()))
+    pick_disc(win.sync_view)  # a click on a disc there does not leave Sync
+    assert win.center.currentWidget() is win.sync_view
+    assert win.sync_view.browser.title.text() == "A"
+    win.source_tabs.set_current("library")
+    assert win.right_stack.currentWidget() is win._discs_page
+    assert win.splitter.sizes() == before  # (the room it took comes back)
+    win.close()
+    win.deleteLater()
+    lib.close()
