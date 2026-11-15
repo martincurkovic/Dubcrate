@@ -160,6 +160,15 @@ def _no_modal_question(monkeypatch):
 
     monkeypatch.setattr("dubcrate.ui.disc_view.ask_overlap", refuse_overlap)
 
+    def refuse_editing(*_a, **_k):
+        raise AssertionError(
+            "a test opened the 'edit your rekordbox library?' box; patch rekordbox_editor.ask_enable_editing"
+        )
+
+    monkeypatch.setattr(
+        "dubcrate.ui.rekordbox_editor.ask_enable_editing", refuse_editing
+    )
+
 
 @pytest.fixture(autouse=True)
 def _no_real_burner(monkeypatch):

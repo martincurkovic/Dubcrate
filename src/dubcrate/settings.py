@@ -187,6 +187,17 @@ def set_levels_enabled(on: bool) -> None:
     _qs().setValue("levels/enabled", bool(on))
 
 
+def get_rekordbox_editing() -> bool | None:
+    """Whether memory cue edits are saved into rekordbox's library: True / False once the user chose, None
+    until then (the first edit asks, and the answer is kept for good; Settings > Library changes it)."""
+    value = _qs().value("rekordbox/editing")
+    return None if value is None else _as_bool(value, False)
+
+
+def set_rekordbox_editing(on: bool) -> None:
+    _qs().setValue("rekordbox/editing", bool(on))
+
+
 def get_sync_eject() -> bool:
     """Whether Sync ejects the card when it has written (on unless switched off: a FAT card pulled
     before it is ejected can be left unreadable)."""

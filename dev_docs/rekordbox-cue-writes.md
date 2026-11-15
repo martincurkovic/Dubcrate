@@ -85,6 +85,25 @@ It is the only code that writes a rekordbox database (the owner allowed exactly 
 - **Afterwards** Dubcrate drops its edits for the written tracks, and for those already equal to rekordbox's (`--keep-edits` keeps them), so
   later changes made in rekordbox show through again.
 
+### In the app (built 2026-11-15, after the command line worked)
+
+The owner chose: **writes on by default at edit time, but the library opens read-only until the user agrees.** The first time a memory
+cue on a rekordbox track is added, moved or deleted, `ask_enable_editing` asks; the answer (`rekordbox/editing`, True or False, kept for
+good) is also the **Settings > Library** checkbox. Declined = the old behaviour: edits stay in Dubcrate's table.
+
+- `ui/rekordbox_editor.py: RekordboxEditor` (made by `PreviewController`): the edit is saved into Dubcrate's own `memory_cue` rows at once (the
+  player redraws instantly and nothing can be lost), then `apply_write` runs on a worker for that track. When it succeeds the cue cache
+  re-reads the database (`RekordboxCueCache.refresh`, checked with `is_current` so a read begun before the write is not trusted) and only then are
+  Dubcrate's rows for the track dropped (if the track was not edited again meanwhile): no flicker, and the track shows rekordbox's own cues.
+- **rekordbox open:** `apply_write` refuses, the edit stays in Dubcrate (the status bar says "Kept in Dubcrate only ... close it first") and the
+  next edit of that track writes the whole list. Edits on other tracks that were left waiting are not flushed by this (the command line does that).
+- **Backups:** `apply_write(..., keep_backup=False)` deletes its copy after a good read-back. The first write of a session keeps its copy (the state
+  before anything this session), the later ones don't; `prune_backups` keeps the newest 20 `master-*` folders.
+- A track that isn't in rekordbox (an Explorer or folder file) is never asked about and never written; its edits are Dubcrate's, as before.
+- Tests: `tests/test_ui_rekordbox_editor.py` (a stand-in cache and writer: the question asked once and remembered, a decline writes nothing, write
+  then drop, backup once, a failure keeps the edit, an edit during a write is written too, the checkbox). **The whole path with a real rekordbox
+  is not tried.** Live check: with rekordbox closed, edit a cue in the player, accept the question, open rekordbox: the cue is there.
+
 ### What the tests cover, and what they cannot
 
 `tests/test_rekordbox_write.py` builds a synthetic `master.db` with pyrekordbox's own models (NULLs allowed as in the real file): adding, moving,

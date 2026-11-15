@@ -19,6 +19,7 @@ from dubcrate.waveform import PREVIEW_COLUMNS, Waveform, compute_waveform
 
 from .cue_cache import RekordboxCueCache
 from .player_strip import PlayerStrip
+from .rekordbox_editor import RekordboxEditor
 from .tasks import run_async
 
 # the arrow keys' jump for a track with no beat grid and no tempo
@@ -90,6 +91,9 @@ class PreviewController(QObject):
         self.cues = cues or RekordboxCueCache(lib, self)
         self.cues.message.connect(self.message)
         self.cues.changed.connect(self._show_cues)
+        self.editor = RekordboxEditor(lib, self.cues, self)
+        self.editor.message.connect(self.message)
+        self.editor.settled.connect(self._show_cues)
 
         self.player.position_changed.connect(strip.set_position)
         self.player.state_changed.connect(strip.set_playing)
@@ -262,7 +266,7 @@ class PreviewController(QObject):
             self.player.clear_loop()
         self._show_session()
 
-    # -- memory cues: edited in Dubcrate, rekordbox is never written ----------------------------------
+    # -- memory cues: kept in Dubcrate, then saved into rekordbox if the user allowed it ----------------
 
     def _memory_cues(self) -> list[tuple[int, str]] | None:
         """The loaded track's memory cues now, (milliseconds, label), or None if they can't be changed yet
@@ -275,11 +279,15 @@ class PreviewController(QObject):
                 "rekordbox's cues are still being read: try again in a moment"
             )
             return None
+        self.editor.allow(
+            self._track
+        )  # asks the first time a rekordbox track is edited
         return memory_list(found)
 
     def _save_memory(self, cues: list[tuple[int, str]]) -> None:
         self._lib.set_memory_cues(self._track.path, cues)
         self._show_cues()
+        self.editor.saved(self._track)
 
     def memory_add(self) -> None:
         """MEMORY: a memory cue at the playhead (on the nearest beat with quantise on)."""

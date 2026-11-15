@@ -1,4 +1,4 @@
-"""Memory cues edited in Dubcrate: kept in its own library, laid over rekordbox's, and never written to rekordbox."""
+"""Memory cues edited in Dubcrate: kept in its own library, laid over rekordbox's, and only written to rekordbox by `rekordbox_write` (when the user allows it)."""
 
 import pytest
 

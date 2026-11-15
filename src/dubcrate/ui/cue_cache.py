@@ -66,6 +66,26 @@ class RekordboxCueCache(QObject):
         base = self._rekordbox_cues(track, announce)
         return None if base is None else tuple(with_edits(self._lib, track, base))
 
+    def database_for(self, track: Track) -> Path | None:
+        """The rekordbox `master.db` the track is in (itself or through its twin); None: not a rekordbox track."""
+        analysed = self._lib.rekordbox_twin(track) or track
+        source = next(
+            (s for s in self._lib.sources() if s.id == analysed.source_id), None
+        )
+        if source is None or source.kind != "rekordbox":
+            return None
+        return Path(source.path)
+
+    def is_current(self, database: Path) -> bool:
+        """Whether what is held for the database was read from its files as they are now."""
+        held = self._held.get(database)
+        return held is not None and held[0] == _stamp(database)
+
+    def refresh(self, database: Path) -> None:
+        """Read the database again now (after Dubcrate wrote to it); `changed` says when it is read."""
+        if database not in self._reading:
+            self._read_in_background(database, _stamp(database), False)
+
     def _rekordbox_cues(self, track: Track, announce: bool) -> Sequence[Cue] | None:
         """The track's rekordbox cues (empty: it has none, or isn't in rekordbox); None: still being read.
 
@@ -75,12 +95,9 @@ class RekordboxCueCache(QObject):
         A file that is also in rekordbox (same path) takes rekordbox's cues, as it takes its waveform.
         """
         analysed = self._lib.rekordbox_twin(track) or track
-        source = next(
-            (s for s in self._lib.sources() if s.id == analysed.source_id), None
-        )
-        if source is None or source.kind != "rekordbox":
+        database = self.database_for(track)
+        if database is None:
             return ()
-        database = Path(source.path)
         held = self._held.get(database)
         stamp = _stamp(database)
         if held is not None and held[0] == stamp:

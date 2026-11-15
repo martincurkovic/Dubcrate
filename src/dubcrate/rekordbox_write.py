@@ -371,6 +371,33 @@ def _others(db: Any, skip: set[str]) -> dict[str, list[tuple[int, int, str, int]
     return {k: sorted(v) for k, v in found.items()}
 
 
+KEEP_BACKUPS = 20  # kept backups (`master-*` folders) before the oldest are deleted
+
+
+def _new_backup_dir(backup_dir: Path) -> Path:
+    """A new, empty `master-<time>` folder (a second write in the same second gets a number)."""
+    stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    backup_dir.mkdir(parents=True, exist_ok=True)
+    for n in range(1, 1000):
+        path = backup_dir / (f"master-{stamp}" if n == 1 else f"master-{stamp}-{n}")
+        try:
+            path.mkdir()
+        except FileExistsError:
+            continue
+        return path
+    raise WriteError(f"could not make a backup folder in {backup_dir}")
+
+
+def prune_backups(backup_dir: Path, keep: int = KEEP_BACKUPS) -> None:
+    """Delete the oldest `master-*` folders beyond `keep` (only folders of that name: nothing else is touched)."""
+    old = sorted(
+        (p for p in backup_dir.glob("master-*") if p.is_dir()),
+        key=lambda p: p.stat().st_mtime,
+    )
+    for path in old[: max(0, len(old) - keep)]:
+        shutil.rmtree(path, ignore_errors=True)
+
+
 def restore(backup: Path, master_db: Path) -> None:
     """Put a backup's files back over `master_db` (and remove sidecars the backup didn't have)."""
     for suffix in ("-wal", "-shm"):
@@ -424,19 +451,20 @@ def apply_write(
     *,
     unlock: bool = True,
     running: Callable[[], bool] = rekordbox_running,
+    keep_backup: bool = True,
 ) -> WriteOutcome:
     """Write `edits` (memory cues by `path_key`) into `master_db`: back it up, write, read back, undo on failure.
 
     Raises `WriteError` with the library as it was (the message says so) if anything goes wrong; a write that
-    is refused up front touches nothing."""
+    is refused up front touches nothing. The backup is always made first (the read-back's undo needs it);
+    `keep_backup=False` deletes it once the write has been read back (the app keeps one a session, not one a
+    cue), and a kept one prunes the oldest beyond `KEEP_BACKUPS`."""
     if running():
         raise WriteError("rekordbox is running: close it first, then try again")
     plan = plan_write(master_db, edits, unlock=unlock)
     if plan.empty:
         return WriteOutcome(plan, None)
-    stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-    backup = backup_dir / f"master-{stamp}"
-    backup.mkdir(parents=True, exist_ok=False)
+    backup = _new_backup_dir(backup_dir)
     try:
         _snapshot(master_db, backup)
     except OSError as exc:
@@ -481,6 +509,10 @@ def apply_write(
         raise WriteError(
             f"{exc}. The library was put back as it was (copy kept in {backup})"
         ) from exc
+    if keep_backup:
+        prune_backups(backup_dir)
+    else:
+        shutil.rmtree(backup, ignore_errors=True)
     log.info(
         "rekordbox write: %d track(s), +%d ~%d -%d cue(s)",
         len(plan.changes),
@@ -490,7 +522,7 @@ def apply_write(
     )
     return WriteOutcome(
         plan,
-        backup,
+        backup if keep_backup else None,
         written=[c.key for c in plan.changes],
         cues_added=added,
         cues_moved=moved,
