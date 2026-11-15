@@ -15,6 +15,7 @@ accept a file with complete waveform records, nor whether it keeps them when the
 --pattern  TRACK: a sawtooth, 1 to 15 and round again every 15 columns, that nobody could take for music
 --model    TRACK: what `wave_model` says the player would draw for the track's audio
 --half     TRACK: the model's first 50 columns, the other 50 left at 0 (not played)
+--absolute the model on the player's own scale (the default raises a quiet track so its loudest column reaches 15)
 (a track given by none of them gets an empty slot, as the player leaves one before a track it did play)
 
 The disc must be new to BASE (a disc with a file already is refused). macOS only; `--dry-run` writes no
@@ -73,14 +74,18 @@ def audio_files(folder: Path) -> dict[int, Path]:
 
 
 def columns_for(
-    track: int, mode: str, files: dict[int, Path], ffmpeg: Path
+    track: int,
+    mode: str,
+    files: dict[int, Path],
+    ffmpeg: Path,
+    scale: bool = True,
 ) -> list[int]:
     if mode == "pattern":
         return wave_model.pattern_values()
     if track not in files:
         sys.exit(f"no audio file for track {track} in the --audio folder")
     audio = wavetest.decode(files[track], ffmpeg)
-    values = wave_model.column_values(audio)
+    values = wave_model.column_values(audio, scale_to_top=scale)
     print(
         f"  track {track}: {len(audio) / wave_model.RATE:.1f} s from {files[track].name}"
     )
@@ -101,7 +106,8 @@ def plan(args: argparse.Namespace) -> dict[int, tuple[str, list[int]]]:
         sys.exit("ffmpeg was not found")
     files = audio_files(args.audio) if args.audio else {}
     return {
-        t: (m, columns_for(t, m, files, ffmpeg.path)) for t, m in sorted(wanted.items())
+        t: (m, columns_for(t, m, files, ffmpeg.path, not args.absolute))
+        for t, m in sorted(wanted.items())
     }
 
 
@@ -149,6 +155,7 @@ def main() -> None:
     parser.add_argument("--audio", type=Path)
     for mode in ("pattern", "model", "half"):
         parser.add_argument(f"--{mode}", type=int, action="append", default=[])
+    parser.add_argument("--absolute", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
     tracks = plan(args)

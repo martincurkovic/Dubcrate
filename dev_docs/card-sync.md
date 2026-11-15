@@ -239,6 +239,26 @@ real values everywhere = overwritten; real values in the first 17 columns only =
 player with values near the model's = merged; the first half unchanged = kept. Track 3 against `wave_model.column_values` of its audio
 is the model's first held-out check.
 
+**Result (2026-11-15; image `~/cdj-card/cdj-waveform-test-3.img`, its files in `~/cdj-card/write-test-3-card/`):**
+
+- **Accepted.** No card error; the disc loaded with all four slots, written by us.
+- **Used.** Tracks 1, 2 and 4 (with a record) loaded at once; track 3 (an empty slot) was analysed on the player during loading and the player
+  then wrote its own record. So a record on the card is what lets a track skip the on-player analysis.
+- **Kept, merged by column.** After play, the other four discs and the index are byte for byte unchanged. In `CDJ00005.PDJ` tracks 1 and 2
+  are identical to what we wrote in all 100 columns, though the player played the first part of each: **it does not re-measure a column that
+  already has a value.** Track 4: the half we wrote is unchanged; the player filled **only zero columns it played** (50 to 56 of the 50 to 99; the
+  rest are still 0, so only about 18 s of that half was played, or the player stopped there; to be asked).
+- **The model, held out.** Track 3's record is the player's own, for music the model was not fitted on: **91% of its 100 columns within one value,
+  96% within two, mean error 0.73, bias +0.13** (the three misses of 3+ are dips: the player read 6, 2, 6 where the model said 12, 10, 10).
+- **The screen draws the stored record.** Track 1 showed the **sawtooth** on the player; tracks 2 and 4 looked like ordinary waveforms (the
+  model is close to what the player would have drawn). So a record we write is what the owner sees, which is the point of pre-writing.
+- **Not explained: track 4 was played all the way through, yet the player filled only columns 50 to 56** of the empty half (the rest of it
+  is still 0). Fully played tracks on discs 1 and 2 were filled in all 100 columns, so something about a record that is already part-written
+  (or the 50 columns we wrote) changes what the player does for the rest. It does not matter if we write complete records.
+- **The owner's decision (2026-11-15):** the model need not match the player 1:1, what it makes is good enough, and **quiet tracks must be scaled
+  up so the loudest column reaches the top of the view** (a track turned down by level matching would otherwise be a thin line). Done in
+  `wave_model.column_values(scale_to_top=True)`, the default.
+
 ## Order of work
 
 ### Phase 0: on the hardware (the owner; about half an hour, none of it destructive)

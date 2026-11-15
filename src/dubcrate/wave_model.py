@@ -4,14 +4,16 @@ The player writes, for every track it plays, 100 columns of one value each (0 to
 (`cdj_card.WaveRecord`). `dev_docs/cdj1000mk3-card.md` ("The waveform test disc, played", "Disc 2") has
 what was measured; in short, a column is 1/100 of the track, its value is **2 dB a step of the level of a
 bass band** (about 115 to 150 Hz, 12 dB an octave, of the mean of the two channels), taken as a power mean
-(exponent 4) over the first 0.7 of the column, with a floor of 2 for anything audible and 1 for near silence.
+(exponent 4) over the first 0.7 of the column, with a floor of 2 for anything audible and 1 for near silence, and (by default) the whole track raised so that its loudest
+column reaches the top of the view.
 
-**This is a fit, not the player's own rule**: on nine real-music tracks it is within one value (2 dB) for
+**This is a fit, not the player's own rule** (the figures are for `scale_to_top=False`, the player's absolute scale): on nine real-music tracks it is within one value (2 dB) for
 76% of columns, within two for 91%, exact for 34%, with a mean error of 1.2 values and a bias of +0.2; on pure tones it
 reads about one value high. The corners, the exponent, the window and the offset were fitted on those tracks
 (`~/cdj-card/wave-analysis2/`, outside the repository), not checked on another.
 What it does not model: the dip (a drop of 6 dB or more makes the next 2 s block read 1), and the sampling
-instants, which follow CD frames. **No record made from it has been shown to a player yet.**
+instants, which follow CD frames. **Records we wrote were accepted by a CDJ-1000MK3, drawn on its screen (a sawtooth showed), loaded without the player analysing
+the track, and kept when the track was played** (`dev_docs/card-sync.md`, "Writing a waveform", 2026-11-15).
 """
 
 import numpy as np
@@ -31,6 +33,7 @@ MAX_VALUE = 15
 SILENCE_DB = (
     -41.0
 )  # a column whose full-range peak is under this reads 1, else at least 2
+MAX_BOOST_DB = 24.0  # the most a quiet track is scaled up (12 values): a hiss must not fill the view
 
 
 def _butterworth2(f: np.ndarray, corner: float, high: bool) -> np.ndarray:
@@ -57,10 +60,17 @@ def bass_band(audio: np.ndarray) -> np.ndarray:
     return np.fft.irfft(spectrum * response, len(mono))
 
 
-def column_values(audio: np.ndarray) -> list[int]:
+def column_values(audio: np.ndarray, scale_to_top: bool = True) -> list[int]:
     """The 100 values (1 to 15) the player would show for a track, in time order (the first column first).
 
-    `audio` is the track as the player decodes it: stereo at 44.1 kHz, shape (samples, 2)."""
+    `audio` is the track as the player decodes it: stereo at 44.1 kHz, shape (samples, 2).
+
+    `scale_to_top` raises a track that would not reach the top of the view so that its **loudest column reads
+    15** (every value moves up by the same number of 2 dB steps, never more than `MAX_BOOST_DB`, and a track
+    that is silent throughout is left alone). A track already at the top is not changed (it is never scaled
+    down). That makes the waveform the same whatever gain the burn applied: a track turned down by level
+    matching (`loudness.gain_for`, up to 12 dB) is not a thin line. `False` gives the player's absolute scale.
+    """
     samples = len(audio)
     if samples < COLUMNS:
         raise ValueError("The track is too short for a waveform.")
@@ -71,19 +81,24 @@ def column_values(audio: np.ndarray) -> list[int]:
     peak = np.abs(
         (stereo[:, 0] + stereo[:, 1]) / 2
     )  # the mono mix: opposite channels cancel to silence
-    out = []
+    levels, floors = [], []
     for k in range(COLUMNS):
         start = round(k * samples / COLUMNS)
         end = max(start + 1, round((k + WINDOW) * samples / COLUMNS))
         mean = (power[min(end, samples)] - power[start]) / max(
             1, min(end, samples) - start
         )
-        level = 20 * np.log10(max(mean ** (1 / POWER), 1e-9))
-        value = int(np.floor((level + OFFSET_DB) / 2))
+        levels.append(20 * np.log10(max(mean ** (1 / POWER), 1e-9)) + OFFSET_DB)
         column_peak = peak[start : round((k + 1) * samples / COLUMNS)].max(initial=0)
-        floor = 2 if 20 * np.log10(max(column_peak, 1e-9)) > SILENCE_DB else 1
-        out.append(max(floor, min(MAX_VALUE, value)))
-    return out
+        floors.append(2 if 20 * np.log10(max(column_peak, 1e-9)) > SILENCE_DB else 1)
+    boost = 0.0
+    if scale_to_top and max(floors) > 1:
+        # the step is 2 dB, so the loudest column lands on 15 when it sits exactly at 2 * MAX_VALUE
+        boost = float(np.clip(2 * MAX_VALUE - max(levels), 0.0, MAX_BOOST_DB))
+    return [
+        max(floor, min(MAX_VALUE, int(np.floor((level + boost) / 2))))
+        for level, floor in zip(levels, floors)
+    ]
 
 
 def coarse_values(values: list[int]) -> list[int]:
