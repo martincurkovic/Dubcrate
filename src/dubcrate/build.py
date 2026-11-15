@@ -1,10 +1,14 @@
 """Turn a planned disc from the library into something a burner can burn."""
 
-from collections.abc import Callable
-from dataclasses import dataclass, replace
+import logging
+import wave
+from collections.abc import Callable, Mapping, Sequence
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
-from dubcrate import mp3
+import numpy as np
+
+from dubcrate import mp3, wave_model
 from dubcrate.burn.base import DataDisc, DiscTrack, MediaInfo
 from dubcrate.burn.base import Disc as BurnDisc
 from dubcrate.cd import MAX_TRACKS, disc_used_sectors, format_msf
@@ -24,6 +28,8 @@ from dubcrate.mp3 import format_amount
 from dubcrate.render import RenderError, ToolMissingError, render_mp3, render_track
 
 Progress = Callable[[str], None]
+
+log = logging.getLogger(__name__)
 
 
 class BuildError(RuntimeError):
@@ -112,6 +118,9 @@ class PlanTrack:
     gain_db: float = (
         0.0  # level matching: a plain volume change for this track (audio CDs)
     )
+    wave_needed: bool = (
+        False  # no CDJ waveform cached yet: work it out from the rendered audio
+    )
 
 
 @dataclass(frozen=True)
@@ -147,6 +156,9 @@ class Rendered:
     lengths: dict[
         int, int
     ]  # track id -> rendered CD sectors, to store afterwards (audio only)
+    waveforms: dict[int, list[int]] = field(
+        default_factory=dict
+    )  # track id -> the CDJ waveform
 
     @property
     def used_sectors(self) -> int:
@@ -175,7 +187,16 @@ def plan_burn(lib: Library, disc_id: int) -> BurnPlan:
         pregap_sectors=summary.pregap_sectors,
         capacity_sectors=summary.capacity_sectors,
         tracks=tuple(
-            PlanTrack(e.track.id, e.track.path, e.title, e.artist, e.dir_id)
+            PlanTrack(
+                e.track.id,
+                e.track.path,
+                e.title,
+                e.artist,
+                e.dir_id,
+                wave_needed=summary.kind == "audio"
+                and e.track.waveform is None
+                and not e.track.missing,
+            )
             for e in entries
         ),
         kind=summary.kind,
@@ -224,6 +245,7 @@ def render_plan(
     burn_disc = BurnDisc(title=plan.name, performer=plan.performer)
     workdir.mkdir(parents=True, exist_ok=True)
     lengths: dict[int, int] = {}
+    waveforms: dict[int, list[int]] = {}
     for number, t in enumerate(plan.tracks, start=1):
         gain = f" ({t.gain_db:+.1f} dB)" if t.gain_db else ""
         say(f"rendering {number}/{len(plan.tracks)}: {t.title}{gain}")
@@ -235,6 +257,12 @@ def render_plan(
         except RenderError as exc:
             raise BuildError(f"#{number} {t.title}: {exc}") from exc
         lengths[t.track_id] = sectors
+        if (
+            t.wave_needed
+            and t.track_id not in waveforms
+            and (values := _waveform_of(wav)) is not None
+        ):
+            waveforms[t.track_id] = values
         burn_disc.tracks.append(DiscTrack(wav, t.title, t.artist, sectors))
 
     used = disc_used_sectors((t.sectors for t in burn_disc.tracks), plan.pregap_sectors)
@@ -243,7 +271,31 @@ def render_plan(
             f"rendered audio is {format_msf(used)}, over the"
             f" {format_msf(plan.capacity_sectors)} capacity"
         )
-    return Rendered(burn_disc, plan.pregap_sectors, lengths)
+    return Rendered(burn_disc, plan.pregap_sectors, lengths, waveforms)
+
+
+def _waveform_of(wav: Path) -> list[int] | None:
+    """The CDJ waveform (`wave_model`) of a rendered track, so Sync has nothing left to analyse: the burn
+    has just decoded the track, so this costs a fraction of a second. **Never an error**: a burn must
+    not fail for a waveform; None means Sync works it out later."""
+    try:
+        with wave.open(str(wav), "rb") as w:
+            audio = np.frombuffer(w.readframes(w.getnframes()), dtype="<i2")
+        return wave_model.column_values(audio.reshape(-1, 2))
+    except (OSError, EOFError, wave.Error, ValueError) as exc:
+        log.warning("no waveform for %s: %s", wav.name, exc)
+        return None
+
+
+def remember_rendered(
+    lib: Library, lengths: Mapping[int, int], waveforms: Mapping[int, Sequence[int]]
+) -> None:
+    """Keep what a render found out about its tracks: the exact CD lengths and the CDJ waveforms.
+    On the thread that owns the library."""
+    for track_id, sectors in lengths.items():
+        lib.set_cd_sectors(track_id, sectors)
+    for track_id, values in waveforms.items():
+        lib.set_waveform(track_id, values)
 
 
 def _render_mp3_plan(plan: BurnPlan, workdir: Path, say: Progress) -> Rendered:
@@ -324,6 +376,5 @@ def build_burn_disc(
     if lib.disc(disc_id).kind == "audio":  # an MP3 disc is sized from file sizes
         measure_tracks(lib, [e.track.id for e in lib.disc_entries(disc_id)])
     rendered = render_plan(planned_with_levels(lib, disc_id, target), workdir, progress)
-    for track_id, sectors in rendered.lengths.items():
-        lib.set_cd_sectors(track_id, sectors)
+    remember_rendered(lib, rendered.lengths, rendered.waveforms)
     return rendered.disc, rendered.pregap_sectors

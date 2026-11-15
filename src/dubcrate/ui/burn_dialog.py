@@ -40,6 +40,7 @@ from dubcrate.build import (
     format_amount,
     media_problems,
     plan_burn,
+    remember_rendered,
     render_plan,
 )
 from dubcrate.burn import (
@@ -543,11 +544,11 @@ class BurnDialog(QDialog):
                             plan.pregap_sectors,
                             say,
                         )
-            return rendered.lengths
+            return rendered.lengths, rendered.waveforms
 
         run_async(
             work,
-            lambda lengths: self._burn_done(lengths, simulate),
+            lambda found: self._burn_done(found[0], simulate, found[1]),
             self._burn_failed,
         )
 
@@ -556,9 +557,14 @@ class BurnDialog(QDialog):
         self.progress.setVisible(False)
         self.confirm_check.setChecked(False)  # ask again before the next one
 
-    def _burn_done(self, lengths: dict[int, int], simulate: bool) -> None:
-        for track_id, sectors in lengths.items():
-            self._lib.set_cd_sectors(track_id, sectors)
+    def _burn_done(
+        self,
+        lengths: dict[int, int],
+        simulate: bool,
+        waveforms: dict[int, list[int]] | None = None,
+    ) -> None:
+        # what the render found out stays: the exact lengths, and the waveforms Sync would write
+        remember_rendered(self._lib, lengths, waveforms or {})
         self._after_attempt()
         logger.info("%s finished", "test burn" if simulate else "burn")
         if simulate:
@@ -622,11 +628,9 @@ class BurnDialog(QDialog):
         run_async(work, self._export_done, self._export_failed)
 
     def _export_done(self, result: ExportResult) -> None:
-        for (
-            track_id,
-            sectors,
-        ) in result.lengths.items():  # the rendered lengths are exact
-            self._lib.set_cd_sectors(track_id, sectors)
+        remember_rendered(
+            self._lib, result.lengths, result.waveforms
+        )  # (lengths are exact)
         self._busy = False
         self.progress.setVisible(False)
         self._append(

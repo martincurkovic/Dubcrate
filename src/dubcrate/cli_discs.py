@@ -13,6 +13,7 @@ from dubcrate.build import (
     media_notes,
     media_problems,
     planned_with_levels,
+    remember_rendered,
 )
 from dubcrate.burn import (
     BACKENDS,
@@ -331,8 +332,7 @@ def cmd_export(lib: Library, args: argparse.Namespace) -> int:
     except (BuildError, ExportError) as exc:
         print(f"export failed: {exc}", file=sys.stderr)
         return 1
-    for track_id, sectors in result.lengths.items():
-        lib.set_cd_sectors(track_id, sectors)
+    remember_rendered(lib, result.lengths, result.waveforms)
     print(f"exported to {result.folder}")
     print(f"read {result.readme.name} there for how to burn it")
     return 0

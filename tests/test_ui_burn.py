@@ -234,6 +234,9 @@ def test_a_burn_renders_burns_stores_lengths_and_marks_the_disc_burned(
         225,
     ]  # exact
     assert all(t.cd_sectors is not None for t in lib.tracks())  # stored on this thread
+    assert all(
+        t.waveform is not None and len(t.waveform) == 100 for t in lib.tracks()
+    )  # and the waveforms Sync would write: nothing left for it to analyse
 
     text = dialog.log.toPlainText()
     assert "rendering 1/2: Alpha" in text and "fake burner: done" in text

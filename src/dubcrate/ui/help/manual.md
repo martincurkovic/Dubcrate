@@ -375,7 +375,7 @@ The CDJ-1000MK3 keeps the cue points you set on the player on its **SD card**, o
 3. **Pick a disc** to read what a sync would add, track by track, with any warnings, in the box under the list. Hover over a status to see the same text.
 4. **Measure Lengths.** A disc's entry on the card is its table of contents, which needs every track's exact length on the CD. A burn measures them; a disc you haven't burned yet may say *Can't sync: tracks have no measured length*. **Measure Lengths** reads those files (it changes nothing in them) and the list updates.
 5. **Tick the discs** to sync (a folder ticks the discs inside it); the line at the bottom adds up what it would do.
-6. **Write waveforms** (ticked unless you change it) also writes each track's waveform. The first time, Sync **analyses** the tracks that have no waveform yet, a few seconds each (a bar in the list says how far it is), and keeps the result, so the next sync doesn't. Untick it to write cues only.
+6. **Write waveforms** (ticked unless you change it) also writes each track's waveform. **A burn works the waveforms out for you** (it has the audio in hand anyway), so for a disc you burned with Dubcrate there is nothing to wait for. For any track that has none (a disc you haven't burned here, say), Sync **analyses** it first, under a second each (the list says how far it is), and keeps the result, so the next sync doesn't. Untick it to write cues only.
 
 The rules it follows:
 

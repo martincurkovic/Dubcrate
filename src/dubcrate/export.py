@@ -13,7 +13,7 @@ through `build.render_plan`, the same code a burn uses, so what is exported is w
 
 import shutil
 import unicodedata
-from dataclasses import dataclass
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 from dubcrate import mp3
@@ -38,6 +38,9 @@ class ExportResult:
     lengths: dict[
         int, int
     ]  # track id -> rendered CD sectors (audio), to store in the library
+    waveforms: dict[int, list[int]] = field(
+        default_factory=dict
+    )  # track id -> CDJ waveform
 
 
 def _ascii(text: str) -> str:
@@ -82,6 +85,7 @@ def export_plan(
             result = _finish_mp3(plan, folder, rendered.disc)
         else:
             result = _finish_audio(plan, folder, rendered.disc, rendered.lengths)
+            result = replace(result, waveforms=rendered.waveforms)
     except (BuildError, ExportError):
         shutil.rmtree(folder, ignore_errors=True)
         raise
