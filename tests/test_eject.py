@@ -26,7 +26,8 @@ def test_a_card_is_ejected_by_its_volume_without_a_terminal(on_a_mac):
         return finished()
 
     eject.eject_card(Path("/Volumes/DISK_IMG"), run)
-    assert seen["command"] == ["diskutil", "eject", "/Volumes/DISK_IMG"]
+    # (the volume is a Path: on Windows it prints with backslashes, and this only stands in for a Mac)
+    assert seen["command"] == ["diskutil", "eject", str(Path("/Volumes/DISK_IMG"))]
     assert seen["check"] is False and seen["stdin"] is subprocess.DEVNULL
     assert seen["timeout"] == eject.TIMEOUT_SECONDS
 

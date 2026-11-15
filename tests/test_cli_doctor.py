@@ -21,8 +21,12 @@ def test_it_says_where_each_tool_is_and_what_is_missing(monkeypatch, capsys, tmp
     fake_tools(monkeypatch, {"ffmpeg", "ffprobe", "drutil"})
     assert cli.main(["--library", str(tmp_path / "x.db"), "doctor"]) == 0
     out = capsys.readouterr().out
-    assert "ffmpeg 9.9: /bin/ffmpeg" in out and "ffprobe 9.9" in out
-    assert "drutil: /bin/drutil" in out and "cdrdao: not found" in out
+    ffmpeg, drutil = (
+        str(Path("/bin/ffmpeg")),
+        str(Path("/bin/drutil")),
+    )  # (backslashes on Windows)
+    assert f"ffmpeg 9.9: {ffmpeg}" in out and "ffprobe 9.9" in out
+    assert f"drutil: {drutil}" in out and "cdrdao: not found" in out
 
 
 def test_a_missing_ffmpeg_is_an_error_with_the_way_out(monkeypatch, capsys, tmp_path):

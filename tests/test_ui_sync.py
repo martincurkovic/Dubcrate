@@ -887,7 +887,9 @@ def test_a_card_rows_text_is_shortened_with_an_ellipsis_not_cut_off(qapp, plugge
     qapp.processEvents()
     row = panel.row_for(card)
     assert (
-        row.title.text().endswith("…")
+        row.title.text().endswith(
+            ("…", "...")
+        )  # (Qt writes three dots where the font has no ellipsis, as on Windows)
         and "very long volume name" in row.title.toolTip()
     )
     panel.resize(600, 400)
