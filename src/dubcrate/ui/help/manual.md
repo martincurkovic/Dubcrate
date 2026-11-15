@@ -160,7 +160,15 @@ The player is laid out as rbxport's is:
 - **Middle:** the title, artist, time, key and tempo, the two waveforms, and under them the **hot cue buttons A to H**, **MEMORY** with **◀** and **▶**, the loop controls (**AU** automatic, **MA** manual) and **Q** (quantise).
 - **Right:** three tabs, **MEMORY** (the memory cues and loops, with their times), **HOT CUE** (A to H) and **INFO** (the track's **cover art**, a small square of the picture embedded in the file or a musical note if there isn't one; the rating and comment from rekordbox; and what the file is: type, size, sample rate, bitrate). Dubcrate reads covers from MP3 (ID3), FLAC and M4A files; other kinds show the note.
 
-**The cues are rekordbox's and are only shown, never changed.** A hot cue button is lit when the track has that cue, and pressing it (or a row in the memory or hot cue list) jumps there, playing or paused as it was; **◀** and **▶** go to the memory cue before or after the playhead. **MEMORY** and **✕**, which would save or delete a cue, are off.
+**rekordbox's cues are only shown, never changed.** A hot cue button is lit when the track has that cue, and pressing it (or a row in the memory or hot cue list) jumps there, playing or paused as it was; **◀** and **▶** go to the memory cue before or after the playhead. Hot cues and loops are read-only.
+
+**Memory cues can be edited, in Dubcrate only.** Your rekordbox library is not touched: edited memory cues are kept in Dubcrate's own library, and from then on they are the track's memory cues in the player, on the **Sync** tab's waveform preview and on the **card** (so a sync puts them on the player).
+
+- **MEMORY** adds a memory cue where the track is (on the nearest beat if **Q** is on). A track can have ten.
+- **✕** beside it deletes the memory cue at (or within a second of) the playhead, and the **✕** at the end of a row in the **MEMORY** tab deletes that one.
+- **Right-click** a row in the **MEMORY** tab for **Move to Playhead** and **Delete**. A memory loop is rekordbox's and has neither.
+- A track whose memory cues you have changed says **Edited here: rekordbox's are unchanged** at the top of the **MEMORY** tab, with **Reset**, which forgets your changes and goes back to rekordbox's. Deleting every memory cue is an edit too (the track then has none).
+- The edits are tied to the music file, so they survive re-importing your library and are the same whichever list the file is shown from. They are **not in rekordbox**: if you change the cues in rekordbox afterwards, a track you edited here keeps showing your memory cues until you press **Reset**.
 
 **CUE, loops and quantise are the preview's own.** They are for finding your way round a track and trying a loop, and they **last only until another track is loaded**: nothing is saved, and nothing is written to rekordbox.
 

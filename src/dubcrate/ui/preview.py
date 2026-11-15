@@ -13,6 +13,7 @@ from dubcrate.audio.player import AudioPlayer
 from dubcrate.beatjump import jump_time
 from dubcrate.deck import Deck
 from dubcrate.library import Library
+from dubcrate.library.cue_edits import MAX_MEMORY_CUES, memory_list
 from dubcrate.library.models import Track
 from dubcrate.waveform import PREVIEW_COLUMNS, Waveform, compute_waveform
 
@@ -22,6 +23,10 @@ from .tasks import run_async
 
 # the arrow keys' jump for a track with no beat grid and no tempo
 FALLBACK_JUMP_SECONDS = 2.0
+SAME_MEMORY_MS = 50  # a memory cue within this of another is the same one
+NEAR_MEMORY_SECONDS = (
+    1.0  # the ✕ by MEMORY deletes the memory cue this close to the playhead
+)
 
 
 @dataclass(frozen=True)
@@ -100,6 +105,11 @@ class PreviewController(QObject):
         strip.loop_in_requested.connect(self.loop_in)
         strip.loop_out_requested.connect(self.loop_out)
         strip.reloop_requested.connect(self.reloop)
+        strip.memory_add_requested.connect(self.memory_add)
+        strip.memory_delete_requested.connect(self.memory_delete_near)
+        strip.memory_row_delete_requested.connect(self.memory_delete)
+        strip.memory_move_requested.connect(self.memory_move)
+        strip.memory_reset_requested.connect(self.memory_reset)
         strip.seek_requested.connect(self.player.seek)
         strip.scratch_started.connect(self.player.begin_scratch)
         strip.scratch_moved.connect(self.player.scratch_to)
@@ -252,6 +262,85 @@ class PreviewController(QObject):
             self.player.clear_loop()
         self._show_session()
 
+    # -- memory cues: edited in Dubcrate, rekordbox is never written ----------------------------------
+
+    def _memory_cues(self) -> list[tuple[int, str]] | None:
+        """The loaded track's memory cues now, (milliseconds, label), or None if they can't be changed yet
+        (nothing loaded, or rekordbox's are still being read: an edit then would drop them)."""
+        if not self._usable():
+            return None
+        found = self.cues.cues_for(self._track)
+        if found is None:
+            self.message.emit(
+                "rekordbox's cues are still being read: try again in a moment"
+            )
+            return None
+        return memory_list(found)
+
+    def _save_memory(self, cues: list[tuple[int, str]]) -> None:
+        self._lib.set_memory_cues(self._track.path, cues)
+        self._show_cues()
+
+    def memory_add(self) -> None:
+        """MEMORY: a memory cue at the playhead (on the nearest beat with quantise on)."""
+        current = self._memory_cues()
+        if current is None:
+            return
+        ms = round(self.deck.snap(self.player.position) * 1000)
+        if any(abs(ms - other) < SAME_MEMORY_MS for other, _ in current):
+            self.message.emit("There is a memory cue here already")
+        elif len(current) >= MAX_MEMORY_CUES:
+            self.message.emit(
+                f"A track can have {MAX_MEMORY_CUES} memory cues: delete one first"
+            )
+        else:
+            self._save_memory([*current, (ms, "")])
+
+    def memory_delete(self, seconds: float) -> None:
+        """Delete the memory cue at `seconds` (a row's ✕)."""
+        current = self._memory_cues()
+        if current is None:
+            return
+        ms = round(seconds * 1000)
+        kept = [(m, label) for m, label in current if abs(m - ms) > 1]
+        if len(kept) != len(current):
+            self._save_memory(kept)
+
+    def memory_delete_near(self) -> None:
+        """The ✕ by MEMORY: delete the memory cue nearest the playhead, if one is within a second of it."""
+        current = self._memory_cues()
+        if current is None:
+            return
+        here = self.player.position
+        near = min(current, key=lambda c: abs(c[0] / 1000 - here), default=None)
+        if near is None or abs(near[0] / 1000 - here) > NEAR_MEMORY_SECONDS:
+            self.message.emit("No memory cue near the playhead")
+            return
+        self._save_memory([c for c in current if c is not near])
+
+    def memory_move(self, seconds: float) -> None:
+        """Move the memory cue at `seconds` to the playhead (on the nearest beat with quantise on)."""
+        current = self._memory_cues()
+        if current is None:
+            return
+        ms = round(seconds * 1000)
+        target = round(self.deck.snap(self.player.position) * 1000)
+        moving = [c for c in current if abs(c[0] - ms) <= 1]
+        rest = [c for c in current if abs(c[0] - ms) > 1]
+        if not moving:
+            return
+        if any(abs(target - other) < SAME_MEMORY_MS for other, _ in rest):
+            self.message.emit("There is a memory cue here already")
+            return
+        self._save_memory([*rest, (target, moving[0][1])])
+
+    def memory_reset(self) -> None:
+        """Forget the edits: rekordbox's memory cues again."""
+        if self._track is None:
+            return
+        self._lib.clear_memory_cues(self._track.path)
+        self._show_cues()
+
     def beat_jump(self, direction: int) -> None:
         """Jump the set number of beats forward (`direction` 1) or back (-1), in phase.
 
@@ -296,8 +385,17 @@ class PreviewController(QObject):
         """Put the loaded track's rekordbox cues on the waveforms (the database may still be being read)."""
         if self._track is None or self._track is not self._requested:
             return  # nothing loaded, or another track is on its way
-        if found := self.cues.cues_for(self._track):
-            self._strip.show_cues(tuple(found))
+        found = self.cues.cues_for(self._track)
+        if found is None:
+            return  # (rekordbox's are still being read)
+        edited = self._lib.memory_cues(self._track.path) is not None
+        cues = tuple(found)
+        if not cues and not edited and self._analysis is not None:
+            cues = tuple(
+                self._analysis.cues
+            )  # (the analysis file's own, when rekordbox has none for it)
+        self._strip.show_cues(cues)
+        self._strip.set_memory_edited(edited)
 
     def load(self, track: Track, *, play: bool = True) -> None:
         """Load `track` for preview, and start it if `play`."""

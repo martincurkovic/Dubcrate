@@ -51,6 +51,7 @@ LEFT_WIDTH = 116
 ROW_HEIGHT = 26  # every button in the cue row
 SIDE_WIDTH = 250
 READ_ONLY = "Cues are rekordbox's: Dubcrate shows them but never changes them."
+KEPT_HERE = "It is kept in Dubcrate (and goes to the card); rekordbox's own cues are never changed."
 
 IDLE_HINT = "Double-click a track to preview it"
 
@@ -87,6 +88,15 @@ class PlayerStrip(QWidget):
     loop_in_requested = Signal()
     loop_out_requested = Signal()
     reloop_requested = Signal()
+    memory_add_requested = Signal()  # MEMORY: a memory cue at the playhead
+    memory_delete_requested = (
+        Signal()
+    )  # the ✕ beside it: the memory cue at the playhead
+    memory_row_delete_requested = Signal(
+        float
+    )  # a row's ✕ in the Memory list: that cue's time
+    memory_move_requested = Signal(float)  # a row's "Move to Playhead": that cue's time
+    memory_reset_requested = Signal()  # "Reset": rekordbox's memory cues again
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -257,12 +267,19 @@ class PlayerStrip(QWidget):
             "MEMORY", width=70, height=ROW_HEIGHT, bold=True
         )
         self.memory_button.setEnabled(False)
-        self.memory_button.setToolTip(READ_ONLY)
+        self.memory_button.setToolTip(
+            "Add a memory cue at the playhead (on the nearest beat with Q on). "
+            + KEPT_HERE
+        )
+        self.memory_button.clicked.connect(self.memory_add_requested)
         self.memory_back_button = PillButton("◀", width=30, height=ROW_HEIGHT)
         self.memory_next_button = PillButton("▶", width=30, height=ROW_HEIGHT)
         self.memory_delete_button = PillButton("✕", width=30, height=ROW_HEIGHT)
         self.memory_delete_button.setEnabled(False)
-        self.memory_delete_button.setToolTip(READ_ONLY)
+        self.memory_delete_button.setToolTip(
+            "Delete the memory cue at the playhead. " + KEPT_HERE
+        )
+        self.memory_delete_button.clicked.connect(self.memory_delete_requested)
         self.memory_back_button.setToolTip("Jump to the memory cue before this point")
         self.memory_next_button.setToolTip("Jump to the memory cue after this point")
         self.memory_back_button.clicked.connect(lambda: self._jump_memory(-1))
@@ -366,6 +383,9 @@ class PlayerStrip(QWidget):
         self.side = SidePanel()
         self.side.setFixedWidth(SIDE_WIDTH)
         self.side.jump_requested.connect(self.jump_requested)
+        self.side.memory_delete_requested.connect(self.memory_row_delete_requested)
+        self.side.memory_move_requested.connect(self.memory_move_requested)
+        self.side.memory_reset_requested.connect(self.memory_reset_requested)
 
         layout = QHBoxLayout(self)
         layout.setContentsMargins(12, 10, 12, 8)
@@ -416,6 +436,10 @@ class PlayerStrip(QWidget):
         self._auto_index = index
         self.loop_size.setText(size_label(AUTO_SIZES[index]))
         self.loop_size_changed.emit(AUTO_SIZES[index])
+
+    def set_memory_edited(self, edited: bool) -> None:
+        """Say that the track's memory cues are the ones edited in Dubcrate (not rekordbox's), with a Reset."""
+        self.side.set_edited(edited)
 
     def set_loop_state(self, active: bool) -> None:
         """Show whether a loop is on (the size button and RELOOP light up)."""
@@ -547,6 +571,8 @@ class PlayerStrip(QWidget):
     def _enable(self, loaded: bool) -> None:
         self.play_button.setEnabled(loaded)
         for w in (
+            self.memory_button,
+            self.memory_delete_button,
             self.jump_back_button,
             self.jump_forward_button,
             self.cue_button,

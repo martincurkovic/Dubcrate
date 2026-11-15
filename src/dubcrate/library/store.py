@@ -287,13 +287,36 @@ CREATE TABLE preview_cache (
 )
 """
 
+# Memory cues the user edited in Dubcrate (never written to rekordbox, `dev_docs/rekordbox-cue-writes.md`). Keyed
+# by the file (`path_key`), like the preview cache, so they survive a re-import and are the same whichever row
+# (rekordbox's, a folder's, the Explorer's) the file comes under. A track with a `memory_cue_set` row has
+# its memory cues replaced by the `memory_cue` rows (there may be none: all deleted).
+_SCHEMA_V13 = """
+CREATE TABLE memory_cue_set (
+    path_key TEXT PRIMARY KEY,
+    edited_at TEXT NOT NULL
+);
+CREATE TABLE memory_cue (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    path_key TEXT NOT NULL,
+    time_ms INTEGER NOT NULL,
+    label TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX memory_cue_path ON memory_cue (path_key)
+"""
+
 _MIGRATIONS = (
     _SCHEMA_V1, _SCHEMA_V2, _SCHEMA_V3, _SCHEMA_V4, _SCHEMA_V5, _migrate_to_v6,
     _SCHEMA_V7, _SCHEMA_V8, _SCHEMA_V9, _SCHEMA_V10, _SCHEMA_V11, _SCHEMA_V12,
+    _SCHEMA_V13,
 )  # fmt: skip
 
 MAX_CACHED_PREVIEWS = 20_000  # about 40 MB; past it the oldest are forgotten
 SCHEMA_VERSION = len(_MIGRATIONS)
+
+
+def _now() -> str:
+    return datetime.now(UTC).isoformat(timespec="seconds")
 
 
 def path_key(path: str) -> str:
@@ -848,6 +871,45 @@ class Library:
                 "DELETE FROM preview_cache WHERE rowid <= (SELECT MAX(rowid) FROM preview_cache) - ?",
                 (MAX_CACHED_PREVIEWS,),
             )
+
+    # -- memory cues edited in Dubcrate ----------------------------------------------
+
+    def memory_cues(self, path: str) -> list[tuple[int, str]] | None:
+        """The memory cues edited for the file at `path` as (milliseconds, label), in time order; None if it has
+        not been edited (rekordbox's are then the ones in use). An edited track may have none."""
+        key = path_key(path)
+        if self._conn.execute("SELECT 1 FROM memory_cue_set WHERE path_key = ?", (key,)).fetchone() is None:  # fmt: skip
+            return None
+        rows = self._conn.execute(
+            "SELECT time_ms, label FROM memory_cue WHERE path_key = ? ORDER BY time_ms, id",
+            (key,),
+        ).fetchall()
+        return [(row["time_ms"], row["label"]) for row in rows]
+
+    def set_memory_cues(self, path: str, cues: Iterable[tuple[int, str]]) -> None:
+        """Make these (milliseconds, label) the file's memory cues, replacing rekordbox's and any earlier edit.
+        Times are held to 0 or more and the same time is kept once."""
+        key = path_key(path)
+        unique: dict[int, str] = {}
+        for ms, label in cues:
+            unique.setdefault(max(0, int(ms)), label)
+        with self._conn:
+            self._conn.execute("DELETE FROM memory_cue WHERE path_key = ?", (key,))
+            self._conn.execute(
+                "INSERT OR REPLACE INTO memory_cue_set (path_key, edited_at) VALUES (?, ?)",
+                (key, _now()),
+            )
+            self._conn.executemany(
+                "INSERT INTO memory_cue (path_key, time_ms, label) VALUES (?, ?, ?)",
+                [(key, ms, label) for ms, label in sorted(unique.items())],
+            )
+
+    def clear_memory_cues(self, path: str) -> None:
+        """Forget the edits to the file's memory cues: rekordbox's are used again."""
+        key = path_key(path)
+        with self._conn:
+            self._conn.execute("DELETE FROM memory_cue WHERE path_key = ?", (key,))
+            self._conn.execute("DELETE FROM memory_cue_set WHERE path_key = ?", (key,))
 
     def previews_for(self, tracks: Iterable[Track]) -> dict[int, Waveform]:
         """The kept Preview waveform of each of these tracks that has one, by track id. A track whose

@@ -15,6 +15,7 @@ from PySide6.QtCore import QObject, Signal
 
 from dubcrate.analysis import Cue
 from dubcrate.library import Library
+from dubcrate.library.cue_edits import with_edits
 from dubcrate.library.models import Track
 from dubcrate.library.rekordbox import RekordboxError, read_cues
 
@@ -59,6 +60,13 @@ class RekordboxCueCache(QObject):
         self._reading: set[Path] = set()
 
     def cues_for(self, track: Track, *, announce: bool = True) -> Sequence[Cue] | None:
+        """The track's cues: rekordbox's, with its memory cues replaced by any the user edited in Dubcrate
+        (`library.cue_edits.with_edits`). Empty: it has none; None: rekordbox's are still being read.
+        """
+        base = self._rekordbox_cues(track, announce)
+        return None if base is None else tuple(with_edits(self._lib, track, base))
+
+    def _rekordbox_cues(self, track: Track, announce: bool) -> Sequence[Cue] | None:
         """The track's rekordbox cues (empty: it has none, or isn't in rekordbox); None: still being read.
 
         If the read this starts fails, `message` says so only when `announce`: the track list asks

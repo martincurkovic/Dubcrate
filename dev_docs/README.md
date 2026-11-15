@@ -13,6 +13,8 @@
   owner's decisions, how a cue is mapped and merged, the hardware checklist and the phases.
 - [wave-test-disc.md](wave-test-disc.md): the disc of test signals that finds the CDJ's waveform scale: how to
   burn and play it, what each of its tracks answers, and how to read what the player wrote (`dubcrate card check-waveforms`).
+- [rekordbox-cue-writes.md](rekordbox-cue-writes.md): what rekordbox's `djmdCue` rows look like (measured), the risks of ever
+  writing to them, the staged plan, and memory cue editing as built (kept in Dubcrate, never written to rekordbox).
 - [audio.md](audio.md): miniaudio and the preview player, what was measured.
 - [cross-platform.md](cross-platform.md): Linux and Windows support: what is portable, what
   is macOS-only, the decision to use `cdrdao`, and the phased plan. Read before touching

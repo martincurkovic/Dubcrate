@@ -76,12 +76,18 @@ def test_the_memory_arrows_go_to_the_nearest_memory_cue_either_side(strip):
     assert not strip.memory_back_button.isEnabled() and not strip.memory_next_button.isEnabled()  # fmt: skip
 
 
-def test_the_memory_controls_that_would_write_are_off_and_say_why(strip):
+def test_the_memory_buttons_wait_for_a_track_and_say_rekordbox_is_not_changed(strip):
     for button in (strip.memory_button, strip.memory_delete_button):
         assert not button.isEnabled() and "rekordbox" in button.toolTip()
     strip._enable(True)
     for button in (strip.memory_button, strip.memory_delete_button):
-        assert not button.isEnabled()  # (a loaded track does not change that)
+        assert button.isEnabled()
+    heard = []
+    strip.memory_add_requested.connect(lambda: heard.append("add"))
+    strip.memory_delete_requested.connect(lambda: heard.append("delete"))
+    strip.memory_button.click()
+    strip.memory_delete_button.click()
+    assert heard == ["add", "delete"]
 
 
 def test_the_loop_cue_and_quantise_buttons_are_off_until_a_track_is_loaded_and_have_tips(strip):  # fmt: skip

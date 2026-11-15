@@ -306,3 +306,173 @@ def test_the_controls_are_ignored_while_scratching(rig):
     rig.strip.loop_size.click()
     assert not rig.player.looping and not rig.c.deck.loop_active
     rig.player.end_scratch()
+
+
+# -- memory cues edited in the player ------------------------------------------------------------
+
+
+def memory_times(rig):
+    return [round(rig.strip.side.memory.topLevelItem(i).data(0, 0x0100 + 40), 3) for i in range(rig.strip.side.memory.topLevelItemCount())]  # fmt: skip
+
+
+def stored(rig):
+    return rig.lib.memory_cues(rig.c.track.path)
+
+
+def test_the_memory_button_adds_a_memory_cue_at_the_playhead_and_it_is_kept(rig):
+    assert (
+        rig.strip.memory_button.isEnabled()
+        and rig.strip.memory_delete_button.isEnabled()
+    )
+    at(rig, 12.5)
+    rig.strip.memory_button.click()
+    assert stored(rig) == [(12500, "")]
+    assert memory_times(rig) == [12.5]
+    assert rig.strip.side.edited_row.isVisibleTo(
+        rig.strip.side
+    )  # (it says it is edited, with a Reset)
+    assert [c.time for c in rig.strip._cues if c.kind == "memory"] == [
+        12.5
+    ]  # (and it is drawn on the waveforms)
+    at(rig, 3.0)
+    rig.strip.memory_button.click()
+    assert stored(rig) == [(3000, ""), (12500, "")] and memory_times(rig) == [3.0, 12.5]
+
+
+def test_a_new_memory_cue_lands_on_the_beat_with_quantise_on(rig):
+    rig.strip.quantise_button.click()
+    at(rig, 12.3)
+    rig.strip.memory_button.click()
+    assert stored(rig) == [(12500, "")]
+
+
+def test_a_memory_cue_already_there_or_one_too_many_is_said_and_not_added(rig):
+    at(rig, 12.5)
+    rig.strip.memory_button.click()
+    rig.strip.memory_button.click()
+    assert (
+        stored(rig) == [(12500, "")]
+        and rig.messages[-1] == "There is a memory cue here already"
+    )
+    for n in range(2, 11):
+        at(rig, float(n * 2))
+        rig.strip.memory_button.click()
+    assert len(stored(rig)) == 10
+    at(rig, 27.0)
+    rig.strip.memory_button.click()
+    assert len(stored(rig)) == 10 and "10 memory cues" in rig.messages[-1]
+
+
+def test_the_list_x_deletes_that_cue_and_a_loop_has_none(rig):
+    at(rig, 5.0)
+    rig.strip.memory_button.click()
+    at(rig, 9.0)
+    rig.strip.memory_button.click()
+    side = rig.strip.side
+    side._clicked(side.memory.topLevelItem(0), 1)  # the first row's ✕
+    assert stored(rig) == [(9000, "")] and memory_times(rig) == [9.0]
+    side._clicked(
+        side.memory.topLevelItem(0), 0
+    )  # (the time itself jumps there, nothing is deleted)
+    assert stored(rig) == [(9000, "")] and rig.player.position == pytest.approx(
+        9.0, abs=0.05
+    )
+    side._clicked(side.memory.topLevelItem(0), 1)
+    assert (
+        stored(rig) == [] and memory_times(rig) == []
+    )  # (all deleted: still an edit, not rekordbox's)
+    assert side.edited_row.isVisibleTo(side)
+
+
+def test_the_x_by_memory_deletes_the_one_near_the_playhead_and_says_when_there_is_none(
+    rig,
+):
+    at(rig, 5.0)
+    rig.strip.memory_button.click()
+    at(rig, 20.0)
+    rig.strip.memory_delete_button.click()
+    assert (
+        stored(rig) == [(5000, "")]
+        and rig.messages[-1] == "No memory cue near the playhead"
+    )
+    at(rig, 5.6)
+    rig.strip.memory_delete_button.click()
+    assert stored(rig) == []
+
+
+def test_move_to_playhead_keeps_the_label_and_refuses_a_place_taken(rig):
+    rig.lib.set_memory_cues(rig.c.track.path, [(5000, "drop"), (9000, "")])
+    rig.c._show_cues()
+    side = rig.strip.side
+    at(rig, 7.0)
+    menu = side.memory_menu(side.memory.topLevelItem(0))
+    assert [a.text() for a in menu.actions() if a.text()] == ["Move to Playhead", "Delete", "Reset to rekordbox's"]  # fmt: skip
+    next(a for a in menu.actions() if a.text() == "Move to Playhead").trigger()
+    assert stored(rig) == [(7000, "drop"), (9000, "")]
+    at(rig, 9.01)
+    side.memory_menu(side.memory.topLevelItem(0)).actions()[0].trigger()
+    assert stored(rig) == [(7000, "drop"), (9000, "")] and "already" in rig.messages[-1]
+
+
+def test_reset_goes_back_to_rekordboxs_and_forgets_the_edits(rig):
+    at(rig, 5.0)
+    rig.strip.memory_button.click()
+    assert stored(rig) == [(5000, "")]
+    rig.strip.side.reset_button.click()
+    assert stored(rig) is None and memory_times(rig) == []
+    assert not rig.strip.side.edited_row.isVisibleTo(rig.strip.side)
+
+
+def test_the_menu_of_a_loop_or_an_empty_spot_has_no_edit_items_and_reset_only_when_edited(
+    rig,
+):
+    from dubcrate.analysis import Cue
+
+    side = rig.strip.side
+    side.set_cues((Cue("loop", 60.0, end=64.0), Cue("memory", 5.0)))
+    loop, plain = side.memory.topLevelItem(1), side.memory.topLevelItem(0)
+    assert plain.text(1) == "✕" and loop.text(1) == ""
+    assert side.memory_menu(
+        loop
+    ).isEmpty()  # (a memory loop is rekordbox's: not editable here)
+    assert not side.memory_menu(None).actions()
+    side._clicked(loop, 1)  # (no ✕ on a loop: nothing)
+    side.set_edited(True)
+    assert [a.text() for a in side.memory_menu(None).actions()] == [
+        "Reset to rekordbox's"
+    ]
+
+
+def test_an_edit_waits_while_rekordboxs_cues_are_still_being_read_so_none_are_lost(
+    rig, monkeypatch
+):
+    monkeypatch.setattr(rig.c.cues, "cues_for", lambda track, announce=True: None)
+    at(rig, 5.0)
+    rig.strip.memory_button.click()
+    assert stored(rig) is None and "still being read" in rig.messages[-1]
+
+
+def test_hot_cues_and_loops_stay_rekordboxs_whatever_is_edited(rig, monkeypatch):
+    from dubcrate.analysis import Cue
+
+    rekordbox = [
+        Cue("hot", 20.0, slot=1),
+        Cue("memory", 2.0),
+        Cue("loop", 30.0, end=32.0),
+    ]
+    # (rekordbox's own cues; the edits are laid over them by cues_for)
+    monkeypatch.setattr(
+        rig.c.cues, "_rekordbox_cues", lambda track, announce: rekordbox
+    )
+    at(rig, 7.0)
+    rig.strip.memory_button.click()
+    assert stored(rig) == [
+        (2000, ""),
+        (7000, ""),
+    ]  # (it began from rekordbox's own memory cue)
+    assert memory_times(rig) == [
+        2.0,
+        7.0,
+        30.0,
+    ]  # (the memory loop is listed, and unchanged)
+    assert rig.strip._hot_times == {1: 20.0} and rig.strip.hot_buttons[0].isEnabled()

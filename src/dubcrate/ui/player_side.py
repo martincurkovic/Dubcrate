@@ -5,6 +5,10 @@ Dubcrate never writes them. Clicking a memory or hot cue asks the player to jump
 (`jump_requested`). The Info page shows the track's embedded **artwork** (a painted note on a square when it has
 none), the rating and comment rekordbox gave it and what the file is (type, size, sample rate, bitrate), in a
 bordered frame like the other two pages.
+
+The Memory page is also where **memory cues are edited** (the rekordbox library itself is never written): a row's ✕
+deletes it, right-click moves it to the playhead, and an edited track says so with a **Reset** that goes back to
+rekordbox's. Hot cues and memory loops are rekordbox's and are only shown.
 """
 
 from PySide6.QtCore import QRectF, Qt, Signal
@@ -13,7 +17,9 @@ from PySide6.QtWidgets import (
     QButtonGroup,
     QFrame,
     QHBoxLayout,
+    QHeaderView,
     QLabel,
+    QMenu,
     QSizePolicy,
     QStackedWidget,
     QTreeWidget,
@@ -31,6 +37,9 @@ from .wave_style import hot_cue_color
 
 HOT_SLOTS = 8  # A to H
 TIME_ROLE = Qt.ItemDataRole.UserRole + 40
+DELETABLE_ROLE = (
+    Qt.ItemDataRole.UserRole + 41
+)  # a plain memory cue: one that can be edited here
 
 
 def cue_clock(seconds: float) -> str:
@@ -158,12 +167,24 @@ class SidePanel(QWidget):
     """MEMORY | HOT CUE | INFO."""
 
     jump_requested = Signal(float)  # seconds
+    memory_delete_requested = Signal(float)  # a memory cue's time: delete it
+    memory_move_requested = Signal(
+        float
+    )  # a memory cue's time: move it to the playhead
+    memory_reset_requested = Signal()  # go back to rekordbox's memory cues
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.memory = _list()
         self.hot = _list()
         self.hot.setColumnCount(2)  # (the letter, then its time)
+        self.memory.setColumnCount(2)  # (the time, and a ✕ to delete it)
+        self.memory.header().setStretchLastSection(False)
+        self.memory.header().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        self.memory.header().setSectionResizeMode(1, QHeaderView.ResizeMode.Fixed)
+        self.memory.setColumnWidth(1, 26)
+        self.memory.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.memory.customContextMenuRequested.connect(self._memory_context_menu)
         self.memory.itemClicked.connect(self._clicked)
         self.hot.itemClicked.connect(self._clicked)
         self.rating = QLabel()
@@ -195,8 +216,31 @@ class SidePanel(QWidget):
             label.setSizePolicy(
                 QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred
             )
+        self._edited = False
+        self.edited_note = QLabel("Edited here: rekordbox's are unchanged")
+        self.edited_note.setObjectName("mutedLabel")
+        self.edited_note.setMinimumWidth(0)
+        self.edited_note.setSizePolicy(
+            QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred
+        )
+        self.reset_button = PillButton("Reset", height=22, shape="tile", size_delta=-1)
+        self.reset_button.setToolTip("Forget the edits: rekordbox's memory cues again")
+        self.reset_button.clicked.connect(self.memory_reset_requested)
+        notice = QWidget()
+        notice_row = QHBoxLayout(notice)
+        notice_row.setContentsMargins(0, 0, 0, 0)
+        notice_row.addWidget(self.edited_note, 1)
+        notice_row.addWidget(self.reset_button)
+        self.edited_row = notice
+        notice.hide()
+        memory_page = QWidget()
+        memory_box = QVBoxLayout(memory_page)
+        memory_box.setContentsMargins(0, 0, 0, 0)
+        memory_box.setSpacing(4)
+        memory_box.addWidget(notice)
+        memory_box.addWidget(self.memory, 1)
         self.pages = QStackedWidget()
-        for page in (self.memory, self.hot, info):
+        for page in (memory_page, self.hot, info):
             self.pages.addWidget(page)
 
         self.tabs = [
@@ -238,15 +282,25 @@ class SidePanel(QWidget):
         self.comment.setText(track.comment)
         self.file.setText("\n".join(file_lines(track)))
 
+    def set_edited(self, edited: bool) -> None:
+        """Say whether the track's memory cues are the ones edited here (with a Reset) or rekordbox's."""
+        self._edited = edited
+        self.edited_row.setVisible(edited)
+
     def set_cues(self, cues: tuple[Cue, ...]) -> None:
         """The loaded track's cues: memory cues and loops in time order, and the hot cues by letter."""
         self.memory.clear()
         for cue in sorted((c for c in cues if c.slot is None), key=lambda c: c.time):
             text = cue_clock(cue.time)
+            plain = cue.kind == "memory"
             if cue.kind == "loop" and cue.end:
                 text += f"  →  {cue_clock(cue.end)}"
-            item = QTreeWidgetItem([text])
+            item = QTreeWidgetItem([text, "✕" if plain else ""])
             item.setData(0, TIME_ROLE, cue.time)
+            item.setData(0, DELETABLE_ROLE, plain)
+            item.setTextAlignment(1, Qt.AlignmentFlag.AlignCenter)
+            if plain:
+                item.setToolTip(1, "Delete this memory cue (rekordbox is not changed)")
             self.memory.addTopLevelItem(item)
         self.hot.clear()
         by_slot = {c.slot: c for c in cues if c.slot}
@@ -263,7 +317,39 @@ class SidePanel(QWidget):
             self.hot.addTopLevelItem(item)
         self.hot.setColumnWidth(0, 28)
 
-    def _clicked(self, item: QTreeWidgetItem, _column: int) -> None:
+    def _clicked(self, item: QTreeWidgetItem, column: int) -> None:
         seconds = item.data(0, TIME_ROLE)
-        if seconds is not None:
-            self.jump_requested.emit(float(seconds))
+        if seconds is None:
+            return
+        if column == 1 and item.treeWidget() is self.memory:  # the ✕
+            if item.data(0, DELETABLE_ROLE):
+                self.memory_delete_requested.emit(float(seconds))
+            return
+        self.jump_requested.emit(float(seconds))
+
+    def memory_menu(self, item: QTreeWidgetItem | None) -> QMenu:
+        """The right-click menu of the Memory list: move to the playhead and delete (a plain memory cue only), and
+        Reset when the track's memory cues are edited."""
+        menu = QMenu(self)
+        seconds = item.data(0, TIME_ROLE) if item is not None else None
+        if seconds is not None and item.data(0, DELETABLE_ROLE):
+            move = menu.addAction("Move to Playhead")
+            move.triggered.connect(
+                lambda: self.memory_move_requested.emit(float(seconds))
+            )
+            delete = menu.addAction("Delete")
+            delete.triggered.connect(
+                lambda: self.memory_delete_requested.emit(float(seconds))
+            )
+        if self._edited:
+            if not menu.isEmpty():
+                menu.addSeparator()
+            menu.addAction("Reset to rekordbox's").triggered.connect(
+                self.memory_reset_requested
+            )
+        return menu
+
+    def _memory_context_menu(self, where) -> None:
+        menu = self.memory_menu(self.memory.itemAt(where))
+        if not menu.isEmpty():
+            menu.popup(self.memory.viewport().mapToGlobal(where))

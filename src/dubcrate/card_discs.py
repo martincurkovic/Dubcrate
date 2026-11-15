@@ -23,6 +23,7 @@ from dubcrate.analysis import Cue
 from dubcrate.card_report import describe_plan, msf
 from dubcrate.card_sync import DiscPlan, DiscRequest, Status, map_cues, plan_card
 from dubcrate.library import Library
+from dubcrate.library.cue_edits import with_edits
 from dubcrate.library.models import DiscEntry, DiscSummary, Track
 from dubcrate.library.rekordbox import RekordboxError, read_cues
 
@@ -77,7 +78,8 @@ class RekordboxCues:
 
     The database is read once per rekordbox source, the first time a track of it is asked about.
     A file that is also in rekordbox (same path) takes rekordbox's cues, as the preview takes its
-    waveform; a track with no rekordbox twin has none.
+    waveform; a track with no rekordbox twin has none. **Memory cues edited in Dubcrate replace its memory cues**
+    (`cue_edits.with_edits`), so the card gets the edited ones.
     """
 
     def __init__(
@@ -90,6 +92,10 @@ class RekordboxCues:
         self._by_source: dict[int, Mapping[str, Sequence[Cue]]] = {}
 
     def for_track(self, track: Track) -> Sequence[Cue]:
+        """The track's cues for the card: rekordbox's, with its memory cues replaced by any edited in Dubcrate."""
+        return with_edits(self._lib, track, self._rekordbox_cues(track))
+
+    def _rekordbox_cues(self, track: Track) -> Sequence[Cue]:
         analysed = self._lib.rekordbox_twin(track) or track
         source = next(
             (s for s in self._lib.sources() if s.id == analysed.source_id), None
