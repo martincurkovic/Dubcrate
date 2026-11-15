@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 from PySide6.QtCore import Qt
 
+from dubcrate import card_format
 from dubcrate import cdj_card as cc
 from dubcrate.analysis import Cue
 from dubcrate.library import Library, TrackRecord
@@ -655,7 +656,10 @@ def test_an_eject_that_fails_says_to_eject_by_hand_and_the_card_is_read_again(
     ejecting.view.sync_button.click()
     assert ejecting.finished()
     assert "disk is busy" in ejecting.said[-1]
-    assert "Eject it in Finder before taking it out." in ejecting.said[-1]
+    assert (
+        f"Eject it ({card_format.eject_hint()}) before taking it out."
+        in ejecting.said[-1]
+    )
     assert ejecting.gone == []
     assert wait_until(ejecting.view, lambda: shown(ejecting.view)[0][1] == "In sync")
 
@@ -806,7 +810,10 @@ def test_an_eject_that_fails_says_to_do_it_in_finder_and_the_card_stays(
     monkeypatch.setattr(sync_view, "eject_card", busy)
     panel.row_for(card).button.click()
     assert wait_for(lambda: said)
-    assert "disk is busy" in said[0] and "Eject it in Finder" in said[0]
+    assert (
+        "disk is busy" in said[0]
+        and f"Eject it ({card_format.eject_hint()})" in said[0]
+    )
     assert panel.current_card() == card and panel.row_for(card).button.isEnabled()
 
 

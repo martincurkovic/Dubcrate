@@ -197,9 +197,22 @@ def file_name(number: int, artist: str, title: str) -> str:
     return f"{prefix}{label}.mp3"
 
 
+# Names Windows won't create as a file or folder, with or without an extension (a disc read on
+# Windows, or a staging folder made there).
+_WINDOWS_RESERVED = frozenset(
+    {"CON", "PRN", "AUX", "NUL", "CONIN$", "CONOUT$"}
+    | {f"COM{n}" for n in range(1, 10)}
+    | {f"LPT{n}" for n in range(1, 10)}
+)
+
+
 def dir_name(name: str) -> str:
-    """A folder's name as it is written on the disc: what a file system allows, Joliet's length."""
-    return _clean(name)[:MAX_NAME_CHARS].strip(" .") or "Folder"
+    """A folder's name as it is written on the disc: what a file system allows, Joliet's length.
+    A name Windows reserves (`CON`, `NUL`, `COM1`, ...) gets an underscore, as it can't be made there."""
+    clean = _clean(name)[:MAX_NAME_CHARS].strip(" .") or "Folder"
+    if clean.split(".", 1)[0].rstrip().upper() in _WINDOWS_RESERVED:
+        clean = f"{clean}_"
+    return clean
 
 
 def format_size(sectors: int) -> str:

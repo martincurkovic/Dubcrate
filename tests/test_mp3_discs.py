@@ -189,6 +189,24 @@ def test_the_scanner_agrees_with_ffmpegs_constant_and_variable_files(tmp_path):
     assert mp3.scan_mp3(tagged).cbr and mp3.scan_mp3(tagged).bitrate == 320
 
 
+@pytest.mark.parametrize(
+    ("name", "written"),
+    [
+        ("CON", "CON_"),
+        ("nul", "nul_"),
+        ("Com3", "Com3_"),
+        ("LPT9.txt", "LPT9.txt_"),
+        ("aux .", "aux_"),
+        ("CONSOLE", "CONSOLE"),
+        ("Communion", "Communion"),
+        ("COM10", "COM10"),
+        ("Warm Ups", "Warm Ups"),
+    ],
+)
+def test_a_folder_name_windows_reserves_gets_an_underscore(name, written):
+    assert mp3.dir_name(name) == written
+
+
 def test_file_names_are_numbered_clean_and_short_enough_for_joliet():
     assert (
         mp3.file_name(1, "Daft Punk", "One More Time")

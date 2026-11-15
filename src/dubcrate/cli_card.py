@@ -161,7 +161,7 @@ def cmd_sync(lib: Library, args: argparse.Namespace) -> int:
     print(
         f"\nwrote {len(outcome.written)} file(s) ({outcome.cues_written} cues, "
         f"{outcome.waveforms_written} waveforms); the card's old files are in {outcome.backup}"
-        "\nEject the card (Finder, or `diskutil eject`) before taking it out: a card pulled early "
+        f"\nEject the card ({card_format.eject_hint()}) before taking it out: a card pulled early "
         "can be left unreadable."
     )
     return 0
@@ -313,7 +313,7 @@ def add_parsers(sub: argparse._SubParsersAction) -> None:
     p.add_argument(
         "disk",
         nargs="?",
-        help="the whole card, such as disk4 (see: diskutil list); omit to list removable disks",
+        help="the whole card, such as disk4 (macOS), sdb (Linux) or disk3 (Windows); omit to list removable disks",
     )
     p.add_argument("--yes", action="store_true", help="really erase the card")
     p.add_argument(

@@ -289,7 +289,7 @@ class MainWindow(QMainWindow):
             "explorer",
             "Explorer",
             explorer_glyph,
-            "Browse folders on this Mac, or a drive, without importing them",
+            "Browse folders on this computer, or a drive, without importing them",
         )
         self.source_tabs.add_tab(
             "sync",

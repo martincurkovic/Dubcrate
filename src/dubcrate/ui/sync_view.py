@@ -41,8 +41,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from dubcrate import card_format, settings
 from dubcrate import cdj_card as cc
-from dubcrate import settings
 from dubcrate.analysis import Cue
 from dubcrate.cancel import CancelToken
 from dubcrate.card_apply import apply_sync, default_backup_dir
@@ -300,7 +300,7 @@ class CardPanel(QWidget):
         self.cards.customContextMenuRequested.connect(self._on_context_menu)
         layout.addWidget(self.cards, 1)
         self.hint = QLabel(
-            "Plug the CDJ's SD card into this Mac: it appears here by itself, found by its "
+            "Plug the CDJ's SD card into this computer: it appears here by itself, found by its "
             "PIONEER folder (click Refresh if it doesn't).\n\nA blank card can be set up by right-clicking "
             "this list and choosing Format a Card. A copy of a card's folder, or a disk image of a card, "
             "can be chosen by hand."
@@ -468,7 +468,9 @@ class CardPanel(QWidget):
 
         def failed(text: str) -> None:
             self._ejecting = False
-            self.message.emit(f"{text} Eject it in Finder before taking it out.")
+            self.message.emit(
+                f"{text} Eject it ({card_format.eject_hint()}) before taking it out."
+            )
             self.refresh()
 
         run_async(work, done, failed)
@@ -1272,7 +1274,9 @@ class SyncView(QWidget):
 
         def failed(text: str) -> None:
             self._set_writing(False)
-            self.message.emit(f"{said} {text} Eject it in Finder before taking it out.")
+            self.message.emit(
+                f"{said} {text} Eject it ({card_format.eject_hint()}) before taking it out."
+            )
             self.refresh()
 
         run_async(work, done, failed)

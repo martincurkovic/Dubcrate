@@ -94,6 +94,38 @@ was run on a Windows desktop or drive. What they showed:
   every theme change restyled all of them. Now deleted after each test: the full suite takes about 100 s on a
   Mac (it was 275 s) and a theme test 0.04 s (it was 11 s).
 
+## Audit of what is still macOS-only (2026-11-15)
+
+Found by searching the code for `darwin`, `diskutil`, `drutil`, `hdiutil`, `/Volumes`, `Finder` and
+`~/Library`, after the card work (cancel, waveforms, format-a-card) was done. Ranked by what it costs a user
+who has no Mac. Everything off macOS is **[not tried]** until the line says otherwise.
+
+| # | Gap | Where | Effect off a Mac today | Portable version |
+| --- | --- | --- | --- | --- |
+| 1 | **Ejecting** a card or the disc | `eject.py` | "Eject after syncing" and the row's eject button fail; a card pulled early can be left unreadable by the player (the one hazard the owner has hit) | Linux: `udisksctl unmount -b` (this is the flush that matters) then `power-off` (best effort: a built-in slot refuses it); the disc with `eject`. Windows: the Shell "Eject" verb through PowerShell, then wait for the drive to vanish. **Phase 6, step 1** |
+| 2 | **Reading the disc's TOC** | `drive_toc.py` (`drutil toc`), `cdj_card.toc_from_drutil`, used by `burn_check`, `card sync --from-drive`, `card toc` | `can_read_toc()` is False, so the post-burn check is skipped and a burn goes unverified | Linux: `cdparanoia -Q` / `cd-info`, or the `CDROMREADTOC*` ioctls through `ctypes` (no tool). Windows: `IOCTL_CDROM_READ_TOC` through `ctypes`. One small parser each, all ending in `(starts, lead_out)`. **Phase 6, step 3** |
+| 3 | **Making the ISO** for an MP3 disc | `iso.py` (`hdiutil` on a Mac, `xorriso` / `genisoimage` / `mkisofs` elsewhere) | Windows: "not supported yet"; Linux needs xorriso installed | `pycdlib` (pure Python, LGPL-2.1, ISO 9660 + Joliet): no tool on any OS, and the `hdiutil` branch can go. Needs a notices entry, and the Joliet name limits checked against `mp3.MAX_NAME_CHARS`. **Phase 6, step 4** |
+| 4 | **Burning** | `burn/discrecording.py` (Mac), `burn/cdrdao.py` | Phases 3 and 4 below | unchanged: `cdrdao` on Linux; Windows has no trustworthy `cdrdao.exe`, IMAPI2 is the fallback |
+| 5 | **ffmpeg / ffprobe bundled** | `scripts/build_ffmpeg_macos.sh`, `tools.find_tool` | only the macOS app bundles them; elsewhere the user installs them (`tools.install_command()`) | LGPL builds per OS (Phase 5) |
+| 6 | **A card plugged in, noticed** | `ui/explorer.py: volume_parents`, `CardPanel` | Windows has no folder to watch, so the list changes on Refresh or when the tab opens; Linux and Windows drive lists never ran on a real system | poll `mounted_volumes()` while the tab is visible, or `WM_DEVICECHANGE` |
+| 7 | **Packaging and CI** | `build.yml`, `build_macos.sh`, `dmg_settings.py` | no Windows or Linux app | Phase 5 |
+| 8 | **Wording** | `sync_view.py` ("Eject it in Finder", twice), `cli_card.py` (sync message, `--disk` help "see: diskutil list"), the card panel's hint ("this Mac"), the guide and README (⌘, Homebrew, `~/Library`) | misleading, not broken | `card_format.eject_hint()` exists; use it. **Phase 6, step 2** |
+| 9 | **Windows file names** | `mp3._clean` | it strips backslash, slash, colon, asterisk, question mark, quotes, angle brackets, the vertical bar and control characters, and trailing dots and spaces, and `dir_name` now adds an underscore to Windows' reserved names (`CON`, `NUL`, `COM1` ...; 2026-11-15). MP3 *files* were always safe (the number prefix). The 260-character path limit for staged files is **unchecked** | reserved-name guard in `mp3.dir_name`; check long paths on a real Windows machine |
+
+### Phase 6: the drive and card helpers (started 2026-11-15)
+
+Each helper gets one function with the platform chosen in ONE place (as `card_format._backend()` does), an
+injectable runner, an expected-error exception with plain words, tests against stand-in commands, and a
+**[not tried]** tag until it has run on the real OS.
+
+- [x] **1. Eject** (`eject.py`): Linux and Windows added, tested against stand-in commands. **[not tried]**
+- [x] **2. Wording**: "Eject it in Finder" and the other Mac-only phrases use `card_format.eject_hint()` or say the OS neutrally.
+- [x] **3. Read the TOC** on Linux (kernel ioctls) and Windows (`IOCTL_CDROM_READ_TOC`, `ctypes`) in `drive_toc.py`, so `burn_check` runs after any burn. Tested against made-up answers only. **[not tried]**
+- [ ] **4. `pycdlib`** for the MP3 disc's ISO, then drop the external-tool lookup for it.
+- [~] **5. Windows reserved names**: `mp3.dir_name` gives `CON`, `NUL`, `COM1`... an underscore (done, tested). The 260-character path limit for staged files is still **unchecked** on a real Windows machine.
+- [ ] **6. Notice a card on Windows** (poll while the Sync tab shows).
+- [ ] Then Phases 3 to 5 below (burn, packaging).
+
 ## Roadmap
 
 ### Phase 0: groundwork (no behaviour change, no drive needed): done 2026-11-13
