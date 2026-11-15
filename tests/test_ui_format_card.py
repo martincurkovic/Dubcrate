@@ -233,7 +233,7 @@ def test_right_click_on_a_card_offers_eject_and_format(qapp, tmp_path, monkeypat
     panel = CardPanel(volumes=lambda: [card])
     panel.refresh(announce=False)
     menu = panel.card_menu(card)
-    assert [a.text() for a in menu.actions() if a.text()] == ["Eject “DISK_IMG”", "Format a Card…"]  # fmt: skip
+    assert [a.text() for a in menu.actions() if a.text()] == ["Sync to “DISK_IMG”…", "Eject “DISK_IMG”", "Format a Card…"]  # fmt: skip
     ejected = []
     monkeypatch.setattr(panel, "_eject", ejected.append)
     menu_action(menu, "Eject “DISK_IMG”").trigger()
@@ -249,6 +249,23 @@ def test_right_click_on_a_folder_chosen_by_hand_offers_to_take_it_off_the_list(q
     panel._chosen.append(folder)
     panel.refresh(announce=False)
     menu = panel.card_menu(folder)
-    assert [a.text() for a in menu.actions() if a.text()] == ["Take This Folder Off the List", "Format a Card…"]  # fmt: skip
+    assert [a.text() for a in menu.actions() if a.text()] == ["Sync to “copy”…", "Take This Folder Off the List", "Format a Card…"]  # fmt: skip
     menu_action(menu, "Take This Folder Off the List").trigger()
     assert panel.cards.count() == 0
+
+
+def test_sync_in_the_menu_asks_for_a_sync_to_that_card_and_waits_while_one_writes(qapp, tmp_path):  # fmt: skip
+    first, second = tmp_path / "A", tmp_path / "B"
+    for card in (first, second):
+        cc.make_card_folders(card)
+    panel = CardPanel(volumes=lambda: [first, second])
+    panel.refresh(announce=False)
+    asked, told = [], []
+    panel.sync_requested.connect(asked.append)
+    panel.card_changed.connect(told.append)
+    assert panel.current_card() == first
+    menu_action(panel.card_menu(second), "Sync to “B”…").trigger()
+    assert asked == [second] and panel.current_card() == second
+    assert told == []  # (the Sync view is told once, by the request)
+    panel.set_busy(True)
+    assert not menu_action(panel.card_menu(second), "Sync to “B”…").isEnabled()

@@ -31,6 +31,7 @@ The first release: macOS (Apple Silicon and Intel) and, new, Linux (an AppImage)
 
 ### Preview
 
+- The player is laid out like rbxport's: controls down the left (previous / next, beat jump with a size menu, CUE and play), hot cue buttons A to H, memory cue buttons and loop controls under the waveform, zoom buttons over it, and **Memory / Hot Cue / Info** tabs on the right. Drag a track from a list onto the player to load it. Cues stay read-only; CUE, loops and quantise are drawn but not working yet.
 - A **player** with waveforms (rekordbox's own for rekordbox tracks, with beat grid, phrases and cues), scratching by dragging,
   beat jump with the arrow keys, play-through to the next track, and **four looks** (System, Light, Dark, Macintosh System 6).
 

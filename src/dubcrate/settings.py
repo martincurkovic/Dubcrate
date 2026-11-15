@@ -296,7 +296,16 @@ def set_wave_background(mode: str) -> None:
     _qs().setValue("waveform/background", mode)
 
 
-BEAT_JUMP_SIZES = (1, 2, 4, 8, 16, 32)  # beats
+BEAT_JUMP_SIZES = (1, 2, 4, 8, 16, 32, 64, 128)  # beats (up to 32 bars)
+
+
+def beat_jump_label(beats: int) -> str:
+    """A jump as the player's menu says it: `4 Beats`, `16 Beats`, then bars: `8 Bars` (32 beats)."""
+    if beats >= 32:
+        return f"{beats // 4} Bars"
+    return f"{beats} Beat{'s' if beats != 1 else ''}"
+
+
 DEFAULT_BEAT_JUMP = 4  # one bar
 
 

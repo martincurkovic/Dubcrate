@@ -262,6 +262,7 @@ class MainWindow(QMainWindow):
         )  # (a card shows up by itself)
         self.sync_view = SyncView(self._lib, can_eject=self.card_panel.is_volume)
         self.card_panel.card_changed.connect(self.sync_view.set_card)
+        self.card_panel.sync_requested.connect(self.sync_view.sync_to)
         self.sync_view.card_ejected.connect(self.card_panel.refresh)  # (it has gone)
         self.sync_view.busy_changed.connect(self.card_panel.set_busy)
         self.card_panel.message.connect(
@@ -328,6 +329,7 @@ class MainWindow(QMainWindow):
 
         self.player_strip = PlayerStrip()
         self.player_strip.settings_requested.connect(self.open_settings)
+        self.player_strip.track_dropped.connect(self._load_dropped_track)
         self.preview = PreviewController(
             self._lib, self.player_strip, self._player, parent=self
         )
@@ -1850,6 +1852,17 @@ class MainWindow(QMainWindow):
         dialog.audio_changed.connect(self.preview.apply_settings)
         dialog.theme_chosen.connect(self.set_theme)
         dialog.exec()
+        self.player_strip.set_beat_jump(
+            settings.get_beat_jump()
+        )  # (it may have been changed there)
+
+    def _load_dropped_track(self, track_id: int) -> None:
+        """A track was dragged from a list onto the player: load it, as a double-click does."""
+        try:
+            (track,) = self._lib.tracks_by_ids([track_id])
+        except (KeyError, ValueError):
+            return
+        self.preview.load(track)
 
     def add_selected_to_disc(self) -> None:
         self.disc_view.add_tracks(self.selected_track_ids())

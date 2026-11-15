@@ -257,10 +257,10 @@ def test_the_detail_view_has_a_faint_line_through_the_middle_even_in_silence(
     image = detail.grab().toImage()
     background = wave_style.color("wave_bg")
     middle = detail.height() // 2
-    assert pixel(image, 20, middle) != background  # the line
-    assert pixel(image, 20, middle) != wave_style.color("wave_text")  # but faint
-    assert pixel(image, 20, middle - 10) == background
-    assert pixel(image, 20, middle + 10) == background
+    assert pixel(image, 100, middle) != background  # the line
+    assert pixel(image, 100, middle) != wave_style.color("wave_text")  # but faint
+    assert pixel(image, 100, middle - 10) == background
+    assert pixel(image, 100, middle + 10) == background
     detail.close()
 
 
@@ -272,5 +272,5 @@ def test_system6_has_no_faint_line(qapp):
     detail.set_position(2.0)
     detail.show()
     image = detail.grab().toImage()
-    assert pixel(image, 20, detail.height() // 2) == wave_style.color("wave_bg")
+    assert pixel(image, 100, detail.height() // 2) == wave_style.color("wave_bg")
     detail.close()

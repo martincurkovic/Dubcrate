@@ -17,13 +17,13 @@ KINDS = ("previous", "play", "next")
 
 
 class TransportButton(QAbstractButton):
-    def __init__(self, kind: str, parent=None):
+    def __init__(self, kind: str, parent=None, size: int | None = None):
         if kind not in KINDS:
             raise ValueError(f"kind must be one of {KINDS}, not {kind!r}")
         super().__init__(parent)
         self.kind = kind
         self._playing = False
-        size = PLAY_SIZE if kind == "play" else SKIP_SIZE
+        size = size or (PLAY_SIZE if kind == "play" else SKIP_SIZE)
         self.setFixedSize(QSize(size, size))
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setFocusPolicy(Qt.FocusPolicy.TabFocus)

@@ -228,10 +228,30 @@ def _main(ctx, size=SIZE):
     )  # wide enough that the track list's columns all show
     ctx.open_playlist(window, BROWSE)
     ctx.load_track(window, 2)
+    _stage_cues(window)
     window.refresh_discs()
     window.disc_tree.expandAll()
     ctx.settle()
     return window
+
+
+def _stage_cues(window):
+    """Staged: the made-up tracks are not in rekordbox, so the loaded one is given invented cues (the player's flags,
+    its hot cue buttons and its memory / hot cue lists show them)."""
+    from dubcrate.analysis import Cue
+
+    d = window.player_strip._duration
+    window.player_strip.show_cues(
+        (
+            Cue("memory", 0.1),
+            Cue("memory", d * 0.25),
+            Cue("memory", d * 0.5),
+            Cue("loop", d * 0.55, end=d * 0.55 + 4.0),
+            Cue("hot", d * 0.12, slot=1),
+            Cue("hot", d * 0.4, slot=2),
+            Cue("hot", d * 0.7, slot=3),
+        )
+    )
 
 
 def _over(window, dialog):

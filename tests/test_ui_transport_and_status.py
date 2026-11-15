@@ -105,22 +105,51 @@ def test_clicks_and_the_keyboard_work_like_any_button(qapp):
     assert len(clicks) == 2  # a disabled button doesn't answer
 
 
+def centre_line(widgets):
+    """The vertical middles of `widgets` in the strip's own coordinates."""
+    return {round(w.mapTo(w.window(), w.rect().center()).y()) for w in widgets}
+
+
 def test_the_header_centres_every_control_on_one_line(qapp):
     strip = PlayerStrip()
-    strip.resize(1000, 200)
+    strip.resize(1200, 340)
     strip.show()
     qapp.processEvents()
-    centres = {
-        round(w.geometry().center().y())
-        for w in (
-            strip.prev_button,
-            strip.play_button,
-            strip.next_button,
+    centres = centre_line(
+        (
+            strip.elapsed,
+            strip.remaining,
+            strip.key,
+            strip.bpm,
             strip.settings_button,
             strip.volume,
         )
-    }
+    )
     assert max(centres) - min(centres) <= 1
+    strip.deleteLater()
+
+
+def test_the_left_column_pairs_its_buttons_on_a_line_and_stacks_the_rest(qapp):
+    strip = PlayerStrip()
+    strip.resize(1200, 340)
+    strip.show()
+    qapp.processEvents()
+    for pair in (
+        (strip.prev_button, strip.next_button),
+        (strip.jump_back_button, strip.jump_forward_button),
+    ):
+        centres = centre_line(pair)
+        assert max(centres) - min(centres) <= 1
+    column = [
+        strip.prev_button,
+        strip.jump_back_button,
+        strip.jump_combo,
+        strip.cue_button,
+        strip.play_button,
+    ]
+    tops = [w.mapTo(strip, w.rect().topLeft()).y() for w in column]
+    assert tops == sorted(tops)  # (top to bottom: skip, jump, size, CUE, play)
+    assert len({w.mapTo(strip, w.rect().center()).x() for w in (strip.cue_button, strip.play_button)}) == 1  # fmt: skip
     strip.deleteLater()
 
 

@@ -258,6 +258,9 @@ class CardPanel(QWidget):
     drives appear are watched, as the Explorer does. **Refresh** is for when that misses one."""
 
     card_changed = Signal(object)  # the card's folder (a Path), or None
+    sync_requested = Signal(
+        object
+    )  # right-click > Sync to this card: the card's folder (a Path)
     message = Signal(str)  # for the status bar
 
     def __init__(
@@ -421,14 +424,20 @@ class CardPanel(QWidget):
     # -- the right-click menu ------------------------------------------------------
 
     def card_menu(self, path: Path | None) -> QMenu:
-        """The menu for a card in the list (`path`), or for the empty part of it (None): Eject it
-        (or take a folder chosen by hand off the list), and Format a Card…, which is also here for
-        a blank card that is not listed yet."""
+        """The menu for a card in the list (`path`), or for the empty part of it (None): Sync the ticked
+        discs to it, Eject it (or take a folder chosen by hand off the list), and Format a Card…, which
+        is also here for a blank card that is not listed yet."""
         menu = QMenu(self)
         idle = not (self._busy or self._ejecting)
         if path is not None:
             name = path.name or str(path)
             row = self.row_for(path)
+            sync = menu.addAction(f"Sync to “{name}”…")
+            sync.setEnabled(idle)
+            sync.setToolTip(
+                "Write the ticked discs' cues and waveforms to this card (it asks first)"
+            )
+            sync.triggered.connect(lambda: self._sync_to(path))
             if row is not None and row.by_hand:
                 menu.addAction("Take This Folder Off the List").triggered.connect(
                     lambda: self._remove(path)
@@ -446,6 +455,17 @@ class CardPanel(QWidget):
         )
         fmt.triggered.connect(self.format_card)
         return menu
+
+    def _sync_to(self, path: Path) -> None:
+        """Right-click > Sync: show `path` as the picked card (quietly: the Sync view is told below, once)
+        and ask for a sync to it."""
+        self.cards.blockSignals(True)
+        for row in range(self.cards.count()):
+            if self.cards.item(row).data(Qt.ItemDataRole.UserRole) == str(path):
+                self.cards.setCurrentRow(row)
+        self.cards.blockSignals(False)
+        self._restyle_rows()
+        self.sync_requested.emit(path)
 
     def _on_context_menu(self, where) -> None:
         item = self.cards.itemAt(where)
@@ -590,6 +610,9 @@ class SyncView(QWidget):
             None  # set while measuring or analysing: the Cancel button's
         )
         self._ticking = False
+        self._sync_when_ready = (
+            False  # sync as soon as the discs have been looked at against a new card
+        )
 
         # The right-hand side of the window while the Sync tab is on (the window puts `disc_panel` there, in place
         # of the Discs list): the discs, each with a tick to say what to sync, and what to do with the ticked ones.
@@ -751,6 +774,11 @@ class SyncView(QWidget):
         self._surveys = {s.disc.id: s for s in surveys}
         self._unmeasured = self._tracks_to_measure(surveys)
         self._fill()
+        if (
+            self._sync_when_ready
+        ):  # (a right-click > Sync to a card that was not the one shown)
+            self._sync_when_ready = False
+            self._request_sync()
 
     def _tracks_to_measure(self, surveys: Sequence[DiscSurvey]) -> list[Track]:
         """The tracks of discs that can't be synced for want of a length, that can be probed."""
@@ -1051,6 +1079,21 @@ class SyncView(QWidget):
         """A sync is (or is no longer) writing and ejecting: the card list must leave the card alone."""
         self._writing = writing
         self.busy_changed.emit(writing)
+
+    def sync_to(self, card: Path) -> None:
+        """The card's right-click > Sync: make `card` the one shown (looking at the discs against it
+        first, if it is not already) and sync the ticked discs to it, asking as the Sync button does."""
+        if card != self._card_path:
+            self._sync_when_ready = True
+            self.set_card(card)
+            return
+        self._request_sync()
+
+    def _request_sync(self) -> None:
+        if not self.ticked_ids():
+            self.message.emit("Tick the discs you want to sync first.")
+            return
+        self._on_sync()
 
     def _on_sync(self) -> None:
         """Ask, then plan the card fresh, copy its files aside and write (on a worker); then, if

@@ -16,6 +16,7 @@ from dubcrate.analysis import Cue, Phrase
 from dubcrate.waveform import BAND_HIGH, BAND_LOW, BAND_MID, STYLE_BANDS, Waveform
 
 from . import theme
+from .player_controls import PillButton
 from .wave_style import (
     cache_token,
     color,
@@ -288,6 +289,29 @@ class DetailView(QWidget):
         self.setCursor(Qt.CursorShape.OpenHandCursor)
         theme.notifier.changed.connect(self.update)
         wave_notifier.changed.connect(self.update)
+        # zoom + / RST / -, over the waveform's left edge (a press on one is its own, not a scratch)
+        self.zoom_in_button = PillButton("+", self, width=30, height=22, bold=True)
+        self.zoom_reset_button = PillButton("RST", self, width=30, height=22)
+        self.zoom_out_button = PillButton("−", self, width=30, height=22, bold=True)
+        self.zoom_in_button.setToolTip("Zoom in (a shorter stretch of the track)")
+        self.zoom_reset_button.setToolTip("Zoom back to the usual stretch")
+        self.zoom_out_button.setToolTip("Zoom out (a longer stretch of the track)")
+        self.zoom_in_button.clicked.connect(lambda: self.zoom(1))
+        self.zoom_reset_button.clicked.connect(
+            lambda: self.set_window_seconds(DEFAULT_ZOOM)
+        )
+        self.zoom_out_button.clicked.connect(lambda: self.zoom(-1))
+        self._place_zoom_buttons()
+
+    def _place_zoom_buttons(self) -> None:
+        y = 6
+        for button in (
+            self.zoom_in_button,
+            self.zoom_reset_button,
+            self.zoom_out_button,
+        ):
+            button.move(8, y)
+            y += button.height() + 4
 
     # -- content ----------------------------------------------------------
 

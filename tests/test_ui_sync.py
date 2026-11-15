@@ -1357,3 +1357,34 @@ def test_a_long_title_never_changes_how_wide_the_panes_are(qapp, tmp_path, monke
     win.close()
     win.deleteLater()
     lib.close()
+
+
+def test_right_click_sync_picks_the_card_and_asks_the_same_question_as_the_button(writing):  # fmt: skip
+    analyse_everything(writing.lib)
+    look_again(writing, "waveforms")
+    writing.view._tick_all(Qt.CheckState.Checked)
+    writing.view.sync_to(writing.card)  # (the card is already the one shown)
+    assert wait_until(writing.view, lambda: bool(writing.asked))
+    assert len(writing.asked) == 1 and "waveforms" in writing.asked[0]
+    assert writing.finished()
+
+
+def test_right_click_sync_with_nothing_ticked_says_to_tick_discs_first(writing):
+    look_again(writing, "cue")
+    writing.view._tick_all(Qt.CheckState.Unchecked)
+    said = []
+    writing.view.message.connect(said.append)
+    writing.view.sync_to(writing.card)
+    assert said == ["Tick the discs you want to sync first."] and writing.asked == []
+
+
+def test_right_click_sync_to_another_card_waits_for_the_discs_to_be_looked_at_against_it(writing, tmp_path):  # fmt: skip
+    look_again(writing, "cue")
+    writing.view._tick_all(Qt.CheckState.Checked)
+    other = card_folder(tmp_path / "other")
+    writing.view.sync_to(
+        other
+    )  # (not the one shown: it is looked at first, then the question)
+    assert wait_until(writing.view, lambda: bool(writing.asked))
+    assert writing.view._card_path == other and len(writing.asked) == 1
+    assert writing.finished()

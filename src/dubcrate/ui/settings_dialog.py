@@ -93,9 +93,7 @@ class SettingsDialog(QDialog):
 
         self.beat_jump_combo = QComboBox()
         for beats in settings.BEAT_JUMP_SIZES:
-            self.beat_jump_combo.addItem(
-                f"{beats} beat{'s' if beats != 1 else ''}", beats
-            )
+            self.beat_jump_combo.addItem(settings.beat_jump_label(beats), beats)
         self.beat_jump_combo.setCurrentIndex(
             max(0, self.beat_jump_combo.findData(settings.get_beat_jump()))
         )

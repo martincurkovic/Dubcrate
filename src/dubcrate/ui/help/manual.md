@@ -148,20 +148,28 @@ For a folder you use all the time (say, MP3s that aren't in rekordbox), **right-
 
 ## Listening to tracks
 
-**Double-click** a track to preview it, and press **Space** to play or pause (and **←** and **→** to beat jump). These keys work wherever you are in the window, except where you are typing, so the search box, a title you are editing and a setting you are typing into keep their keys. A slider keeps its own arrows, and in the Library and Discs lists **←** and **→** still close and open folders, but **Space** works there too. The **Preview** column shows the whole track as a waveform.
+**Double-click** a track to preview it (or **drag it from a list onto the player**), and press **Space** to play or pause (and **←** and **→** to beat jump). These keys work wherever you are in the window, except where you are typing, so the search box, a title you are editing and a setting you are typing into keep their keys. A slider keeps its own arrows, and in the Library and Discs lists **←** and **→** still close and open folders, but **Space** works there too. The **Preview** column shows the whole track as a waveform.
 
 When a track plays to its end, the next one in the list (or in the open disc, in its order) starts by itself, skipping any file that is missing, and playback stops after the last. Pause, or choose another track, and it stays as you left it.
+
+The player is laid out as rbxport's is:
+
+- **Left:** previous and next track, beat jump back and forward (**‹** **›**) with a menu of how far (1 beat up to 32 bars), **CUE** and play / pause. CUE, and the loop and quantise buttons under the waveform, are drawn but off for now: they come in the next update.
+- **Middle:** the title, artist, time, key and tempo, the two waveforms, and under them the **hot cue buttons A to H**, **MEMORY** with **◀** and **▶**, the loop controls (**AU** automatic, **MA** manual) and **Q**.
+- **Right:** three tabs, **MEMORY** (the memory cues and loops, with their times), **HOT CUE** (A to H) and **INFO** (the rating and comment from rekordbox, and what the file is: type, size, sample rate, bitrate).
+
+**The cues are rekordbox's and are only shown, never changed.** A hot cue button is lit when the track has that cue, and pressing it (or a row in the memory or hot cue list) jumps there, playing or paused as it was; **◀** and **▶** go to the memory cue before or after the playhead. **MEMORY** and **✕**, which would save or delete a cue, are off.
 
 The two waveforms in the player:
 
 - The **overview** shows the whole track. For rekordbox tracks it also shows the phrases (such as INTRO, CHORUS, DOWN, UP and OUTRO) and your cue points. Click anywhere in it to jump there.
-- The **detail view** is zoomed in and scrolls past a fixed playhead, with the beat grid and, for rekordbox tracks, your cues drawn on it. Use the mouse wheel to zoom, and drag it to scratch (below).
+- The **detail view** is zoomed in and scrolls past a fixed playhead, with the beat grid and, for rekordbox tracks, your cues drawn on it. Zoom with the **+**, **RST** and **−** buttons over its left edge, or the mouse wheel, and drag it to scratch (below).
 
 For rekordbox tracks the waveforms, beat grid and phrases come from rekordbox's own analysis, and the cues from its library (read when you first play one of its tracks, and again if rekordbox has changed them). Hot cues show their letter and colour, memory cues are red, and a loop is a tinted stretch. The **Preview** column in the track list flags the hot cues too, as small lettered boxes along the top of each strip (as in rekordbox). For other music Dubcrate draws the waveform itself. Beat grids and cues are only shown for your planning: **they do not go on the CD.**
 
 **Scratching.** Grab the zoomed waveform and drag it, as you would a CDJ's jog wheel. The waveform sticks to your pointer, and you hear the track move with it: drag right to take it back, left to move it forward, faster for a higher pitch, and hold still for silence. While your hand is on it, a playing track is held, and it carries on from wherever you let go. A paused track stays paused after you let go, so you can use this to find a spot. Clicking without dragging doesn't jump anywhere: to jump, click the overview.
 
-**Beat jump.** With a track selected in the list, **←** and **→** jump back or forward by a set number of beats (4 unless you change it in **Settings > Audio**). The jump keeps its place within the beat, so the track stays in time, and it follows the beat grid, including any change of tempo. Tracks without rekordbox's beat grid use their tempo instead. A track with neither (say, an MP3 with no BPM tag that isn't in rekordbox) jumps a fixed **2 seconds**, whatever the setting. A playing track keeps playing.
+**Beat jump.** **←** and **→**, or the **‹** and **›** buttons, jump back or forward by the number of beats in the player's menu (4 unless you change it there or in **Settings > Audio**; the menu also has bars, up to 32). The jump keeps its place within the beat, so the track stays in time, and it follows the beat grid, including any change of tempo. Tracks without rekordbox's beat grid use their tempo instead. A track with neither (say, an MP3 with no BPM tag that isn't in rekordbox) jumps a fixed **2 seconds**, whatever the setting. A playing track keeps playing.
 
 **Waveform looks.** Choose how waveforms are drawn under **View > Waveform**, or in **Settings > Appearance**:
 
@@ -369,7 +377,7 @@ The CDJ-1000MK3 keeps the cue points you set on the player on its **SD card**, o
 
 ![The Sync tab with a track picked: its waveform at the bottom, as the CDJ draws it](screenshots/sync-waveforms.png "The waveform a sync will write")
 
-1. **The card** (left). Put the player's SD card into your Mac: it appears in the list by itself a moment later (and goes when you take it out), found by the **PIONEER** folder on it. Each card shows its name, size and how many discs the player has put on it, with an **eject** button on the right that ejects it (right-click a card for the same, and for **Format a Card…**). Click **Refresh** if a card doesn't show up. For a copy of a card's folder, or a disk image of one, use **Choose Folder…**: it is listed with a **×** that takes it off the list again (the folder itself isn't touched).
+1. **The card** (left). Put the player's SD card into your Mac: it appears in the list by itself a moment later (and goes when you take it out), found by the **PIONEER** folder on it. Each card shows its name, size and how many discs the player has put on it, with an **eject** button on the right that ejects it (right-click a card to **Sync** the ticked discs to it, to eject it, or to **Format a Card…**). Click **Refresh** if a card doesn't show up. For a copy of a card's folder, or a disk image of one, use **Choose Folder…**: it is listed with a **×** that takes it off the list again (the folder itself isn't touched).
 2. **Discs to sync** (right). While the Sync tab is on, the list on the right is your **audio** discs, in the folders you filed them in, each with a **tick box** at the end: tick the ones to sync (a folder ticks the discs inside it; **Clear selection** unticks all; the box above searches). Clicking a disc here only shows it in the middle: it never takes you out of the Sync tab. Each disc has a **Status**:
    - **Not on the card: 12 cues and 14 waveforms to add**: the player has never seen this disc, or has no file for it yet.
    - **12 cues to add** (or **3 waveforms to add**): the disc is on the card, and these are not.

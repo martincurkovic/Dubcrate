@@ -83,6 +83,8 @@ class PreviewController(QObject):
         self.player.state_changed.connect(strip.set_playing)
         self.player.failed.connect(self.message)
         strip.play_toggled.connect(self.toggle)
+        strip.beat_jump_requested.connect(self.beat_jump)
+        strip.jump_requested.connect(self.jump_to)
         strip.seek_requested.connect(self.player.seek)
         strip.scratch_started.connect(self.player.begin_scratch)
         strip.scratch_moved.connect(self.player.scratch_to)
@@ -106,6 +108,7 @@ class PreviewController(QObject):
         volume = settings.get_volume()
         self.player.set_volume(volume)
         self._strip.set_volume(volume)
+        self._strip.set_beat_jump(settings.get_beat_jump())
 
     def _on_volume(self, volume: float) -> None:
         self.player.set_volume(volume)
@@ -114,6 +117,12 @@ class PreviewController(QObject):
     def toggle(self) -> None:
         if self.player.loaded:
             self.player.toggle()
+
+    def jump_to(self, seconds: float) -> None:
+        """Go to a time in the loaded track (a hot cue, a memory cue): playing or paused stays as it was."""
+        if self.player.scratching or not self.player.loaded:
+            return
+        self.player.seek(max(0.0, min(seconds, self.player.duration)))
 
     def beat_jump(self, direction: int) -> None:
         """Jump the set number of beats forward (`direction` 1) or back (-1), in phase.
