@@ -1,5 +1,6 @@
 """The player laid out as rbxport's is: left controls, zoom, the cue row, the side panel, and dropping a track on it."""
 
+import itertools
 import json
 
 import pytest
@@ -91,13 +92,17 @@ def test_the_loop_cue_and_quantise_buttons_are_off_until_a_track_is_loaded_and_h
     assert all(b.isEnabled() for b in buttons)
 
 
-def test_au_and_ma_swap_the_loop_controls(strip):
-    assert strip.loop_controls.currentIndex() == 0 and strip.auto_button.isChecked()
+def test_au_and_ma_swap_the_loop_controls_and_only_the_shown_one_takes_room(strip):
+    assert strip.auto_button.isChecked() and not strip.manual_button.isChecked()
+    assert strip.loop_auto_group.isVisibleTo(strip)
+    assert not strip.loop_manual_group.isVisibleTo(strip)
     strip.manual_button.click()
-    assert strip.loop_controls.currentIndex() == 1
     assert strip.manual_button.isChecked() and not strip.auto_button.isChecked()
+    assert strip.loop_manual_group.isVisibleTo(strip)
+    assert not strip.loop_auto_group.isVisibleTo(strip)
     strip.auto_button.click()
-    assert strip.loop_controls.currentIndex() == 0
+    assert strip.loop_auto_group.isVisibleTo(strip)
+    assert not strip.loop_manual_group.isVisibleTo(strip)
 
 
 def test_the_side_panel_lists_memory_cues_loops_and_hot_cues(strip):
@@ -323,3 +328,71 @@ def test_the_zoom_buttons_are_two_rings_and_a_label_in_one_column(strip):
     assert shapes == ["circle", "text", "circle"]
     centres = {b.geometry().center().x() for b in (detail.zoom_in_button, detail.zoom_reset_button, detail.zoom_out_button)}  # fmt: skip
     assert max(centres) - min(centres) <= 1
+
+
+# -- the cue row's layout ----------------------------------------------------------------------
+
+
+def test_joined_buttons_know_their_place_in_the_group(qapp):
+    from dubcrate.ui.player_controls import PillButton, join
+
+    buttons = [PillButton(t) for t in "abcd"]
+    join(buttons)
+    assert [b.segment for b in buttons] == ["first", "middle", "middle", "last"]
+    (alone,) = [PillButton("x")]
+    join([alone])
+    assert alone.segment == "only"
+    with pytest.raises(ValueError, match="segment"):
+        alone.set_segment("end")
+
+
+def test_a_segment_is_rounded_only_at_the_groups_ends(qapp):
+    from PySide6.QtCore import QPointF, QRectF
+
+    from dubcrate.ui.player_controls import segment_path
+
+    box = QRectF(0.5, 0.5, 40, 25)
+    corner = QPointF(1.0, 1.0)  # just inside the top-left corner
+    assert not segment_path(box, 6, first=True, last=False).contains(
+        corner
+    )  # (rounded away)
+    assert segment_path(box, 6, first=False, last=False).contains(corner)  # (square)
+    far = QPointF(39.8, 1.0)
+    assert not segment_path(box, 6, first=False, last=True).contains(far)
+    assert segment_path(box, 6, first=True, last=False).contains(far)
+
+
+def test_every_button_in_the_cue_row_is_the_same_height(strip):
+    from dubcrate.ui.player_strip import ROW_HEIGHT
+
+    row = [*strip.hot_buttons, strip.memory_button, strip.memory_back_button, strip.memory_next_button, strip.memory_delete_button, strip.auto_button, strip.manual_button, strip.loop_size_back, strip.loop_size, strip.loop_size_forward, strip.loop_in, strip.loop_out, strip.reloop, strip.quantise_button]  # fmt: skip
+    assert {b.height() for b in row} == {ROW_HEIGHT}
+
+
+def test_a_joined_group_has_no_gaps_and_takes_no_more_room_than_its_buttons(strip):
+    strip.show_cues(())
+    groups = [
+        (strip.memory_button, strip.memory_back_button, strip.memory_next_button, strip.memory_delete_button),
+        (strip.auto_button, strip.manual_button),
+        (strip.loop_size_back, strip.loop_size, strip.loop_size_forward),
+    ]  # fmt: skip
+    for group in groups:
+        for left, right in itertools.pairwise(group):
+            assert left.geometry().right() + 1 == right.geometry().left()  # (touching)
+    assert strip.loop_auto_group.width() == sum(
+        b.width() for b in groups[2]
+    )  # (the arrows do not drift apart)
+    strip.manual_button.click()
+    manual = (strip.loop_in, strip.loop_out, strip.reloop)
+    assert strip.loop_manual_group.width() == sum(b.width() for b in manual)
+
+
+def test_the_groups_are_told_apart_by_dividers_and_the_hot_cues_stay_separate(strip):
+    from dubcrate.ui.player_controls import GroupDivider
+
+    assert len(strip.findChildren(GroupDivider)) == 2
+    xs = [b.geometry().left() for b in strip.hot_buttons]
+    gaps = {
+        xs[i + 1] - xs[i] - strip.hot_buttons[i].width() for i in range(len(xs) - 1)
+    }
+    assert gaps == {4}  # (A to H are separate squares, evenly spaced)

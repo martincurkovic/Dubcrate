@@ -20,7 +20,6 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QSizePolicy,
-    QStackedWidget,
     QVBoxLayout,
     QWidget,
 )
@@ -35,13 +34,21 @@ from . import key_style
 from .gear_button import GearButton
 from .knob import Knob
 from .models import TRACK_MIME
-from .player_controls import RING_SIZE, ChoiceButton, CueRing, PillButton
+from .player_controls import (
+    RING_SIZE,
+    ChoiceButton,
+    CueRing,
+    GroupDivider,
+    PillButton,
+    join,
+)
 from .player_side import HOT_SLOTS, SidePanel
 from .transport_button import TransportButton
 from .wave_style import hot_cue_color
 from .waveform_view import DetailView, OverviewView
 
 LEFT_WIDTH = 116
+ROW_HEIGHT = 26  # every button in the cue row
 SIDE_WIDTH = 250
 READ_ONLY = "Cues are rekordbox's: Dubcrate shows them but never changes them."
 
@@ -219,77 +226,70 @@ class PlayerStrip(QWidget):
         self.detail.scratch_ended.connect(self.scratch_ended)
 
         # -- the cue row: hot cues, memory cues, loops, quantise ---------------------------
+        # Related buttons are joined into groups (one rounded outline, a line between them), and the groups are
+        # told apart by a thin divider: [A..H] | [MEMORY ◀ ▶ ✕] | [AU MA] [‹ 4 ›  or  IN OUT RELOOP] ... [Q]
         self.hot_buttons: list[PillButton] = []
         self._hot_times: dict[int, float] = {}
-        cue_row = QHBoxLayout()
-        cue_row.setSpacing(4)
+        hot_row = QHBoxLayout()
+        hot_row.setSpacing(4)
+        hot_row.setContentsMargins(0, 0, 0, 0)
         for slot in range(1, HOT_SLOTS + 1):
             button = PillButton(
-                "ABCDEFGH"[slot - 1], color=hot_cue_color(slot), width=26, bold=True
+                "ABCDEFGH"[slot - 1],
+                color=hot_cue_color(slot),
+                width=28,
+                height=ROW_HEIGHT,
+                bold=True,
             )
             button.setEnabled(False)
             button.setToolTip(f"Hot cue {'ABCDEFGH'[slot - 1]}: not set in rekordbox")
             button.clicked.connect(lambda _c=False, n=slot: self._jump_to_hot(n))
             self.hot_buttons.append(button)
-            cue_row.addWidget(button)
-        cue_row.addSpacing(12)
-        self.memory_button = PillButton("MEMORY", width=64, bold=True)
+            hot_row.addWidget(button)
+
+        self.memory_button = PillButton(
+            "MEMORY", width=70, height=ROW_HEIGHT, bold=True
+        )
         self.memory_button.setEnabled(False)
         self.memory_button.setToolTip(READ_ONLY)
-        self.memory_back_button = PillButton("◀", width=26)
-        self.memory_next_button = PillButton("▶", width=26)
-        self.memory_delete_button = PillButton("✕", width=26)
+        self.memory_back_button = PillButton("◀", width=30, height=ROW_HEIGHT)
+        self.memory_next_button = PillButton("▶", width=30, height=ROW_HEIGHT)
+        self.memory_delete_button = PillButton("✕", width=30, height=ROW_HEIGHT)
         self.memory_delete_button.setEnabled(False)
         self.memory_delete_button.setToolTip(READ_ONLY)
         self.memory_back_button.setToolTip("Jump to the memory cue before this point")
         self.memory_next_button.setToolTip("Jump to the memory cue after this point")
         self.memory_back_button.clicked.connect(lambda: self._jump_memory(-1))
         self.memory_next_button.clicked.connect(lambda: self._jump_memory(1))
-        for w in (
-            self.memory_button,
-            self.memory_back_button,
-            self.memory_next_button,
-            self.memory_delete_button,
-        ):
-            cue_row.addWidget(w)
-        cue_row.addSpacing(12)
-        self.auto_button = PillButton("AU", checkable=True, width=34, bold=True)
-        self.manual_button = PillButton("MA", checkable=True, width=34, bold=True)
+
+        self.auto_button = PillButton("AU", checkable=True, width=36, height=ROW_HEIGHT, bold=True)  # fmt: skip
+        self.manual_button = PillButton("MA", checkable=True, width=36, height=ROW_HEIGHT, bold=True)  # fmt: skip
         self.auto_button.setChecked(True)
         self.auto_button.clicked.connect(lambda: self._loop_mode(0))
         self.manual_button.clicked.connect(lambda: self._loop_mode(1))
         self.auto_button.setToolTip("Automatic loop: a set number of beats")
         self.manual_button.setToolTip("Manual loop: set the in and out points")
-        cue_row.addWidget(self.auto_button)
-        cue_row.addWidget(self.manual_button)
-        self.loop_size_back = PillButton("‹", width=24, shape="tile")
+
+        self.loop_size_back = PillButton("‹", width=30, height=ROW_HEIGHT, bold=True)
         self.loop_size = PillButton(
-            size_label(DEFAULT_AUTO), checkable=True, width=40, bold=True
+            size_label(DEFAULT_AUTO),
+            checkable=True,
+            width=46,
+            height=ROW_HEIGHT,
+            bold=True,
         )
-        self.loop_size_forward = PillButton("›", width=24, shape="tile")
+        self.loop_size_forward = PillButton("›", width=30, height=ROW_HEIGHT, bold=True)
         self.loop_size_back.clicked.connect(lambda: self._step_loop_size(-1))
         self.loop_size_forward.clicked.connect(lambda: self._step_loop_size(1))
         self.loop_size.clicked.connect(
             lambda: self.auto_loop_requested.emit(AUTO_SIZES[self._auto_index])
         )
-        auto = QWidget()
-        auto_row = QHBoxLayout(auto)
-        auto_row.setContentsMargins(0, 0, 0, 0)
-        auto_row.setSpacing(4)
-        for w in (self.loop_size_back, self.loop_size, self.loop_size_forward):
-            auto_row.addWidget(w)
-        self.loop_in = PillButton("IN", width=48)
-        self.loop_out = PillButton("OUT", width=48)
-        self.reloop = PillButton("RELOOP", checkable=True, width=64)
+        self.loop_in = PillButton("IN", width=48, height=ROW_HEIGHT)
+        self.loop_out = PillButton("OUT", width=48, height=ROW_HEIGHT)
+        self.reloop = PillButton("RELOOP", checkable=True, width=68, height=ROW_HEIGHT)
         self.loop_in.clicked.connect(self.loop_in_requested)
         self.loop_out.clicked.connect(self.loop_out_requested)
         self.reloop.clicked.connect(self.reloop_requested)
-        manual = QWidget()
-        manual_row = QHBoxLayout(manual)
-        manual_row.setContentsMargins(0, 0, 0, 0)
-        manual_row.setSpacing(4)
-        for w in (self.loop_in, self.loop_out, self.reloop):
-            manual_row.addWidget(w)
         for w, tip in (
             (self.loop_size_back, "A smaller loop (half as many beats)"),
             (
@@ -303,17 +303,45 @@ class PlayerStrip(QWidget):
         ):
             w.setEnabled(False)
             w.setToolTip(tip)
-        self.loop_controls = QStackedWidget()
-        self.loop_controls.addWidget(auto)
-        self.loop_controls.addWidget(manual)
-        cue_row.addWidget(self.loop_controls)
-        cue_row.addStretch(1)
-        self.quantise_button = PillButton("Q", checkable=True, width=34, bold=True)
+        # only the group for the chosen mode is shown, so the row never keeps room for the wider one
+        self.loop_auto_group = QWidget()
+        self.loop_auto_group.setLayout(
+            join([self.loop_size_back, self.loop_size, self.loop_size_forward])
+        )
+        self.loop_manual_group = QWidget()
+        self.loop_manual_group.setLayout(
+            join([self.loop_in, self.loop_out, self.reloop])
+        )
+        self.loop_manual_group.hide()
+
+        self.quantise_button = PillButton("Q", checkable=True, width=36, height=ROW_HEIGHT, bold=True)  # fmt: skip
         self.quantise_button.setEnabled(False)
         self.quantise_button.setToolTip(
             "Quantise: a cue point or loop edge lands on the nearest beat (needs a beat grid or a tempo)"
         )
         self.quantise_button.toggled.connect(self.quantise_toggled)
+
+        cue_row = QHBoxLayout()
+        cue_row.setSpacing(0)
+        cue_row.setContentsMargins(0, 0, 0, 0)
+        cue_row.addLayout(hot_row)
+        cue_row.addWidget(GroupDivider(height=ROW_HEIGHT - 6))
+        cue_row.addLayout(
+            join(
+                [
+                    self.memory_button,
+                    self.memory_back_button,
+                    self.memory_next_button,
+                    self.memory_delete_button,
+                ]
+            )
+        )
+        cue_row.addWidget(GroupDivider(height=ROW_HEIGHT - 6))
+        cue_row.addLayout(join([self.auto_button, self.manual_button]))
+        cue_row.addSpacing(8)
+        cue_row.addWidget(self.loop_auto_group)
+        cue_row.addWidget(self.loop_manual_group)
+        cue_row.addStretch(1)
         cue_row.addWidget(self.quantise_button)
 
         middle = QVBoxLayout()
@@ -367,7 +395,8 @@ class PlayerStrip(QWidget):
     def _loop_mode(self, which: int) -> None:
         self.auto_button.setChecked(which == 0)
         self.manual_button.setChecked(which == 1)
-        self.loop_controls.setCurrentIndex(which)
+        self.loop_auto_group.setVisible(which == 0)
+        self.loop_manual_group.setVisible(which == 1)
 
     def _step_loop_size(self, direction: int) -> None:
         """The size arrows: the next smaller (-1) or bigger (1) auto loop."""
