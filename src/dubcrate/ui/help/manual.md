@@ -405,7 +405,7 @@ The CDJ-1000MK3 keeps the cue points you set on the player on its **SD card**, o
    - **No rekordbox cues**: nothing to put on the card. Only tracks that are in rekordbox have cues (a file elsewhere that is the same file as one in rekordbox counts). A disc still gets its waveforms if the card has none for its tracks.
    - **Can't sync**: the reason is in the middle; see the next point.
 
-   The line under the list adds up what the ticked discs would do, and below it are **Write waveforms**, **Eject after syncing**, **Measure Lengths** and **Sync**.
+   The line under the list adds up what the ticked discs would do, and below it are **Write waveforms**, **Eject after syncing**, **Measure Lengths**, **Import Cues…** and **Sync**.
 3. **Look through a disc** (middle). The disc you click on the right is listed track by track: its number, title, artist, length on the disc, what a sync does with its **cues** (*5 to add*, *on the card*, or *–* for none) and its **waveform** (*Will be written*, *On the card* or *Not analysed*). Any warning about the disc is under its name, and **Details** shows the full list of what a sync would do. Click a track and **its waveform is drawn at the bottom, as the player's display draws it**: a dot-matrix of 100 columns and 7 rows growing up from the bottom, square white dots on black like the player's own. White is a waveform that will be written, dimmer one the card already has (the player draws that one, and a sync leaves it alone), and a dashed line a track not analysed yet. **Small red dashes under the dots are the track's memory cues**, where they fall in the track, as on the player's own display (every cue that will be on the card for that track: the ones already there and the ones a sync adds) (a sync does that first, or press **Analyse Waveforms** beside the waveform to do it now: it works out the waveform of every such track on the disc and keeps it, and writes nothing to the card, so no card is needed).
 4. **Measure Lengths.** A disc's entry on the card is its table of contents, which needs every track's exact length on the CD. A burn measures them; a disc you haven't burned yet may say *Can't sync: tracks have no measured length*. **Measure Lengths** reads those files (it changes nothing in them) and the list updates.
 5. **Write waveforms** (ticked unless you change it) also writes each track's waveform. **A burn works the waveforms out for you** (it has the audio in hand anyway), so for a disc you burned with Dubcrate there is nothing to wait for. For any track that has none (a disc you haven't burned here, say), Sync **analyses** it first, under a second each (the list says how far it is), and keeps the result, so the next sync doesn't. Untick it to write cues only.
@@ -422,6 +422,15 @@ The rules it follows:
 - **Eject after syncing** (ticked unless you change it, and only for a card that is plugged in, not a folder you chose) ejects the card once it is written, and the status bar says when it is safe to take out. If the Mac won't let go of it, the status bar says so: eject it in Finder.
 
 Two discs whose tracks are exactly the same lengths would look like the same disc to the player, and so would share their cues.
+
+![The review of memory cues found on the card: ticked per disc, track and cue](screenshots/card-import.png "Import Cues…")
+
+**Bringing cues back from the card.** Memory cues you set on the player itself are on the card, and **Import Cues…** (beside **Measure Lengths**) brings them back. It looks at every disc of yours that is on the card and lists the memory cues that Dubcrate doesn't already have, track by track, all ticked: untick any you don't want, then press **Import**. They become memory cues in Dubcrate, and in rekordbox too if you have allowed that (**Settings > Library**; rekordbox must be closed for that part, otherwise they wait in Dubcrate). Things to know:
+
+- **Only new memory cues are imported.** A cue Dubcrate put on the card (from rekordbox, hot cues and loops included) is recognised by its place and is not offered again. Loops and the player's three hot cue buttons are not imported (the review says how many there were).
+- **Moves and deletions on the player are not noticed.** A cue you moved on the player shows up as a new one beside the old one (delete the old one in the player), and a cue you deleted on the player stays where it is in Dubcrate and rekordbox. Nothing is ever removed by an import.
+- A track keeps at most **ten** memory cues; if more are new, the earliest fit and the review says how many were left out.
+- It only reads the card; nothing on it changes. This is new and has not been tried with cues set on a real player.
 
 ### Setting up a blank card
 
@@ -443,10 +452,12 @@ You don't need the player to get a card ready. **Format a Card…** (right-click
 
 ![The Settings window, on the Audio tab](screenshots/settings.png "Settings")
 
+![The Settings window, on the Library tab](screenshots/settings-library.png "Settings > Library")
+
 - **Discs:** how **new** discs are planned: **Plan new discs for** 80 minutes (700 MB) or 74 minutes (650 MB), the same size, as megabytes, for an MP3 CD, **Between tracks**, which is **Gapless** unless you choose 1, 2 or 3 seconds of silence (audio CDs only), and **MP3 CDs: highest rate**, the top constant bitrate for new MP3 discs (320 kbit/s unless you lower it).
 - **Burning:** the **Burn speed** a burn starts with (10x unless you change it). Old players read discs burned slowly more reliably, and 10x to 16x is a good range. Your drive may not offer every speed. You can still pick another speed for a single burn in the burn window. **Normalise the levels of tracks on audio CDs** chooses whether a burn starts with normalising on, and **Normalise to** what to bring the tracks to; see [Burning a disc](#burning-a-disc).
 - **Audio:** the **Output device** for previews and the **Buffer size**, and the **Beat jump** distance for the arrow keys.
-- **Library:** whether Dubcrate updates your rekordbox library each time it starts (on by default), and whether it checks for a newer version of Dubcrate when it starts (also on by default; see [Updates](#updates-and-what-dubcrate-sends)).
+- **Library:** whether Dubcrate updates your rekordbox library each time it starts (on by default), whether memory cue changes you make in the player are **saved into your rekordbox library** (see [Listening to tracks](#listening-to-tracks); asked the first time you edit one), and whether it checks for a newer version of Dubcrate when it starts (also on by default; see [Updates](#updates-and-what-dubcrate-sends)).
 - **Appearance:** the **Theme** (the same choice as **View > Theme**), the **Waveform style** (the same as **View > Waveform**), the **Waveform background**, and the **Key notation**: **Camelot** (8A) or **Musical** (A min). Only what is shown changes; your library, rekordbox and the files keep what they have.
 
 ---

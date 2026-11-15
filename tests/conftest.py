@@ -169,6 +169,13 @@ def _no_modal_question(monkeypatch):
         "dubcrate.ui.rekordbox_editor.ask_enable_editing", refuse_editing
     )
 
+    def refuse_import(*_a, **_k):
+        raise AssertionError(
+            "a test opened the card import review; patch sync_view.ask_import"
+        )
+
+    monkeypatch.setattr("dubcrate.ui.sync_view.ask_import", refuse_import)
+
 
 @pytest.fixture(autouse=True)
 def _no_real_burner(monkeypatch):

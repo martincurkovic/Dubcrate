@@ -548,3 +548,49 @@ def _settings(ctx):
     ctx.on_cleanup(dialog.close)
     ctx.settle(8)
     return dialog
+
+
+@shot(
+    "settings-library",
+    "Settings…: the Library tab, with the choice to save memory cue changes into rekordbox",
+)
+def _settings_library(ctx):
+    from dubcrate.ui.settings_dialog import SettingsDialog
+
+    window = ctx.window()
+    dialog = SettingsDialog(window)
+    tabs = dialog.findChild(__import__("PySide6.QtWidgets").QtWidgets.QTabWidget)
+    for i in range(tabs.count()):
+        if tabs.tabText(i) == "Library":
+            tabs.setCurrentIndex(i)
+    dialog.resize(640, 560)
+    dialog.show()
+    ctx.on_cleanup(dialog.close)
+    ctx.settle(8)
+    return dialog
+
+
+@shot(
+    "card-import",
+    "Sync > Import Cues…: the review of memory cues set on the player (invented), over the Sync tab",
+)
+def _card_import(ctx):
+    """The made-up tracks have no cues on a card, so the findings are invented from a disc's real tracks."""
+    from dubcrate.card_import import DiscFinding, TrackFinding
+    from dubcrate.ui.card_import_dialog import CardImportDialog
+
+    window = _sync(ctx)
+    disc_id = ctx.demo.discs["peak"]
+    entries = ctx.lib.disc_entries(disc_id)
+    tracks = [
+        TrackFinding(entries[1].track, 2, entries[1].title, entries[1].artist, [41500, 97000]),
+        TrackFinding(entries[4].track, 5, entries[4].title, entries[4].artist, [18000]),
+    ]  # fmt: skip
+    summary = ctx.lib.disc(disc_id)
+    finding = DiscFinding(disc_id, summary.name, f"CDJ CDs / {summary.name}", tracks, loops=1, hot_cues=2)  # fmt: skip
+    dialog = CardImportDialog([finding], window)
+    dialog.resize(600, 420)
+    dialog.show()
+    ctx.on_cleanup(dialog.close)
+    ctx.settle(8)
+    return _over(window, dialog)

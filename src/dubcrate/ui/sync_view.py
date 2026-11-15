@@ -49,6 +49,7 @@ from dubcrate.card_discs import (
     survey_discs,
     wave_rows,
 )
+from dubcrate.card_import import survey_new_cues
 from dubcrate.eject import EjectError, eject_card
 from dubcrate.library import Library
 from dubcrate.library.lengths import needs_measuring, probe_lengths
@@ -57,6 +58,7 @@ from dubcrate.library.rekordbox import RekordboxError, read_cues
 from dubcrate.library.waves import measure_waveforms, store_waveforms
 
 from . import theme
+from .card_import_dialog import ask_import
 from .explorer import DrivePoller, mounted_volumes
 from .format_card_dialog import FormatCardDialog
 from .glyph_widgets import GlyphButton, GlyphIcon, close_glyph, eject_glyph, ink
@@ -582,6 +584,9 @@ class SyncView(QWidget):
         Signal()
     )  # the card was ejected after a sync: it is gone from the Mac
     busy_changed = Signal(bool)  # a sync is writing (or ejecting): leave the card alone
+    cues_chosen = Signal(
+        object
+    )  # [(Track, [ms, ...])]: memory cues from the card to bring in
 
     def __init__(
         self,
@@ -603,6 +608,7 @@ class SyncView(QWidget):
         self._surveys: dict[int, DiscSurvey] = {}
         self._unmeasured: list[Track] = []
         self._loaded: dict = {}  # rekordbox's cues as last read, for looking at the discs again
+        self._cue_loader: Callable[[Path], Mapping[str, Sequence[Cue]]] = lambda _p: {}
         self._serial = 0  # a newer refresh makes an older one's result stale
         self._measuring = False
         self._analysing = False
@@ -677,6 +683,12 @@ class SyncView(QWidget):
         )
         self.cancel_button.clicked.connect(self._cancel_work)
         self.cancel_button.hide()
+        self.import_button = QPushButton("Import Cues…")
+        self.import_button.setToolTip(
+            "Look for memory cues set on the player that Dubcrate doesn't have, and bring in the ones you "
+            "pick. Reads the card; changes nothing on it."
+        )
+        self.import_button.clicked.connect(self.import_from_card)
         self.sync_button = QPushButton("Sync")
         self.sync_button.clicked.connect(self._on_sync)
         self.eject_check = QCheckBox("Eject after syncing")
@@ -696,6 +708,7 @@ class SyncView(QWidget):
         panel.addLayout(checks)
         buttons = QHBoxLayout()
         buttons.addWidget(self.measure_button)
+        buttons.addWidget(self.import_button)
         buttons.addStretch(1)
         buttons.addWidget(self.cancel_button)
         buttons.addWidget(self.sync_button)
@@ -764,6 +777,7 @@ class SyncView(QWidget):
                 raise RekordboxError(found or "it wasn't read")
             return found
 
+        self._cue_loader = load
         surveys = survey_discs(
             self._lib,
             self._card,
@@ -1033,6 +1047,9 @@ class SyncView(QWidget):
             self.footer_note.setText(
                 f"{said} to add." if ticked else "Tick the discs to sync."
             )
+        self.import_button.setEnabled(
+            self._card is not None and bool(self._surveys) and not busy
+        )
         self.sync_button.setEnabled(
             WRITING_ENABLED
             and bool(ticked)
@@ -1052,6 +1069,25 @@ class SyncView(QWidget):
             if can_eject or self._writing
             else "Only a card that is plugged in can be ejected, not a folder you chose."
         )
+
+    def import_from_card(self) -> None:
+        """Find the memory cues on the card that Dubcrate doesn't have, let the user pick, and hand them on
+        (`cues_chosen`). Reads the card's files as already read; writes nothing."""
+        if self._card is None or not self._surveys:
+            self.message.emit("Choose a card first")
+            return
+        findings = survey_new_cues(
+            self._lib,
+            self._card,
+            RekordboxCues(self._lib, load=self._cue_loader),
+            list(self._surveys.values()),
+        )
+        if not findings:
+            self.message.emit("No new memory cues on the card")
+            return
+        chosen = ask_import(self, findings)
+        if chosen:
+            self.cues_chosen.emit(chosen)
 
     def _picked_to_analyse(self) -> list[Track]:
         """The picked disc's tracks that have no waveform yet (none when Write waveforms is off)."""

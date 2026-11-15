@@ -342,6 +342,37 @@ class PreviewController(QObject):
             return
         self._save_memory([*rest, (target, moving[0][1])])
 
+    def import_memory(self, items: list[tuple[Track, list[int]]]) -> int | None:
+        """Add memory cues set on the player (the card's, `card_import`) to tracks: `items` are (track, new times in
+        milliseconds). They are saved like any edit (Dubcrate's own table, then rekordbox if that is allowed; the
+        question is asked once if it hasn't been). Returns how many were added, or None if rekordbox's cues are
+        still being read (nothing is changed then, so no cue is dropped)."""
+        current = []
+        for track, _ in items:
+            found = self.cues.cues_for(track)
+            if found is None:
+                self.message.emit(
+                    "rekordbox's cues are still being read: try again in a moment"
+                )
+                return None
+            current.append(memory_list(found))
+        added = 0
+        for (track, times), have in zip(items, current, strict=True):
+            merged = list(have)
+            for ms in times:
+                if len(merged) >= MAX_MEMORY_CUES:
+                    break
+                if all(abs(ms - other) >= SAME_MEMORY_MS for other, _ in merged):
+                    merged.append((ms, ""))
+                    added += 1
+            if merged == have:
+                continue
+            self.editor.allow(track)  # asks the first time a rekordbox track is edited
+            self._lib.set_memory_cues(track.path, sorted(merged))
+            self.editor.saved(track)
+        self._show_cues()
+        return added
+
     def memory_reset(self) -> None:
         """Forget the edits: rekordbox's memory cues again."""
         if self._track is None:

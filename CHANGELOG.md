@@ -20,6 +20,7 @@ The first release: macOS (Apple Silicon and Intel) and, new, Linux (an AppImage)
   **Split Shown Tracks Across Discs**, drag and drop, and a warning when a disc is over its size.
 - Track text for the disc (title and artist) can be edited for a disc without touching the library, rekordbox or the file.
 - **Memory cues can be edited in the player** (add, move, delete). The first time, Dubcrate asks whether to **save the changes into your rekordbox library** (remembered; Settings > Library changes it); if so each change is written into rekordbox's database when you make it (rekordbox closed, the first change of a session backed up, read back, undone on failure), and if not it stays in Dubcrate. `dubcrate rekordbox write-memory-cues` does the same from the command line. It is the one thing Dubcrate writes to rekordbox, and it has been tested on synthetic databases and run once on the author's own rekordbox 7.2 library, so keep your own backup and try it on one track first.
+- **Bring memory cues back from the card**: the Sync tab's **Import Cues…** lists the memory cues you set on the player that Dubcrate doesn't have, and the ones you tick become memory cues in Dubcrate (and rekordbox, if you allowed that). Only new cues are imported; moves and deletions on the player are not noticed. Not tried with cues set on a real player yet.
 
 ### Burning
 

@@ -338,6 +338,7 @@ class MainWindow(QMainWindow):
         )
         self.preview.preview_ready.connect(self._on_preview_ready)
         self.preview.cues.changed.connect(self._on_cues_changed)
+        self.sync_view.cues_chosen.connect(self._import_card_cues)
         self.player_strip.previous_requested.connect(lambda: self._step_track(-1))
         self.player_strip.next_requested.connect(lambda: self._step_track(1))
         self.preview.player.finished.connect(self._play_on_after_end)
@@ -1855,6 +1856,17 @@ class MainWindow(QMainWindow):
         self.player_strip.set_beat_jump(
             settings.get_beat_jump()
         )  # (it may have been changed there)
+
+    def _import_card_cues(self, items: list) -> None:
+        """Memory cues picked from the card (Sync > Import Cues…) become memory cues in Dubcrate (and rekordbox)."""
+        added = self.preview.import_memory(items)
+        if added is None:
+            return
+        self.statusBar().showMessage(
+            f"Imported {added} memory cue{'s' if added != 1 else ''} from the card",
+            8000,
+        )
+        self.sync_view.refresh()
 
     def _load_dropped_track(self, track_id: int) -> None:
         """A track was dragged from a list onto the player: load it, as a double-click does."""
