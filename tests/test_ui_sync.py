@@ -1128,3 +1128,80 @@ def test_the_cancel_button_stops_measuring_lengths_and_keeps_the_ones_measured(c
 
 def test_the_cancel_button_is_hidden_when_nothing_is_running(cue_view):
     assert not cue_view.cancel_button.isVisibleTo(cue_view)
+
+
+def test_the_waveforms_tab_has_a_button_that_analyses_the_picked_disc_and_writes_nothing(writing, monkeypatch, tmp_path):  # fmt: skip
+    real_files(writing, tmp_path)
+    calls = []
+
+    def fake(todo, report=None, cancel=None):
+        calls.append([t.id for t in todo])
+        return {t.id: saw() for t in todo}, []
+
+    monkeypatch.setattr(sync_view, "measure_waveforms", fake)
+    look_again(writing, "waveforms")
+    view = writing.view
+    assert not view.analyse_button.isEnabled()  # no disc picked
+    view.tree.setCurrentItem(next(i for i in view._disc_items() if i.text(0) == "A"))
+    assert view.analyse_button.isEnabled()
+    assert view.analyse_note.text() == "12 tracks not analysed yet."
+    assert {r.state for r in view.waves.rows} == {"pending"}
+    before = card_files(writing.card)
+    view.analyse_button.click()
+    assert not view.analyse_button.isEnabled()  # busy
+    assert wait_until(view, lambda: not view._analysing and bool(calls))
+    assert len(calls) == 1 and len(calls[0]) == 12
+    assert writing.said[-1] == "Analysed 12 tracks."
+    assert view.analyse_note.text() == "Every track is analysed."
+    assert not view.analyse_button.isEnabled()  # nothing left to do
+    assert {r.state for r in view.waves.rows} == {"write"}
+    assert writing.asked == [] and not writing.backup.exists()
+    assert card_files(writing.card) == before  # nothing was written to the card
+    assert sum(t.waveform is not None for t in writing.lib.tracks()) >= 12
+
+
+def test_the_analyse_button_is_off_while_write_waveforms_is_unticked(writing, monkeypatch, tmp_path):  # fmt: skip
+    real_files(writing, tmp_path)
+    look_again(writing, "waveforms")
+    view = writing.view
+    view.tree.setCurrentItem(next(i for i in view._disc_items() if i.text(0) == "A"))
+    assert view.analyse_button.isEnabled()
+    view.waves_check.setChecked(False)
+    assert not view.analyse_button.isEnabled()
+    assert view.analyse_note.text() == "Write waveforms is off."
+    monkeypatch.setattr(
+        sync_view, "measure_waveforms", lambda *a, **k: pytest.fail("ran")
+    )
+    view.analyse_waveforms()  # (a call anyway does nothing)
+
+
+def test_the_analyse_button_can_be_cancelled_like_a_sync(writing, monkeypatch, tmp_path):  # fmt: skip
+    import time
+
+    real_files(writing, tmp_path)
+    started = []
+
+    def slow(todo, report=None, cancel=None):
+        done = {}
+        for n, track in enumerate(todo, 1):
+            if n == 4:
+                started.append(True)
+                while True:
+                    cancel.check((done, []))
+                    time.sleep(0.005)
+            done[track.id] = saw()
+            report(n, len(todo))
+        return done, []
+
+    monkeypatch.setattr(sync_view, "measure_waveforms", slow)
+    look_again(writing, "waveforms")
+    view = writing.view
+    view.tree.setCurrentItem(next(i for i in view._disc_items() if i.text(0) == "A"))
+    view.analyse_button.click()
+    assert wait_until(view, lambda: bool(started))
+    assert view.cancel_button.isVisibleTo(view)
+    view.cancel_button.click()
+    assert wait_until(view, lambda: not view._analysing)
+    assert "Cancelled: 3 of 12" in writing.said[-1]
+    assert view.analyse_note.text() == "9 tracks not analysed yet."
+    assert view.analyse_button.isEnabled()  # it can carry on

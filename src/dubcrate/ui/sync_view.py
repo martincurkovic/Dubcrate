@@ -28,6 +28,7 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QListWidget,
     QListWidgetItem,
+    QMenu,
     QMessageBox,
     QPlainTextEdit,
     QPushButton,
@@ -295,22 +296,18 @@ class CardPanel(QWidget):
         self.cards.setVerticalScrollMode(QListWidget.ScrollMode.ScrollPerPixel)
         self.cards.currentItemChanged.connect(self._picked)
         self.cards.itemSelectionChanged.connect(self._restyle_rows)
+        self.cards.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.cards.customContextMenuRequested.connect(self._on_context_menu)
         layout.addWidget(self.cards, 1)
         self.hint = QLabel(
             "Plug the CDJ's SD card into this Mac: it appears here by itself, found by its "
-            "PIONEER folder (click Refresh if it doesn't).\n\nA blank card can be set up here with "
-            "Format a Card. A copy of a card's folder, or a disk image of a card, can be chosen by hand."
+            "PIONEER folder (click Refresh if it doesn't).\n\nA blank card can be set up by right-clicking "
+            "this list and choosing Format a Card. A copy of a card's folder, or a disk image of a card, "
+            "can be chosen by hand."
         )
         self.hint.setObjectName("mutedLabel")
         self.hint.setWordWrap(True)
         layout.addWidget(self.hint)
-        self.format_button = QPushButton("Format a Card…")
-        self.format_button.setToolTip(
-            "Set up a blank SD card from scratch: erase it, make it FAT16 and add the PIONEER folder, "
-            "so cues and waveforms can go on it before it has been in a player"
-        )
-        self.format_button.clicked.connect(self.format_card)
-        layout.addWidget(self.format_button)
         self.choose_button = QPushButton("Choose Folder…")
         self.choose_button.clicked.connect(self.choose_folder)
         layout.addWidget(self.choose_button)
@@ -410,12 +407,45 @@ class CardPanel(QWidget):
                 row.set_selected(item.isSelected())
                 row.button.setEnabled(not (self._busy or self._ejecting))
 
+    # -- the right-click menu ------------------------------------------------------
+
+    def card_menu(self, path: Path | None) -> QMenu:
+        """The menu for a card in the list (`path`), or for the empty part of it (None): Eject it
+        (or take a folder chosen by hand off the list), and Format a Card…, which is also here for
+        a blank card that is not listed yet."""
+        menu = QMenu(self)
+        idle = not (self._busy or self._ejecting)
+        if path is not None:
+            name = path.name or str(path)
+            row = self.row_for(path)
+            if row is not None and row.by_hand:
+                menu.addAction("Take This Folder Off the List").triggered.connect(
+                    lambda: self._remove(path)
+                )
+            else:
+                eject = menu.addAction(f"Eject “{name}”")
+                eject.setEnabled(idle)
+                eject.triggered.connect(lambda: self._eject(path))
+            menu.addSeparator()
+        fmt = menu.addAction("Format a Card…")
+        fmt.setEnabled(idle)
+        fmt.setToolTip(
+            "Set up a blank SD card from scratch: erase it, make it FAT16 and add the PIONEER "
+            "folder, so cues and waveforms can go on it before it has been in a player"
+        )
+        fmt.triggered.connect(self.format_card)
+        return menu
+
+    def _on_context_menu(self, where) -> None:
+        item = self.cards.itemAt(where)
+        path = Path(item.data(Qt.ItemDataRole.UserRole)) if item is not None else None
+        self.card_menu(path).exec(self.cards.viewport().mapToGlobal(where))
+
     # -- ejecting and removing -----------------------------------------------------
 
     def set_busy(self, busy: bool) -> None:
         """A sync is writing to the card: its eject button waits, and no card is formatted under it."""
         self._busy = busy
-        self.format_button.setEnabled(not busy)
         self._restyle_rows()
 
     def _eject(self, path: Path) -> None:
@@ -650,11 +680,29 @@ class SyncView(QWidget):
         self.detail = QPlainTextEdit()
         self.detail.setReadOnly(True)
         self.waves = WaveRows()
+        self.analyse_note = QLabel()
+        self.analyse_note.setObjectName("mutedLabel")
+        self.analyse_button = QPushButton("Analyse Waveforms")
+        self.analyse_button.setToolTip(
+            "Work out the waveform of each track of this disc that has none yet, from the music "
+            "files, and keep it. Writes nothing to the card; a sync (or a burn) would do the same."
+        )
+        self.analyse_button.clicked.connect(self.analyse_waveforms)
+        waves_head = QHBoxLayout()
+        waves_head.setContentsMargins(4, 4, 4, 0)
+        waves_head.addWidget(self.analyse_note, 1)
+        waves_head.addWidget(self.analyse_button)
+        waves_page = QWidget()
+        waves_box = QVBoxLayout(waves_page)
+        waves_box.setContentsMargins(0, 0, 0, 0)
+        waves_box.setSpacing(0)
+        waves_box.addLayout(waves_head)
+        waves_box.addWidget(self.waves, 1)
         self.detail_tabs = QTabWidget()
         self.detail_tabs.addTab(self.detail, "What a sync does")
-        self.detail_tabs.addTab(self.waves, "Waveforms")
+        self.detail_tabs.addTab(waves_page, "Waveforms")
         self.detail_tabs.setMinimumHeight(190)
-        self.detail_tabs.setMaximumHeight(260)
+        self.detail_tabs.setMaximumHeight(280)
         layout.addWidget(self.detail_tabs)
 
         self.footer_title = QLabel()
@@ -957,6 +1005,7 @@ class SyncView(QWidget):
     def _show_detail(self) -> None:
         survey = self._surveys.get(self._current_disc_id() or -1)
         self._show_waves(survey)
+        self._update_analyse(self._measuring or self._writing or self._analysing)
         if survey is not None:
             self.detail.setPlainText("\n".join(survey.detail()))
             return
@@ -990,6 +1039,7 @@ class SyncView(QWidget):
         self.cancel_button.setVisible(self._measuring or self._analysing)
         self.measure_button.setEnabled(bool(self._unmeasured) and not busy)
         self.waves_check.setEnabled(not busy)
+        self._update_analyse(busy)
         card = self._card_path.name if self._card_path else ""
         if self._card is None:
             self.footer_title.setText("No card")
@@ -1026,6 +1076,28 @@ class SyncView(QWidget):
             else "Only a card that is plugged in can be ejected, not a folder you chose."
         )
 
+    def _picked_to_analyse(self) -> list[Track]:
+        """The picked disc's tracks that have no waveform yet (none when Write waveforms is off)."""
+        survey = self._surveys.get(self._current_disc_id() or -1)
+        if survey is None or survey.input.problems or not self.waves_check.isChecked():
+            return []
+        return list(survey.input.to_analyse)
+
+    def _update_analyse(self, busy: bool) -> None:
+        """The Waveforms tab's header: how many tracks are waiting, and the button that does them."""
+        survey = self._surveys.get(self._current_disc_id() or -1)
+        todo = self._picked_to_analyse()
+        if survey is None or survey.input.problems:
+            note = ""
+        elif not self.waves_check.isChecked():
+            note = "Write waveforms is off."
+        elif todo:
+            note = f"{len(todo)} track{'s' if len(todo) != 1 else ''} not analysed yet."
+        else:
+            note = "Every track is analysed."
+        self.analyse_note.setText(note)
+        self.analyse_button.setEnabled(bool(todo) and not busy)
+
     def _set_writing(self, writing: bool) -> None:
         """A sync is (or is no longer) writing and ejecting: the card list must leave the card alone."""
         self._writing = writing
@@ -1055,8 +1127,26 @@ class SyncView(QWidget):
         return list(found.values())
 
     def _analyse_then_write(self, todo: list[Track], disc_ids: list[int]) -> None:
-        """Analyse the tracks that have no waveform yet (on a worker: the first time takes a few
-        seconds a track), keep the results, look at the discs again, and then ask and write."""
+        """Analyse the tracks that have no waveform yet, look at the discs again, and then ask and write."""
+
+        def then() -> None:
+            surveys = [self._surveys[i] for i in disc_ids if i in self._surveys]
+            if surveys:
+                self._confirm_and_write(surveys)
+
+        self._analyse(todo, then)
+
+    def analyse_waveforms(self) -> None:
+        """The Waveforms tab's button: analyse the picked disc's tracks that have no waveform. Needs no card."""
+        todo = self._picked_to_analyse()
+        if todo and not (self._analysing or self._measuring or self._writing):
+            self._analyse(todo)
+
+    def _analyse(
+        self, todo: list[Track], then: Callable[[], None] | None = None
+    ) -> None:
+        """Analyse tracks (on a worker: the first time takes a few seconds a track), keep the results
+        and look at the discs again; then `then()`, unless it was cancelled or failed."""
         self._analysing = True
         token = self._cancel = CancelToken()
         self.cancel_button.setEnabled(True)
@@ -1072,10 +1162,13 @@ class SyncView(QWidget):
                 self.message.emit(
                     f"No waveform for {len(problems)} file(s): {problems[0]}"
                 )
+            elif then is None:
+                self.message.emit(
+                    f"Analysed {len(found)} track{'s' if len(found) != 1 else ''}."
+                )
             self._look_at_discs(self._loaded)
-            surveys = [self._surveys[i] for i in disc_ids if i in self._surveys]
-            if surveys:
-                self._confirm_and_write(surveys)
+            if then is not None:
+                then()
 
         def failed(text: str) -> None:
             self._analysing = False

@@ -6,6 +6,7 @@ import pytest
 from PySide6.QtCore import Qt
 
 from dubcrate import card_format as cf
+from dubcrate import cdj_card as cc
 from dubcrate.ui import sync_view
 from dubcrate.ui.format_card_dialog import FormatCardDialog
 from dubcrate.ui.sync_view import CardPanel
@@ -196,21 +197,58 @@ def test_the_panel_opens_the_window_and_picks_the_card_it_made(
             self.cb(card)
 
     monkeypatch.setattr(sync_view, "FormatCardDialog", Fake)
-    panel.format_button.click()
+    menu_action(panel.card_menu(None), "Format a Card…").trigger()
     assert panel.current_card() == card and told[-1] == card
     assert "Formatted “DISK_IMG”" in said[-1]
     assert panel.subtitle.text() == "1 card found"
 
 
-def test_the_button_waits_while_a_sync_writes(qapp, monkeypatch):
+def menu_action(menu, text):
+    return next(a for a in menu.actions() if a.text() == text)
+
+
+def test_the_format_menu_item_waits_while_a_sync_writes(qapp, monkeypatch):
     panel = CardPanel(volumes=list)
     opened = []
     monkeypatch.setattr(
         sync_view, "FormatCardDialog", lambda parent: opened.append(parent)
     )
     panel.set_busy(True)
-    assert not panel.format_button.isEnabled()
+    assert not menu_action(panel.card_menu(None), "Format a Card…").isEnabled()
     panel.format_card()
     assert opened == []
     panel.set_busy(False)
-    assert panel.format_button.isEnabled()
+    assert menu_action(panel.card_menu(None), "Format a Card…").isEnabled()
+
+
+def test_right_click_on_the_empty_list_offers_only_format(qapp):
+    panel = CardPanel(volumes=list)
+    assert [a.text() for a in panel.card_menu(None).actions() if a.text()] == ["Format a Card…"]  # fmt: skip
+    assert not hasattr(panel, "format_button")
+
+
+def test_right_click_on_a_card_offers_eject_and_format(qapp, tmp_path, monkeypatch):
+    card = tmp_path / "DISK_IMG"
+    cc.make_card_folders(card)
+    panel = CardPanel(volumes=lambda: [card])
+    panel.refresh(announce=False)
+    menu = panel.card_menu(card)
+    assert [a.text() for a in menu.actions() if a.text()] == ["Eject “DISK_IMG”", "Format a Card…"]  # fmt: skip
+    ejected = []
+    monkeypatch.setattr(panel, "_eject", ejected.append)
+    menu_action(menu, "Eject “DISK_IMG”").trigger()
+    assert ejected == [card]
+    panel.set_busy(True)
+    assert not menu_action(panel.card_menu(card), "Eject “DISK_IMG”").isEnabled()
+
+
+def test_right_click_on_a_folder_chosen_by_hand_offers_to_take_it_off_the_list(qapp, tmp_path, monkeypatch):  # fmt: skip
+    folder = tmp_path / "copy"
+    cc.make_card_folders(folder)
+    panel = CardPanel(volumes=list)
+    panel._chosen.append(folder)
+    panel.refresh(announce=False)
+    menu = panel.card_menu(folder)
+    assert [a.text() for a in menu.actions() if a.text()] == ["Take This Folder Off the List", "Format a Card…"]  # fmt: skip
+    menu_action(menu, "Take This Folder Off the List").trigger()
+    assert panel.cards.count() == 0

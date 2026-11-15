@@ -199,7 +199,7 @@ What differs from the player's own format (`00-blank.img`: partition at sector 3
 partition first did not move it. Matching exactly needs the MBR and boot sector written raw, which means `sudo`.
 cdjmerge's notes say a card formatted elsewhere is refused by the player; this is **unproven either way**.
 
-**The Sync tab has a Format a Card… button (2026-11-15, owner's request: set a card up from home, without the CDJ).** Same core, with a window that lists removable disks and why any is refused, a tick box and a button that says what it does, and the disk checked again, and checked to still be the one listed (`format_card(expect=)`), just before it is erased. **The hardware test below is still to do, and the guide says so.**
+**The Sync tab has a Format a Card… item in the card list's right-click menu (2026-11-15, owner's request: set a card up from home, without the CDJ).** Same core, with a window that lists removable disks and why any is refused, a tick box and a button that says what it does, and the disk checked again, and checked to still be the one listed (`format_card(expect=)`), just before it is erased. **The hardware test below is still to do, and the guide says so.**
 
 **Hardware test (the owner; a SPARE 2 GB card, not the working one; do these in order, stop at the first failure):**
 
