@@ -2,13 +2,16 @@
 
 Three pages behind three tab buttons, as rbxport has them, **read-only**: the cues are rekordbox's and
 Dubcrate never writes them. Clicking a memory or hot cue asks the player to jump there
-(`jump_requested`). The Info page shows the rating and comment rekordbox gave the track and what the file
-is (type, size, sample rate, bitrate).
+(`jump_requested`). The Info page shows the track's embedded **artwork** (a painted note on a square when it has
+none), the rating and comment rekordbox gave it and what the file is (type, size, sample rate, bitrate), in a
+bordered frame like the other two pages.
 """
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import QRectF, Qt, Signal
+from PySide6.QtGui import QColor, QFont, QImage, QPainter, QPainterPath, QPen, QPixmap
 from PySide6.QtWidgets import (
     QButtonGroup,
+    QFrame,
     QHBoxLayout,
     QLabel,
     QSizePolicy,
@@ -22,6 +25,7 @@ from PySide6.QtWidgets import (
 from dubcrate.analysis import Cue
 from dubcrate.library.models import Track
 
+from . import theme
 from .player_controls import PillButton
 from .wave_style import hot_cue_color
 
@@ -60,6 +64,85 @@ def file_lines(track: Track) -> list[str]:
     return [line for line in lines if line]
 
 
+class InfoFrame(QFrame):
+    """The Info page's frame: drawn like the lists beside it (their panel colour, border and corners)."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        theme.notifier.changed.connect(self.update)
+
+    def paintEvent(self, _event) -> None:
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, theme.antialiasing())
+        palette = theme.current_palette()
+        radius = 0 if palette.get("hard_edges") else 4
+        painter.setPen(QPen(QColor(palette["border_list"]), 1))
+        painter.setBrush(QColor(palette["bg_panel"]))
+        painter.drawRoundedRect(QRectF(self.rect()).adjusted(0.5, 0.5, -0.5, -0.5), radius, radius)  # fmt: skip
+
+
+class ArtworkView(QWidget):
+    """The track's cover, a square (cropped from the middle if the picture is not), or a placeholder.
+
+    The placeholder is painted, not an image file: a music note on a plain square in the theme's colours."""
+
+    SIZE = 104
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setFixedSize(self.SIZE, self.SIZE)
+        self._pixmap: QPixmap | None = None
+        theme.notifier.changed.connect(self.update)
+
+    @property
+    def has_image(self) -> bool:
+        return self._pixmap is not None
+
+    def set_image(self, data: bytes | None) -> None:
+        """Show the picture in `data` (a JPEG or PNG), or the placeholder if there is none or it can't be read."""
+        self._pixmap = None
+        if data:
+            image = QImage.fromData(data)
+            if not image.isNull():
+                ratio = self.devicePixelRatioF()
+                side = round(self.SIZE * ratio)
+                scaled = image.scaled(
+                    side,
+                    side,
+                    Qt.AspectRatioMode.KeepAspectRatioByExpanding,
+                    Qt.TransformationMode.SmoothTransformation,
+                )
+                left, top = (scaled.width() - side) // 2, (scaled.height() - side) // 2
+                self._pixmap = QPixmap.fromImage(scaled.copy(left, top, side, side))
+                self._pixmap.setDevicePixelRatio(ratio)
+        self.update()
+
+    def paintEvent(self, _event) -> None:
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, theme.antialiasing())
+        palette = theme.current_palette()
+        box = QRectF(self.rect()).adjusted(0.5, 0.5, -0.5, -0.5)
+        radius = 0 if palette.get("hard_edges") else 4
+        clip = QPainterPath()
+        clip.addRoundedRect(box, radius, radius)
+        if self._pixmap is not None:
+            painter.setClipPath(clip)
+            painter.drawPixmap(self.rect(), self._pixmap)
+            painter.setClipping(False)
+            painter.setPen(QPen(QColor(palette["border_list"]), 1))
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.drawRoundedRect(box, radius, radius)
+            return
+        painter.setPen(QPen(QColor(palette["border_list"]), 1))
+        painter.setBrush(QColor(palette["bg_input"]))
+        painter.drawRoundedRect(box, radius, radius)
+        font = QFont(self.font())
+        font.setPointSizeF(self.SIZE * 0.34)
+        painter.setFont(font)
+        painter.setPen(QColor(palette["text_disabled"]))
+        painter.drawText(box, Qt.AlignmentFlag.AlignCenter, "♪")
+
+
 def _list() -> QTreeWidget:
     tree = QTreeWidget()
     tree.setHeaderHidden(True)
@@ -91,12 +174,22 @@ class SidePanel(QWidget):
         )
         self.file = QLabel()
         self.file.setObjectName("mutedLabel")
-        info = QWidget()
+        self.art = ArtworkView()
+        details = QVBoxLayout()
+        details.setSpacing(4)
+        details.addWidget(self.rating)
+        details.addStretch(1)
+        details.addWidget(self.file)
+        top = QHBoxLayout()
+        top.setSpacing(10)
+        top.addWidget(self.art, 0, Qt.AlignmentFlag.AlignTop)
+        top.addLayout(details, 1)
+        info = InfoFrame()
         box = QVBoxLayout(info)
-        box.setContentsMargins(6, 6, 6, 6)
-        box.addWidget(self.rating)
+        box.setContentsMargins(10, 10, 10, 10)
+        box.setSpacing(8)
+        box.addLayout(top)
         box.addWidget(self.comment, 1)
-        box.addWidget(self.file)
         for label in (self.rating, self.comment, self.file):
             label.setMinimumWidth(0)
             label.setSizePolicy(
@@ -130,7 +223,12 @@ class SidePanel(QWidget):
 
     # -- what is shown -----------------------------------------------------------
 
+    def set_artwork(self, data: bytes | None) -> None:
+        """The loaded track's embedded cover picture (None: none, so the placeholder)."""
+        self.art.set_image(data)
+
     def set_track(self, track: Track | None) -> None:
+        self.art.set_image(None)  # (the cover arrives with the audio)
         if track is None:
             self.rating.setText("")
             self.comment.setText("")

@@ -7,6 +7,7 @@ from PySide6.QtCore import QObject, Signal
 
 from dubcrate import settings
 from dubcrate.analysis import Analysis, read_analysis, share_root
+from dubcrate.artwork import read_artwork
 from dubcrate.audio.decode import DecodedAudio, decode_file
 from dubcrate.audio.player import AudioPlayer
 from dubcrate.beatjump import jump_time
@@ -28,6 +29,7 @@ class LoadedMedia:
     audio: DecodedAudio
     waveform: Waveform
     analysis: Analysis | None
+    artwork: bytes | None = None  # the embedded cover picture, if the file has one
 
 
 def load_media(
@@ -47,7 +49,7 @@ def load_media(
         waveform = analysis.waveform
     else:
         waveform = compute_waveform(audio.mono())
-    return LoadedMedia(audio, waveform, analysis)
+    return LoadedMedia(audio, waveform, analysis, read_artwork(path))
 
 
 class PreviewController(QObject):
@@ -336,7 +338,9 @@ class PreviewController(QObject):
                 analysis.beat_times if analysis else None,
                 (analysis.bpm if analysis else None) or track.bpm,
             )
-            self._strip.show_media(media.audio.duration, media.waveform, media.analysis)
+            self._strip.show_media(
+                media.audio.duration, media.waveform, media.analysis, media.artwork
+            )
             self.player.load(media.audio, autoplay=play)
             self._show_cues()
             self.preview_ready.emit(

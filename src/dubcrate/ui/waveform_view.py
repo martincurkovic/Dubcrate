@@ -290,9 +290,9 @@ class DetailView(QWidget):
         theme.notifier.changed.connect(self.update)
         wave_notifier.changed.connect(self.update)
         # zoom + / RST / -, over the waveform's left edge (a press on one is its own, not a scratch)
-        self.zoom_in_button = PillButton("+", self, width=22, height=22, bold=True, shape="circle")  # fmt: skip
+        self.zoom_in_button = PillButton("+", self, width=24, height=24, bold=True, shape="circle", size_delta=3)  # fmt: skip
         self.zoom_reset_button = PillButton("RST", self, width=30, height=16, shape="text")  # fmt: skip
-        self.zoom_out_button = PillButton("−", self, width=22, height=22, bold=True, shape="circle")  # fmt: skip
+        self.zoom_out_button = PillButton("−", self, width=24, height=24, bold=True, shape="circle", size_delta=3)  # fmt: skip
         self.zoom_in_button.setToolTip("Zoom in (a shorter stretch of the track)")
         self.zoom_reset_button.setToolTip("Zoom back to the usual stretch")
         self.zoom_out_button.setToolTip("Zoom out (a longer stretch of the track)")

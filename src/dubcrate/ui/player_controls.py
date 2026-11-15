@@ -20,6 +20,7 @@ from PySide6.QtGui import (
     QActionGroup,
     QColor,
     QFont,
+    QFontInfo,
     QPainter,
     QPainterPath,
     QPen,
@@ -115,12 +116,16 @@ class PillButton(QAbstractButton):
         height: int = 24,
         bold: bool = False,
         shape: str = "pill",
+        size_delta: float = -1.0,
     ):
         if shape not in SHAPES:
             raise ValueError(f"shape must be one of {SHAPES}, not {shape!r}")
         super().__init__(parent)
         self.shape = shape
         self._segment = "only"
+        self._size_delta = (
+            size_delta  # the label's size against the default font's, in points
+        )
         self.setText(text)
         self.setCheckable(checkable)
         self._color = QColor(color) if color is not None else None
@@ -250,7 +255,7 @@ class PillButton(QAbstractButton):
             painter.drawRoundedRect(box, radius, radius)
         font = QFont(self.font())
         font.setBold(self._bold)
-        font.setPointSizeF(max(8.0, font.pointSizeF() - 1.0))
+        font.setPointSizeF(max(8.0, QFontInfo(font).pointSizeF() + self._size_delta))
         painter.setFont(font)
         painter.setPen(text)
         painter.drawText(box, Qt.AlignmentFlag.AlignCenter, self.text())
@@ -264,8 +269,10 @@ class ChoiceButton(PillButton):
 
     activated = Signal(int)
 
-    def __init__(self, parent=None, *, width: int = 76, height: int = 26):
-        super().__init__("", parent, width=width, height=height, shape="tile")
+    def __init__(self, parent=None, *, width: int = 76, height: int = 28):
+        super().__init__(
+            "", parent, width=width, height=height, shape="tile", size_delta=1.0
+        )
         self._items: list[tuple[str, object]] = []
         self._index = -1
         self.clicked.connect(self._open_menu)
@@ -352,7 +359,7 @@ class CueRing(QAbstractButton):
         painter.drawEllipse(box)
         font = QFont(self.font())
         font.setBold(True)
-        font.setPointSizeF(max(8.0, font.pointSizeF() - 1.0))
+        font.setPointSizeF(max(8.0, QFontInfo(font).pointSizeF() - 1.0))
         painter.setFont(font)
         if pressed:
             label = QColor(palette["bg_panel"])

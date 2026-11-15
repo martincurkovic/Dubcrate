@@ -158,7 +158,7 @@ The player is laid out as rbxport's is:
 
 - **Left:** previous and next track, beat jump back and forward (**‹** **›**) with a menu of how far (1 beat up to 32 bars), **CUE** and play / pause.
 - **Middle:** the title, artist, time, key and tempo, the two waveforms, and under them the **hot cue buttons A to H**, **MEMORY** with **◀** and **▶**, the loop controls (**AU** automatic, **MA** manual) and **Q** (quantise).
-- **Right:** three tabs, **MEMORY** (the memory cues and loops, with their times), **HOT CUE** (A to H) and **INFO** (the rating and comment from rekordbox, and what the file is: type, size, sample rate, bitrate).
+- **Right:** three tabs, **MEMORY** (the memory cues and loops, with their times), **HOT CUE** (A to H) and **INFO** (the track's **cover art**, a small square of the picture embedded in the file or a musical note if there isn't one; the rating and comment from rekordbox; and what the file is: type, size, sample rate, bitrate). Dubcrate reads covers from MP3 (ID3), FLAC and M4A files; other kinds show the note.
 
 **The cues are rekordbox's and are only shown, never changed.** A hot cue button is lit when the track has that cue, and pressing it (or a row in the memory or hot cue list) jumps there, playing or paused as it was; **◀** and **▶** go to the memory cue before or after the playhead. **MEMORY** and **✕**, which would save or delete a cue, are off.
 

@@ -396,3 +396,168 @@ def test_the_groups_are_told_apart_by_dividers_and_the_hot_cues_stay_separate(st
         xs[i + 1] - xs[i] - strip.hot_buttons[i].width() for i in range(len(xs) - 1)
     }
     assert gaps == {4}  # (A to H are separate squares, evenly spaced)
+
+
+# -- the info page: its frame and the cover ----------------------------------------------------------
+
+
+def png_bytes(width=300, height=200, colour="#cc3344"):
+    from PySide6.QtCore import QBuffer, QIODevice
+    from PySide6.QtGui import QColor, QImage
+
+    image = QImage(width, height, QImage.Format.Format_RGB32)
+    image.fill(QColor(colour))
+    buffer = QBuffer()
+    buffer.open(QIODevice.OpenModeFlag.WriteOnly)
+    image.save(buffer, "PNG")
+    return bytes(buffer.data())
+
+
+def test_the_info_page_has_the_same_kind_of_border_as_the_other_two_pages(strip):
+    from PySide6.QtGui import QColor
+
+    from dubcrate.ui import theme
+    from dubcrate.ui.player_side import InfoFrame
+
+    side = strip.side
+    side.tabs[2].click()
+    frame = side.pages.widget(2)
+    assert isinstance(frame, InfoFrame) and side.pages.currentWidget() is frame
+    image = frame.grab().toImage()
+    border = QColor(theme.current_palette()["border_list"]).name()
+    edge = {
+        QColor(image.pixel(x, image.height() // 2)).name()
+        for x in (0, image.width() - 1)
+    }
+    assert border in edge  # (a line round it, in the lists' border colour)
+    assert QColor(image.pixel(image.width() // 2, 0)).name() == border
+
+
+def test_a_track_without_a_cover_shows_the_placeholder_and_one_with_a_cover_shows_it(
+    strip,
+):
+    art = strip.side.art
+    assert not art.has_image  # (the placeholder: a note on a square)
+    strip.side.set_artwork(png_bytes())
+    assert art.has_image and art.size().width() == art.size().height() == art.SIZE
+    strip.side.set_artwork(None)
+    assert not art.has_image
+    strip.side.set_artwork(b"this is not a picture")
+    assert not art.has_image  # (undecodable: the placeholder, never an error)
+
+
+def test_a_wide_cover_is_cropped_to_a_square_from_the_middle(strip):
+    from PySide6.QtGui import QColor, QImage, QPainter
+
+    image = QImage(
+        400, 200, QImage.Format.Format_RGB32
+    )  # red | green | blue thirds... the middle is green
+    painter = QPainter(image)
+    painter.fillRect(0, 0, 100, 200, QColor("#ff0000"))
+    painter.fillRect(100, 0, 200, 200, QColor("#00ff00"))
+    painter.fillRect(300, 0, 100, 200, QColor("#0000ff"))
+    painter.end()
+    from PySide6.QtCore import QBuffer, QIODevice
+
+    buffer = QBuffer()
+    buffer.open(QIODevice.OpenModeFlag.WriteOnly)
+    image.save(buffer, "PNG")
+    strip.side.set_artwork(bytes(buffer.data()))
+    shot = strip.side.art.grab().toImage()
+    middle = QColor(shot.pixel(shot.width() // 2, shot.height() // 2))
+    assert middle.green() > 200 and middle.red() < 60 and middle.blue() < 60
+    corner = QColor(shot.pixel(shot.width() // 5, shot.height() // 2))
+    assert corner.green() > 200  # (the red third was cropped off, not squeezed in)
+
+
+def test_choosing_a_track_clears_the_old_cover_until_its_own_arrives(strip):
+    strip.side.set_artwork(png_bytes())
+    track = make_track()
+    strip.show_track(track)
+    assert not strip.side.art.has_image
+    strip.show_media(60.0, sample_waveform(), None, artwork=png_bytes())
+    assert strip.side.art.has_image
+    strip.clear()
+    assert not strip.side.art.has_image
+
+
+def make_track():
+    from dubcrate.library.models import Track
+
+    return Track(
+        id=1,
+        source_id=1,
+        ext_id="x",
+        path="/m/a.mp3",
+        title="T",
+        artist="A",
+        duration=60.0,
+    )
+
+
+def sample_waveform():
+    import numpy as np
+
+    from dubcrate.waveform import Waveform
+
+    return Waveform(np.random.default_rng(1).random((600, 3)).astype(np.float32), 150.0)
+
+
+def test_the_preview_reads_the_cover_with_the_audio_and_shows_it(
+    qapp, tmp_path, wait_for, monkeypatch
+):
+    import wave
+
+    import numpy as np
+
+    from dubcrate.audio.player import AudioPlayer
+    from dubcrate.ui import preview
+
+    path = tmp_path / "a.wav"
+    with wave.open(str(path), "wb") as w:
+        w.setnchannels(2)
+        w.setsampwidth(2)
+        w.setframerate(44_100)
+        w.writeframes(np.zeros((22_050, 2), dtype=np.int16).tobytes())
+    seen = []
+    cover = png_bytes()
+    monkeypatch.setattr(preview, "read_artwork", lambda p: seen.append(p) or cover)
+    lib = Library.open(":memory:")
+    lib.replace_source("folder", str(tmp_path), "S", [TrackRecord(ext_id="a", path=str(path), title="A", duration=0.5)])  # fmt: skip
+    widget = PlayerStrip()
+    controller = preview.PreviewController(lib, widget, AudioPlayer())
+    controller.load(lib.tracks()[0], play=False)
+    assert wait_for(lambda: controller.track is not None and widget.side.art.has_image)
+    assert seen == [str(path)]
+    controller.shutdown()
+    lib.close()
+
+
+def test_the_beat_jump_glyphs_and_amount_are_drawn_bigger_than_an_ordinary_label(qapp):
+    from dubcrate.ui.player_controls import PillButton
+
+    def lit(delta):
+        button = PillButton("‹", width=50, height=30, shape="tile", size_delta=delta)
+        button.show()
+        image = button.grab().toImage()
+        background = image.pixel(2, 2)
+        return sum(1 for x in range(image.width()) for y in range(image.height()) if image.pixel(x, y) != background)  # fmt: skip
+
+    # (the size really changes: pixel-sized app fonts once clamped every label to 8 points)
+    assert lit(8) > 1.25 * lit(-1)
+
+
+def test_the_left_column_sits_a_little_way_down_and_cue_and_play_float_above_the_bottom(
+    strip,
+):
+    top = strip.prev_button.mapTo(strip, strip.prev_button.rect().topLeft()).y()
+    assert top >= 18  # (the group is lower than the very top of the strip)
+    amount_bottom = strip.jump_combo.mapTo(
+        strip, strip.jump_combo.rect().bottomLeft()
+    ).y()
+    cue_top = strip.cue_button.mapTo(strip, strip.cue_button.rect().topLeft()).y()
+    play_bottom = strip.play_button.mapTo(
+        strip, strip.play_button.rect().bottomLeft()
+    ).y()
+    assert cue_top - amount_bottom > 8  # (room between the two groups)
+    assert strip.height() - play_bottom > 20  # (not hard against the bottom edge)

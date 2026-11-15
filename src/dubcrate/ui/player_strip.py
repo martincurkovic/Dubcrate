@@ -110,10 +110,10 @@ class PlayerStrip(QWidget):
         self.play_button.clicked.connect(self.play_toggled)
         self.next_button.clicked.connect(self.next_requested)
         self.jump_back_button = PillButton(
-            "‹", width=28, height=24, bold=True, shape="tile"
+            "‹", width=50, height=30, bold=True, shape="tile", size_delta=8
         )
         self.jump_forward_button = PillButton(
-            "›", width=28, height=24, bold=True, shape="tile"
+            "›", width=50, height=30, bold=True, shape="tile", size_delta=8
         )
         self.jump_back_button.setToolTip("Beat jump back (←)")
         self.jump_forward_button.setToolTip("Beat jump forward (→)")
@@ -148,12 +148,18 @@ class PlayerStrip(QWidget):
         jump.addWidget(self.jump_forward_button)
         left = QVBoxLayout()
         left.setSpacing(8)
+        left.addSpacing(
+            10
+        )  # (the group sits a little way down, level with the overview)
         left.addLayout(skip)
         left.addLayout(jump)
         left.addWidget(self.jump_combo)
         left.addStretch(1)
         left.addWidget(self.cue_button, 0, Qt.AlignmentFlag.AlignHCenter)
         left.addWidget(self.play_button, 0, Qt.AlignmentFlag.AlignHCenter)
+        left.addStretch(
+            1
+        )  # (CUE and play float in the lower middle, not on the bottom edge)
         left_box = QWidget()
         left_box.setFixedWidth(LEFT_WIDTH)
         left_box.setLayout(left)
@@ -270,7 +276,9 @@ class PlayerStrip(QWidget):
         self.auto_button.setToolTip("Automatic loop: a set number of beats")
         self.manual_button.setToolTip("Manual loop: set the in and out points")
 
-        self.loop_size_back = PillButton("‹", width=30, height=ROW_HEIGHT, bold=True)
+        self.loop_size_back = PillButton(
+            "‹", width=30, height=ROW_HEIGHT, bold=True, size_delta=5
+        )
         self.loop_size = PillButton(
             size_label(DEFAULT_AUTO),
             checkable=True,
@@ -278,7 +286,9 @@ class PlayerStrip(QWidget):
             height=ROW_HEIGHT,
             bold=True,
         )
-        self.loop_size_forward = PillButton("›", width=30, height=ROW_HEIGHT, bold=True)
+        self.loop_size_forward = PillButton(
+            "›", width=30, height=ROW_HEIGHT, bold=True, size_delta=5
+        )
         self.loop_size_back.clicked.connect(lambda: self._step_loop_size(-1))
         self.loop_size_forward.clicked.connect(lambda: self._step_loop_size(1))
         self.loop_size.clicked.connect(
@@ -505,9 +515,14 @@ class PlayerStrip(QWidget):
         self._enable(False)
 
     def show_media(
-        self, duration: float, waveform: Waveform, analysis: Analysis | None
+        self,
+        duration: float,
+        waveform: Waveform,
+        analysis: Analysis | None,
+        artwork: bytes | None = None,
     ) -> None:
-        """The track's audio and waveform are ready."""
+        """The track's audio and waveform are ready (and its embedded cover picture, if it has one)."""
+        self.side.set_artwork(artwork)
         self._duration = duration
         analysis = analysis or Analysis()
         both = (*analysis.cues, *self._markers)

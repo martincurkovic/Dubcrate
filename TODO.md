@@ -93,6 +93,7 @@
 - [x] Phase 2 of the player: **CUE** (a temporary cue point), the **auto and manual loops** (AU / MA, IN, OUT, RELOOP, the loop size) and **Q** (quantise) work in the preview engine, session-only, never saved to rekordbox (`deck.py`, `audio/player.py`, `ui/preview.py`).
 - [ ] Listen to the loops on a real track: the wrap has no crossfade (a hard cut at the loop's end), so a loop not on a zero crossing may click; add a few milliseconds of fade if it does (`audio/player.py: _take`).
 - [ ] Try the new player by hand: dragging a track onto it, the hot cue and memory buttons on a real rekordbox track, the zoom buttons, and how it looks on a small screen.
+- [ ] Read cover art from Ogg / Opus (base64 `METADATA_BLOCK_PICTURE`) and the `ID3 ` chunk of AIFF and WAV files, which the Info tab does not show yet (`artwork.py`).
 
 ### Linux and Windows
 
