@@ -1,8 +1,9 @@
 # Writing cues to rekordbox: what is known, and the plan
 
-**Status (2026-11-15): nothing is written to rekordbox.** `AGENTS.md`'s hard rule ("never write to a rekordbox
-database") stands. This file records what a read-only look at the owner's real library showed about `djmdCue`,
-the risks, and the staged plan. The owner has agreed to stages 1 and 2; stage 3 waits for them to ask for it.
+**Status (end of 2026-11-15): stages 1 (additions only), 2 and 3 are built.** Memory cues can be edited in the player, saved into
+rekordbox's `master.db` (the command line was run by the owner on their live library and worked; the in-app path is not tried live)
+and imported back from the card. `AGENTS.md`'s hard rule has ONE exception, `rekordbox_write.py`, for memory cues only. This file
+records what a read-only look at the owner's real library showed about `djmdCue`, the risks, the plan and how each stage was built.
 
 ## What `djmdCue` holds (measured on the owner's library, a snapshot copy, 2026-11-15)
 
@@ -40,8 +41,9 @@ habit of marking a track's start.
 
 ## The plan
 
-1. **Review what changed on the CDJ** (read-only): read the card back, compare it with what Dubcrate wrote (a baseline saved at sync
-   time), and list new, moved and deleted cues per track. Needs the baseline, and the player's real files to test the logic on.
+1. **Review what changed on the CDJ** (read-only): **built 2026-11-15 for additions only** (`card_import.py`, Sync tab > Import Cues…; see
+   `card-sync.md`, "Importing cues from the card"). Moves and deletions on the player need a baseline of what a sync wrote (the card's cues
+   after each sync, per disc ID): **not built**.
 2. **Edit memory cues in Dubcrate** (built 2026-11-15, see below): stored in Dubcrate's own database, layered over rekordbox's, and
    used by the player, Sync and the labels. rekordbox is not touched.
 3. **Write to rekordbox**: memory cues only, rekordbox closed, a backup of `master.db` and its `-wal` / `-shm` first, a

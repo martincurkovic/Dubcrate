@@ -162,7 +162,7 @@ branches in one named helper each (as `rekordbox.default_master_db` does), never
 
 ### Where things stand
 
-*Last updated after the session (2026-11-14) that proved card sync on the owner's CDJ-1000MK3 and built the Sync tab (writing on, eject after syncing, a card list that notices cards), the post-burn TOC check, rekordbox cues in the preview, the waveform test disc, `wheel_guard` and the print window closing; before that (2026-11-13): the card's format reverse-engineered and card sync's core.*
+*Last updated after the session (2026-11-15) that built the rbxport-style player, the Sync tab's redesign, Linux/Windows groundwork (card formatting, eject, TOC, pycdlib ISOs, a Linux AppImage), **memory cue editing, the rekordbox memory-cue writer and the way back from the card**; before that (2026-11-14): card sync proven on the owner's CDJ-1000MK3, the Sync tab, the post-burn TOC check, the waveform test disc; (2026-11-13): the card's format reverse-engineered and card sync's core.*
 
 Built: library import (folders and rekordbox), disc planning (fit, split, reorder,
 exact capacity), audio **and MP3 discs** (MP3 folders included), the `dubcrate` command-line
@@ -188,6 +188,7 @@ waveforms and scratching, an update check, a built `.dmg` (Nuitka), and since th
   cue set, a file made from nothing, a disc new to the card, and a whole `dubcrate card sync --yes`), the **Sync tab is built
   with writing on**, and rekordbox's cues live in its database, not the analysis files. **Read
   `dev_docs/card-sync.md` (its "Handover" section first) before touching any of it.**
+- **Memory cues, end to end (2026-11-15):** edited in the player (`library/cue_edits.py`, Dubcrate's own tables, schema v13), **saved into rekordbox's `master.db`** (`rekordbox_write.py`: the ONE sanctioned writer; `dubcrate rekordbox write-memory-cues` was run by the owner on their live rekordbox 7.2.19 library and "worked perfectly"; **in the app** `ui/rekordbox_editor.py` does it at edit time after a one-time question remembered in `rekordbox/editing`, with a Settings > Library checkbox: built and tested with a stand-in writer, **not tried live**), and **imported back from the card** (`card_import.py`, Sync tab > Import Cues…: additions only, no baseline, **not tried with cues set on a real player**). Read `dev_docs/rekordbox-cue-writes.md` ("Stage 3 as built", "In the app") and `dev_docs/card-sync.md` ("Importing cues from the card") before touching any of it.
 - **Also 2026-11-14:** `burn_check.py` (an audio burn on a Mac is checked against the plan by reading the disc's TOC, then ejected),
   rekordbox cues drawn in the preview (`ui/cue_cache.py`), the **waveform test disc** (`wavetest.py`,
   `spikes/wave_test_disc.py`, `dev_docs/wave-test-disc.md`: made, waiting to be burned and played), `ui/wheel_guard.py`.
@@ -196,13 +197,14 @@ Burning through DiscRecording is proven on the owner's hardware (a disc burned a
 CDJ-1000MK3, CD-TEXT shown); the burn *window*, the gapless fix, the `cdrdao` backend, non-zero gaps,
 MP3 discs and **everything below are not proven on hardware or a real display**.
 
-**Not tried by hand (tests and offscreen renders only):** the Sync tab itself on a real card (the command line is proven), the post-burn TOC check on a real burn, the waveform test disc, the card list noticing a real card being plugged in, printing on a real printer or paper (and
+**Not tried by hand (tests and offscreen renders only):** saving memory cue edits into rekordbox from the player (the command line is proven; the question, the worker, rekordbox open vs closed), Import Cues… with cues set on a real player, the Sync tab itself on a real card (the command line is proven), the post-burn TOC check on a real burn, the waveform test disc, the card list noticing a real card being plugged in, printing on a real printer or paper (and
 whether the Mac print panel keeps the paper size we ask for), trackpad pinch and the feel of
 dragging spin boxes, the Explorer on a real Mac (permission prompts for Documents / Downloads / drives,
 a slow or unplugged drive), and whether the built app bundles QtPrintSupport (`scripts/build_macos.sh`).
 
 **Next** (the owner's `TODO.md` is the live list and is theirs: do not tidy it, but tick items off when they are done, which they have asked for; `dev_docs/roadmap.md` has the reasons):
 1. Hardware checks of the burn window, an MP3 disc, level matching on a CDJ and the "not tried" list above.
+   The cue work's open items are in `TODO.md` under "Cues: Dubcrate, rekordbox and the card" (try the in-app rekordbox save and Import Cues… by hand; a baseline so moves and deletions on the player are noticed; Import in the card list's right-click menu; writing waiting edits from the app; hot cues and loops).
 2. **Waveform pre-writing is built into Sync** (the waveform tests are done, `dev_docs/cdj1000mk3-card.md`, "Disc 2"; the write test showed the player accepts, draws, uses and keeps our records): try it from the Sync tab on a Dubcrate-burned disc and the real card, with the post-burn TOC check on the same burn. Open: the dip after a drop (the model doesn't have it). Plan, decisions and handover in `dev_docs/card-sync.md`.
 3. **A tab per app library** (not one merged Library tab), when a second library exists. Only
    rekordbox is used (Engine DJ and Algoriddim djay are backups synced from it with Lexicon, so there

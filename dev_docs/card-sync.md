@@ -4,7 +4,7 @@ Goal: a **Sync** tab that writes a Dubcrate disc's cues onto the CDJ-1000MK3's S
 disc loads in the player with its rekordbox cues already set. The card format is in
 [cdj1000mk3-card.md](cdj1000mk3-card.md) (read that first: what is measured, and its
 **"Gaps, and where more testing is indicated"**). The module that reads and writes it is
-`src/dubcrate/cdj_card.py`. **Status 2026-11-14: Phases 0 to 3 are done: the core, the command line and the Sync tab are built, and a CDJ-1000MK3 showed the
+`src/dubcrate/cdj_card.py`. **Update 2026-11-15 (read this before the older status below): waveform pre-writing (Phase 4) is built and in Sync (see "Waveform sync"), blank cards can be formatted (see "Formatting a card"), and the way back is built: memory cues set on the player can be imported (see "Importing cues from the card"; additions only, not tried with a real player's cues). The Sync tab was redesigned (card list left, tracks and the CDJ-style waveform in the middle, discs to tick right).** **Status 2026-11-14: Phases 0 to 3 are done: the core, the command line and the Sync tab are built, and a CDJ-1000MK3 showed the
 cues of files our writer produced (details in the Handover below). Waveform pre-writing (Phase 4) is not started: it needs the
 amplitude scale, for which a test disc is made and waiting (`wave-test-disc.md`).** Built: `cdj_card.py` (the format, `write_card`, `backup_card`), `card_sync.py` (cue
 mapping, merge, plan), `card_discs.py` (a Dubcrate disc's TOC and rekordbox cues), `card_report.py`,

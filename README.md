@@ -28,6 +28,7 @@ with CD-TEXT so track titles appear on the CDJ.
 - **Imports your rekordbox library** (read-only), with your existing playlists.
 - **Previews tracks** with a waveform. For rekordbox tracks it shows rekordbox's own waveform, beat
   grid, phrases and any cue points.
+- **Edits memory cues** in the preview player, and (if you allow it) saves them into rekordbox's library. **Syncs cues and waveforms to a CDJ-1000MK3's SD card**, and brings memory cues you set on the player back.
 - **Plans discs** of 74 or 80 minutes. Drag tracks on, rename them, move them around.
 - **Burns audio CDs with CD-TEXT**, or as MP3 discs.
 - **Keeps its own playlists.** Your discs are saved in Dubcrate.

@@ -57,7 +57,7 @@ dev_docs/                                command-line reference, burning and har
 
 - **Burning uses up real discs.** Everything that can burn defaults to a dry run and
   needs `--yes`. Read [dev_docs/burning.md](dev_docs/burning.md) before touching it.
-- **Rekordbox is only ever read.** Never write to its database or analysis files.
+- **Rekordbox is only ever read, with one exception.** Never write to its analysis files, and never to its database except through `src/dubcrate/rekordbox_write.py`, which writes memory cues only (backup first, read back, undone on failure; see `AGENTS.md` and `dev_docs/rekordbox-cue-writes.md`). Tests use synthetic databases, never a real library.
 - **The SQLite library belongs to the GUI thread.** Worker threads compute and
   return results; the GUI thread stores them.
 - **Discs reference library track ids.** Anything that can go on a disc must be a library track:

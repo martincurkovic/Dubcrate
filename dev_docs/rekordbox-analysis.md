@@ -3,7 +3,7 @@
 Tagged like [burning.md](burning.md): **[measured DATE]** on the owner's real rekordbox 7
 library (1,065 tracks; 300-400 sampled), **[notes]** from Deep Symmetry's format notes
 and not checked, **[tests]** covered by the automated tests. Everything here is
-read-only: Dubcrate never writes to rekordbox.
+read-only (the one exception, memory cues written to `master.db`, is in [rekordbox-cue-writes.md](rekordbox-cue-writes.md)).
 
 ## The database (`master.db`)
 

@@ -142,6 +142,7 @@
 
 ## Decisions so far
 
+- **Memory cues** (owner's choices 2026-11-15): editable in Dubcrate's player; kept in Dubcrate's own tables first, **saved into rekordbox's `master.db` at edit time if the user agreed** (asked once, remembered, a Settings > Library checkbox; rekordbox must be closed, otherwise the edit waits in Dubcrate), via the one sanctioned writer `rekordbox_write.py` (backup, one transaction through pyrekordbox, read-back, undo; the first write of a session keeps its backup, the newest 20 are kept). Only memory cues: hot cues and loops stay read-only. **Import Cues…** brings memory cues set on the CDJ back, additions only (a baseline for moves and deletions is not built). See `rekordbox-cue-writes.md` and `card-sync.md`.
 - **Card sync** (owner's choices 2026-11-13): every rekordbox cue (memory, hot A to H, loops) becomes a **CDJ memory
   cue** (memory loop for a loop); the card's three hot cue slots are never written or touched (a disc has only three,
   and they are the owner's). **Merge, never replace**: cues already on the card stay, near-duplicates (same track,
