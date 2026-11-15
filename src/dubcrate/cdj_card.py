@@ -43,7 +43,7 @@ LEAD_IN_FRAMES = 150  # track 1 of every disc starts here (00:02.00)
 MAX_CUES = 100  # memory cues and loops together, per disc (the player's manual)
 HOT_CUE_SLOTS = 3  # A, B, C
 WAVE_COLUMNS = 50  # a W001 record's bytes; a W002 record packs twice as many nibbles
-WAVE_MAX_LEVEL = 14  # the highest amplitude seen (a level is 0 to 15 in its nibble)
+WAVE_MAX_LEVEL = 15  # the highest amplitude (a W002 nibble is 0 to 15; 15 was seen on the second test disc)
 
 KIND_CUE = 0x0010  # a memory cue, and also what a hot cue slot says
 KIND_LOOP = 0x0020
@@ -217,10 +217,16 @@ class HotCue:
 
 @dataclass
 class WaveRecord:
-    """One track's waveform record in `W001` (50 amplitudes, a byte each, 0 to 14) or `W002`
-    (the same waveform at twice the resolution, 100 nibbles packed two to a byte, high first).
+    """One track's waveform record in `W001` (50 amplitudes, a byte each, 0 to 15) or `W002`
+    (the same waveform at twice the resolution, 100 nibbles packed two to a byte).
 
-    The player fills it in as the track plays: columns not yet played are 0.
+    The player fills it in as the track plays: columns not yet played are 0, and an unplayed slot
+    before a played track has track number 0 and no data (`unplayed`).
+
+    **Time order in a `W002` byte: the LOW nibble is the earlier column** (measured on disc 2,
+    `dev_docs/cdj1000mk3-card.md`). `fine` and `nibbles` keep the nibbles in the byte's order (high
+    first) for the code written before that was known; `fine_in_time_order` / `time_values` are the
+    columns in the order they are played.
     """
 
     track: int
@@ -247,8 +253,26 @@ class WaveRecord:
             )
         return cls(track, bytes(a << 4 | b for a, b in zip(levels[::2], levels[1::2])))
 
+    @classmethod
+    def unplayed(cls) -> "WaveRecord":
+        """The slot the player leaves for a track before the highest one played: track 0, all zero."""
+        return cls(0, bytes(WAVE_COLUMNS))
+
+    @classmethod
+    def fine_in_time_order(cls, track: int, values: Sequence[int]) -> "WaveRecord":
+        """A `W002` record from the 100 columns in the order they are played (the low nibble is earlier)."""
+        if len(values) != 2 * WAVE_COLUMNS or not all(0 <= v <= 15 for v in values):
+            raise CardFormatError(
+                f"A fine waveform is {2 * WAVE_COLUMNS} values, 0 to 15."
+            )
+        return cls(track, bytes(b << 4 | a for a, b in zip(values[0::2], values[1::2])))
+
+    def time_values(self) -> list[int]:
+        """The 100 columns of a `W002` record, in the order they are played."""
+        return [n for byte in self.data for n in (byte & 15, byte >> 4)]
+
     def nibbles(self) -> list[int]:
-        """The 100 amplitudes of a `W002` record."""
+        """The 100 amplitudes of a `W002` record in the byte's order (high nibble first: NOT time order)."""
         return [n for byte in self.data for n in (byte >> 4, byte & 15)]
 
     def pack(self) -> bytes:

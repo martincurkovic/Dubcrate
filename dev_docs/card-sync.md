@@ -210,6 +210,35 @@ cdjmerge's notes say a card formatted elsewhere is refused by the player; this i
 3. Image the card after (`spikes/cdj_card_snap.sh`) and add a row to the experiments table in
    `cdj1000mk3-card.md` (`f1-formatted-by-dubcrate`, `f2-synced-straight-away`).
 
+## Writing a waveform: the write test (2026-11-15)
+
+Phase 4 (waveform pre-writing) needs to know three things nobody has seen: does the player **accept** a file with complete
+waveform records, does it **show** them before the track is played, and does it **keep** them when the track is played.
+`src/dubcrate/wave_model.py` (the fitted model, `column_values` / `coarse_values` / `records`) and
+`spikes/cdj_card_wavetest.py` (a COPY of a card image with the records written, like `cdj_card_testimage.py`) make the test image.
+
+**Built:** `~/cdj-card/write-test-1.img`, a copy of `cdj-waveform-test-2.img` plus a fifth disc, `CDJ00005`, a **commercial 20-track CD**
+(TOC in `~/cdj-card/CD5 TOC.txt`, tracks 1 to 4 ripped from the mounted AIFFs into `~/cdj-card/cd5-rip/`). Its four waveform slots:
+
+| Track | Written | Tells us |
+|---|---|---|
+| 1 | a sawtooth, 1 to 15 every 15 columns (cannot be mistaken for music) | the player reads and shows our record; with a short play, keep, overwrite or merge |
+| 2 | the model's 100 columns of the track's audio | the realistic case: does it look right, does playing change it |
+| 3 | nothing (an empty slot, track 0) | the player writes its own when played: **ground truth on new music** for checking the model |
+| 4 | the model's first 50 columns, the other 50 left at 0 | does the player fill the unplayed half, and does it replace the written half |
+
+**The owner's steps:** put the image on the SPARE card (`spikes/cdj_card_restore.sh write-test-1 /dev/diskN`, `sudo`, erases the card;
+the card ends up as the four earlier discs plus this one); load the CD; **before playing, look at tracks 1, 2 and 4** (does a waveform show,
+does track 1 show the sawtooth, any `CARD ERROR` / `UNFORMAT`; a photo helps); then play: track 1 for about 40 s (17 columns of its 100)
+and stop, track 2 for about 60 s, tracks 3 and 4 all the way through, no search or jog; eject the disc, eject the card from the Mac, image
+it (`cdj_card_snap.sh write-test-1-after`). Put the card back with `cdj_card_restore.sh cdj-waveform-test-2 /dev/diskN`. If the player
+rejects the card: reformat it in the player (or `dubcrate card format`), restore the earlier image, and tell the agent what the display said.
+
+**Reading the result:** diff the after-image's `CDJ00005.PDJ` against `write-test-1`'s. Track 1 after a short play: all sawtooth = kept;
+real values everywhere = overwritten; real values in the first 17 columns only = merged by column. Track 4: the second half filled by the
+player with values near the model's = merged; the first half unchanged = kept. Track 3 against `wave_model.column_values` of its audio
+is the model's first held-out check.
+
 ## Order of work
 
 ### Phase 0: on the hardware (the owner; about half an hour, none of it destructive)

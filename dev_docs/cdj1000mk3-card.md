@@ -401,7 +401,7 @@ Tones in 0.5 s columns alternate by 2 values (a steady tone reads 4, 2, 4, 2 on 
 (CD frames are 1/75 s)**.
 
 **[inferred] The best model so far** (scratch: `~/cdj-card/wave-analysis2/pnorm_real.py`): causal band-pass of the mono mix (high-pass about
-115, low-pass about 150 Hz), then `(mean of |y|^4 over the first 0.7 of the column) ^ (1/4)`, in dB, `floor((dB + 46) / 2)` capped 0 to 15
+115, low-pass about 150 Hz), then `(mean of |y|^4 over the first 0.7 of the column) ^ (1/4)`, in dB, `floor((dB + 45) / 2)` capped 0 to 15 (46 gives 47% exact but a +0.6 bias; `src/dubcrate/wave_model.py` uses 45: **34% exact, 76% within one, 91% within two, bias +0.2**)
 with the floor of 2. **On the nine real tracks: mean error 1.09 values, 46% exact, 76% within one value; on the tone probes mean error
 1.25.** The peak of the band over the column overshoots real music by 2 to 3 values; the mean undershoots by up to 3; a power mean of
 about 4 is in between. This is an approximation (the exponent, window and corners are fitted, not read off the player).
