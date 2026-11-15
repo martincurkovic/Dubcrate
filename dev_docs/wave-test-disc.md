@@ -18,6 +18,19 @@ Code: `src/dubcrate/wavetest.py` (the audio and the manifest), `src/dubcrate/wav
    if that is on it would rescale every track and spoil the measurement. Do a **Test Only** burn first if you
    like. A CD-R or a CD-RW will do (the disc is 34 minutes, 20 tracks, gapless). Tracks pass through the burn
    pipeline unchanged: `tests/test_wavetest.py` proves it sample for sample, for FLAC and WAV sources.
+   **Or from the command line, in a scratch library** (nothing to remove afterwards, and Normalise is off unless
+   you pass `--levels`; tried as a dry run on 2026-11-15, the track ids are 1 to 20 in order):
+
+   ```sh
+   dc() { uv run dubcrate --library /tmp/wave.db "$@"; }
+   dc import-folder ~/cdj-card/wave-test-disc
+   dc disc new "Wave test" --pregap 0
+   dc disc add 1 --track $(seq 1 20)
+   dc burn 1                       # dry run
+   dc burn 1 --yes --simulate      # laser-off test write, disc in the drive
+   dc burn 1 --yes                 # the burn (ask first: it uses the disc)
+   ```
+
 2. **Play every track all the way through** on a CDJ-1000MK3 with the SD card in, at normal speed, with the pitch
    at 0 and no jog wheel or search (the player fills a record as it plays; skipped parts stay empty). Start with
    an unplayed disc as far as the card goes: **this disc is new to the card**, so its entry and file are made by

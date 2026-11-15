@@ -83,9 +83,11 @@ def build_tracks(disc: Disc, pregap_sectors: int = 0) -> list:
     """Create a DRTrack per disc track, with `pregap_sectors` before tracks 2+.
 
     DiscRecording defaults to 2 s of silence before every track. Track 1 keeps
-    its mandatory lead-in, so we only override the rest. The pregap is marked
-    required so the burn fails, rather than silently falling back to 2 s, if
-    the drive can't honour it.
+    its mandatory lead-in, so we only override the rest. The pregap is NOT marked
+    required: the LiteOn eSAU108 refuses a required 0 ("doesn't support the
+    requested pregap length", 2026-11-15, found by the first real gapless burn),
+    but accepts it asked for politely. **Whether such a disc is really gapless is
+    not known**: check `drutil toc` (`burn_check` says it for an audio burn).
     """
     tracks = []
     for index, t in enumerate(disc.tracks):
@@ -95,7 +97,7 @@ def build_tracks(disc: Disc, pregap_sectors: int = 0) -> list:
         if index > 0:
             props = dict(track.properties())
             props[DR.DRPreGapLengthKey] = pregap_sectors
-            props[DR.DRPreGapIsRequiredKey] = True
+            props[DR.DRPreGapIsRequiredKey] = False
             track.setProperties_(props)
         tracks.append(track)
     return tracks

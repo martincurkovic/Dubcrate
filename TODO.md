@@ -27,6 +27,7 @@
 - [x] SD card sync metadata tab
   - [ ] Try the Sync tab itself on a real card (the command line is proven on hardware; the tab shares its write)
   - [ ] Waveform pre-writing (needs the amplitude scale)
+- [ ] Try `dubcrate card format` on a spare 2 GB card (dev_docs/card-sync.md, "Formatting a card": does the player accept it, and cues synced straight onto it?), then build a GUI for it
 - [ ] Clean up long text labels in settings and add cm/in units (maybe in print dialog too)
   - [x] Check on real paper (and say if the vertical line spacing should shrink too)
   - [x] Make print dialog close when print (and resulting system print dialog is pressed)

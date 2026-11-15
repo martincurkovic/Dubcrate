@@ -63,7 +63,14 @@ Use a blank CD-R (not a CD-RW) and a low speed.
   `drutil toc` showed tracks starting at 00:02.00, 00:44.00 and 01:16.00: a
   **2-second pregap** after tracks 1 and 2. Cause: DiscRecording's default pregap
   is 2 s of silence (`DRPreGapLengthKey`), which we hadn't overridden.
-- **[not tried]** The fix: discs are now gapless by default (`pregap_sectors = 0`,
+- **[hardware 2026-11-15]** The fix as first written (`DRPreGapLengthKey` 0 with `DRPreGapIsRequiredKey` true on
+  tracks 2+) **failed on the LiteOn eSAU108**: "The disc drive doesn't support the requested pregap length",
+  before any track was written (the drive ejects the disc on a failed burn). Test writes (laser off) showed:
+  length 0 with the flag **off** is accepted; length 0 required is refused, even on every track. `build_tracks`
+  now leaves the flag off, and the waveform test disc (20 tracks) was burned that way. **Not known whether that disc
+  is gapless or has 2 s gaps**: nobody has read its TOC (the CLI doesn't run `burn_check`, and the disc was ejected).
+  Non-zero values with the flag on were not reached (the disc ejected after the refusal).
+- **[not tried, superseded above]** The fix: discs are now gapless by default (`pregap_sectors = 0`,
   and `DRPreGapIsRequiredKey` set so a drive that can't do it fails the burn
   rather than silently falling back to 2 s). Expected after the fix: tracks at
   00:02.00, 00:42.00 and 01:12.00. [tests] cover the planning and capacity side.
