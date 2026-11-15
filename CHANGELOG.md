@@ -9,7 +9,7 @@ been tested by the automated tests it says that too.
 
 ## [0.1.0] - not released yet
 
-The first release: macOS (Apple Silicon and Intel), for the CDJ-1000MK3 and other players that read audio CDs.
+The first release: macOS (Apple Silicon and Intel) and, new, Linux (an AppImage), for the CDJ-1000MK3 and other players that read audio CDs.
 
 ### Library and discs
 
@@ -61,6 +61,6 @@ The first release: macOS (Apple Silicon and Intel), for the CDJ-1000MK3 and othe
 
 ### Known limits
 
-- macOS only for now; the rekordbox importer is tried with rekordbox 7, and version 6 is untested.
+- macOS is the system Dubcrate has been used on. **Linux** (an AppImage, x86_64) is built and opened by an automated test, but has not been run on a real desktop, a drive or a card; install `cdrdao` with your package manager to burn. Windows is not built yet. The rekordbox importer is tried with rekordbox 7, and version 6 is untested.
 - The app is **not signed**, so macOS asks you to allow it the first time (see the README).
 - Written for the CDJ-1000MK3's card (firmware 2.20); the card format of other players has not been looked at.

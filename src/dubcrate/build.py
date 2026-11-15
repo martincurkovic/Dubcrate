@@ -1,8 +1,9 @@
 """Turn a planned disc from the library into something a burner can burn."""
 
 import logging
+import sys
 import wave
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 
@@ -298,24 +299,49 @@ def remember_rendered(
         lib.set_waveform(track_id, values)
 
 
+WINDOWS_PATH_LIMIT = 259  # MAX_PATH is 260, counting the terminating NUL
+
+
+def path_too_long(paths: Iterable[Path]) -> Path | None:
+    """The first of `paths` Windows can't make (longer than `WINDOWS_PATH_LIMIT`), else None; always
+    None on any other system. An MP3 disc nested 8 folders deep, each with a 60-character name, goes
+    past it (Python and ffmpeg both stop at 260 unless a Windows setting that most machines don't have is on)."""
+    if sys.platform != "win32":
+        return None
+    return next((p for p in paths if len(str(p)) > WINDOWS_PATH_LIMIT), None)
+
+
+def path_too_long_message(path: Path) -> str:
+    return (
+        f"Windows can't make a file whose whole path is longer than {WINDOWS_PATH_LIMIT} characters, "
+        f"and this one is {len(str(path))}: “{path}”. Give the disc's folders shorter names, or nest "
+        "them less, then try again."
+    )
+
+
 def _render_mp3_plan(plan: BurnPlan, workdir: Path, say: Progress) -> Rendered:
     """Stage an MP3 disc: a folder named for the disc, holding its own folders, and in each
     folder one MP3 per track numbered from 1 (so a player that sorts by name keeps the order)."""
     folder = workdir / mp3.volume_name(plan.name)
-    folder.mkdir(parents=True, exist_ok=True)
-    data = DataDisc(title=folder.name, folder=folder)
     where: dict[int | None, Path] = {None: folder}
     for d in plan.dirs:  # parents first
         where[d.id] = where[d.parent_id] / mp3.dir_name(d.name)
+    numbers: dict[int | None, int] = {}
+    destinations: list[Path] = []
+    for t in plan.tracks:
+        number = numbers[t.dir_id] = numbers.get(t.dir_id, 0) + 1
+        destinations.append(where[t.dir_id] / mp3.file_name(number, t.artist, t.title))
+    if too_long := path_too_long([*where.values(), *destinations]):
+        raise BuildError(path_too_long_message(too_long))
+    folder.mkdir(parents=True, exist_ok=True)
+    data = DataDisc(title=folder.name, folder=folder)
+    for d in plan.dirs:
         where[d.id].mkdir(
             exist_ok=True
         )  # (empty folders are kept: they are part of the plan)
     used = mp3.FOLDER_OVERHEAD_SECTORS * len(plan.dirs)
-    numbers: dict[int | None, int] = {}
-    for done, t in enumerate(plan.tracks, start=1):
+    for done, (t, dst) in enumerate(zip(plan.tracks, destinations), start=1):
         say(f"preparing {done}/{len(plan.tracks)}: {t.title}")
-        number = numbers[t.dir_id] = numbers.get(t.dir_id, 0) + 1
-        dst = where[t.dir_id] / mp3.file_name(number, t.artist, t.title)
         try:
             size = render_mp3(
                 Path(t.path),

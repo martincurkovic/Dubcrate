@@ -151,3 +151,102 @@ def test_the_packaging_tools_are_a_dependency_group_not_a_runtime_dependency():
     assert (
         "build" in project["tool"]["uv"]["default-groups"]
     )  # the build scripts' `uv sync`
+
+
+# -- the Linux build (scripts/build_linux.sh, build_ffmpeg_linux.sh, assets/linux, the AppImage) -----------
+
+LINUX_SCRIPT = (ROOT / "scripts" / "build_linux.sh").read_text(encoding="utf-8")
+FFMPEG_MACOS = (ROOT / "scripts" / "build_ffmpeg_macos.sh").read_text(encoding="utf-8")
+FFMPEG_LINUX = (ROOT / "scripts" / "build_ffmpeg_linux.sh").read_text(encoding="utf-8")
+
+
+def assigned(script: str, name: str) -> str:
+    found = re.search(rf'^{name}="([^"]*)"', script, re.MULTILINE)
+    assert found, name
+    return found.group(1)
+
+
+def data_args(script: str) -> list[str]:
+    return re.findall(r"--include-data-(?:dir|files)=[^\s\"]+", script)
+
+
+def test_the_linux_and_macos_builds_bundle_the_same_data():
+    assert data_args(LINUX_SCRIPT) and data_args(LINUX_SCRIPT) == data_args(BUILD_SCRIPT)  # fmt: skip
+    sources = re.findall(r"--include-data-(?:dir|files)=([^=\s]+)=", LINUX_SCRIPT)
+    for source in sources:
+        if not source.startswith("../build/"):  # (ffmpeg: made by the script)
+            assert (ROOT / "src" / source).resolve().exists(), source
+
+
+def test_the_linux_build_has_no_macos_parts_and_names_what_it_needs():
+    code = "\n".join(l for l in LINUX_SCRIPT.splitlines() if not l.lstrip().startswith("#"))  # fmt: skip
+    for macos in ("MACOSX", "codesign", "plutil", "dmgbuild", "sed -i ''", "sysctl", "objc", "DiscRecording"):  # fmt: skip
+        assert macos not in code, macos
+    for module in ("pyrekordbox", "sqlcipher3", "cffi", "_cffi_backend"):
+        assert module in LINUX_SCRIPT, module  # (found by name, so named)
+    assert assigned(LINUX_SCRIPT, "APP_NAME") == assigned(BUILD_SCRIPT, "APP_NAME")
+    assert "build_ffmpeg_linux.sh" in LINUX_SCRIPT and "dubcrate/bin" in LINUX_SCRIPT
+    assert "patchelf" in LINUX_SCRIPT and "build-essential" in LINUX_SCRIPT
+
+
+def test_both_ffmpeg_builds_are_the_same_lgpl_build():
+    for name in ("FFMPEG_VERSION", "FFMPEG_SHA256", "LAME_VERSION", "LAME_SHA256"):
+        assert assigned(FFMPEG_LINUX, name) == assigned(FFMPEG_MACOS, name), name
+    for needed in ("--enable-libmp3lame", "--enable-encoder=pcm_s16le,libmp3lame", "--enable-muxer=pcm_s16le", "--disable-autodetect"):  # fmt: skip
+        assert needed in FFMPEG_LINUX, needed
+    for banned in ("--enable-gpl", "--enable-nonfree", "--enable-version3"):
+        assert not re.search(rf"^\s*{banned}\b", FFMPEG_LINUX, re.MULTILINE), banned
+    assert (
+        "--enable-gpl" in FFMPEG_LINUX
+    )  # (the check that refuses a GPL build names it)
+    configure = lambda text: re.findall(
+        r"^\s+(--(?:enable|disable)-[^\s\\]+)", text, re.MULTILINE
+    )
+    shared = [c for c in configure(FFMPEG_MACOS) if c != "--enable-zlib"]
+    assert set(shared) <= set(configure(FFMPEG_LINUX)) | {"--enable-gpl"}
+
+
+def test_the_appimage_is_assembled_from_files_that_exist_and_agree():
+    desktop = (ROOT / "assets" / "linux" / "Dubcrate.desktop").read_text(encoding="utf-8")  # fmt: skip
+    fields = dict(line.split("=", 1) for line in desktop.splitlines() if "=" in line)
+    assert fields["Name"] == "Dubcrate" and fields["Exec"] == "main.bin"
+    assert fields["Icon"] == assigned(LINUX_SCRIPT, "APP_NAME")  # AppDir/Dubcrate.png
+    assert "AudioVideo" in fields["Categories"].split(";") and fields["Terminal"] == "false"  # fmt: skip
+    assert 'cp "$ROOT_DIR/assets/linux/$APP_NAME.desktop"' in LINUX_SCRIPT
+    assert 'cp "$ROOT_DIR/assets/icon/Dubcrate-512.png" "$APPDIR/$APP_NAME.png"' in LINUX_SCRIPT  # fmt: skip
+    assert 'exec "$HERE/usr/bin/main.bin"' in LINUX_SCRIPT
+    icon = (ROOT / "assets" / "icon" / "Dubcrate-512.png").read_bytes()
+    assert icon[:8] == b"\x89PNG\r\n\x1a\n" and icon[16:24] == (512).to_bytes(4, "big") * 2  # fmt: skip
+
+
+def test_the_appimage_tool_is_pinned_with_a_hash_for_each_architecture():
+    assert re.fullmatch(r"\d+\.\d+\.\d+", assigned(LINUX_SCRIPT, "APPIMAGETOOL_VERSION"))  # fmt: skip
+    for arch in ("X86_64", "AARCH64"):
+        assert re.fullmatch(r"[0-9a-f]{64}", assigned(LINUX_SCRIPT, f"APPIMAGETOOL_SHA256_{arch}"))  # fmt: skip
+    assert (
+        "sha256sum -c" in LINUX_SCRIPT and "--appimage-extract-and-run" in LINUX_SCRIPT
+    )
+
+
+def test_the_linux_names_the_script_makes_are_the_ones_the_workflow_uploads_and_smoke_tests():
+    assert 'IMAGE="$APP_NAME-linux-$ARCH.AppImage"' in LINUX_SCRIPT
+    assert 'zip -q "$APP_NAME-linux-$ARCH.zip" "$IMAGE"' in LINUX_SCRIPT
+    job = BUILD_WORKFLOW.split("  build-linux:")[1].split("\n  release:")[0]
+    assert "runs-on: ubuntu-24.04" in job and "build_linux.sh" in job
+    assert "${{ env.APP_NAME }}-linux-x86_64.zip" in job
+    assert (
+        "$APP_NAME-linux-x86_64.AppImage" in job
+        and "src/$APP_NAME.dist/main.bin" in job
+    )
+    assert job.count("--smoke-test=") == 2  # the app, and the AppImage that carries it
+    assert "build_ffmpeg_linux.sh" in job and "needs: [test, test-macos]" in job
+    assert "build-linux" in BUILD_WORKFLOW.split("  release:")[1].split("steps:")[0]
+
+
+def test_the_docker_build_wraps_the_same_script_and_checks_the_result():
+    wrapper = (ROOT / "scripts" / "build_linux_docker.sh").read_text(encoding="utf-8")  # fmt: skip
+    dockerfile = (ROOT / "scripts" / "linux-build.Dockerfile").read_text(encoding="utf-8")  # fmt: skip
+    assert "scripts/build_linux.sh" in wrapper and wrapper.count("--smoke-test=") == 2
+    for needed in ("build-essential", "patchelf", "nasm", "zip", "file", "zlib1g-dev"):
+        assert needed in dockerfile, needed
+        assert needed in LINUX_SCRIPT, needed

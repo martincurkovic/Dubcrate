@@ -49,7 +49,7 @@ with CD-TEXT so track titles appear on the CDJ.
 
 ## What you need
 
-- **A Mac.** Windows and Linux are planned in the very near future.
+- **A Mac**, or **Linux** (an AppImage, new: not yet tried on a real desktop, and you install `cdrdao` with your package manager to burn). Windows is planned.
 - **A CD burner** that can write CD-R and blank
   **CD-R** discs. CD-RW works, but is not recommended for old CD players.
 - **[ffmpeg](https://ffmpeg.org/)**, which Dubcrate uses to read tracks and prepare

@@ -7,7 +7,7 @@ on:
       - "v*.*.*"
 
 env:
-  # the one place the app's name lives for CI; scripts/build_macos.sh and the assets under assets/ use the same name
+  # the one place the app's name lives for CI; scripts/build_macos.sh, scripts/build_linux.sh and the assets under assets/ use the same name
   APP_NAME: Dubcrate
 
 jobs:
@@ -89,8 +89,50 @@ jobs:
           name: ${{ env.APP_NAME }}-macos-intel
           path: ${{ env.APP_NAME }}-macos-intel.dmg
 
+  build-linux:
+    # the push-time tests already ran on Linux (the `test` job), so this only builds
+    needs: [test, test-macos]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version-file: ".python-version"
+      - uses: astral-sh/setup-uv@v6
+      - name: Sync environment
+        run: uv sync
+      - name: Install build tools
+        # Nuitka compiles C (build-essential, patchelf); nasm is for ffmpeg's x86 code; the rest are what Qt loads, so the built app
+        # can be opened once here (the smoke test)
+        run: sudo apt-get update && sudo apt-get install -y build-essential patchelf nasm zip file zlib1g-dev qt6-qpa-plugins libegl1 libgl1 libfontconfig1 libnss3 libasound2t64 libpulse0 libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-randr0 libxcb-render-util0 libxcb-shape0 libxcb-shm0 libxcb-sync1 libxcomposite1 libxdamage1 libxi6 libxtst6 fonts-dejavu-core
+      - name: Cache the ffmpeg build
+        # scripts/build_linux.sh builds LGPL ffmpeg and ffprobe once (scripts/build_ffmpeg_linux.sh, a few minutes) and bundles them
+        uses: actions/cache@v4
+        with:
+          path: build/ffmpeg
+          key: ffmpeg-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/build_ffmpeg_linux.sh') }}
+      - name: Build
+        run: |
+          chmod +x scripts/build_linux.sh scripts/build_ffmpeg_linux.sh
+          ./scripts/build_linux.sh  # also builds $APP_NAME-linux-x86_64.AppImage and .zip at the repo root
+      - name: Smoke-test the built app
+        run: |
+          echo "Running src/$APP_NAME.dist/main.bin"
+          QT_QPA_PLATFORM=offscreen "src/$APP_NAME.dist/main.bin" --smoke-test=smoke.txt || { cat smoke.txt; exit 1; }
+          cat smoke.txt
+      - name: Smoke-test the AppImage
+        run: |
+          QT_QPA_PLATFORM=offscreen "./$APP_NAME-linux-x86_64.AppImage" --appimage-extract-and-run --smoke-test=smoke-appimage.txt || { cat smoke-appimage.txt; exit 1; }
+          cat smoke-appimage.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.APP_NAME }}-linux
+          path: ${{ env.APP_NAME }}-linux-x86_64.zip
+
   release:
-    needs: [build-macos-arm, build-macos-intel]
+    needs: [build-macos-arm, build-macos-intel, build-linux]
     if: github.ref_type == 'tag'
     runs-on: ubuntu-latest
     permissions:

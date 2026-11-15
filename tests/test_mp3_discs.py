@@ -3,6 +3,7 @@
 import shutil
 import subprocess
 import sys
+from pathlib import Path
 
 import pytest
 from PySide6.QtWidgets import QMessageBox
@@ -819,3 +820,46 @@ def test_the_command_line_makes_folders_and_adds_into_them(lib, capsys):
     assert (
         run("disc", "mkdir", str(disc.id), "house") == 1
     )  # a clash is an error, not a traceback
+
+
+# -- Windows' 260-character path limit ------------------------------------------------------
+
+
+def test_only_windows_has_a_path_limit(monkeypatch):
+    from dubcrate import build
+
+    long = Path("/" + "a" * 300)
+    monkeypatch.setattr(sys, "platform", "darwin")
+    assert build.path_too_long([long]) is None
+    monkeypatch.setattr(sys, "platform", "linux")
+    assert build.path_too_long([long]) is None
+    monkeypatch.setattr(sys, "platform", "win32")
+    assert build.path_too_long([Path("C:/short"), long]) == long
+    edge = Path("x" * build.WINDOWS_PATH_LIMIT)
+    assert build.path_too_long([edge]) is None
+    assert build.path_too_long([Path("x" * (build.WINDOWS_PATH_LIMIT + 1))])
+
+
+def test_the_message_says_how_long_and_how_to_fix_it():
+    from dubcrate import build
+
+    text = build.path_too_long_message(Path("C:/" + "a" * 300))
+    assert "259 characters" in text and "303" in text and "shorter names" in text
+
+
+@needs_ffmpeg
+def test_an_mp3_disc_too_deep_for_windows_is_refused_before_anything_is_made(lib, tmp_path, monkeypatch):  # fmt: skip
+    from dubcrate import build
+
+    disc = lib.create_disc("Deep", kind="mp3")
+    lib.add_to_disc(disc, track_ids(lib))
+    folder = lib.create_disc_dir(disc, "A" * 40)
+    inner = lib.create_disc_dir(disc, "B" * 40, parent_id=folder)
+    lib.add_to_disc(disc, track_ids(lib)[:1], dir_id=inner)
+    plan = plan_burn(lib, disc)
+    monkeypatch.setattr(sys, "platform", "win32")
+    monkeypatch.setattr(build, "WINDOWS_PATH_LIMIT", 60)
+    work = tmp_path / "work"
+    with pytest.raises(BuildError, match="Windows can't make a file whose whole path"):
+        render_plan(plan, work, print)
+    assert not work.exists() or not list(work.rglob("*.mp3"))

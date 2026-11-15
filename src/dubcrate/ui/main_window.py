@@ -52,7 +52,7 @@ from .about_dialog import AboutDialog, NoticesDialog
 from .burn_dialog import BurnDialog, BurnerFactory
 from .disc_tree import COLUMN_WIDTH, DiscTree
 from .disc_view import DiscView
-from .explorer import ExplorerTree, volume_parents
+from .explorer import ExplorerTree, needs_polling, volume_parents
 from .help_dialog import show_help_dialog
 from .label_dialog import LabelDialog
 from .models import (
@@ -247,7 +247,7 @@ class MainWindow(QMainWindow):
         library_layout.addWidget(self.tree, 1)
 
         # the Explorer: folders on this Mac, read when you open them, with nothing imported
-        self.explorer_tree = ExplorerTree(watch=volume_parents())
+        self.explorer_tree = ExplorerTree(watch=volume_parents(), poll=needs_polling())
         self.explorer_tree.folder_selected.connect(self._on_explorer_folder)
         explorer_page = self._folder_page("Explorer", self.explorer_tree)
         self.explorer_tree.pin_requested.connect(self.pin_folder)
@@ -256,7 +256,7 @@ class MainWindow(QMainWindow):
 
         # Sync: the CDJ's card on the left, the discs and what a sync would do in the middle
         self.card_panel = CardPanel(
-            watch=volume_parents()
+            watch=volume_parents(), poll=needs_polling()
         )  # (a card shows up by itself)
         self.sync_view = SyncView(self._lib, can_eject=self.card_panel.is_volume)
         self.card_panel.card_changed.connect(self.sync_view.set_card)

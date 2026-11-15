@@ -1212,3 +1212,24 @@ def test_the_analyse_button_can_be_cancelled_like_a_sync(writing, monkeypatch, t
     assert "Cancelled: 3 of 12" in writing.said[-1]
     assert view.analyse_note.text() == "9 tracks not analysed yet."
     assert view.analyse_button.isEnabled()  # it can carry on
+
+
+def test_a_polling_card_panel_looks_only_while_shown_and_finds_a_card_that_appears(
+    qapp, plugged, wait_for
+):
+    panel = CardPanel(volumes=plugged.volumes, poll=True)
+    assert not panel._poller.is_running()
+    panel.show()
+    assert panel._poller.is_running()
+    panel._poller._volumes = plugged.volumes
+    panel._poller.start()
+    card = plugged.insert("CARD")
+    assert panel._poller.check()
+    assert wait_for(lambda: panel.row_for(card) is not None)
+    panel.hide()
+    assert not panel._poller.is_running()
+    panel.close()
+
+
+def test_a_card_panel_that_can_watch_folders_does_not_poll(qapp):
+    assert CardPanel(volumes=list)._poller is None

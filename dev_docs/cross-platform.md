@@ -122,8 +122,8 @@ injectable runner, an expected-error exception with plain words, tests against s
 - [x] **2. Wording**: "Eject it in Finder" and the other Mac-only phrases use `card_format.eject_hint()` or say the OS neutrally.
 - [x] **3. Read the TOC** on Linux (kernel ioctls) and Windows (`IOCTL_CDROM_READ_TOC`, `ctypes`) in `drive_toc.py`, so `burn_check` runs after any burn. Tested against made-up answers only. **[not tried]**
 - [x] **4. `pycdlib`** makes the MP3 disc's ISO on every OS (`iso.py`: Joliet names, Rock Ridge, numbered 8.3 names underneath, ASCII volume label); the external-tool lookup and the `hdiutil` branch are gone. Read back with `xorriso` and `isoinfo`; the smoke test makes an image in a built app. **Not burned and played** on a real drive.
-- [~] **5. Windows reserved names**: `mp3.dir_name` gives `CON`, `NUL`, `COM1`... an underscore (done, tested). The 260-character path limit for staged files is still **unchecked** on a real Windows machine.
-- [ ] **6. Notice a card on Windows** (poll while the Sync tab shows).
+- [x] **5. Windows reserved names and the path limit**: `mp3.dir_name` gives `CON`, `NUL`, `COM1`... an underscore; on Windows `build.path_too_long` refuses an MP3 disc whose staged paths would pass 259 characters (before anything is made), with a message that says to shorten or nest less (`build.WINDOWS_PATH_LIMIT`). Tested with a faked platform. **[not tried]** on Windows, where whether a longer path would really fail (it depends on a registry setting) is unchecked.
+- [x] **6. Notice a card on Windows**: `explorer.DrivePoller` looks at `mounted_volumes()` every 3 s while the Explorer tree or the card list is on show, only where `needs_polling()` (no folder to watch: Windows), and refreshes through the usual settle timer. Tested with fake drive lists. **[not tried]** on Windows.
 - [ ] Then Phases 3 to 5 below (burn, packaging).
 
 ## Roadmap
@@ -236,12 +236,11 @@ injectable runner, an expected-error exception with plain words, tests against s
 
 ### Phase 5: packaging and release
 
-- [ ] `build.yml`: a job per OS producing an installer or archive; the smoke test
-  (`--smoke-test=FILE`) runs against each build, as for macOS. The release job already runs on Linux.
-- [ ] ffmpeg: macOS bundles an LGPL build (`scripts/build_ffmpeg_macos.sh`, looked up by
-  `tools.find_tool` before `PATH`). Linux and Windows still need their own: the same flags would
-  do (LGPL, static, LAME built in), but nothing was tried there. Decide per OS.
-- [ ] Update `BUILDING.md`, `README.md`, `CONTRIBUTING.md` and the guide per OS.
+- [~] `build.yml`: a job per OS producing an installer or archive; the smoke test
+  (`--smoke-test=FILE`) runs against each build, as for macOS. **Linux done (2026-11-15)**: `build-linux` (ubuntu-24.04, x86_64) builds the AppImage with `scripts/build_linux.sh`, opens the app and the AppImage once, and uploads `Dubcrate-linux-x86_64.zip`, which the draft release includes; the model was jv-studio's. Windows is still to do (jv-studio's `build_windows.ps1` and Inno Setup `.iss`).
+- [~] ffmpeg: macOS bundles an LGPL build (`scripts/build_ffmpeg_macos.sh`, looked up by
+  `tools.find_tool` before `PATH`). **Linux too (`scripts/build_ffmpeg_linux.sh`: the same pinned sources and options, checked to be LGPL and to need only libc and zlib).** Windows still needs its own (MSYS2 or a cross build).
+- [~] Update `BUILDING.md`, `README.md`, `CONTRIBUTING.md` and the guide per OS: `BUILDING.md` and the README say what Linux needs and how it is built; the guide and CONTRIBUTING still talk about a Mac in places.
 
 ## What we know about cdrdao (read before relying on it)
 

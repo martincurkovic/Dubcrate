@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Dubcrate
+GenericName=CD burner for DJs
+Comment=Plan, burn and label audio and MP3 CDs for CDJs, and sync cues and waveforms to the player's SD card
+Exec=main.bin
+Icon=Dubcrate
+Categories=AudioVideo;Audio;DiscBurning;
+Terminal=false

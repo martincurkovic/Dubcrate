@@ -1238,3 +1238,64 @@ def test_a_tab_picked_as_soon_as_it_is_added_is_scrolled_into_view(qapp):
     viewport = bar._area.viewport()
     assert viewport.rect().contains(button.mapTo(viewport, button.rect().center()))
     bar.hide()
+
+
+# -- a system with no folder to watch (Windows): the drives are looked at every few seconds ----
+
+
+def test_the_poller_says_changed_only_when_the_drives_are_not_what_they_were(qapp):
+    drives = [Path("D:/")]
+    poller = explorer.DrivePoller(volumes=lambda: list(drives))
+    told = []
+    poller.changed.connect(lambda: told.append(1))
+    poller.start()  # (the first look only remembers)
+    assert told == [] and poller.is_running()
+    assert poller.check() is False
+    drives.append(Path("E:/"))
+    assert poller.check() is True and told == [1]
+    assert poller.check() is False and told == [1]  # (the same set again: nothing new)
+    drives.clear()
+    assert poller.check() is True and told == [1, 1]
+    poller.stop()
+    assert not poller.is_running()
+
+
+def test_a_drive_that_cannot_be_listed_for_a_moment_is_not_a_change(qapp):
+    def listing():
+        raise OSError("busy")
+
+    poller = explorer.DrivePoller(volumes=lambda: [Path("D:/")])
+    poller.start()
+    poller._volumes = listing
+    assert poller.check() is False
+
+
+def test_systems_with_no_folder_to_watch_poll(monkeypatch):
+    monkeypatch.setattr(sys, "platform", "win32")
+    assert explorer.needs_polling()
+    monkeypatch.setattr(sys, "platform", "darwin")
+    assert not explorer.needs_polling()
+    monkeypatch.setattr(sys, "platform", "linux")
+    assert not explorer.needs_polling()
+
+
+def test_a_polling_tree_looks_only_while_it_is_on_show_and_lists_a_drive_that_appears(qapp, wait_for):  # fmt: skip
+    drives = [("Gig Stick", Path("/gig"), True)]
+    widget = ExplorerTree(roots=lambda: list(drives), poll=True)
+    assert not widget._poller.is_running()  # (not shown yet)
+    widget.resize(300, 400)
+    widget.show()
+    assert widget._poller.is_running()
+    poller = widget._poller
+    poller._volumes = lambda: [name for name, _p, _v in drives]
+    poller.start()
+    drives.append(("Backup", Path("/backup"), True))
+    assert poller.check()
+    assert wait_for(lambda: root_names(widget) == ["Gig Stick", "Backup"])
+    widget.hide()
+    assert not widget._poller.is_running()
+    widget.close()
+
+
+def test_a_tree_that_can_watch_folders_does_not_poll(qapp):
+    assert ExplorerTree(roots=list)._poller is None

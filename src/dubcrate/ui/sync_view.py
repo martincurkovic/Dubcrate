@@ -61,7 +61,7 @@ from dubcrate.library.rekordbox import RekordboxError, read_cues
 from dubcrate.library.waves import measure_waveforms, store_waveforms
 
 from . import theme
-from .explorer import mounted_volumes
+from .explorer import DrivePoller, mounted_volumes
 from .format_card_dialog import FormatCardDialog
 from .glyph_widgets import GlyphButton, GlyphIcon, close_glyph, eject_glyph, ink
 from .label_dialog import disc_paths
@@ -269,6 +269,7 @@ class CardPanel(QWidget):
         volumes: Callable[[], list[Path]] | None = None,
         parent: QWidget | None = None,
         watch: Sequence[Path] = (),
+        poll: bool = False,
     ):
         super().__init__(parent)
         self._volumes = volumes  # None: the drives that are plugged in
@@ -323,7 +324,21 @@ class CardPanel(QWidget):
         self._settle.setSingleShot(True)  # card to finish mounting
         self._settle.setInterval(CARD_SETTLE_MS)
         self._settle.timeout.connect(self._drives_changed)
+        self._poller: DrivePoller | None = None
+        if poll:  # (Windows: a drive is a letter, not a folder to watch)
+            self._poller = DrivePoller(self)
+            self._poller.changed.connect(self._settle.start)
         self._watch_folders()
+
+    def showEvent(self, event) -> None:
+        if self._poller is not None:
+            self._poller.start()
+        super().showEvent(event)
+
+    def hideEvent(self, event) -> None:
+        if self._poller is not None:
+            self._poller.stop()
+        super().hideEvent(event)
 
     # -- finding cards -------------------------------------------------------------
 

@@ -12,7 +12,15 @@ import sys
 from collections.abc import Callable
 from pathlib import Path
 
-from PySide6.QtCore import QFileSystemWatcher, QModelIndex, QPoint, Qt, QTimer, Signal
+from PySide6.QtCore import (
+    QFileSystemWatcher,
+    QModelIndex,
+    QObject,
+    QPoint,
+    Qt,
+    QTimer,
+    Signal,
+)
 from PySide6.QtGui import QStandardItem, QStandardItemModel
 from PySide6.QtWidgets import QAbstractItemView, QMenu, QTreeView
 
@@ -147,6 +155,61 @@ def volume_parents() -> list[Path]:
     return [*_linux_bases(), Path("/run/media")]
 
 
+DRIVE_POLL_MS = 3000  # how often a list that can't watch a folder looks at the drives
+
+
+def needs_polling() -> bool:
+    """Whether a drive plugged in can't be noticed by watching folders (Windows, whose drives are
+    letters), so the lists look at the drives every few seconds while they are on show instead."""
+    return not volume_parents()
+
+
+class DrivePoller(QObject):
+    """Looks at `mounted_volumes()` every `interval_ms` while started and says `changed` when the set
+    of drives is not what it was (the first look only remembers it). Listing drives is a couple of
+    cheap system calls, so this runs on the GUI thread."""
+
+    changed = Signal()
+
+    def __init__(
+        self,
+        parent: QObject | None = None,
+        volumes: Callable[[], list[Path]] | None = None,
+        interval_ms: int = DRIVE_POLL_MS,
+    ):
+        super().__init__(parent)
+        self._volumes = volumes or mounted_volumes
+        self._last: tuple[str, ...] | None = None
+        self._timer = QTimer(self)
+        self._timer.setInterval(interval_ms)
+        self._timer.timeout.connect(self.check)
+
+    def _snapshot(self) -> tuple[str, ...]:
+        try:
+            return tuple(str(p) for p in self._volumes())
+        except OSError:
+            return self._last or ()
+
+    def start(self) -> None:
+        self._last = self._snapshot()
+        self._timer.start()
+
+    def stop(self) -> None:
+        self._timer.stop()
+
+    def is_running(self) -> bool:
+        return self._timer.isActive()
+
+    def check(self) -> bool:
+        """Look now; True (and `changed`) if the drives differ from the last look."""
+        now = self._snapshot()
+        differs = self._last is not None and now != self._last
+        self._last = now
+        if differs:
+            self.changed.emit()
+        return differs
+
+
 def volume_label(volume: Path) -> str:
     """A drive's name for the tree: its folder name, or for a Windows drive "D:"."""
     return volume.name or str(volume).rstrip("\\/")
@@ -193,8 +256,11 @@ class ExplorerTree(QTreeView):
         roots: Callable[[], list[tuple[str, Path, bool]]] | None = None,
         watch: list[Path] | None = None,
         contents_of: Path | None = None,
+        poll: bool = False,
     ):
         """`watch`: folders where a drive appears; the rows are listed again when one changes.
+        `poll`: for a system with no such folder (`needs_polling()`): the drives are looked at every
+        few seconds while the tree is on show.
 
         `contents_of`: show what is inside this folder as the top level, not the folder itself (a
         pinned folder's tab already says which folder it is). The folder's own files are what is
@@ -227,7 +293,21 @@ class ExplorerTree(QTreeView):
         )  # moment for the drive to finish mounting
         self._drives_timer.setInterval(DRIVE_SETTLE_MS)
         self._drives_timer.timeout.connect(self._drives_changed)
+        self._poller: DrivePoller | None = None
+        if poll:
+            self._poller = DrivePoller(self)
+            self._poller.changed.connect(self._drives_timer.start)
         self._watch_folders()
+
+    def showEvent(self, event) -> None:
+        if self._poller is not None:
+            self._poller.start()
+        super().showEvent(event)
+
+    def hideEvent(self, event) -> None:
+        if self._poller is not None:
+            self._poller.stop()
+        super().hideEvent(event)
 
     # -- the rows --------------------------------------------------------
 

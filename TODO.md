@@ -90,6 +90,8 @@
 
 ### Linux and Windows
 
+- [ ] Run the Linux AppImage on a real desktop (Ubuntu or Fedora): open it, play a preview, burn a test disc, eject a card (`dev_docs/linux-test-plan.md`); then try it on an older glibc, since an AppImage built on Ubuntu 24.04 needs 2.39 or newer ([BUILDING.md](BUILDING.md)).
+- [ ] Build for Windows: a build script, a `build.yml` job and an installer (`jv-studio`'s `build_windows.ps1` and Inno Setup are the model), and an LGPL ffmpeg for it ([cross-platform.md](dev_docs/cross-platform.md), Phase 5).
 - [ ] Try eject (card and disc) and the disc's TOC reader on a real Linux and a real Windows machine (`eject.py`, `drive_toc.py`; tested against stand-in commands only) ([cross-platform.md](dev_docs/cross-platform.md)).
 - [x] Use `pycdlib` to make the MP3 disc's ISO on every OS, so no `xorriso` is needed and Windows can make MP3 discs ([cross-platform.md](dev_docs/cross-platform.md), Phase 6 step 4).
 - [ ] Burn an MP3 disc from a `pycdlib` image (`dubcrate export`'s `disc.iso`, in Brasero or Finder, or `cdrdao` on Linux) and play it in a CDJ and a car player; try a disc 8 folders deep ([cross-platform.md](dev_docs/cross-platform.md)).
