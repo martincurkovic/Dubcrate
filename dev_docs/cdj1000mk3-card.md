@@ -341,6 +341,83 @@ firmware's `TEXT_WAVE_MODE` suggests this is the waveform the display shows **[i
   `CSUM`, every byte of them is accounted for, and tracks played at length (so the BPM counter
   had run) added nothing but waveform. The firmware's tag table has no BPM chunk either.
 
+### The waveform test disc, played (2026-11-15)
+
+The disc (`wave-test-disc.md`: 20 tracks, 34:00, burned by `dubcrate burn` with a gapless TOC that matched
+the plan exactly) was played through once on the CDJ-1000MK3 (firmware 2.20) with the card in; the card was
+imaged (`~/cdj-card/cdj-waveform-test.img`) and `PIONEER` copied to `~/cdj-card/wave-post-cdj`. It is the card's
+third disc, `CDJ00003`, found by its TOC (lead-out 34:02.00), **so a Dubcrate-burned disc's computed ID is what the
+player makes: gap (d) in "Gaps" is answered**. All 20 tracks have complete records (50 of 50 and 100 of 100
+values), 2,384 bytes of file. `wavefit.analyse` (written for a peak or RMS rule on 100 columns) found neither: its best
+statistic still put 8% of column pairs the wrong way round, and its "scale" was meaningless. Looking at the values
+by segment, **[measured]** the player's value is **not the level of the full-range signal**:
+
+- A **1 kHz sine** reads 1 below about -42 dBFS peak, **2 from -39 to -3 dBFS** (flat, however loud) and 3 at 0 dBFS.
+  The same for every tone from 1 kHz to 16 kHz at -12 and at -30 dBFS, and for sine, square and triangle at equal
+  RMS. Track 4 (20 dB quieter) steps from 1 to 2 at the same absolute level, not at its own loudest part.
+- **Low tones read high, and loudness-dependent**: at -12 dBFS, 31.5 Hz reads 2, 63 Hz 6, **125 Hz 12-13**, 250 Hz
+  9-11, 500 Hz 3-4, 1 kHz 2; at -30 dBFS, 125 Hz reads 3 (12 down 9 for 18 dB: **about 2 to 2.5 dB per value**).
+- Pink noise (bass-heavy) climbs smoothly with level, 1 at RMS -60 to 11 at -12, again about 2 dB per value;
+  white noise at the same RMS reads 2 to 6. Narrow pulses (broadband, a strong bass line) read 12-14.
+- Silence, dither and anything below about -44 dBFS RMS read 1.
+
+**Corrected after disc 2 (same day).** The first two readings above (full-range peak or RMS; then 50 blocks with two values) were
+both wrong in details; disc 2 (below) fixed them. What follows is the current best reading.
+
+### Disc 2: probes and real music (2026-11-15)
+
+Disc 2 (`wave-test-disc.md`, "Disc 2": 10 probe tracks, then nine real tracks from the owner's library, 63 minutes, burned and
+played in full) is the card's fourth disc, `CDJ00004`, found by its TOC (lead-out 63:09.64). Files: `~/cdj-card/wave-post-cdj-2`, the
+image `~/cdj-card/cdj-waveform-test-2.img`, the exact audio `~/cdj-card/wave2-export/`, the scratch analysis `~/cdj-card/wave-analysis2/`.
+
+**[measured] The structure.** A track has **100 columns, each 1/100 of its length** (1 s on a 100 s track, 0.5 s on a 50 s one, 3 s on
+a 300 s one), and **the audio of column k starts at k times that length: no shift**. `W002` holds them **in pairs per byte with the LOW
+nibble first in time** (the high nibble is the later column); the earlier assumption "high nibble first" was backwards, and every earlier
+"shift of 1 s" and "two measurements per block" came from reading the pairs the wrong way round. `W001` (50 values) is about the mean of each
+pair. Proof: single 125 Hz events of 0.5 s, 1 s, 2 s and 3 s land in the right nibbles of the right bytes (a 0.5 s event at 41.0 s
+is in block 20's high nibble; a 3 s event at 74 to 77 s fills block 37's two nibbles and block 38's low one); the disc-1 bursts (all
+in the first second of their 2 s block) were all in low nibbles.
+
+**[measured] The scale: 2 dB per value, exactly.** A 125 Hz tone (both channels) reads `floor((level + 36) / 2)` for its peak level in dBFS,
+capped at 15: -6 dBFS and above 15, -9 13, -12 12, -15 10, -18 9, -21 7, -24 6, -27 4, -30 3. Below about -40 dBFS (the ladder reads 2
+from -39 to -33, 1 below -42) a track that is not silent still reads 2: **a floor of 2 for anything audible, 1 for near silence**. A
+drop of N dB in the tone lowers the value by N/2.
+
+**[measured] What it listens to: a bass band peaking around 125 to 160 Hz, 12 dB an octave on both sides.** Tones at -12 dBFS read
+(value, so dB relative to 125 Hz at 2 dB each): 40 Hz 2 (floor), 50 Hz 4 (-16 dB), 63 Hz 6 (-12), 80 Hz 8 (-8), 100 Hz 10 (-4), **125 Hz
+12 (0), 160 Hz 12 (0)**, 200 Hz 11 (-2), 250 Hz 9 (-6), 315 Hz 7 (-10), 400 Hz 5 to 6 (-13), 500 Hz 3 (-18); 1 kHz and above: the floor.
+A pair of 2nd-order Butterworth sections fits it (high-pass about 115 to 140 Hz, low-pass about 150 to 210 Hz). A loud 1 kHz tone adds
+to a quiet 125 Hz one as the **peaks add** (125 Hz at -30 reads 3, 5 with 1 kHz at -6 on top; 125 Hz at -18 reads 9 with or without it).
+**Stereo is the mean of the two channels** `(L + R) / 2`: left only reads 6 dB (3 values) below both; right inverted reads 1; left
+-12 with right -24 reads 10; left only at -6 reads the same as both at -12.
+
+**[measured] The time behaviour.** Each column averages over **roughly the first 0.7 of its length** (a deconvolution of the values on the band
+envelope puts the weight at 0.3 to 1.0 s before the column's end, the start of the column being the heaviest; the fit to real
+music picks start 0 and length 0.7 independently), with a **power mean, not a peak and not a mean**: a 0.5 s event at the start of a
+column reads 13, a 0.2 s event 10, a 0.05 s event 1 (not seen), and the column after an event reads 1 at once (no release). Pulse trains
+read higher the more pulses a column holds (1 pulse a second 8, 2 a second 11, 20 a second 13) and saturate; the **two nibbles of a pulse
+byte differ by 2** (13 and 11 for 10 pulses a second, reversed by the pulse spacing), a sampling effect not understood.
+Tones in 0.5 s columns alternate by 2 values (a steady tone reads 4, 2, 4, 2 on a 50 s track): the **sample instants are quantised
+(CD frames are 1/75 s)**.
+
+**[inferred] The best model so far** (scratch: `~/cdj-card/wave-analysis2/pnorm_real.py`): causal band-pass of the mono mix (high-pass about
+115, low-pass about 150 Hz), then `(mean of |y|^4 over the first 0.7 of the column) ^ (1/4)`, in dB, `floor((dB + 46) / 2)` capped 0 to 15
+with the floor of 2. **On the nine real tracks: mean error 1.09 values, 46% exact, 76% within one value; on the tone probes mean error
+1.25.** The peak of the band over the column overshoots real music by 2 to 3 values; the mean undershoots by up to 3; a power mean of
+about 4 is in between. This is an approximation (the exponent, window and corners are fitted, not read off the player).
+
+**[measured, not explained] The dip after a drop.** After a drop in level of 6 dB or more, a whole 2 s block reads (1, 1): the first
+block after the drop for 6, 8 and 12 dB, two blocks for 18 dB; drops of 2 and 4 dB show no dip (the value lags by one column instead);
+a rise never dips; the block that straddles the drop reads (new, old) in the right order. Real music has this too (about one
+column in a hundred in a few tracks). It is **not** release time, ringing or a gain recovery (the block after is fully back).
+
+**What this means for pre-writing waveforms.** The structure, the order and the scale are known; the band is known to about 5 dB; the
+time window and statistic are fitted, giving within one value (2 dB) for three columns in four on real music. **That may be enough to
+look right, but nobody has written a record yet and seen the player accept it, or checked whether the player keeps or overwrites it
+when the track is played.** Next: (1) write a record for a track the player has not seen and look at it on the player; (2) play a
+pre-written track and see whether the player changes it (a record left alone after play would mean our values stand); (3) if more
+accuracy is wanted: the dip rule, the sample instants (CD frames), and a held-out real track.
+
 ### The first card stopped being detected (unexplained)
 
 After the first `card sync --yes` onto the owner's original 2 GB card (the one every image above came from), **neither CDJ registered the card at all** (no card error: no card), though it mounted and read fine on the Mac

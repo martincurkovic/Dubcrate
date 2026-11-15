@@ -86,8 +86,8 @@ def build_tracks(disc: Disc, pregap_sectors: int = 0) -> list:
     its mandatory lead-in, so we only override the rest. The pregap is NOT marked
     required: the LiteOn eSAU108 refuses a required 0 ("doesn't support the
     requested pregap length", 2026-11-15, found by the first real gapless burn),
-    but accepts it asked for politely. **Whether such a disc is really gapless is
-    not known**: check `drutil toc` (`burn_check` says it for an audio burn).
+    but accepts it asked for politely, and the disc comes out gapless (`drutil toc`:
+    tracks exactly their lengths apart).
     """
     tracks = []
     for index, t in enumerate(disc.tracks):

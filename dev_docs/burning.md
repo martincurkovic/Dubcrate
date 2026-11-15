@@ -67,8 +67,10 @@ Use a blank CD-R (not a CD-RW) and a low speed.
   tracks 2+) **failed on the LiteOn eSAU108**: "The disc drive doesn't support the requested pregap length",
   before any track was written (the drive ejects the disc on a failed burn). Test writes (laser off) showed:
   length 0 with the flag **off** is accepted; length 0 required is refused, even on every track. `build_tracks`
-  now leaves the flag off, and the waveform test disc (20 tracks) was burned that way. **Not known whether that disc
-  is gapless or has 2 s gaps**: nobody has read its TOC (the CLI doesn't run `burn_check`, and the disc was ejected).
+  now leaves the flag off, and the waveform test disc (20 tracks) was burned that way. **It is gapless, 2026-11-15:** `drutil toc` shows track 1 at
+  00:02.00 and every 100 s track exactly 100 s after the last (1:42.00, 3:22.00, ... lead-out 34:02.00), and
+  `dubcrate card toc 1` says the planned TOC is exactly the disc's (so `toc_from_lengths` holds for a real burn:
+  the card-sync disc ID question, gap (d), is answered for this disc). The CLI doesn't run `burn_check`.
   Non-zero values with the flag on were not reached (the disc ejected after the refusal).
 - **[not tried, superseded above]** The fix: discs are now gapless by default (`pregap_sectors = 0`,
   and `DRPreGapIsRequiredKey` set so a drive that can't do it fails the burn

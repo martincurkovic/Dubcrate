@@ -98,3 +98,44 @@ Put the numbers in [cdj1000mk3-card.md](cdj1000mk3-card.md) (the waveform sectio
 files in the experiments table. Then waveform pre-writing (a Sync that writes complete records so a disc loads with
 its waveforms already drawn) becomes possible: it needs the scale from here and a check that the player accepts a
 complete record, which `t2` already showed for an empty file but not for a full one.
+
+## Result of the first run (2026-11-15)
+
+Disc 1 showed the values are not the full-range level (a bass band, about 2.5 dB a value as first read). Its two later readings
+(50 blocks of two values, shift 0 or 1 s) were corrected by disc 2: see [cdj1000mk3-card.md](cdj1000mk3-card.md), "Disc 2".
+`wavefit.py` was written for a full-range peak or RMS on 100 columns read high-nibble first, so it is out of date (the
+scratch analysis is in `~/cdj-card/wave-analysis/` and `wave-analysis2/`).
+
+## Disc 2: probes and real music (built 2026-11-15, not yet burned or played)
+
+Built from what disc 1 showed. **Tracks 1 to 10 are probes** (`wavetest.build_probe_tracks`, 19 minutes, made by
+`uv run spikes/wave_test_disc.py probes ~/cdj-card/wave-test-disc-2 --first 1`, manifest beside the FLACs), **tracks 11 to 19 are
+real music** from `~/Music/Rekordbox` (read-only; picked by a survey of 150 tracks' bass level, loudness, level drops
+and range), 44 minutes. The probes come first so they are played even if time runs out; the whole disc is 63 minutes.
+
+| # | Probe | Question |
+|---|---|---|
+| 1 | 125 Hz at -6, down 2, 4, 6, 8, 12 and 18 dB for 8 s, back up each time | how big a drop makes the next block read low, and to what |
+| 2 | 125 Hz at -6 for 7 s, down 12 dB for 1.5 to 8 s | does the dip depend on how long the low level lasts, or on where a block edge falls (7 s steps shift it) |
+| 3 | 125 Hz ladder, -69 to 0 dBFS in 3 dB steps, 4 s each | the level scale in the band the player listens to |
+| 4 | tones at 40, 50, 63, 80, 100, 125, 160, 200, 250, 315, 400, 500 Hz, -12 dBFS, 8 s each | the band's shape in third-octave steps |
+| 5 | 125 Hz with and without a loud 1 kHz tone, and 1 kHz alone | is the floor a max, a sum or a gain |
+| 6 | 125 Hz on the left only, right only, both, right inverted, unequal | the channel sum or the louder channel |
+| 7 | pulse trains, periods 0.05 to 2 s, widths 0.5 to 5 ms | what the two values in a block measure |
+| 8 | single 125 Hz events of 0.05 to 3 s in silence, at odd and even seconds | attack and hold: which block and which value an event lands in |
+| 9, 10 | 125 Hz staircases over 50 s and 300 s | a block is 1/50 of the track: 1 s and 6 s |
+
+Real tracks (11 to 19): Robbie Doherty, *Find A Way* (breakdowns, 100 dB range); Kettama and Interplanetary Criminal, *Yosemite*
+(17 big drops); Chase Astate, *Channel Clear*; Inverse, *Longest Road* (the longest); Flo Rida, *Low* (loudest bass); Stonebank, *By Your
+Side* (least bass); Michael Jackson, *P.Y.T.* (most bass for its level); ABBA, *Voulez Vous* (steady, quiet); The Proclaimers, *I'm Gonna Be*.
+
+**To burn it** (a scratch library; the real tracks are symlinks, nothing in the music folder is touched; Normalise is off unless
+`--levels` is given): `import-folder` the probe folder and a folder of symlinks to the nine tracks, `disc new "Wave test 2" --pregap 0`,
+`disc add 1 --track 1 2 ... 19`, `burn 1`, `burn 1 --yes`. **Play every track all the way through** as before, image the card and copy
+`PIONEER`. **The audio of the real tracks is what Dubcrate renders**: `dubcrate export 1 DIR` writes the exact WAVs.
+
+**Played 2026-11-15** (card image `cdj-waveform-test-2.img`, the disc is `CDJ00004`; files in `~/cdj-card/wave-post-cdj-2`). Results are in
+[cdj1000mk3-card.md](cdj1000mk3-card.md), "Disc 2: probes and real music": the structure (100 columns, low nibble first, no shift), the
+exact scale (2 dB a value: a 125 Hz tone at -6 dBFS reads 15), the bass band (125 to 160 Hz, 12 dB an octave), stereo as a mean, the
+averaging window (the first 0.7 of a column, a power mean of about 4), the dip after drops of 6 dB or more (unexplained), and how well
+the best model does on the nine real tracks (within one value for 76%).

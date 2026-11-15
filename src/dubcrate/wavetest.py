@@ -118,6 +118,15 @@ def synth(seg: Segment, rng: np.random.Generator) -> np.ndarray:
     peak = db(p.get("peak_db", 0.0))
     if kind == "sine":
         return _stereo(peak * np.sin(2 * math.pi * p["freq"] * t), p)
+    if (
+        kind == "mix"
+    ):  # several sines added: `parts` = [{"freq", "peak_db", optional "gains"/"invert_r"}, ...]
+        out = np.zeros((n, 2))
+        for part in p["parts"]:
+            out += _stereo(
+                db(part["peak_db"]) * np.sin(2 * math.pi * part["freq"] * t), part
+            )
+        return out
     if kind == "square":
         return _stereo(
             peak * np.where(np.sin(2 * math.pi * p["freq"] * t) >= 0, 1.0, -1.0), p
@@ -590,6 +599,207 @@ def build_tracks() -> list[TrackSpec]:
     return tracks
 
 
+PROBE_DISC_TITLE = "Dubcrate wave test 2"
+
+
+def _timeline(
+    items: list[tuple[float, str, Params, str]], total: float
+) -> tuple[Segment, ...]:
+    """(length, kind, params, label) one after another from 0, then silence to `total`."""
+    out, at = [], 0.0
+    for length, kind, params, label in items:
+        out.append(Segment(at, at + length, kind, params, label))
+        at += length
+    assert at <= total + 1e-9, (at, total)
+    if at < total - 1e-9:
+        out.append(Segment(at, total, "silence", {}, "silence"))
+    return tuple(out)
+
+
+def _tone(freq: float, level: float, **extra: Any) -> Params:
+    return {"freq": freq, "peak_db": level, **extra}
+
+
+def build_probe_tracks(first: int = 10) -> list[TrackSpec]:
+    """The second disc's probe tracks, numbered from `first` (they follow the real music on the disc).
+
+    Built from what the first disc showed (dev_docs/cdj1000mk3-card.md, "The waveform test disc, played"):
+    the values follow a bass band (about 90 to 150 Hz) at about 2.5 dB a value, the next block reads low
+    after a drop in level, and a block holds two values. So: drops of many sizes and lengths (aligned
+    with the 2 s blocks and not), a level ladder and a frequency ladder in that band, a loud mid tone over
+    and under a bass tone, the stereo cases at 125 Hz, pulse trains, single events in silence, and a
+    short and a long track (a block is 1/50 of a track, whatever its length).
+    """
+    n = first
+    hi = -6.0
+    tracks: list[TrackSpec] = []
+
+    def add(
+        title: str, seconds: float, note: str, segments: tuple[Segment, ...]
+    ) -> None:
+        nonlocal n
+        tracks.append(TrackSpec(n, title, seconds, note, segments, seed=2))
+        n += 1
+
+    drops = [2.0, 4.0, 6.0, 8.0, 12.0, 18.0]
+    items: list[tuple[float, str, Params, str]] = []
+    for d in drops:
+        items.append((8.0, "sine", _tone(125, hi), f"125 Hz at {hi:g} dBFS"))
+        items.append((8.0, "sine", _tone(125, hi - d), f"125 Hz down {d:g} dB"))
+    add(
+        "125 Hz drops of 2 to 18 dB",
+        100.0,
+        "how big a drop makes the next block read low, and what it reads",
+        _timeline(items, 100.0),
+    )
+
+    holds = [1.5, 3.0, 4.5, 6.0, 2.0, 8.0]
+    items = []
+    for h in holds:
+        items.append((7.0, "sine", _tone(125, hi), f"125 Hz at {hi:g} dBFS"))
+        items.append((h, "sine", _tone(125, hi - 12), f"125 Hz down 12 dB for {h:g} s"))
+    add(
+        "125 Hz drops, held for 1.5 to 8 s",
+        100.0,
+        "does the dip depend on how long the low level lasts, or on where the block edge falls (7 s steps)",
+        _timeline(items, 100.0),
+    )
+
+    items = [
+        (4.0, "sine", _tone(125, lv), f"125 Hz at {lv:g} dBFS")
+        for lv in range(-69, 3, 3)
+    ]
+    add(
+        "125 Hz level ladder, -69 to 0 dBFS",
+        100.0,
+        "the level scale in the band the player listens to",
+        _timeline(items, 100.0),
+    )
+
+    freqs = [40, 50, 63, 80, 100, 125, 160, 200, 250, 315, 400, 500]
+    items = [(8.0, "sine", _tone(f, -12.0), f"{f} Hz at -12 dBFS") for f in freqs]
+    add(
+        "Tones from 40 to 500 Hz at -12 dBFS",
+        100.0,
+        "the band's shape, with the steps a third of an octave apart",
+        _timeline(items, 100.0),
+    )
+
+    def mix(*parts: tuple[float, float]) -> Params:
+        return {"parts": [_tone(f, lv) for f, lv in parts]}
+
+    items = [
+        (12.0, "mix", mix((125, -18)), "125 Hz at -18 alone"),
+        (12.0, "mix", mix((125, -18), (1000, -6)), "125 Hz at -18 with 1 kHz at -6"),
+        (12.0, "mix", mix((125, -18), (1000, -30)), "125 Hz at -18 with 1 kHz at -30"),
+        (12.0, "mix", mix((1000, -6)), "1 kHz at -6 alone"),
+        (12.0, "mix", mix((125, -30), (1000, -6)), "125 Hz at -30 with 1 kHz at -6"),
+        (12.0, "mix", mix((125, -6)), "125 Hz at -6 alone"),
+        (12.0, "mix", mix((125, -6), (1000, -6)), "125 Hz at -6 with 1 kHz at -6"),
+        (12.0, "mix", mix((125, -30)), "125 Hz at -30 alone"),
+    ]
+    add(
+        "125 Hz with a loud 1 kHz tone",
+        100.0,
+        "does a loud mid tone change the value (a max, a sum, a gain)?",
+        _timeline(items, 100.0),
+    )
+
+    stereo = [
+        ([-12.0, None], False, "left only at -12"),
+        ([None, -12.0], False, "right only at -12"),
+        ([-12.0, -12.0], False, "both at -12, in phase"),
+        ([-12.0, -12.0], True, "both at -12, right inverted"),
+        ([-12.0, -24.0], False, "left -12, right -24"),
+        ([-24.0, -12.0], False, "left -24, right -12"),
+        ([-6.0, None], False, "left only at -6"),
+        ([-18.0, -18.0], False, "both at -18, in phase"),
+    ]
+    items = [
+        (12.0, "sine", _tone(125, 0.0, gains=g, invert_r=inv), f"125 Hz, {label}")
+        for g, inv, label in stereo
+    ]
+    add(
+        "125 Hz on the left, the right and both",
+        100.0,
+        "the channel sum, the louder channel or each",
+        _timeline(items, 100.0),
+    )
+
+    pulses = [
+        (0.05, 0.001),
+        (0.1, 0.001),
+        (0.2, 0.001),
+        (0.5, 0.001),
+        (1.0, 0.001),
+        (2.0, 0.001),
+        (0.1, 0.005),
+        (0.1, 0.0005),
+    ]
+    items = [
+        (
+            12.0,
+            "impulses",
+            {"period": p, "width": w, "peak_db": 0.0},
+            f"pulses every {p:g} s, {w * 1000:g} ms wide",
+        )
+        for p, w in pulses
+    ]
+    add(
+        "Pulse trains, periods 0.05 to 2 s",
+        100.0,
+        "what the two values in a block measure, from pulses of known spacing and width",
+        _timeline(items, 100.0),
+    )
+
+    events = [
+        (8.0, 0.05),
+        (24.5, 0.2),
+        (41.0, 0.5),
+        (57.5, 1.0),
+        (74.0, 3.0),
+        (91.5, 2.0),
+    ]
+    segs = [Segment(0, 100, "silence", {}, "silence")]
+    for at, length in events:
+        segs.append(
+            Segment(
+                at,
+                at + length,
+                "sine",
+                _tone(125, -6.0),
+                f"125 Hz at -6 for {length:g} s at {at:g} s",
+            )
+        )
+    add(
+        "Single 125 Hz events in silence",
+        100.0,
+        "attack and hold: which block, and which value, an event of each length lands in",
+        tuple(segs),
+    )
+
+    levels = [-42, -36, -30, -24, -18, -12, -6]
+    items = [(7.0, "sine", _tone(125, lv), f"125 Hz at {lv:g} dBFS") for lv in levels]
+    add(
+        "125 Hz staircase over 50 s",
+        50.0,
+        "a block is 1/50 of the track: 1 s here",
+        _timeline(items, 50.0),
+    )
+
+    items = [(42.0, "sine", _tone(125, lv), f"125 Hz at {lv:g} dBFS") for lv in levels]
+    add(
+        "125 Hz staircase over 300 s",
+        300.0,
+        "and 6 s on a long track",
+        _timeline(items, 300.0),
+    )
+
+    for track in tracks:
+        assert track.samples % SECTOR == 0, track.title
+    return tracks
+
+
 def _low_levels(
     parts: list[tuple[str, Params, str]], total: float
 ) -> tuple[Segment, ...]:
@@ -606,10 +816,10 @@ def _low_levels(
 # -- the manifest ----------------------------------------------------------------------------------------
 
 
-def manifest(tracks: list[TrackSpec]) -> dict[str, Any]:
+def manifest(tracks: list[TrackSpec], title: str = DISC_TITLE) -> dict[str, Any]:
     """Plain data that rebuilds the tracks (and so the exact audio)."""
     return {
-        "disc": DISC_TITLE,
+        "disc": title,
         "rate": RATE,
         "tracks": [
             {
@@ -707,7 +917,11 @@ def decode(path: Path, ffmpeg: Path) -> np.ndarray:
 
 
 def write_disc(
-    out: Path, tracks: list[TrackSpec], ffmpeg: Path, say=print
+    out: Path,
+    tracks: list[TrackSpec],
+    ffmpeg: Path,
+    say=print,
+    title: str = DISC_TITLE,
 ) -> list[Path]:
     """Write the disc's tracks as tagged FLAC (lossless), each checked by decoding it again and
     comparing every sample, with the manifest and a README beside them. Refuses a folder that has
@@ -735,9 +949,9 @@ def write_disc(
                 "-metadata",
                 f"title={track.title}",
                 "-metadata",
-                f"artist={DISC_TITLE}",
+                f"artist={title}",
                 "-metadata",
-                f"album={DISC_TITLE}",
+                f"album={title}",
                 "-metadata",
                 f"track={track.number}/{len(tracks)}",
                 str(flac),
@@ -750,7 +964,7 @@ def write_disc(
         written.append(flac)
         say(f"{flac.name}: {track.seconds:g} s, checked")
     (out / "manifest.json").write_text(
-        json.dumps(manifest(tracks), indent=1), encoding="utf-8"
+        json.dumps(manifest(tracks, title), indent=1), encoding="utf-8"
     )
     (out / "README.txt").write_text(README, encoding="utf-8")
     return written

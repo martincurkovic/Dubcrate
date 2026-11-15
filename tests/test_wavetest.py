@@ -260,3 +260,45 @@ def test_writing_the_disc_makes_checked_files_a_manifest_and_a_readme_and_refuse
 
 def test_db_helper():
     assert db(0) == 1.0 and db(-20) == pytest.approx(0.1)
+
+
+def test_the_second_discs_probes_are_whole_sectors_in_order_and_inside_full_scale():
+    probes = wavetest.build_probe_tracks(11)
+    assert [p.number for p in probes] == list(range(11, 21))
+    assert all(p.samples % wavetest.SECTOR == 0 for p in probes)
+    assert len({p.title for p in probes}) == 10
+    assert sum(p.seconds for p in probes) == 1150
+    for p in probes:
+        assert all(0 <= s.start < s.end <= p.seconds + 1e-9 for s in p.segments), (
+            p.title
+        )
+
+
+def test_a_mix_adds_its_parts_and_a_stereo_probe_puts_a_tone_where_it_says():
+    probes = {p.number: p for p in wavetest.build_probe_tracks(1)}
+    mixed = probes[5]  # 125 Hz with a loud 1 kHz tone
+    seg = next(s for s in mixed.segments if s.label == "125 Hz at -6 with 1 kHz at -6")
+    a, b = seg.samples
+    audio = render(mixed).astype(np.float64)[a:b] / 32768
+    assert (
+        abs(np.abs(audio).max() - 1.0) < 0.01
+    )  # two half-scale sines add to full scale
+    spectrum = np.abs(np.fft.rfft(audio[:, 0] * np.hanning(len(audio))))
+    freqs = np.fft.rfftfreq(len(audio), 1 / wavetest.RATE)
+    assert (
+        abs(freqs[spectrum.argmax()] - 125) < 5
+        or abs(freqs[spectrum.argmax()] - 1000) < 5
+    )
+    left_only = probes[6]
+    seg = next(s for s in left_only.segments if s.label == "125 Hz, left only at -12")
+    a, b = seg.samples
+    stereo = render(left_only).astype(np.float64)[a:b] / 32768
+    assert np.abs(stereo[:, 0]).max() > 0.2 and np.abs(stereo[:, 1]).max() < 0.001
+
+
+def test_the_probe_manifest_names_the_disc_and_rebuilds_the_same_tracks():
+    probes = wavetest.build_probe_tracks(1)
+    data = wavetest.manifest(probes, wavetest.PROBE_DISC_TITLE)
+    assert data["disc"] == "Dubcrate wave test 2"
+    again = wavetest.tracks_from_manifest(json.loads(json.dumps(data)))
+    assert np.array_equal(render(again[4]), render(probes[4]))
