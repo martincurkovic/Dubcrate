@@ -46,7 +46,7 @@ habit of marking a track's start.
    used by the player, Sync and the labels. rekordbox is not touched.
 3. **Write to rekordbox**: memory cues only, rekordbox closed, a backup of `master.db` and its `-wal` / `-shm` first, a
    transaction, a read-back check, soft deletes, refusal on a schema not seen before; built and tried on synthetic databases first.
-   **Built 2026-11-15, see "Stage 3 as built"; not yet run on the owner's real library.**
+   **Built 2026-11-15, see "Stage 3 as built"; the owner ran it on their real library (rekordbox 7.2.19.0342) the same day and reported that it worked perfectly.**
 
 ## Stage 2 as built
 
@@ -95,7 +95,7 @@ snapshot copy of the owner's real library (schema check passed, a real track's c
 notices the change on opening (it should: the file changed), whether the USB export carries the cue, and whether `CueUpdated` / the counter
 jump are what it expects.
 
-### Live test (the owner runs it; rekordbox 7.2.19.0342)
+### Live test (the owner ran it on 2026-11-15 and said it "worked perfectly"; which checklist steps they checked was not recorded)
 
 1. rekordbox **closed**. Your backup of the library is the safety net; Dubcrate makes another (`rekordbox-backups`).
 2. In Dubcrate edit the memory cues of **one** track (add one, move one, delete one). `dubcrate rekordbox write-memory-cues` (dry run): read what it says.

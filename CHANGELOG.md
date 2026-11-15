@@ -19,7 +19,7 @@ The first release: macOS (Apple Silicon and Intel) and, new, Linux (an AppImage)
 - **Discs are playlists** you keep in folders, with an exact capacity bar for 74 or 80 minute discs; **Fit All to Disc**,
   **Split Shown Tracks Across Discs**, drag and drop, and a warning when a disc is over its size.
 - Track text for the disc (title and artist) can be edited for a disc without touching the library, rekordbox or the file.
-- **Memory cues can be edited in the player** (add, move, delete) and are kept in Dubcrate. `dubcrate rekordbox write-memory-cues` can put them into rekordbox's database (rekordbox closed, a backup first, read back, undone on failure): it is the one thing Dubcrate writes to rekordbox, and it has been tested on synthetic databases only, so keep your own backup and try it on one track first.
+- **Memory cues can be edited in the player** (add, move, delete) and are kept in Dubcrate. `dubcrate rekordbox write-memory-cues` can put them into rekordbox's database (rekordbox closed, a backup first, read back, undone on failure): it is the one thing Dubcrate writes to rekordbox, and it has been tested on synthetic databases and run once on the author's own rekordbox 7.2 library, so keep your own backup and try it on one track first.
 
 ### Burning
 
