@@ -1,15 +1,16 @@
 """The player across the top, laid out as rbxport's is: controls down the left, the two waveforms with the
 cue buttons under them in the middle, and the memory cues, hot cues and info on the right.
 
-- **Left:** previous / next track, beat jump back / forward with its size menu, CUE (to come) and play / pause.
+- **Left:** previous / next track, beat jump back / forward with its size menu, CUE and play / pause.
 - **Middle:** what is loaded (title, artist, time, key, tempo, the cog and the volume knob), the overview
   and the zoomed waveform (zoom + / RST / - over its left edge), then the row of cue buttons: hot cues A to H
-  (a lit one jumps there), MEMORY with the previous / next memory cue, the loop controls and Q (to come).
+  (a lit one jumps there), MEMORY with the previous / next memory cue, the loop controls and Q.
 - **Right:** `player_side.SidePanel`.
 
 A track is loaded by double-clicking it, or by **dragging it from a track list onto the player**
-(`track_dropped`). **Everything about cues is read-only**: they come from rekordbox and are never written.
-The loop controls, CUE and quantise are drawn but off until the audio engine has them.
+(`track_dropped`). **Everything about rekordbox's cues is read-only**: they are never written. CUE, the
+loops and Q are the preview's own and **last only until another track is loaded** (`deck.Deck` decides
+what they do, `PreviewController` does it, and `show_session` / `set_loop_state` show it here).
 """
 
 import json
@@ -27,6 +28,7 @@ from PySide6.QtWidgets import (
 
 from dubcrate import settings
 from dubcrate.analysis import Analysis, Cue
+from dubcrate.deck import AUTO_SIZES, DEFAULT_AUTO, size_label
 from dubcrate.library.models import Track
 from dubcrate.waveform import Waveform
 
@@ -42,7 +44,6 @@ from .waveform_view import DetailView, OverviewView
 
 LEFT_WIDTH = 116
 SIDE_WIDTH = 250
-SOON = "Loops, CUE and quantise come in the next update."
 READ_ONLY = "Cues are rekordbox's: Dubcrate shows them but never changes them."
 
 IDLE_HINT = "Double-click a track to preview it"
@@ -68,12 +69,28 @@ class PlayerStrip(QWidget):
         float
     )  # a hot cue, a memory cue or a list row: go to this time
     track_dropped = Signal(int)  # a track id dragged from a track list onto the player
+    cue_pressed = (
+        Signal()
+    )  # the CUE button went down / came up (holding it previews from the cue point)
+    cue_released = Signal()
+    quantise_toggled = Signal(bool)
+    auto_loop_requested = Signal(
+        float
+    )  # the loop size button: a loop of this many beats, or leave the loop
+    loop_size_changed = Signal(float)  # beats, from the size arrows
+    loop_in_requested = Signal()
+    loop_out_requested = Signal()
+    reloop_requested = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self._duration = 0.0
         self._position = 0.0
-        self._cues: tuple[Cue, ...] = ()
+        self._cues: tuple[Cue, ...] = ()  # rekordbox's, for the lists and buttons
+        self._markers: tuple[
+            Cue, ...
+        ] = ()  # the session's own (cue point, loop), drawn with them
+        self._auto_index = AUTO_SIZES.index(DEFAULT_AUTO)
         self.setAcceptDrops(True)
 
         # -- the left column -----------------------------------------------------
@@ -103,8 +120,13 @@ class PlayerStrip(QWidget):
         )
         self.set_beat_jump(settings.get_beat_jump())
         self.cue_button = CueRing()
-        self.cue_button.setToolTip(SOON)
+        self.cue_button.setToolTip(
+            "CUE: while playing, back to the cue point and stop. Stopped on the cue point, hold it to "
+            "play from there. Stopped anywhere else, it sets the cue point here (until another track is loaded)."
+        )
         self.cue_button.setEnabled(False)
+        self.cue_button.pressed.connect(self.cue_pressed)
+        self.cue_button.released.connect(self.cue_released)
 
         skip = QHBoxLayout()
         skip.setSpacing(6)
@@ -238,8 +260,15 @@ class PlayerStrip(QWidget):
         cue_row.addWidget(self.auto_button)
         cue_row.addWidget(self.manual_button)
         self.loop_size_back = PillButton("‹", width=24)
-        self.loop_size = PillButton("4", width=40, bold=True)
+        self.loop_size = PillButton(
+            size_label(DEFAULT_AUTO), checkable=True, width=40, bold=True
+        )
         self.loop_size_forward = PillButton("›", width=24)
+        self.loop_size_back.clicked.connect(lambda: self._step_loop_size(-1))
+        self.loop_size_forward.clicked.connect(lambda: self._step_loop_size(1))
+        self.loop_size.clicked.connect(
+            lambda: self.auto_loop_requested.emit(AUTO_SIZES[self._auto_index])
+        )
         auto = QWidget()
         auto_row = QHBoxLayout(auto)
         auto_row.setContentsMargins(0, 0, 0, 0)
@@ -248,23 +277,29 @@ class PlayerStrip(QWidget):
             auto_row.addWidget(w)
         self.loop_in = PillButton("IN", width=48)
         self.loop_out = PillButton("OUT", width=48)
-        self.reloop = PillButton("RELOOP", width=64)
+        self.reloop = PillButton("RELOOP", checkable=True, width=64)
+        self.loop_in.clicked.connect(self.loop_in_requested)
+        self.loop_out.clicked.connect(self.loop_out_requested)
+        self.reloop.clicked.connect(self.reloop_requested)
         manual = QWidget()
         manual_row = QHBoxLayout(manual)
         manual_row.setContentsMargins(0, 0, 0, 0)
         manual_row.setSpacing(4)
         for w in (self.loop_in, self.loop_out, self.reloop):
             manual_row.addWidget(w)
-        for w in (
-            self.loop_size_back,
-            self.loop_size,
-            self.loop_size_forward,
-            self.loop_in,
-            self.loop_out,
-            self.reloop,
+        for w, tip in (
+            (self.loop_size_back, "A smaller loop (half as many beats)"),
+            (
+                self.loop_size,
+                "Loop this many beats from here (press again to leave the loop)",
+            ),
+            (self.loop_size_forward, "A bigger loop (twice as many beats)"),
+            (self.loop_in, "Loop IN: the loop starts here"),
+            (self.loop_out, "Loop OUT: the loop ends here, and starts"),
+            (self.reloop, "RELOOP: leave the loop, or go back into the last one"),
         ):
             w.setEnabled(False)
-            w.setToolTip(SOON)
+            w.setToolTip(tip)
         self.loop_controls = QStackedWidget()
         self.loop_controls.addWidget(auto)
         self.loop_controls.addWidget(manual)
@@ -272,7 +307,10 @@ class PlayerStrip(QWidget):
         cue_row.addStretch(1)
         self.quantise_button = PillButton("Q", checkable=True, width=34, bold=True)
         self.quantise_button.setEnabled(False)
-        self.quantise_button.setToolTip(SOON)
+        self.quantise_button.setToolTip(
+            "Quantise: a cue point or loop edge lands on the nearest beat (needs a beat grid or a tempo)"
+        )
+        self.quantise_button.toggled.connect(self.quantise_toggled)
         cue_row.addWidget(self.quantise_button)
 
         middle = QVBoxLayout()
@@ -327,6 +365,30 @@ class PlayerStrip(QWidget):
         self.auto_button.setChecked(which == 0)
         self.manual_button.setChecked(which == 1)
         self.loop_controls.setCurrentIndex(which)
+
+    def _step_loop_size(self, direction: int) -> None:
+        """The size arrows: the next smaller (-1) or bigger (1) auto loop."""
+        index = max(0, min(len(AUTO_SIZES) - 1, self._auto_index + direction))
+        if index == self._auto_index:
+            return
+        self._auto_index = index
+        self.loop_size.setText(size_label(AUTO_SIZES[index]))
+        self.loop_size_changed.emit(AUTO_SIZES[index])
+
+    def set_loop_state(self, active: bool) -> None:
+        """Show whether a loop is on (the size button and RELOOP light up)."""
+        self.loop_size.setChecked(active)
+        self.reloop.setChecked(active)
+
+    def show_session(self, markers: tuple[Cue, ...]) -> None:
+        """The session's own cue point and loop, drawn on the waveforms beside rekordbox's cues."""
+        self._markers = tuple(markers)
+        self._draw_cues()
+
+    def _draw_cues(self) -> None:
+        both = (*self._cues, *self._markers)
+        self.overview.set_cues(both)
+        self.detail.set_cues(both)
 
     def _jump_to_hot(self, slot: int) -> None:
         if slot in self._hot_times:
@@ -385,7 +447,9 @@ class PlayerStrip(QWidget):
         self.overview.clear()
         self.detail.clear()
         self.side.set_track(None)
+        self._markers = ()
         self._set_cues(())
+        self.set_loop_state(False)
         self.set_position(0.0)
         self.set_playing(False)
         self._enable(False)
@@ -401,7 +465,9 @@ class PlayerStrip(QWidget):
         self.overview.clear()
         self.detail.clear("Loading…")
         self.side.set_track(track)
+        self._markers = ()
         self._set_cues(())
+        self.set_loop_state(False)
         self.set_position(0.0)
         self.set_playing(False)
         self._enable(False)
@@ -412,9 +478,10 @@ class PlayerStrip(QWidget):
         """The track's audio and waveform are ready."""
         self._duration = duration
         analysis = analysis or Analysis()
-        self.overview.set_track(duration, waveform, analysis.phrases, analysis.cues)
+        both = (*analysis.cues, *self._markers)
+        self.overview.set_track(duration, waveform, analysis.phrases, both)
         self.detail.set_track(
-            waveform, analysis.beat_times, analysis.beat_numbers, cues=analysis.cues
+            waveform, analysis.beat_times, analysis.beat_numbers, cues=both
         )
         self._set_cues(analysis.cues)
         self.set_position(0.0)
@@ -422,9 +489,8 @@ class PlayerStrip(QWidget):
 
     def show_cues(self, cues: tuple[Cue, ...]) -> None:
         """The cues of the track on show, when they are found after it loaded."""
-        self.overview.set_cues(cues)
-        self.detail.set_cues(cues)
         self._set_cues(cues)
+        self._draw_cues()
 
     def show_error(self, message: str) -> None:
         self.overview.clear()
@@ -433,8 +499,19 @@ class PlayerStrip(QWidget):
 
     def _enable(self, loaded: bool) -> None:
         self.play_button.setEnabled(loaded)
-        self.jump_back_button.setEnabled(loaded)
-        self.jump_forward_button.setEnabled(loaded)
+        for w in (
+            self.jump_back_button,
+            self.jump_forward_button,
+            self.cue_button,
+            self.quantise_button,
+            self.loop_size_back,
+            self.loop_size,
+            self.loop_size_forward,
+            self.loop_in,
+            self.loop_out,
+            self.reloop,
+        ):
+            w.setEnabled(loaded)
 
     def set_position(self, seconds: float) -> None:
         if self.detail.dragging:  # a hand is on the waveform: it decides the position

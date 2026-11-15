@@ -152,13 +152,23 @@ For a folder you use all the time (say, MP3s that aren't in rekordbox), **right-
 
 When a track plays to its end, the next one in the list (or in the open disc, in its order) starts by itself, skipping any file that is missing, and playback stops after the last. Pause, or choose another track, and it stays as you left it.
 
+![The player: a cue point set, a loop on, the hot cue list open](screenshots/player.png "The player")
+
 The player is laid out as rbxport's is:
 
-- **Left:** previous and next track, beat jump back and forward (**‹** **›**) with a menu of how far (1 beat up to 32 bars), **CUE** and play / pause. CUE, and the loop and quantise buttons under the waveform, are drawn but off for now: they come in the next update.
-- **Middle:** the title, artist, time, key and tempo, the two waveforms, and under them the **hot cue buttons A to H**, **MEMORY** with **◀** and **▶**, the loop controls (**AU** automatic, **MA** manual) and **Q**.
+- **Left:** previous and next track, beat jump back and forward (**‹** **›**) with a menu of how far (1 beat up to 32 bars), **CUE** and play / pause.
+- **Middle:** the title, artist, time, key and tempo, the two waveforms, and under them the **hot cue buttons A to H**, **MEMORY** with **◀** and **▶**, the loop controls (**AU** automatic, **MA** manual) and **Q** (quantise).
 - **Right:** three tabs, **MEMORY** (the memory cues and loops, with their times), **HOT CUE** (A to H) and **INFO** (the rating and comment from rekordbox, and what the file is: type, size, sample rate, bitrate).
 
 **The cues are rekordbox's and are only shown, never changed.** A hot cue button is lit when the track has that cue, and pressing it (or a row in the memory or hot cue list) jumps there, playing or paused as it was; **◀** and **▶** go to the memory cue before or after the playhead. **MEMORY** and **✕**, which would save or delete a cue, are off.
+
+**CUE, loops and quantise are the preview's own.** They are for finding your way round a track and trying a loop, and they **last only until another track is loaded**: nothing is saved, and nothing is written to rekordbox.
+
+- **CUE** works like a CDJ's. While the track plays, it goes back to the **cue point** and stops (the cue point starts at the beginning of the track). With the track stopped on the cue point, **hold CUE to hear it from there**; let go and it returns and stops. Stopped anywhere else, CUE **sets the cue point** to where you are. The cue point is shown as a small orange marker.
+- **AU (automatic loop)**: the number is how many beats the loop is (**‹** and **›** make it half or twice as long: ½, 1, 2, 4, 8, 16, 32). Press the number to loop that many beats from where the track is; press it again to leave the loop. If a loop is on, **‹** and **›** resize it from the same start. This needs a beat grid or a tempo (from rekordbox, or the file's BPM tag): without one it says so, and the manual loop still works.
+- **MA (manual loop)**: **IN** marks where the loop starts, **OUT** marks where it ends and starts it. **RELOOP** leaves a loop that is on, or goes back to the start of the last one and loops it again. A new **IN** leaves the loop that was on.
+- A loop that is on is the tinted stretch on both waveforms, and the number (or RELOOP) is lit.
+- **Q (quantise)**: with it on, the cue point and a loop's edges land on the nearest **beat** instead of exactly where the track is. Without a beat grid or a tempo there is nothing to snap to, and it says so.
 
 The two waveforms in the player:
 

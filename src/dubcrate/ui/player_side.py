@@ -80,6 +80,7 @@ class SidePanel(QWidget):
         super().__init__(parent)
         self.memory = _list()
         self.hot = _list()
+        self.hot.setColumnCount(2)  # (the letter, then its time)
         self.memory.itemClicked.connect(self._clicked)
         self.hot.itemClicked.connect(self._clicked)
         self.rating = QLabel()

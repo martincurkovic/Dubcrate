@@ -310,6 +310,27 @@ def _main_system6(ctx):
 
 
 @shot(
+    "player",
+    "the player: a cue point set, an auto loop on and the quantise button lit, over a track with cues",
+)
+def _player(ctx):
+    """The staged main window's player strip (invented cues; the loaded track's tempo is from its tags) with CUE pressed
+    away from the start, an auto loop on and quantise on: what the session's own markers look like beside rekordbox's."""
+    window = _main(ctx)
+    preview = window.preview
+    preview.player.pause()
+    window.player_strip.quantise_button.click()
+    preview.player.seek(8.0)
+    preview.cue_pressed()  # (stopped away from the cue point: sets it, on the beat)
+    preview.player.seek(76.0)
+    window.player_strip.loop_size_forward.click()  # 8 beats
+    window.player_strip.loop_size.click()
+    window.player_strip.side.tabs[1].click()  # the hot cue list
+    ctx.settle(8)
+    return window.player_strip
+
+
+@shot(
     "disc-open", "a disc open in the middle: its list, the capacity bar and the buttons"
 )
 def _disc_open(ctx):

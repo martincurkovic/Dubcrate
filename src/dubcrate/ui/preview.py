@@ -10,6 +10,7 @@ from dubcrate.analysis import Analysis, read_analysis, share_root
 from dubcrate.audio.decode import DecodedAudio, decode_file
 from dubcrate.audio.player import AudioPlayer
 from dubcrate.beatjump import jump_time
+from dubcrate.deck import Deck
 from dubcrate.library import Library
 from dubcrate.library.models import Track
 from dubcrate.waveform import PREVIEW_COLUMNS, Waveform, compute_waveform
@@ -74,6 +75,10 @@ class PreviewController(QObject):
         self._requested: Track | None = (
             None  # the latest one asked for, which may still be loading
         )
+        self.deck = (
+            Deck()
+        )  # the cue point, loop and quantise of the track loaded (session-only)
+        self._previewing = False  # CUE is held, playing from the cue point
         # rekordbox's cues come from its database, not the analysis files; the track list draws them too
         self.cues = cues or RekordboxCueCache(lib, self)
         self.cues.message.connect(self.message)
@@ -85,6 +90,14 @@ class PreviewController(QObject):
         strip.play_toggled.connect(self.toggle)
         strip.beat_jump_requested.connect(self.beat_jump)
         strip.jump_requested.connect(self.jump_to)
+        strip.cue_pressed.connect(self.cue_pressed)
+        strip.cue_released.connect(self.cue_released)
+        strip.quantise_toggled.connect(self.set_quantise)
+        strip.auto_loop_requested.connect(self.auto_loop)
+        strip.loop_size_changed.connect(self.loop_size)
+        strip.loop_in_requested.connect(self.loop_in)
+        strip.loop_out_requested.connect(self.loop_out)
+        strip.reloop_requested.connect(self.reloop)
         strip.seek_requested.connect(self.player.seek)
         strip.scratch_started.connect(self.player.begin_scratch)
         strip.scratch_moved.connect(self.player.scratch_to)
@@ -123,6 +136,112 @@ class PreviewController(QObject):
         if self.player.scratching or not self.player.loaded:
             return
         self.player.seek(max(0.0, min(seconds, self.player.duration)))
+
+    # -- CUE, loops and quantise: the deck decides, the player does it -----------------------------
+
+    def _show_session(self) -> None:
+        self._strip.show_session(self.deck.markers())
+        self._strip.set_loop_state(self.deck.loop_active)
+
+    def _usable(self) -> bool:
+        return (
+            self.player.loaded
+            and self._track is not None
+            and not self.player.scratching
+        )
+
+    def cue_pressed(self) -> None:
+        """CUE went down: back to the cue point and stop, or play from it while held, or set it here."""
+        if not self._usable():
+            return
+        action = self.deck.cue_press(self.player.position, self.player.playing)
+        if action == "return":
+            self.player.pause()
+            self.player.seek(self.deck.cue_point)
+        elif action == "preview":
+            self._previewing = True
+            self.player.seek(self.deck.cue_point)
+            self.player.play()
+        self._show_session()
+
+    def cue_released(self) -> None:
+        """CUE came up: if it was previewing, back to the cue point and stop."""
+        if self._previewing:
+            self._previewing = False
+            self.player.pause()
+            self.player.seek(self.deck.cue_point)
+
+    def set_quantise(self, on: bool) -> None:
+        self.deck.quantise = on
+        if on and self._track is not None and self.deck.beat_length() is None:
+            self.message.emit(
+                "This track has no beat grid or tempo, so there is no beat to snap to"
+            )
+
+    def auto_loop(self, beats: float) -> None:
+        """The loop size button: leave a loop that is on, else loop this many beats from here."""
+        if not self._usable():
+            return
+        if self.deck.loop_active:
+            self.deck.exit_loop()
+            self.player.clear_loop()
+        else:
+            self.deck.auto_beats = beats
+            found = self.deck.auto_loop(self.player.position)
+            if found is None:
+                self.message.emit(
+                    "This track has no beat grid or tempo, so use a manual loop (MA)"
+                    if self.deck.beat_length() is None
+                    else "That loop would run past the end of the track"
+                )
+            else:
+                self.player.set_loop(*found)
+        self._show_session()
+
+    def loop_size(self, beats: float) -> None:
+        """The size arrows: a new size, redrawing a loop that is on."""
+        if not self._usable():
+            return
+        was_on = self.deck.loop_active
+        found = self.deck.resize_auto(beats)
+        if found is not None:
+            self.player.set_loop(*found)
+        elif was_on:
+            self.message.emit("A loop that size would run past the end of the track")
+        self._show_session()
+
+    def loop_in(self) -> None:
+        if not self._usable():
+            return
+        self.deck.mark_in(self.player.position)
+        self.player.clear_loop()  # (a new IN leaves the loop that was on)
+        self._show_session()
+
+    def loop_out(self) -> None:
+        if not self._usable():
+            return
+        found = self.deck.mark_out(self.player.position)
+        if found is None:
+            self.message.emit(
+                "Press IN first"
+                if self.deck.loop_in is None
+                else "OUT has to come after IN"
+            )
+        else:
+            self.player.set_loop(*found)
+        self._show_session()
+
+    def reloop(self) -> None:
+        """RELOOP: leave a loop that is on, or go back to the start of the last one and loop it."""
+        if not self._usable():
+            return
+        found = self.deck.reloop()
+        if found is not None:
+            self.player.seek(found[0])
+            self.player.set_loop(*found)
+        else:
+            self.player.clear_loop()
+        self._show_session()
 
     def beat_jump(self, direction: int) -> None:
         """Jump the set number of beats forward (`direction` 1) or back (-1), in phase.
@@ -187,6 +306,8 @@ class PreviewController(QObject):
         serial = self._serial
         self._requested = track
         self._analysis = None
+        self._previewing = False
+        self.deck.load(0.0, None, None)
         self.player.pause()
         self._strip.show_track(track)
         if track.missing:
@@ -202,6 +323,12 @@ class PreviewController(QObject):
                 return  # the user has since chosen something else
             self._track = track
             self._analysis = media.analysis
+            analysis = media.analysis
+            self.deck.load(
+                media.audio.duration,
+                analysis.beat_times if analysis else None,
+                (analysis.bpm if analysis else None) or track.bpm,
+            )
             self._strip.show_media(media.audio.duration, media.waveform, media.analysis)
             self.player.load(media.audio, autoplay=play)
             self._show_cues()

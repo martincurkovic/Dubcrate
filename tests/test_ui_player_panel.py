@@ -75,11 +75,20 @@ def test_the_memory_arrows_go_to_the_nearest_memory_cue_either_side(strip):
     assert not strip.memory_back_button.isEnabled() and not strip.memory_next_button.isEnabled()  # fmt: skip
 
 
-def test_the_memory_and_loop_controls_that_write_or_need_the_engine_are_off_and_say_why(strip):  # fmt: skip
+def test_the_memory_controls_that_would_write_are_off_and_say_why(strip):
     for button in (strip.memory_button, strip.memory_delete_button):
         assert not button.isEnabled() and "rekordbox" in button.toolTip()
-    for button in (strip.loop_in, strip.loop_out, strip.reloop, strip.loop_size, strip.quantise_button, strip.cue_button):  # fmt: skip
-        assert not button.isEnabled() and "next update" in button.toolTip()
+    strip._enable(True)
+    for button in (strip.memory_button, strip.memory_delete_button):
+        assert not button.isEnabled()  # (a loaded track does not change that)
+
+
+def test_the_loop_cue_and_quantise_buttons_are_off_until_a_track_is_loaded_and_have_tips(strip):  # fmt: skip
+    buttons = (strip.loop_in, strip.loop_out, strip.reloop, strip.loop_size, strip.quantise_button, strip.cue_button)  # fmt: skip
+    assert not any(b.isEnabled() for b in buttons)
+    assert all(b.toolTip() for b in buttons)
+    strip._enable(True)
+    assert all(b.isEnabled() for b in buttons)
 
 
 def test_au_and_ma_swap_the_loop_controls(strip):
@@ -99,6 +108,10 @@ def test_the_side_panel_lists_memory_cues_loops_and_hot_cues(strip):
     hot = [(side.hot.topLevelItem(i).text(0), side.hot.topLevelItem(i).text(1)) for i in range(8)]  # fmt: skip
     assert hot[0] == ("A", "01:17.933") and hot[1] == ("B", "00:29.250")
     assert hot[2] == ("C", "") and hot[3] == ("D", "03:20.000") and hot[7] == ("H", "")
+    assert side.hot.columnCount() == 2 and not side.hot.isColumnHidden(
+        1
+    )  # (the times show)
+    assert side.hot.columnWidth(1) > 40
     heard = jumps(strip)
     side.memory.itemClicked.emit(side.memory.topLevelItem(1), 0)
     side.hot.itemClicked.emit(side.hot.topLevelItem(0), 0)

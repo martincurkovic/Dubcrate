@@ -96,6 +96,10 @@ class PlaybackState:
     scratch_interval: float = 0.0  # the typical gap between events, in seconds
     scratch_history: list = field(default_factory=list)  # recent (time, target) events
     scratch_gain: float = 0.0
+    # a loop: while it is on and the track plays, reaching `loop_end` goes back to `loop_start` (frames)
+    loop_on: bool = False
+    loop_start: int = 0
+    loop_end: int = 0
     lock: threading.Lock = field(default_factory=threading.Lock)
 
 
@@ -181,6 +185,32 @@ def _render_scratch(
     state.scratch_gain = float(gain[-1])
 
 
+def _take(state: PlaybackState, frames: int, total: int) -> np.ndarray:
+    """Up to `frames` frames from the playhead, which moves on; a loop that is on takes the playhead back
+    to its start each time it reaches its end (as many times as the block holds). A playhead already past
+    the loop's end plays on to the end of the track."""
+    samples = state.samples
+    looping = state.loop_on and state.playing and state.loop_end - state.loop_start > 0
+    if not looping:
+        n = max(0, min(frames, total - state.frame))
+        chunk = samples[state.frame : state.frame + n]
+        state.frame += n
+        return chunk
+    parts = []
+    remaining = frames
+    while remaining > 0 and state.frame < total:
+        stop = state.loop_end if state.frame < state.loop_end else total
+        n = max(0, min(remaining, min(stop, total) - state.frame))
+        parts.append(samples[state.frame : state.frame + n])
+        state.frame += n
+        remaining -= n
+        if state.frame >= state.loop_end and state.frame - n < state.loop_end:
+            state.frame = (
+                state.loop_start
+            )  # (only a playhead that was inside the loop wraps)
+    return np.concatenate(parts) if parts else samples[:0]
+
+
 def render_block(state: PlaybackState, frames: int, now: float | None = None) -> bytes:
     """The next `frames` frames of 16-bit stereo audio, advancing `state`. Silence when paused.
 
@@ -196,10 +226,11 @@ def render_block(state: PlaybackState, frames: int, now: float | None = None) ->
         if state.samples is None or (not state.playing and state.gain <= 0.0):
             return out.tobytes()
         total = len(state.samples)
-        n = max(0, min(frames, total - state.frame))
+        chunk = _take(state, frames, total)
+        n = len(chunk)
         if n:
             target = state.volume if state.playing else 0.0
-            chunk = state.samples[state.frame : state.frame + n].astype(np.float32)
+            chunk = chunk.astype(np.float32)
             if state.gain == target:
                 if target != 1.0:
                     chunk *= target
@@ -207,7 +238,6 @@ def render_block(state: PlaybackState, frames: int, now: float | None = None) ->
                 chunk *= np.linspace(state.gain, target, n, dtype=np.float32)[:, None]
             out[:n] = np.clip(chunk, -32768, 32767).astype(np.int16)
             state.gain = target
-            state.frame += n
         if state.frame >= total:
             state.playing = False
             state.finished = True
@@ -298,6 +328,7 @@ class AudioPlayer(QObject):
         self._set_playing(False)
         with self._state.lock:
             self._state.samples = audio.samples
+            self._state.loop_on = False
             self._state.frame = 0
             self._state.gain = 0.0
             self._state.finished = False
@@ -310,6 +341,7 @@ class AudioPlayer(QObject):
         self._set_playing(False)
         with self._state.lock:
             self._state.samples = None
+            self._state.loop_on = False
             self._state.frame = 0
             self._state.gain = 0.0
             self._state.scratching = False
@@ -346,6 +378,30 @@ class AudioPlayer(QObject):
             self._state.gain = 0.0  # fade in from silence: no click at the jump
             self._state.finished = False
         self.position_changed.emit(self.position)
+
+    # -- loops ------------------------------------------------------------
+
+    @property
+    def looping(self) -> bool:
+        return self._state.loop_on
+
+    def set_loop(self, start: float, end: float) -> None:
+        """Loop between two times (seconds) while the track plays: reaching `end` goes back to `start`.
+        A loop of no length is ignored."""
+        if self._state.samples is None:
+            return
+        first = max(0, round(start * SAMPLE_RATE))
+        last = min(len(self._state.samples), round(end * SAMPLE_RATE))
+        if last <= first:
+            return
+        with self._state.lock:
+            self._state.loop_start, self._state.loop_end = first, last
+            self._state.loop_on = True
+
+    def clear_loop(self) -> None:
+        """Leave the loop: the track plays on past its end."""
+        with self._state.lock:
+            self._state.loop_on = False
 
     def begin_scratch(self) -> None:
         """Hold the track under the user's hand. A playing track stays "playing" and

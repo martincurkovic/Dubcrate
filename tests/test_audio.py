@@ -658,3 +658,94 @@ def test_loading_a_new_track_ends_any_scratch(player):
     player.begin_scratch()
     player.load(DecodedAudio(sawtooth()))
     assert not player.scratching and player.position == 0.0
+
+
+# -- loops -------------------------------------------------------------------------------------
+
+
+def ramp(frames=2000):
+    return np.arange(frames, dtype=np.int16).repeat(2).reshape(-1, 2)
+
+
+def loop_state(start=100, end=150, frame=0, **extra):
+    return PlaybackState(
+        samples=ramp(),
+        playing=True,
+        gain=1.0,
+        loop_on=True,
+        loop_start=start,
+        loop_end=end,
+        frame=frame,
+        **extra,
+    )
+
+
+def test_a_loop_takes_the_playhead_back_to_its_start_each_time_it_reaches_its_end():
+    state = loop_state(frame=100)
+    out = blocks(render_block(state, 120))[:, 0].astype(int)
+    # 50 frames of the loop, then again from its start, then 20 into the third pass
+    assert out.tolist() == [*range(100, 150), *range(100, 150), *range(100, 120)]
+    assert state.frame == 120 and state.playing and not state.finished
+
+
+def test_a_block_that_ends_on_the_loops_end_wraps_for_the_next_one():
+    state = loop_state(frame=100)
+    render_block(state, 50)
+    assert state.frame == 100  # (wrapped as it reached the end)
+    assert blocks(render_block(state, 10))[0, 0] == 100
+
+
+def test_the_track_plays_up_to_the_loop_and_then_loops():
+    state = loop_state(start=100, end=150, frame=80)
+    out = blocks(render_block(state, 90))[:, 0].astype(int)
+    assert out.tolist() == [*range(80, 150), *range(100, 120)]
+
+
+def test_a_playhead_past_the_loop_plays_on_and_does_not_wrap():
+    state = loop_state(start=100, end=150, frame=300)
+    out = blocks(render_block(state, 50))[:, 0].astype(int)
+    assert out.tolist() == list(range(300, 350)) and state.frame == 350
+
+
+def test_a_loop_that_is_off_or_while_paused_does_nothing():
+    state = loop_state(frame=140)
+    state.loop_on = False
+    assert state.frame == 140 and blocks(render_block(state, 20))[19, 0] == 159
+    paused = loop_state(frame=140)
+    paused.playing = False
+    paused.gain = 0.0
+    assert not blocks(render_block(paused, 20)).any() and paused.frame == 140
+
+
+def test_a_loop_of_no_length_is_not_a_loop():
+    state = loop_state(start=100, end=100, frame=100)
+    assert blocks(render_block(state, 10))[9, 0] == 109 and state.frame == 110
+
+
+def test_a_loop_at_the_very_end_of_the_track_still_wraps():
+    state = loop_state(start=1900, end=2000, frame=1990)
+    out = blocks(render_block(state, 30))[:, 0].astype(int)
+    assert out.tolist() == [*range(1990, 2000), *range(1900, 1920)]
+    assert not state.finished
+
+
+def test_the_player_sets_and_clears_a_loop_in_seconds_and_a_new_track_drops_it(player):
+    player.load(audio(2.0))
+    assert not player.looping
+    player.set_loop(0.5, 1.0)
+    state = player._state
+    assert player.looping and (state.loop_start, state.loop_end) == (SAMPLE_RATE // 2, SAMPLE_RATE)  # fmt: skip
+    player.set_loop(1.0, 1.0)  # no length: ignored (the first stays)
+    assert state.loop_end == SAMPLE_RATE
+    player.set_loop(1.5, 99.0)  # held to the track
+    assert state.loop_end == len(state.samples)
+    player.clear_loop()
+    assert not player.looping
+    player.set_loop(0.5, 1.0)
+    player.load(audio(1.0))
+    assert not player.looping
+
+
+def test_a_loop_cannot_be_set_without_a_track(player):
+    player.set_loop(0.0, 1.0)
+    assert not player.looping
