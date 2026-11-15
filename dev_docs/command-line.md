@@ -132,3 +132,16 @@ a disc edited after its burn, needs no measured lengths, and warns if the disc d
 plan and what to test first) and [cdj1000mk3-card.md](cdj1000mk3-card.md) before using `--yes` on a
 card you care about: keep an image of it (`spikes/cdj_card_snap.sh`) so it can be put back.
 
+
+## Writing memory cues to rekordbox
+
+```sh
+dubcrate rekordbox write-memory-cues            # dry run: each edited track's memory cues now and after
+dubcrate rekordbox write-memory-cues --yes      # rekordbox CLOSED: back up master.db, write, read back, restore on failure
+dubcrate rekordbox write-memory-cues --db COPY/master.db --backup-dir DIR --keep-edits
+```
+
+The memory cues edited in Dubcrate's player are put into rekordbox's `master.db` and nothing else is written
+(`dev_docs/rekordbox-cue-writes.md`, "Stage 3 as built"). It refuses while rekordbox runs or on a table layout it doesn't know,
+copies the database's files to `rekordbox-backups` next to the library first, and puts them back if the read-back fails.
+Dubcrate's own edits for the written tracks are dropped afterwards unless `--keep-edits`. **Tried on synthetic databases only.**

@@ -91,7 +91,8 @@
 ### Player (rbxport-style)
 
 - [ ] Review what changed on the CDJ: read the card back, diff it with what Dubcrate wrote (a baseline saved at sync time), and list new / moved / deleted cues per track; then let the user accept them as edited memory cues (`dev_docs/rekordbox-cue-writes.md`, stage 1).
-- [ ] Writing memory cues to rekordbox itself (stage 3 of `dev_docs/rekordbox-cue-writes.md`): only if the owner asks, with a backup, rekordbox closed, a transaction, a read-back check and a trial on a copy first.
+- [x] Writing memory cues to rekordbox itself (stage 3 of `dev_docs/rekordbox-cue-writes.md`): `dubcrate rekordbox write-memory-cues` is built, tested on synthetic databases and dry-run against a snapshot of the real library.
+- [ ] **Live test of `dubcrate rekordbox write-memory-cues --yes` on one track** (rekordbox closed, after a backup): the cue shows in rekordbox, survives a restart and a rekordbox edit, and reaches a USB export (checklist in `dev_docs/rekordbox-cue-writes.md`). Then a button for it in the app.
 - [x] Phase 2 of the player: **CUE** (a temporary cue point), the **auto and manual loops** (AU / MA, IN, OUT, RELOOP, the loop size) and **Q** (quantise) work in the preview engine, session-only, never saved to rekordbox (`deck.py`, `audio/player.py`, `ui/preview.py`).
 - [ ] Listen to the loops on a real track: the wrap has no crossfade (a hard cut at the loop's end), so a loop not on a zero crossing may click; add a few milliseconds of fade if it does (`audio/player.py: _take`).
 - [ ] Try the new player by hand: dragging a track onto it, the hot cue and memory buttons on a real rekordbox track, the zoom buttons, and how it looks on a small screen.

@@ -906,10 +906,25 @@ class Library:
 
     def clear_memory_cues(self, path: str) -> None:
         """Forget the edits to the file's memory cues: rekordbox's are used again."""
-        key = path_key(path)
+        self.clear_memory_cue_key(path_key(path))
+
+    def clear_memory_cue_key(self, key: str) -> None:
+        """`clear_memory_cues` for a file known by its `path_key`."""
         with self._conn:
             self._conn.execute("DELETE FROM memory_cue WHERE path_key = ?", (key,))
             self._conn.execute("DELETE FROM memory_cue_set WHERE path_key = ?", (key,))
+
+    def memory_cue_sets(self) -> dict[str, list[tuple[int, str]]]:
+        """Every file with edited memory cues, by its `path_key`: (milliseconds, label), in time order."""
+        found: dict[str, list[tuple[int, str]]] = {
+            row["path_key"]: []
+            for row in self._conn.execute("SELECT path_key FROM memory_cue_set")
+        }
+        for row in self._conn.execute(
+            "SELECT path_key, time_ms, label FROM memory_cue ORDER BY time_ms, id"
+        ):
+            found.setdefault(row["path_key"], []).append((row["time_ms"], row["label"]))
+        return found
 
     def previews_for(self, tracks: Iterable[Track]) -> dict[int, Waveform]:
         """The kept Preview waveform of each of these tracks that has one, by track id. A track whose

@@ -45,8 +45,8 @@ habit of marking a track's start.
 2. **Edit memory cues in Dubcrate** (built 2026-11-15, see below): stored in Dubcrate's own database, layered over rekordbox's, and
    used by the player, Sync and the labels. rekordbox is not touched.
 3. **Write to rekordbox**: memory cues only, rekordbox closed, a backup of `master.db` and its `-wal` / `-shm` first, a
-   transaction, a read-back check, per-track undo, soft deletes, refusal on a schema not seen before; built and tried on a copy first.
-   **Not started.**
+   transaction, a read-back check, soft deletes, refusal on a schema not seen before; built and tried on synthetic databases first.
+   **Built 2026-11-15, see "Stage 3 as built"; not yet run on the owner's real library.**
 
 ## Stage 2 as built
 
@@ -57,3 +57,48 @@ habit of marking a track's start.
   for Sync (`card_discs.RekordboxCues.for_track`, `ui/cue_cache.RekordboxCueCache.cues_for`).
 - The player: **MEMORY** adds a memory cue at the playhead (on the beat with Q on), **✕** in the Memory list deletes one,
   right-click a row to move it to the playhead or delete it, **Reset** goes back to rekordbox's. An edited track says so.
+
+## Stage 3 as built (2026-11-15)
+
+`src/dubcrate/rekordbox_write.py` + `cli_rekordbox.py`: **`dubcrate rekordbox write-memory-cues [--db PATH] [--backup-dir DIR] [--keep-edits] [--yes]`**.
+It is the only code that writes a rekordbox database (the owner allowed exactly this).
+
+- **Dry run unless `--yes`.** It plans from a snapshot copy and prints, per track, the memory cues rekordbox has now and after.
+- **Refuses** while rekordbox is running, and when `djmdCue`, `djmdContent` or `agentRegistry` have columns other than pyrekordbox 0.5.0 knows
+  (a rekordbox update). The real file is SQLCipher-encrypted, so every check goes through pyrekordbox's session, never plain `sqlite3`.
+- **Matches on `path_key`** to ONE live `djmdContent` row; a file that rekordbox lists twice, or not at all, is skipped and keeps its edit.
+- **Copies `master.db`, `-wal`, `-shm` and `masterPlaylists6.xml`** to `rekordbox-backups/master-YYYYmmdd-HHMMSS/` before opening it for writing.
+- **One transaction through `commit(autoinc=True)`**, as rbxport does (the owner's recent rows have consecutive `rb_local_usn`, which is what
+  `autoincrement_local_update_count` makes): `agentRegistry.localUpdateCount` goes up by the changes pyrekordbox saw (more than one per row) and each
+  changed row gets an `rb_local_usn` from it.
+- **Per track:** a cue at the same time is kept (a label change edits `Comment`); the rest are paired in time order so a moved cue changes
+  `InMsec` / `InFrame` in place; extras are **soft deleted** (`rb_local_deleted = 1`, as rekordbox does); new ones copy the newest plain memory
+  cue's `Color` / `ColorTableIndex` / `ActiveLoop` (else 255 / 0 / 0), with `Kind` 0, `Out*` -1 / 0, `InFrame = floor(InMsec × 0.15)`, a new
+  28-bit random `ID` (pyrekordbox's `generate_unused_id`), a new `UUID` and the track's `UUID` as `ContentUUID`. The track's **`CueUpdated`**
+  counter (a string) goes up by one and its `updated_at` is set. Times are UTC to the millisecond (`... +00:00`, which pyrekordbox's
+  `DateTime` type writes).
+- **Hot cues, memory loops, other tracks' cues and every other table are not touched**; a memory loop (a `Kind` 0 row with an out point) is not a
+  plain memory cue and is left as it is.
+- **Reads it back** from a fresh snapshot: `PRAGMA integrity_check` is `ok`, the track and cue row counts are right, each written track's memory
+  cues are what was asked, and no other track's cues changed. **Anything wrong puts the backup's files back** (the sidecars it did not have are
+  removed) and says so.
+- **Afterwards** Dubcrate drops its edits for the written tracks, and for those already equal to rekordbox's (`--keep-edits` keeps them), so
+  later changes made in rekordbox show through again.
+
+### What the tests cover, and what they cannot
+
+`tests/test_rekordbox_write.py` builds a synthetic `master.db` with pyrekordbox's own models (NULLs allowed as in the real file): adding, moving,
+removing, label-only changes, soft delete, row shape, bookkeeping columns, other rows untouched, no-op, refusal (running, unknown columns), a
+failed commit and a bad read-back both restoring, and a guard that `commit(autoinc` appears nowhere else. The dry run was also tried against a
+snapshot copy of the owner's real library (schema check passed, a real track's cues matched).
+**Not covered, and only a real rekordbox can say:** whether rekordbox 7.2.19 reads a cue row it did not write without complaint, whether it
+notices the change on opening (it should: the file changed), whether the USB export carries the cue, and whether `CueUpdated` / the counter
+jump are what it expects.
+
+### Live test (the owner runs it; rekordbox 7.2.19.0342)
+
+1. rekordbox **closed**. Your backup of the library is the safety net; Dubcrate makes another (`rekordbox-backups`).
+2. In Dubcrate edit the memory cues of **one** track (add one, move one, delete one). `dubcrate rekordbox write-memory-cues` (dry run): read what it says.
+3. `dubcrate rekordbox write-memory-cues --yes`. Open rekordbox: the track should have exactly those memory cues and no error.
+4. In rekordbox move and delete one of them, close and reopen: still as you left it. Export the track to a USB: the cue is on the stick.
+5. If anything is wrong: close rekordbox and copy the files in the newest `rekordbox-backups/master-...` over `~/Library/Pioneer/rekordbox/`.
