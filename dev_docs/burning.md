@@ -1,4 +1,4 @@
-# Burning: the spike, and what has been tried on hardware
+# Burning: what has been tried on hardware
 
 Notes are tagged by how we know: **[hardware DATE]** measured on the real drive or
 player, **[tests]** covered by the automated tests, **[not tried]** written but never
@@ -16,31 +16,39 @@ run. Update this file when something is checked.
 3. Capacity is checked before rendering (from measured lengths) and again after
    (from the rendered lengths, which are the truth).
 
-## The burn spike
+## Trying a burn from the command line
 
-`spikes/burn_spike.py` is the original hardware driver: it renders tracks from files
-and burns them without the library. It is a dry run unless you pass `--yes`.
+`dubcrate burn` (and `dubcrate doctor`, which says what Dubcrate finds: tools, drives, the disc in the
+drive) is the way to try a burn without the window. It uses a library, so use a scratch one
+(`--library /tmp/x.db`) and never your own. It is a dry run unless you pass `--yes`.
 
 ```sh
-uv run spikes/burn_spike.py doctor                 # tools, drive, media state
-uv run spikes/burn_spike.py tones work/tones       # synthetic test tracks (24-bit FLAC, WAV, MP3)
-uv run spikes/burn_spike.py plan work/tones/* --work work/render
-uv run spikes/burn_spike.py toc  work/tones/* --work work/render     # the cdrdao TOC
-uv run spikes/burn_spike.py burn work/tones/* --work work/render \
-    --backend discrecording --yes --simulate       # laser-off test write, needs a disc in the drive
-uv run spikes/burn_spike.py burn work/tones/* --work work/render \
-    --backend discrecording --yes                  # really burn
+dc() { uv run dubcrate --library /tmp/x.db "$@"; }
+dc doctor                                     # tools, drive, media state
+# three synthetic tracks: 24-bit FLAC at 48 kHz, a WAV with a Unicode title, an MP3
+mkdir -p /tmp/tones
+ffmpeg -f lavfi -i sine=frequency=440:duration=40:sample_rate=48000 -ac 2 -c:a flac -sample_fmt s32 -metadata title="Test Tone A (24-bit/48k)" -metadata artist=Dubcrate /tmp/tones/01-a.flac
+ffmpeg -f lavfi -i sine=frequency=523:duration=30 -ac 2 -c:a pcm_s16le -metadata title="Café Ünïcode ☆ Test" -metadata artist="Dubcrate Ünit" /tmp/tones/02-b.wav
+ffmpeg -f lavfi -i sine=frequency=659:duration=25 -ac 2 -c:a libmp3lame -b:a 320k -metadata title="Test Tone C (MP3)" -metadata artist=Dubcrate /tmp/tones/03-c.mp3
+dc import-folder /tmp/tones
+dc disc new "Tones" --pregap 0
+dc disc add 1 --track 1 2 3
+dc burn 1                                     # dry run: checks the disc, burns nothing
+mkdir -p /tmp/tones-out && dc export 1 /tmp/tones-out   # a new folder there with the WAVs and the cdrdao TOC, no drive needed
+dc burn 1 --yes --simulate                    # laser-off test write, needs a disc in the drive
+dc burn 1 --yes                               # really burn
 ```
 
-`--pregap SECONDS` adds silence before tracks 2 and up. `work/` is git-ignored.
+`--pregap` on `disc new` / `disc set` sets the silence before tracks 2 and up (see the findings below for what
+the drive accepts), `--backend discrecording|cdrdao` picks the burner, and `--work DIR` keeps the rendered WAVs.
 
 ## A hardware check, step by step
 
 Use a blank CD-R (not a CD-RW) and a low speed.
 
-1. Put the disc in, run `doctor`: it should show the disc as blank, and the drive as
+1. Put the disc in, run `dubcrate doctor`: it should show the disc as blank, and the drive as
    able to write CD-R, CD-TEXT, SAO and test-write.
-2. Run the burn with `--simulate --yes`. The laser stays off, so the disc survives.
+2. Run `dubcrate burn 1 --simulate --yes`. The laser stays off, so the disc survives.
 3. Burn for real.
 4. `drutil toc` on the burned disc. With gapless discs, track *n+1* should start
    exactly where track *n* ends (for the three test tones: 00:02.00, 00:42.00,
@@ -166,6 +174,6 @@ track: `DRFolder` with `explicitFilesystemMask` ISO 9660 | Joliet, `DRTrack.trac
 - Pregap: `DRPreGapLengthKey` on a `DRTrack`, default 2 s; with
   `DRPreGapIsRequiredKey` true the burn fails instead of picking another length.
 - **Not yet known (matters for the burn dialog):** the polling loop pumps the run
-  loop of the thread it runs on. It has only been run on the main thread (the spike).
+  loop of the thread it runs on. It has only been run on the main thread (the first spike, since removed).
   Whether DiscRecording is happy being driven from a worker thread is untested; if
   it isn't, start and poll the burn on the main thread with a `QTimer`.

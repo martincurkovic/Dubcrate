@@ -52,6 +52,7 @@ from dubcrate.library.waves import measure_waveforms, store_waveforms
 
 from . import theme
 from .explorer import mounted_volumes
+from .format_card_dialog import FormatCardDialog
 from .glyph_widgets import GlyphButton, GlyphIcon, close_glyph, eject_glyph, ink
 from .label_dialog import disc_paths
 from .models import _disc_icon, _folder_icon
@@ -287,12 +288,19 @@ class CardPanel(QWidget):
         layout.addWidget(self.cards, 1)
         self.hint = QLabel(
             "Plug the CDJ's SD card into this Mac: it appears here by itself, found by its "
-            "PIONEER folder (click Refresh if it doesn't).\n\nA copy of a card's folder, or a "
-            "disk image of a card, can be chosen by hand."
+            "PIONEER folder (click Refresh if it doesn't).\n\nA blank card can be set up here with "
+            "Format a Card. A copy of a card's folder, or a disk image of a card, can be chosen by hand."
         )
         self.hint.setObjectName("mutedLabel")
         self.hint.setWordWrap(True)
         layout.addWidget(self.hint)
+        self.format_button = QPushButton("Format a Card…")
+        self.format_button.setToolTip(
+            "Set up a blank SD card from scratch: erase it, make it FAT16 and add the PIONEER folder, "
+            "so cues and waveforms can go on it before it has been in a player"
+        )
+        self.format_button.clicked.connect(self.format_card)
+        layout.addWidget(self.format_button)
         self.choose_button = QPushButton("Choose Folder…")
         self.choose_button.clicked.connect(self.choose_folder)
         layout.addWidget(self.choose_button)
@@ -395,8 +403,9 @@ class CardPanel(QWidget):
     # -- ejecting and removing -----------------------------------------------------
 
     def set_busy(self, busy: bool) -> None:
-        """A sync is writing to the card: its eject button waits."""
+        """A sync is writing to the card: its eject button waits, and no card is formatted under it."""
         self._busy = busy
+        self.format_button.setEnabled(not busy)
         self._restyle_rows()
 
     def _eject(self, path: Path) -> None:
@@ -429,6 +438,30 @@ class CardPanel(QWidget):
         if path in self._chosen:
             self._chosen.remove(path)
         self.refresh()
+
+    # -- formatting a blank card ---------------------------------------------------
+
+    def format_card(self) -> None:
+        """Open the Format a Card window; a card it makes is listed and picked at once."""
+        if self._busy or self._ejecting:
+            return
+        dialog = FormatCardDialog(self)
+        dialog.formatted.connect(self._formatted)
+        dialog.exec()
+
+    def _formatted(self, volume: Path) -> None:
+        """A card was just formatted (and is mounted): look again, and pick it."""
+        self.cards.blockSignals(True)
+        self.refresh(announce=False)
+        for row in range(self.cards.count()):
+            if self.cards.item(row).data(Qt.ItemDataRole.UserRole) == str(volume):
+                self.cards.setCurrentRow(row)
+        self.cards.blockSignals(False)
+        self._restyle_rows()
+        self.message.emit(
+            f"Formatted “{volume.name}”: it is ready for cues and waveforms. Eject it before taking it out."
+        )
+        self.card_changed.emit(self.current_card())
 
     # -- choosing by hand ----------------------------------------------------------
 

@@ -262,3 +262,17 @@ def test_a_confirmed_command_formats_and_says_where_the_card_is(
     assert cli_card.cmd_format(None, Args(yes=True, confirm="disk4")) == 0
     out = capsys.readouterr().out
     assert f"--card {tmp_path}" in out and "Eject it" in out
+
+
+def test_a_card_swapped_since_it_was_listed_is_not_erased(tmp_path, on_a_mac):
+    listed = disk()
+    run, seen, _ = fake_diskutil(
+        tmp_path, card=info(size=1_000_000_000, MediaName="Another card")
+    )
+    with pytest.raises(cf.FormatError, match="not the card that was picked any more"):
+        cf.format_card("disk4", run, expect=listed)
+    assert all(c[1] == "info" for c in seen)  # nothing was erased
+    run, seen, _ = fake_diskutil(tmp_path)
+    assert cf.format_card(
+        "disk4", run, expect=listed
+    ).volume  # the same card goes ahead

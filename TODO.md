@@ -28,7 +28,7 @@
   - [ ] Try the Sync tab itself on a real card (the command line is proven on hardware; the tab shares its write)
   - [x] Waveform pre-writing (needs the amplitude scale)
     - [ ] Try Sync's "Write waveforms" on a Dubcrate-burned disc and the real card (the CDJ should load every track with its waveform drawn, none analysed)
-- [ ] Try `dubcrate card format` on a spare 2 GB card (dev_docs/card-sync.md, "Formatting a card": does the player accept it, and cues synced straight onto it?), then build a GUI for it
+- [ ] Try `dubcrate card format` (or Sync > Format a Card…, built) on a spare 2 GB card (dev_docs/card-sync.md, "Formatting a card": does the player accept it, and cues synced straight onto it?)
 - [ ] Clean up long text labels in settings and add cm/in units (maybe in print dialog too)
   - [x] Check on real paper (and say if the vertical line spacing should shrink too)
   - [x] Make print dialog close when print (and resulting system print dialog is pressed)
@@ -61,11 +61,11 @@
 
 ### Before making the repo public
 
-- [ ] Give the README real download and install steps and re-check that every claim in it has actually been tried ([roadmap.md](dev_docs/roadmap.md)).
+- [ ] Give the README real download and install steps and re-check that every claim in it has actually been tried ([roadmap.md](dev_docs/roadmap.md)). (the audit and suggested wording: dev_docs/release-readiness.md)
 - [ ] Re-read the README's trademark wording and the "not affiliated" notice ([roadmap.md](dev_docs/roadmap.md)).
-- [ ] Look through the git history for anything personal that shouldn't be public ([roadmap.md](dev_docs/roadmap.md)).
-- [ ] Write a changelog (the update check reads GitHub's release notes) ([roadmap.md](dev_docs/roadmap.md)).
-- [ ] Decide whether `AGENTS.md` and `CLAUDE.md` stay in the public repo ([roadmap.md](dev_docs/roadmap.md)).
+- [x] Look through the git history for anything personal that shouldn't be public ([roadmap.md](dev_docs/roadmap.md)). (scanned 2026-11-15, nothing sensitive; the decisions it leaves are in dev_docs/release-readiness.md)
+- [ ] Write a changelog (the update check reads GitHub's release notes) ([roadmap.md](dev_docs/roadmap.md)). (a draft is in CHANGELOG.md: edit it)
+- [x] Decide whether `AGENTS.md` and `CLAUDE.md` stay in the public repo ([roadmap.md](dev_docs/roadmap.md)). (they stay: decided 2026-11-15)
 - [ ] Read the third-party notices carefully, since they name each licence but don't reproduce the full texts ([roadmap.md](dev_docs/roadmap.md)).
 
 ### Features and app polish
@@ -85,7 +85,7 @@
 - [ ] Add rekordbox XML export as an import path with no SQLCipher dependency ([roadmap.md](dev_docs/roadmap.md)).
 - [ ] Read rekordbox's `PWV3` and `PWV5` directly for exact waveform matches on rekordbox tracks ([rekordbox-analysis.md](dev_docs/rekordbox-analysis.md)).
 - [x] Verify the CDJ card format notes (chunk layout and checksum) against a real card file ([cdj1000mk3-card.md](dev_docs/cdj1000mk3-card.md)).
-- [ ] Delete `spikes/burn_spike.py` once nothing needs it, since the window and CLI now do what it does ([roadmap.md](dev_docs/roadmap.md)).
+- [x] Delete `spikes/burn_spike.py` once nothing needs it, since the window and CLI now do what it does ([roadmap.md](dev_docs/roadmap.md)).
 - [ ] Refresh dev notes that have gone stale, such as `command-line.md` saying burning is CLI-only ([command-line.md](dev_docs/command-line.md)).
 
 ### Linux and Windows

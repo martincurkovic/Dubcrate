@@ -11,7 +11,7 @@ import argparse
 import sys
 from pathlib import Path
 
-from dubcrate import card_format
+from dubcrate import card_format, wave_check
 from dubcrate import cdj_card as cc
 from dubcrate.card_apply import apply_sync, default_backup_dir
 from dubcrate.card_discs import (
@@ -210,6 +210,50 @@ def cmd_format(_: Library, args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_check_waveforms(_: Library, args: argparse.Namespace) -> int:
+    """How close the model is to what the player wrote for a disc (the card's own records vs the audio)."""
+    from dubcrate.audio.decode import DecodeError, decode_file
+
+    try:
+        index, files = cc.read_card(Path(args.card).expanduser())
+        if args.from_drive:
+            starts, lead_out = read_drive_toc()
+        else:
+            starts, lead_out = cc.toc_from_drutil(
+                Path(args.toc).expanduser().read_text(encoding="utf-8")
+            )
+    except (cc.CardFormatError, DriveTocError, OSError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    disc_id = cc.DiscId.from_toc(starts, lead_out)
+    entry = index.find(disc_id)
+    if entry is None:
+        print("error: this disc is not on the card (its table of contents is not in the index).", file=sys.stderr)  # fmt: skip
+        return 1
+    file = files.get(entry.name)
+    if file is None or not file.fine:
+        print(f"error: the player has not recorded a waveform for {entry.name} yet: play some of the disc.", file=sys.stderr)  # fmt: skip
+        return 1
+    audio = wave_check.audio_files(Path(args.audio).expanduser())
+
+    def audio_of(track: int):
+        path = audio.get(track)
+        if path is None:
+            return None
+        try:
+            return decode_file(str(path)).samples
+        except DecodeError as exc:
+            print(f"warning: {path.name}: {exc}", file=sys.stderr)
+            return None
+
+    found, notes = wave_check.check_file(file, audio_of, args.track or None)
+    print(
+        f"{entry.name}: {len(file.fine)} waveform slots; the model against the player's own values (absolute scale)"
+    )
+    print("\n".join(wave_check.describe(found, notes)))
+    return 0 if found else 2
+
+
 def add_parsers(sub: argparse._SubParsersAction) -> None:
     card = sub.add_parser("card", help="the CDJ-1000MK3's SD card").add_subparsers(
         dest="action", required=True
@@ -278,3 +322,17 @@ def add_parsers(sub: argparse._SubParsersAction) -> None:
         help="the disk's name again, instead of being asked to type it",
     )
     p.set_defaults(fn=cmd_format)
+
+    p = card.add_parser(
+        "check-waveforms",
+        help="how close the model is to the waveforms the player wrote for a disc (needs the disc's audio)",
+    )
+    p.add_argument("card", help=where)
+    p.add_argument("--audio", required=True, help="a folder with the disc's tracks, each file named with its track number first")  # fmt: skip
+    source = p.add_mutually_exclusive_group(required=True)
+    source.add_argument(
+        "--toc", help="the disc's `drutil toc` output (a file), to find it on the card"
+    )
+    source.add_argument("--from-drive", action="store_true", help="read the disc in the drive's TOC instead")  # fmt: skip
+    p.add_argument("--track", type=int, action="append", help="only this track (repeat for more)")  # fmt: skip
+    p.set_defaults(fn=cmd_check_waveforms)

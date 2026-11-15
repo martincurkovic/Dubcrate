@@ -278,8 +278,6 @@
   from rekordbox's own files). Caching them in SQLite would fix that.
 - The waveform scaling (gamma, the overview's auto-gain) was tuned by eye against the
   rbxport screenshot, not measured.
-- `spikes/burn_spike.py` duplicates some of what `build.py` and the CLI now do; it can
-  go once the window burns.
 - The GUI's *Between tracks* menu offers 1-3 s, whose unit is unverified (see
   [burning.md](burning.md)).
 

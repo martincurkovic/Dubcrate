@@ -19,7 +19,7 @@ player** (2026-11-14, firmware 2.20).
 merge and plan (`card_sync.py`), the library glue (`card_discs.py`), reports (`card_report.py`), the command line
 (`dubcrate card show | backup | toc | sync`), `card_apply.py` (the shared write), `drive_toc.py`, `eject.py`,
 `burn_check.py`, the Sync tab (`ui/sync_view.py`, with its writing **switched on**), reading rekordbox's cues from its
-database and drawing them in the preview, and the waveform test disc (`wavetest.py`, `wavefit.py`). **The player has
+database and drawing them in the preview, and the waveform test discs (`wavetest.py`, `wave_model.py`, `wave_check.py`). **The player has
 accepted our files in every case tried** (t1 to t4 below and in `cdj1000mk3-card.md`). Still unproven on hardware: the
 Sync tab itself on a real card (the command line is), the post-burn TOC check on a real burn, and the test disc. The owner
 has asked for finished items in `TODO.md` to be ticked off (done 2026-11-14).
@@ -198,6 +198,8 @@ What differs from the player's own format (`00-blank.img`: partition at sector 3
 `MSWIN4.1`-like): `diskutil` starts the partition at sector 2048 (1 MiB) with 1 reserved sector, and a "Free Space"
 partition first did not move it. Matching exactly needs the MBR and boot sector written raw, which means `sudo`.
 cdjmerge's notes say a card formatted elsewhere is refused by the player; this is **unproven either way**.
+
+**The Sync tab has a Format a Card… button (2026-11-15, owner's request: set a card up from home, without the CDJ).** Same core, with a window that lists removable disks and why any is refused, a tick box and a button that says what it does, and the disk checked again, and checked to still be the one listed (`format_card(expect=)`), just before it is erased. **The hardware test below is still to do, and the guide says so.**
 
 **Hardware test (the owner; a SPARE 2 GB card, not the working one; do these in order, stop at the first failure):**
 

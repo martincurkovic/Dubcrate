@@ -24,14 +24,13 @@ image and needs no card, and prints what would be written.
 
 import argparse
 import plistlib
-import re
 import shutil
 import subprocess
 import sys
 from pathlib import Path
 
 from dubcrate import cdj_card as cc
-from dubcrate import tools, wave_model, wavetest
+from dubcrate import tools, wave_check, wave_model, wavetest
 
 
 def run(*cmd: str) -> str:
@@ -62,15 +61,6 @@ def mount_point(device: str) -> Path:
         ).stdout
     )
     return Path(info["MountPoint"])
-
-
-def audio_files(folder: Path) -> dict[int, Path]:
-    found = {}
-    for path in sorted(folder.iterdir()):
-        match = re.match(r"\s*(\d+)", path.name)
-        if match and path.is_file() and not path.name.startswith("."):
-            found.setdefault(int(match.group(1)), path)
-    return found
 
 
 def columns_for(
@@ -104,7 +94,7 @@ def plan(args: argparse.Namespace) -> dict[int, tuple[str, list[int]]]:
     ffmpeg = tools.find_tool("ffmpeg")
     if ffmpeg is None:
         sys.exit("ffmpeg was not found")
-    files = audio_files(args.audio) if args.audio else {}
+    files = wave_check.audio_files(args.audio) if args.audio else {}
     return {
         t: (m, columns_for(t, m, files, ffmpeg.path, not args.absolute))
         for t, m in sorted(wanted.items())

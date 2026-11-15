@@ -218,6 +218,22 @@ def _no_real_card_search(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _no_real_card_format(monkeypatch):
+    """No test may list or erase a real disk: the Format a Card window is given a lister and a formatter,
+    and the card panel's button opens a window a test must stand in for (patch sync_view.FormatCardDialog)."""
+
+    def refuse(*_a, **_k):
+        raise AssertionError(
+            "a test reached a real disk or opened the Format a Card window; inject list_disks / "
+            "formatter, or patch sync_view.FormatCardDialog"
+        )
+
+    monkeypatch.setattr("dubcrate.ui.format_card_dialog._real_lister", refuse)
+    monkeypatch.setattr("dubcrate.ui.format_card_dialog._real_formatter", refuse)
+    monkeypatch.setattr("dubcrate.ui.sync_view.FormatCardDialog", refuse)
+
+
+@pytest.fixture(autouse=True)
 def _no_real_export_chooser(monkeypatch):
     """No test may open the folder chooser of the burn window's Export: patch burn_dialog.ask_export_folder."""
 

@@ -5,20 +5,16 @@
         into a new OUTDIR (keep it outside the repository: it is about 300 MB)
     uv run spikes/wave_test_disc.py probes OUTDIR [--first N]
         the second disc's ten probe tracks (they follow N - 1 real tracks on the disc; default N = 10)
-    uv run spikes/wave_test_disc.py fit MANIFEST CARD
-        reads the disc's file from the card (its root, its PIONEER folder, or a copy of PIONEER/CDJ) and
-        prints what the player's waveform values follow, and what each value stands for
+(what the player wrote is read back with `dubcrate card check-waveforms CARD --toc TOC --audio DIR`)
 
-`dev_docs/wave-test-disc.md` is the whole procedure. The logic is `dubcrate.wavetest` and `dubcrate.wavefit`.
+`dev_docs/wave-test-disc.md` is the whole procedure. The logic is `dubcrate.wavetest`; the model is `dubcrate.wave_model`.
 """
 
 import argparse
-import json
 import sys
 from pathlib import Path
 
-from dubcrate import cdj_card as cc
-from dubcrate import tools, wavefit, wavetest
+from dubcrate import tools, wavetest
 
 
 def make(args: argparse.Namespace) -> int:
@@ -60,43 +56,6 @@ def probes(args: argparse.Namespace) -> int:
     return 0
 
 
-def fit(args: argparse.Namespace) -> int:
-    tracks = wavetest.tracks_from_manifest(
-        json.loads(Path(args.manifest).read_text(encoding="utf-8"))
-    )
-    try:
-        index, files = cc.read_card(Path(args.card).expanduser())
-    except cc.CardFormatError as exc:
-        print(f"error: {exc}", file=sys.stderr)
-        return 1
-    wanted = cc.DiscId.from_toc(*cc.toc_from_lengths([t.sectors for t in tracks]))
-    entry = index.find(wanted)
-    if (
-        entry is None
-    ):  # the TOC the disc really has can differ a little: take the one with this many tracks
-        like = [e for e in index.entries if e.disc_id.track_count == len(tracks)]
-        if len(like) != 1:
-            print(
-                f"error: no disc of {len(tracks)} tracks (exactly one) on the card",
-                file=sys.stderr,
-            )
-            return 1
-        entry = like[0]
-        print(
-            f"note: the card's entry for the disc ({entry.file_name}) differs from the planned TOC"
-        )
-    file = files.get(entry.name)
-    if file is None:
-        print(
-            f"error: {entry.file_name} has no file yet: the disc has not been played",
-            file=sys.stderr,
-        )
-        return 1
-    _fit, lines = wavefit.analyse(tracks, file)
-    print("\n".join(lines))
-    return 0
-
-
 def main() -> int:
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
@@ -111,10 +70,6 @@ def main() -> int:
         "--first", type=int, default=10, help="the number of the first probe track"
     )
     p.set_defaults(fn=probes)
-    p = sub.add_parser("fit", help="read the player's result")
-    p.add_argument("manifest")
-    p.add_argument("card")
-    p.set_defaults(fn=fit)
     args = parser.parse_args()
     return args.fn(args)
 

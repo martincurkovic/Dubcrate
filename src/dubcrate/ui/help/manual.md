@@ -390,6 +390,18 @@ The rules it follows:
 
 Two discs whose tracks are exactly the same lengths would look like the same disc to the player, and so would share their cues.
 
+### Setting up a blank card
+
+You don't need the player to get a card ready. **Format a Card…** (under the card list) erases a blank SD card, makes it the kind of FAT16 card the player expects (named `DISK_IMG`) and adds the **PIONEER** folder the player keeps its files in. The card appears in the list at once, picked, so you can sync cues and waveforms to it straight away, at home, and put it in the player at the venue.
+
+![The Format a Card window: the removable disks, a card that can be used and one that can't](screenshots/format-card.png "Format a Card")
+
+- **Only plain SD cards of 2 GB or less.** The CDJ-1000MK3 can't read SDHC or SDXC cards (anything bigger than 2 GB is one of those), and the window greys those out with the reason. A card is told apart by its size, which is all the Mac reports.
+- **It erases the card, and only a card.** Only removable disks are listed (never your Mac's own disk), a locked card or a disk image is greyed out, you have to tick that you understand everything on it will be erased, and the disk is checked again, and checked to still be the one you picked, just before it is erased.
+- **Macs only so far.** On Linux and Windows the window says so.
+
+> **Not yet tried on a player.** The card it makes follows the layout of a card the player formatted itself (FAT16, 32 KB clusters, the same name), but a CDJ has not yet been shown a card made this way, and the player's own card has its partition 1 MiB closer to the start. If the player says *UNFORMAT* or *CARD ERROR* for a card made here, format it once in the player (the CDJ-1000MK3's own manual says how) and please tell us what the display said.
+
 ---
 
 ## Settings

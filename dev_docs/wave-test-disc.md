@@ -1,14 +1,17 @@
 # The waveform test disc
 
-Goal: find the rule the CDJ-1000MK3 uses to turn audio into the waveform it records on its SD card (the
-50-value `W001` and 100-value `W002` record per track, each value 0 to 15; see
-[cdj1000mk3-card.md](cdj1000mk3-card.md), "The waveform"). Reading the firmware did not find it (same file,
-"What the firmware says about it"), so this measures it: **one disc of known signals, played once, read back.**
+**Done: both discs were played on 2026-11-15 and the rule is worked out well enough to write waveforms**
+(results in [cdj1000mk3-card.md](cdj1000mk3-card.md), "The waveform, measured"; the model is `src/dubcrate/wave_model.py`). This file is
+how the discs were made and played, and how to make and read another: a new kind of music, MP3 discs, a different firmware.
 
-Code: `src/dubcrate/wavetest.py` (the audio and the manifest), `src/dubcrate/wavefit.py` (the analysis),
-`spikes/wave_test_disc.py` (`make` and `fit`). The disc's files are made, and checked sample by sample, in
-`~/cdj-card/wave-test-disc/` (outside the repository: 63 MB). It can be made again, identically:
-`uv run spikes/wave_test_disc.py make ~/cdj-card/wave-test-disc` into a new folder.
+Goal: find the rule the CDJ-1000MK3 uses to turn audio into the waveform it records on its SD card (the
+50-value `W001` and 100-value `W002` record per track, each value 0 to 15; see the card notes, "The waveform"). Reading the
+firmware did not find it, so this measures it: **a disc of known signals, played once, read back.**
+
+Code: `src/dubcrate/wavetest.py` (the audio and the manifest), `spikes/wave_test_disc.py` (`make` disc 1, `probes` for disc 2's
+tracks), and `dubcrate card check-waveforms` (`src/dubcrate/wave_check.py`) to compare what the player wrote with the model. Disc 1's
+files are made, and checked sample by sample, in `~/cdj-card/wave-test-disc/` (outside the repository: 63 MB). It can be made
+again, identically: `uv run spikes/wave_test_disc.py make ~/cdj-card/wave-test-disc` into a new folder.
 
 ## The procedure (the owner, at the hardware, about an hour)
 
@@ -39,8 +42,10 @@ Code: `src/dubcrate/wavetest.py` (the audio and the manifest), `src/dubcrate/wav
    its own loudness. The whole disc is 34 minutes; if the player has a continuous-play mode, use it.
 3. **Eject the disc, eject the card from the Mac before pulling it, and copy `PIONEER` off the card** (as for
    `t1-post-cdj`), for example to `~/cdj-card/wave-post-cdj`.
-4. `uv run spikes/wave_test_disc.py fit ~/cdj-card/wave-test-disc/manifest.json ~/cdj-card/wave-post-cdj > wave-report.txt`
-   and look at it (or give it to the agent). It needs no player and no disc.
+4. Compare what the player wrote with the model, track by track: `uv run dubcrate card check-waveforms ~/cdj-card/wave-post-cdj
+   --toc "~/cdj-card/CD TOC.txt" --audio DIR` (the disc's `drutil toc`, and a folder holding its tracks, each file named with its
+   track number first: `wave-test-disc/`'s FLACs, or an audio CD's `1 Audio Track.aiff` files). It needs no player and no disc.
+   The raw columns of any record are `dubcrate card show CARD --waveforms`.
 
 ## The tracks
 
@@ -70,43 +75,14 @@ A level is the **peak** of a sine in dBFS unless it says RMS. Tonal and noise pa
 | 19 | track 1's staircase over 200 s (8 s steps) | does the scale depend on track length? |
 | 20 | track 1's staircase over 40 s (1.6 s steps) | the same, short |
 
-## How the fit reads it
-
-`wavefit.analyse` regenerates every track from the manifest (so it measures the samples that were burned, not
-the nominal levels) and cuts each into the player's columns. Per column it measures six statistics: the louder
-channel's peak, the peak of the sum, and RMS and mean absolute value of the sum and of both channels.
-
-- **Alignment**: the shift of the column grid that fits track 3's bursts best (±1 column, in eighths).
-- **Which statistic**: the share of column pairs, pooled over the scale tracks, that the player's values put
-  the wrong way round for each statistic (0 is a perfect fit). Pooling matters: an RMS player gives equal values
-  to equal-RMS shapes, which says nothing alone, but against another track's columns a peak statistic is
-  contradicted.
-- **The scale**: for the best statistic, the lowest and highest level (dB) seen for each value 0 to 15 from steps
-  and ramps, and the boundaries between values.
-- **Per segment**: the median value of each segment's columns with its peak and RMS, so the other questions
-  (normalisation: track 4 against 1; length: 19 and 20 against 1; frequency; stereo; time constant; the floor) can be
-  read straight off.
-
-A value of zero is both "silent" and "not played yet", so an all-zero record counts as not played.
-The fitter is tested against a stand-in player with a known rule (`tests/test_wavefit.py`: it recovers a peak
-rule and its boundaries, tells an RMS rule from a peak rule, and finds a shifted grid), but **never against a
-real player**: expect to adjust it to what the real records look like.
-
-## When the result is in
-
-Put the numbers in [cdj1000mk3-card.md](cdj1000mk3-card.md) (the waveform section and gap 5), and the player's
-files in the experiments table. Then waveform pre-writing (a Sync that writes complete records so a disc loads with
-its waveforms already drawn) becomes possible: it needs the scale from here and a check that the player accepts a
-complete record, which `t2` already showed for an empty file but not for a full one.
-
 ## Result of the first run (2026-11-15)
 
-Disc 1 showed the values are not the full-range level (a bass band, about 2.5 dB a value as first read). Its two later readings
-(50 blocks of two values, shift 0 or 1 s) were corrected by disc 2: see [cdj1000mk3-card.md](cdj1000mk3-card.md), "Disc 2".
-`wavefit.py` was written for a full-range peak or RMS on 100 columns read high-nibble first, so it is out of date (the
-scratch analysis is in `~/cdj-card/wave-analysis/` and `wave-analysis2/`).
+The player's values are **not** the level of the full signal: they follow a **bass band** (125 to 160 Hz, 12 dB an octave) at **2 dB a
+value**, 100 columns a track, low nibble first. Disc 1's tracks are why: a 1 kHz tone reads the floor of 2 at any level, the frequency
+sweeps (tracks 8 and 11) give the band's shape, the pulses and noise gave the time window. Disc 2 pinned it (below). Disc 1's own
+analysis went through three wrong readings first: see "What we first got wrong" in the card notes.
 
-## Disc 2: probes and real music (built 2026-11-15, not yet burned or played)
+## Disc 2: probes and real music (built, burned and played 2026-11-15)
 
 Built from what disc 1 showed. **Tracks 1 to 10 are probes** (`wavetest.build_probe_tracks`, 19 minutes, made by
 `uv run spikes/wave_test_disc.py probes ~/cdj-card/wave-test-disc-2 --first 1`, manifest beside the FLACs), **tracks 11 to 19 are

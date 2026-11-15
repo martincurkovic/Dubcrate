@@ -182,8 +182,8 @@ was run on a Windows desktop or drive. What they showed:
 
 - [ ] **Spike first, on a real Windows machine with a drive**, before any design:
   `cdrdao scanbus`, `cdrdao disk-info`, a simulated audio burn with CD-TEXT, one real disc
-  checked on a CDJ. `spikes/burn_spike.py` already drives a backend (`--backend cdrdao`, dry run
-  by default) and `burning.md` has the hardware check steps.
+  checked on a CDJ. `dubcrate burn --backend cdrdao` already drives that backend (a dry run by default),
+  `dubcrate doctor` says what is found, and `burning.md` has the hardware check steps.
 - [ ] Get a trustworthy `cdrdao.exe`. The project publishes source (1.2.6 notes mention a native
   Windows interface; an older note says the port was Cygwin-based). Build it with MSYS2 or
   Cygwin in CI and keep it in a bundled folder. Licence: check (it is GPL; we run it as a

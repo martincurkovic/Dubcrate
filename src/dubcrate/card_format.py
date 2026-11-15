@@ -197,15 +197,25 @@ class Formatted:
 
 
 def format_card(
-    device: str, run: Runner = subprocess.run, *, allow_images: bool = False
+    device: str,
+    run: Runner = subprocess.run,
+    *,
+    allow_images: bool = False,
+    expect: CardDisk | None = None,
 ) -> Formatted:
     """Erase a card, make it MBR + FAT16 named `DISK_IMG`, and make `PIONEER/CDJ` on it.
 
     Checks the disk again just before (a disk number can change hands between a list and this),
-    refusing anything `problems` names. The card is **left mounted**, so a sync can follow; it
+    refusing anything `problems` names, and, with `expect` (the disk as it was listed), a disk that is no
+    longer that one (another card in the reader). The card is **left mounted**, so a sync can follow; it
     must still be ejected through the system before it is pulled. Raises `FormatError`.
     """
     disk = inspect(device, run)
+    if expect is not None and (disk.name, disk.size) != (expect.name, expect.size):
+        raise FormatError(
+            f"{disk.device} is not the card that was picked any more (it is now "
+            f"{describe(disk)}): nothing was erased. Look at the list again."
+        )
     if found := problems(disk, allow_images=allow_images):
         raise FormatError(found[0])
     _diskutil(run, "partitionDisk", disk.node, "MBR", "MS-DOS FAT16", LABEL, "100%")

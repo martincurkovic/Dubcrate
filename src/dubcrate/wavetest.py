@@ -5,7 +5,7 @@ The player writes a 50-value (`W001`) and a 100-value (`W002`) record per track 
 "The waveform"). This module makes the audio that finds it: every track is built from **segments of
 known signals** (a staircase of levels, equal-RMS shapes, bursts, ...) so that the values the player
 records can be compared with what was in each column. `dev_docs/wave-test-disc.md` says how to burn and
-play it; `wavefit.py` reads the result.
+play it; `dubcrate card check-waveforms` (`wave_check.py`) reads the result.
 
 The audio is **deterministic** and described by a plain-data manifest (`manifest`, `tracks_from_manifest`),
 so the fitter regenerates the exact samples that were burned instead of trusting nominal levels. Every

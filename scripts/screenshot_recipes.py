@@ -459,6 +459,28 @@ def _sync(ctx):
     return window
 
 
+@shot(
+    "format-card",
+    "Format a Card…: the window that sets up a blank SD card (invented disks: nothing is listed or erased)",
+)
+def _format_card(ctx):
+    from dubcrate import card_format as cf
+    from dubcrate.ui.format_card_dialog import FormatCardDialog
+
+    def listing():
+        return [
+            cf.CardDisk("disk4", "Generic STORAGE DEVICE", 2_013_265_920, "USB", True, True, False, False, True),
+            cf.CardDisk("disk5", "SDXC card", 128_000_000_000, "USB", True, True, False, False, True),
+        ]  # fmt: skip
+
+    dialog = FormatCardDialog(ctx.window(), list_disks=listing)
+    dialog.resize(580, 500)
+    dialog.show()
+    ctx.on_cleanup(dialog.close)
+    ctx.settle(8)
+    return dialog
+
+
 @shot("settings", "Settings…: the Audio tab")
 def _settings(ctx):
     from dubcrate.ui.settings_dialog import SettingsDialog
