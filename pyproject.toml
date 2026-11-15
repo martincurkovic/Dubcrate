@@ -15,6 +15,7 @@ dependencies = [
     "miniaudio>=1.71",
     "numpy>=2",
     "platformdirs>=4.14.5",
+    "pycdlib>=1.22.0",
     "pyobjc-framework-discrecording>=13.0 ; sys_platform == 'darwin'",
     "pyrekordbox>=0.5.0",
     # Qt 6.12 is the current LTS line; its wheels need macOS 14, which is the floor of the built app

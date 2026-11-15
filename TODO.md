@@ -91,7 +91,8 @@
 ### Linux and Windows
 
 - [ ] Try eject (card and disc) and the disc's TOC reader on a real Linux and a real Windows machine (`eject.py`, `drive_toc.py`; tested against stand-in commands only) ([cross-platform.md](dev_docs/cross-platform.md)).
-- [ ] Use `pycdlib` to make the MP3 disc's ISO on every OS, so no `xorriso` is needed and Windows can make MP3 discs ([cross-platform.md](dev_docs/cross-platform.md), Phase 6 step 4).
+- [x] Use `pycdlib` to make the MP3 disc's ISO on every OS, so no `xorriso` is needed and Windows can make MP3 discs ([cross-platform.md](dev_docs/cross-platform.md), Phase 6 step 4).
+- [ ] Burn an MP3 disc from a `pycdlib` image (`dubcrate export`'s `disc.iso`, in Brasero or Finder, or `cdrdao` on Linux) and play it in a CDJ and a car player; try a disc 8 folders deep ([cross-platform.md](dev_docs/cross-platform.md)).
 - [ ] Guard Windows' reserved names (`CON`, `NUL`, `COM1`...) in MP3 folder names, and try a long path on Windows ([cross-platform.md](dev_docs/cross-platform.md), Phase 6 step 5).
 - [ ] Notice an SD card being plugged in on Windows, which has no folder to watch ([cross-platform.md](dev_docs/cross-platform.md), Phase 6 step 6).
 - [ ] Try Format a Card on a spare 2 GB card on Linux and on Windows (built, tested against stand-in commands only: `card_format_linux.py`, `card_format_windows.py`; the Linux layout was checked with the real `sfdisk` and `mkfs.fat` on an image file).

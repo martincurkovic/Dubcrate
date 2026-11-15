@@ -104,7 +104,7 @@ who has no Mac. Everything off macOS is **[not tried]** until the line says othe
 | --- | --- | --- | --- | --- |
 | 1 | **Ejecting** a card or the disc | `eject.py` | "Eject after syncing" and the row's eject button fail; a card pulled early can be left unreadable by the player (the one hazard the owner has hit) | Linux: `udisksctl unmount -b` (this is the flush that matters) then `power-off` (best effort: a built-in slot refuses it); the disc with `eject`. Windows: the Shell "Eject" verb through PowerShell, then wait for the drive to vanish. **Phase 6, step 1** |
 | 2 | **Reading the disc's TOC** | `drive_toc.py` (`drutil toc`), `cdj_card.toc_from_drutil`, used by `burn_check`, `card sync --from-drive`, `card toc` | `can_read_toc()` is False, so the post-burn check is skipped and a burn goes unverified | Linux: `cdparanoia -Q` / `cd-info`, or the `CDROMREADTOC*` ioctls through `ctypes` (no tool). Windows: `IOCTL_CDROM_READ_TOC` through `ctypes`. One small parser each, all ending in `(starts, lead_out)`. **Phase 6, step 3** |
-| 3 | **Making the ISO** for an MP3 disc | `iso.py` (`hdiutil` on a Mac, `xorriso` / `genisoimage` / `mkisofs` elsewhere) | Windows: "not supported yet"; Linux needs xorriso installed | `pycdlib` (pure Python, LGPL-2.1, ISO 9660 + Joliet): no tool on any OS, and the `hdiutil` branch can go. Needs a notices entry, and the Joliet name limits checked against `mp3.MAX_NAME_CHARS`. **Phase 6, step 4** |
+| 3 | **Making the ISO** for an MP3 disc | `iso.py` (`hdiutil` on a Mac, `xorriso` / `genisoimage` / `mkisofs` elsewhere) | **Done 2026-11-15** (was: Windows "not supported yet", Linux needed xorriso) | `pycdlib` (pure Python, LGPL-2.1, ISO 9660 + Joliet): no tool on any OS, and the `hdiutil` branch can go. Needs a notices entry, and the Joliet name limits checked against `mp3.MAX_NAME_CHARS`. **Phase 6, step 4** |
 | 4 | **Burning** | `burn/discrecording.py` (Mac), `burn/cdrdao.py` | Phases 3 and 4 below | unchanged: `cdrdao` on Linux; Windows has no trustworthy `cdrdao.exe`, IMAPI2 is the fallback |
 | 5 | **ffmpeg / ffprobe bundled** | `scripts/build_ffmpeg_macos.sh`, `tools.find_tool` | only the macOS app bundles them; elsewhere the user installs them (`tools.install_command()`) | LGPL builds per OS (Phase 5) |
 | 6 | **A card plugged in, noticed** | `ui/explorer.py: volume_parents`, `CardPanel` | Windows has no folder to watch, so the list changes on Refresh or when the tab opens; Linux and Windows drive lists never ran on a real system | poll `mounted_volumes()` while the tab is visible, or `WM_DEVICECHANGE` |
@@ -121,7 +121,7 @@ injectable runner, an expected-error exception with plain words, tests against s
 - [x] **1. Eject** (`eject.py`): Linux and Windows added, tested against stand-in commands. **[not tried]**
 - [x] **2. Wording**: "Eject it in Finder" and the other Mac-only phrases use `card_format.eject_hint()` or say the OS neutrally.
 - [x] **3. Read the TOC** on Linux (kernel ioctls) and Windows (`IOCTL_CDROM_READ_TOC`, `ctypes`) in `drive_toc.py`, so `burn_check` runs after any burn. Tested against made-up answers only. **[not tried]**
-- [ ] **4. `pycdlib`** for the MP3 disc's ISO, then drop the external-tool lookup for it.
+- [x] **4. `pycdlib`** makes the MP3 disc's ISO on every OS (`iso.py`: Joliet names, Rock Ridge, numbered 8.3 names underneath, ASCII volume label); the external-tool lookup and the `hdiutil` branch are gone. Read back with `xorriso` and `isoinfo`; the smoke test makes an image in a built app. **Not burned and played** on a real drive.
 - [~] **5. Windows reserved names**: `mp3.dir_name` gives `CON`, `NUL`, `COM1`... an underscore (done, tested). The 260-character path limit for staged files is still **unchecked** on a real Windows machine.
 - [ ] **6. Notice a card on Windows** (poll while the Sync tab shows).
 - [ ] Then Phases 3 to 5 below (burn, packaging).
@@ -194,9 +194,10 @@ injectable runner, an expected-error exception with plain words, tests against s
     `CD_TEXT` block our TOC already contains; check every flag we pass against the installed
     version's `--help`, since releases differ.
 - [x] MP3 discs, built (`iso.py`, `cdrdao.build_data_toc`, `CdrdaoBurner.burn_data`): the ISO (ISO 9660 +
-  Joliet + Rock Ridge) comes from `xorriso -as mkisofs` (else `genisoimage` / `mkisofs`; `hdiutil` on a Mac),
-  and is written as one `TRACK MODE1` data track. Export makes the same `disc.iso`. **[tests]**: xorriso's
-  image was read back with `isoinfo` (Joliet names, volume id) and cdrdao's `show-toc` accepts the TOC. The
+  Joliet + Rock Ridge) is made in Python with `pycdlib` (since 2026-11-15; it used to come from `xorriso` /
+  `genisoimage` / `mkisofs` / `hdiutil`), and is written as one `TRACK MODE1` data track. Export makes the same
+  `disc.iso`. **[tests]**: pycdlib's image was read back by pycdlib, `xorriso` and `isoinfo` (Joliet and Rock Ridge
+  names, volume id), and cdrdao's `show-toc` accepts the TOC. The
   write itself is **[not tried]**; the alternative is `xorriso -as cdrecord ... disc.iso`. Decide by trying both
   on a real drive (step 6 of [linux-test-plan.md](linux-test-plan.md)).
 - [ ] Hardware checks, in the style of `burning.md`: drive detection, a simulated audio burn, a

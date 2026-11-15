@@ -20,6 +20,7 @@ The downloadable app contains the **Python** interpreter (PSF-2.0 licence, <http
 | **SQLAlchemy** | MIT | <https://www.sqlalchemy.org> |
 | **sqlcipher3-wheels** | zlib/libpng | Contains **SQLCipher** (BSD-style licence, Zetetic LLC) and **OpenSSL 3** (Apache-2.0), which open rekordbox's encrypted database. <https://github.com/laggykiller/sqlcipher3> |
 | **PyObjC** (pyobjc-core, pyobjc-framework-Cocoa, pyobjc-framework-DiscRecording) | MIT | The bridge to Apple's DiscRecording framework, which burns the CD. <https://github.com/ronaldoussoren/pyobjc> |
+| **pycdlib** | LGPL-2.1 | By Chris Lalancette. Makes the ISO 9660 + Joliet image of an MP3 disc, in Python, so no other program is needed. It is used under LGPL-2.1's option to apply the GPL (version 2 or later) to the library, which is how it is combined with Dubcrate's GPL-3.0-or-later; its source is in the package and at <https://github.com/clalancette/pycdlib>. |
 | **platformdirs** | MIT | <https://github.com/tox-dev/platformdirs> |
 | **certifi** | MPL-2.0 | Certificates for the update check. <https://github.com/certifi/python-certifi> |
 | **cffi** | MIT-0 | <https://cffi.readthedocs.io> |

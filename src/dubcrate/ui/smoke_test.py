@@ -118,6 +118,31 @@ def _check_sqlcipher() -> str:
     return f"SQLCipher {version}, pyrekordbox imports"
 
 
+def _check_iso_image() -> str:
+    """pycdlib is pure Python, but Nuitka only bundles what it sees imported: make a tiny image and read it back."""
+    import tempfile
+    from pathlib import Path
+
+    import pycdlib
+
+    from dubcrate.iso import build_iso
+
+    with tempfile.TemporaryDirectory(prefix="dubcrate-smoke-") as tmp:
+        folder = Path(tmp) / "disc"
+        (folder / "Sub").mkdir(parents=True)
+        (folder / "01 A.mp3").write_bytes(b"x")
+        (folder / "Sub" / "01 B.mp3").write_bytes(b"y")
+        image = build_iso(folder, "SMOKE", Path(tmp) / "disc.iso")
+        iso = pycdlib.PyCdlib()
+        iso.open(str(image))
+        try:
+            assert iso.has_joliet() and iso.has_rock_ridge(), "the image has no Joliet"
+            assert iso.get_record(joliet_path="/Sub/01 B.mp3").is_file()
+        finally:
+            iso.close()
+    return "pycdlib makes an ISO 9660 + Joliet image"
+
+
 def _check_disc_recording() -> str:
     if sys.platform != "darwin":
         return "skipped (not macOS)"
@@ -275,6 +300,7 @@ def run(report_path: str | None = None, isolate: bool = True) -> int:
                 ("icon", _check_icon),
                 ("audio decoder", _check_audio_decoder),
                 ("sqlcipher", _check_sqlcipher),
+                ("iso image", _check_iso_image),
                 ("disc recording", _check_disc_recording),
                 ("notices", _check_notices),
                 ("ca bundle", _check_ca_bundle),

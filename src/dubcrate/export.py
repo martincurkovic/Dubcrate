@@ -34,7 +34,7 @@ class ExportResult:
     readme: Path
     toc: Path | None  # an audio disc's cdrdao table of contents
     disc_folder: Path | None  # an MP3 disc's contents (inside `folder`)
-    iso: Path | None  # an MP3 disc's image, if a tool to make one was found
+    iso: Path | None  # an MP3 disc's image, unless it couldn't be made
     lengths: dict[
         int, int
     ]  # track id -> rendered CD sectors (audio), to store in the library
@@ -111,8 +111,8 @@ def _finish_audio(plan: BurnPlan, folder: Path, disc: Disc, lengths: dict[int, i
 
 
 def _finish_mp3(plan: BurnPlan, folder: Path, disc: DataDisc) -> ExportResult:
-    """The folder is what the disc holds; the ISO image of it (ISO 9660 + Joliet) is made too when a
-    tool for it exists, and a missing one is only said in the README (the folder is still good)."""
+    """The folder is what the disc holds; the ISO image of it (ISO 9660 + Joliet) is made too, and if that
+    fails the reason is only said in the README (the folder is still good)."""
     iso: Path | None = None
     note = ""
     try:

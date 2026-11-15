@@ -1,116 +1,218 @@
-"""The ISO image of an MP3 disc: which tool, with which options, and the data-disc TOC."""
+"""The ISO image of an MP3 disc (made in Python with pycdlib; read back here, and by xorriso when it is there)."""
 
-import sys
+import shutil
+import subprocess
 
+import pycdlib
 import pytest
 
-from dubcrate import iso, tools
+from dubcrate import iso
 from dubcrate.burn import BurnError, BurnOptions
 from dubcrate.burn.base import DataDisc
 from dubcrate.burn.cdrdao import CdrdaoBurner, build_data_toc
 from dubcrate.cd import cdtext_toc_escape
-from dubcrate.iso import IsoError, build_iso, find_iso_tool
+from dubcrate.iso import IsoError, build_iso, volume_ident
 
 posix = pytest.mark.skipif(
-    sys.platform == "win32", reason="the stand-ins are shell scripts"
+    __import__("sys").platform == "win32", reason="the stand-ins are shell scripts"
 )
 
 
-def stand_in(folder, name, body):
-    folder.mkdir(parents=True, exist_ok=True)
-    path = folder / name
-    path.write_text("#!/bin/sh\n" + body)
-    path.chmod(0o755)
-    return path
-
-
-# a tool that records its arguments and writes the image it was asked for (-o FILE)
-RECORD_AND_WRITE = """printf '%s\\n' "$@" > "$FAKE_ARGS"
-while [ "$#" -gt 0 ]; do [ "$1" = "-o" ] && out="$2"; shift; done
-echo "an image" > "$out"
-"""
-
-
-@pytest.fixture
-def bundle(tmp_path, monkeypatch):
-    folder = tmp_path / "bundle"
-    folder.mkdir()
-    monkeypatch.setattr(tools, "BUNDLE_DIR", folder)
-    monkeypatch.setattr(tools.shutil, "which", lambda _name: None)
-    monkeypatch.setenv("FAKE_ARGS", str(tmp_path / "args"))
-    return folder
-
-
 def disc_folder(tmp_path):
+    """MIXED BAG: two files and two folders (one inside the other), with accents in a name."""
     folder = tmp_path / "MIXED BAG"
-    (folder / "Sub").mkdir(parents=True, exist_ok=True)
-    (folder / "01 A.mp3").write_bytes(b"x")
+    (folder / "Warm Ups" / "Deep").mkdir(parents=True)
+    (folder / "02 B.mp3").write_bytes(b"bbbb")
+    (folder / "01 A \u00e9.mp3").write_bytes(b"aa")
+    (folder / "Warm Ups" / "01 C.mp3").write_bytes(b"c" * 5000)
+    (folder / "Warm Ups" / "Deep" / "01 D.mp3").write_bytes(b"dddddd")
+    (folder / "Another").mkdir()
     return folder
 
 
-@posix
-def test_xorriso_is_asked_for_joliet_and_rock_ridge_and_the_volume_name(
-    bundle, tmp_path
-):
-    stand_in(bundle, "xorriso", RECORD_AND_WRITE)
+def opened(path):
+    image = pycdlib.PyCdlib()
+    image.open(str(path))
+    return image
+
+
+def names(image, **where):
+    out = []
+    for child in image.list_children(**where):
+        if child.is_dot() or child.is_dotdot():
+            continue
+        raw = child.file_identifier()
+        out.append(
+            raw.decode("utf-16-be") if "joliet_path" in where else raw.decode("ascii")
+        )
+    return out
+
+
+def content(image, **where):
+    import io
+
+    buffer = io.BytesIO()
+    image.get_file_from_iso_fp(buffer, **where)
+    return buffer.getvalue()
+
+
+def test_the_image_has_joliet_names_in_order_and_the_files_inside(tmp_path):
     out = build_iso(disc_folder(tmp_path), "MIXED BAG", tmp_path / "disc.iso")
-    assert out.read_text().strip() == "an image"
-    args = (tmp_path / "args").read_text().splitlines()
-    assert args[:2] == ["-as", "mkisofs"]
-    assert "-J" in args and "-r" in args and args[args.index("-V") + 1] == "MIXED BAG"  # fmt: skip
-    assert args[-1] == str(tmp_path / "MIXED BAG")
+    assert (
+        out.stat().st_size > 2048 * 16 and out.read_bytes()[32769:32774] == b"CD001"
+    )  # (sector 16)
+    image = opened(out)
+    try:
+        assert image.has_joliet() and image.has_rock_ridge()
+        assert names(image, joliet_path="/") == [
+            "01 A \u00e9.mp3",
+            "02 B.mp3",
+            "Another",
+            "Warm Ups",
+        ]
+        assert names(image, joliet_path="/Warm Ups") == ["01 C.mp3", "Deep"]
+        assert content(image, joliet_path="/01 A \u00e9.mp3") == b"aa"
+        assert content(image, joliet_path="/Warm Ups/Deep/01 D.mp3") == b"dddddd"
+        assert len(content(image, joliet_path="/Warm Ups/01 C.mp3")) == 5000
+    finally:
+        image.close()
 
 
-@posix
-def test_genisoimage_takes_the_same_options_without_the_xorriso_prefix(
-    bundle, tmp_path
-):
-    stand_in(bundle, "genisoimage", RECORD_AND_WRITE)
-    assert find_iso_tool().name == "genisoimage"
-    build_iso(disc_folder(tmp_path), "VOL", tmp_path / "disc.iso")
-    assert (tmp_path / "args").read_text().splitlines()[0] == "-quiet"
+def test_the_plain_iso_names_are_numbered_in_the_order_of_the_real_ones(tmp_path):
+    image = opened(build_iso(disc_folder(tmp_path), "V", tmp_path / "disc.iso"))
+    try:
+        assert names(image, iso_path="/") == ["001.MP3;1", "002.MP3;1", "D001", "D002"]
+        assert names(image, iso_path="/D002") == [
+            "001.MP3;1",
+            "D001",
+        ]  # (Warm Ups: Another is D001)
+        assert content(image, iso_path="/001.MP3;1") == b"aa"
+    finally:
+        image.close()
 
 
-@posix
-def test_xorriso_is_preferred_over_the_others(bundle):
-    for name in ("mkisofs", "genisoimage", "xorriso"):
-        stand_in(bundle, name, "exit 0\n")
-    assert find_iso_tool().name == "xorriso"
+def test_rock_ridge_carries_the_real_names_too(tmp_path):
+    image = opened(build_iso(disc_folder(tmp_path), "V", tmp_path / "disc.iso"))
+    try:
+        assert content(image, rr_path="/Warm Ups/Deep/01 D.mp3") == b"dddddd"
+        assert image.get_record(rr_path="/01 A \u00e9.mp3").is_file()
+    finally:
+        image.close()
 
 
-@posix
-def test_a_tool_that_fails_or_writes_nothing_is_an_expected_error(bundle, tmp_path):
-    stand_in(
-        bundle, "xorriso", 'echo "xorriso : FAILURE : something broke" >&2\nexit 5\n'
+def test_the_volume_label_is_ascii_capitals_and_sixteen_characters(tmp_path):
+    assert volume_ident("MIXED BAG") == "MIXED BAG"
+    assert volume_ident("Caf\u00e9 Sets: Vol. 2 of many") == "CAFE SETS VOL 2"
+    assert volume_ident("\u30c7\u30a3\u30b9\u30af") == "MP3 DISC"  # nothing ASCII left
+    assert volume_ident("") == "MP3 DISC"
+    image = opened(
+        build_iso(disc_folder(tmp_path), "Caf\u00e9 Sets", tmp_path / "disc.iso")
     )
-    with pytest.raises(
-        IsoError, match="xorriso could not make the image: xorriso : FAILURE"
-    ):
+    try:
+        assert image.pvd.volume_identifier.decode("ascii").strip() == "CAFE SETS"
+        assert (
+            image.pvd.application_identifier.text.decode("ascii").strip()
+            == iso.APPLICATION
+        )
+    finally:
+        image.close()
+
+
+def test_a_folder_of_many_files_gets_enough_digits_for_its_plain_names(tmp_path):
+    folder = tmp_path / "BIG"
+    folder.mkdir()
+    for n in range(1, 1001):  # (more than the 999 a disc allows: the digits just grow)
+        (folder / f"{n:04d}.mp3").write_bytes(b"x")
+    image = opened(build_iso(folder, "V", tmp_path / "disc.iso"))
+    try:
+        listed = names(image, iso_path="/")
+        assert (
+            listed[0] == "0001.MP3;1"
+            and listed[-1] == "1000.MP3;1"
+            and len(listed) == 1000
+        )
+    finally:
+        image.close()
+
+
+def test_eight_folders_deep_is_made(tmp_path):
+    folder = tmp_path / "DEEP"
+    here = folder
+    for n in range(1, 9):
+        here = here / f"Level {n}"
+    here.mkdir(parents=True)
+    (here / "01 End.mp3").write_bytes(b"end")
+    image = opened(build_iso(folder, "V", tmp_path / "disc.iso"))
+    try:
+        path = "/".join(f"Level {n}" for n in range(1, 9))
+        assert content(image, joliet_path=f"/{path}/01 End.mp3") == b"end"
+    finally:
+        image.close()
+
+
+def test_an_empty_folder_is_a_valid_image(tmp_path):
+    (tmp_path / "EMPTY").mkdir()
+    out = build_iso(tmp_path / "EMPTY", "V", tmp_path / "disc.iso")
+    image = opened(out)
+    try:
+        assert names(image, joliet_path="/") == []
+    finally:
+        image.close()
+
+
+def test_the_folder_is_only_read_and_a_second_build_replaces_the_first(tmp_path):
+    folder = disc_folder(tmp_path)
+    before = sorted(p.relative_to(folder).as_posix() for p in folder.rglob("*"))
+    out = build_iso(folder, "V", tmp_path / "disc.iso")
+    first = out.stat().st_size
+    (folder / "03 New.mp3").write_bytes(b"n" * 9000)
+    assert build_iso(folder, "V", tmp_path / "disc.iso").stat().st_size > first
+    assert sorted(p.relative_to(folder).as_posix() for p in folder.rglob("*")) == sorted([*before, "03 New.mp3"])  # fmt: skip
+    assert [p.name for p in tmp_path.iterdir() if p.name.endswith(".part")] == []
+
+
+def test_a_failure_is_an_expected_error_and_leaves_no_half_made_file(
+    tmp_path, monkeypatch
+):
+    def fails(self, path, *a, **k):
+        with open(path, "wb") as half:
+            half.write(b"half")
+        raise OSError(28, "No space left on device")
+
+    monkeypatch.setattr(pycdlib.PyCdlib, "write", fails)
+    with pytest.raises(IsoError, match="could not be made: .*No space left"):
         build_iso(disc_folder(tmp_path), "V", tmp_path / "disc.iso")
-    stand_in(bundle, "xorriso", "exit 0\n")  # claims success, writes nothing
-    with pytest.raises(IsoError, match="it wrote nothing"):
-        build_iso(disc_folder(tmp_path), "V", tmp_path / "disc.iso")
+    assert not (tmp_path / "disc.iso").exists() and not list(tmp_path.glob("*.part"))
+
+
+def test_a_name_the_format_refuses_is_an_expected_error(tmp_path):
+    folder = tmp_path / "ODD"
+    folder.mkdir()
+    (folder / ("x" * 70 + ".mp3")).write_bytes(
+        b"x"
+    )  # (longer than Joliet and Rock Ridge allow)
+    with pytest.raises(IsoError, match="could not be made"):
+        build_iso(folder, "V", tmp_path / "disc.iso")
     assert not (tmp_path / "disc.iso").exists()
 
 
-def test_no_tool_says_how_to_get_one(bundle, tmp_path, monkeypatch):
-    monkeypatch.setattr(iso.sys, "platform", "linux")
-    with pytest.raises(IsoError, match="sudo apt install xorriso"):
-        build_iso(disc_folder(tmp_path), "V", tmp_path / "disc.iso")
-
-
-def test_a_folder_that_is_not_there_is_an_expected_error(bundle, tmp_path):
-    stand_in(bundle, "xorriso", "exit 0\n")
+def test_a_folder_that_is_not_there_is_an_expected_error(tmp_path):
     with pytest.raises(IsoError, match="is not a folder"):
         build_iso(tmp_path / "gone", "V", tmp_path / "disc.iso")
 
 
-@pytest.mark.skipif(find_iso_tool() is None, reason="no ISO tool here")
-def test_the_real_tool_makes_an_image(tmp_path):
-    folder = disc_folder(tmp_path)
-    out = build_iso(folder, "MIXED BAG", tmp_path / "disc.iso")
-    assert out.stat().st_size > 2048 * 16  # a volume descriptor starts at sector 16
-    assert b"CD001" in out.read_bytes()[32768:32775]  # ISO 9660's mark
+@pytest.mark.skipif(shutil.which("xorriso") is None, reason="no xorriso here")
+def test_xorriso_lists_the_same_disc(tmp_path):
+    out = build_iso(disc_folder(tmp_path), "MIXED BAG", tmp_path / "disc.iso")
+    # (Rock Ridge names, which xorriso reads by default, and the volume id)
+    proc = subprocess.run(
+        ["xorriso", "-indev", str(out), "-find"],
+        check=False, capture_output=True, encoding="utf-8", errors="replace", stdin=subprocess.DEVNULL,
+    )  # fmt: skip
+    listing = proc.stdout + proc.stderr  # (the volume id is a message, on stderr)
+    assert "Volume id    : 'MIXED BAG'" in listing
+    for name in ("./01 A \u00e9.mp3", "./Warm Ups/Deep/01 D.mp3", "./Another"):
+        assert f"'{name}'" in listing
 
 
 def test_the_data_disc_toc_is_one_mode1_track_of_the_image(tmp_path):
@@ -125,11 +227,28 @@ def test_the_data_disc_toc_is_one_mode1_track_of_the_image(tmp_path):
 # -- burning an MP3 disc with cdrdao -----------------------------------------------------
 
 
+@pytest.fixture
+def bundle(tmp_path, monkeypatch):
+    from dubcrate import tools
+
+    folder = tmp_path / "bundle"
+    folder.mkdir()
+    monkeypatch.setattr(tools, "BUNDLE_DIR", folder)
+    monkeypatch.setattr(tools.shutil, "which", lambda _name: None)
+    return folder
+
+
+def stand_in(folder, name, body):
+    path = folder / name
+    path.write_text("#!/bin/sh\n" + body)
+    path.chmod(0o755)
+    return path
+
+
 @posix
 def test_an_mp3_disc_is_burned_as_an_image_through_cdrdao(
     bundle, tmp_path, monkeypatch
 ):
-    stand_in(bundle, "xorriso", RECORD_AND_WRITE)
     log = tmp_path / "cdrdao.log"
     monkeypatch.setenv("FAKE_LOG", str(log))
     stand_in(
@@ -152,12 +271,15 @@ def test_an_mp3_disc_is_burned_as_an_image_through_cdrdao(
 
 
 @posix
-def test_an_mp3_burn_without_an_image_tool_says_so_before_touching_the_drive(
-    bundle, tmp_path
-):
+def test_an_image_that_cannot_be_made_is_said_before_touching_the_drive(bundle, tmp_path, monkeypatch):  # fmt: skip
     log = tmp_path / "cdrdao.log"
     stand_in(bundle, "cdrdao", f'echo "$@" >> {log}\n')
-    with pytest.raises(BurnError, match="xorriso"):
+
+    def fails(*a, **k):
+        raise IsoError("The disc image could not be made: out of room")
+
+    monkeypatch.setattr("dubcrate.burn.cdrdao.build_iso", fails)
+    with pytest.raises(BurnError, match="out of room"):
         CdrdaoBurner().burn_data(
             DataDisc("V", disc_folder(tmp_path)), BurnOptions(device="/dev/sr0"), print
         )
