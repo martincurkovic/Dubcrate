@@ -269,6 +269,63 @@ class DiscSurvey:
         return out
 
 
+# What the Sync tab's waveform preview shows for a track (the strips are painted by `ui/wave_strip.py`)
+WAVE_WRITE, WAVE_CARD, WAVE_PENDING, WAVE_NONE = "write", "card", "pending", "none"
+
+
+@dataclass(frozen=True)
+class WaveRow:
+    """One track of a disc in the waveform preview: its place, text, what is drawn and what to say."""
+
+    number: int  # 1-based, as on the disc
+    title: str
+    state: str  # WAVE_WRITE | WAVE_CARD | WAVE_PENDING | WAVE_NONE
+    values: tuple[int, ...] = ()  # the 100 columns to draw (empty: nothing to draw)
+    note: str = ""
+
+
+def wave_rows(
+    survey: DiscSurvey, entries: Sequence[DiscEntry], enabled: bool = True
+) -> list[WaveRow]:
+    """For each track of the disc: the waveform a sync would write, the one the card already has
+    (the player draws that one), or why there is none. `enabled` is the Write waveforms tick.
+
+    With no card to compare with (`survey.plan` is None) a track shows its own analysed waveform."""
+    plan = survey.plan
+    rows = []
+    for entry in entries:
+        number = entry.position + 1
+        title = " – ".join(p for p in (entry.artist, entry.title) if p) or "Untitled"
+        own = entry.track.waveform
+        if not enabled:
+            row = WaveRow(number, title, WAVE_NONE, note="Write waveforms is off")
+        elif plan is None:
+            row = (
+                WaveRow(
+                    number, title, WAVE_WRITE, tuple(own), "analysed; choose a card"
+                )
+                if own is not None
+                else WaveRow(number, title, WAVE_NONE, note="not analysed yet")
+                if entry.track.missing
+                else WaveRow(number, title, WAVE_PENDING, note="not analysed yet")
+            )
+        elif number in plan.waves_added and plan.file is not None:
+            values = tuple(plan.file.fine[number - 1].time_values())
+            row = WaveRow(number, title, WAVE_WRITE, values, "will be written")
+        elif number in plan.waves_kept and plan.file is not None:
+            values = tuple(plan.file.fine[number - 1].time_values())
+            row = WaveRow(number, title, WAVE_CARD, values, "already on the card: kept")
+        elif number in plan.waves_pending:
+            row = WaveRow(
+                number, title, WAVE_PENDING, note="analysed first, when you sync"
+            )
+        else:
+            why = "its file is missing" if entry.track.missing else "nothing to write"
+            row = WaveRow(number, title, WAVE_NONE, note=why)
+        rows.append(row)
+    return rows
+
+
 def survey_discs(
     lib: Library,
     card: tuple[cc.IndexFile, Mapping[str, cc.TrackFile | None]] | None,

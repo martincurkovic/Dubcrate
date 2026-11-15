@@ -270,12 +270,12 @@
 - AKAISDS's `wheel_guard` (a control answers the wheel only after a click) is ported (`ui/wheel_guard.py`),
   but **not felt by hand yet** (how it feels on a trackpad, and the armed outline in each look).
 
-- Imports and measuring can't be cancelled, and there is no per-file progress detail.
+- Imports, length measuring, waveform analysis and level measuring can be cancelled (`cancel.py`, 2026-11-15: a Cancel button in the status bar, the Sync tab and the burn window) and show "n of N"; a folder scan or one very long file is only stopped between files.
 - A folder scan runs at about 120 files a second (ffprobe per file), so 50,000 files
   would take several minutes. `tinytag` (MIT) would be the faster fallback.
-- A computed waveform isn't saved, so a folder track's Preview strip reappears only
-  after it has been previewed again in a new session (rekordbox tracks read theirs
-  from rekordbox's own files). Caching them in SQLite would fix that.
+- A computed Preview strip is saved (`preview_cache`, schema v12, keyed by the file's path and size, at most
+  `MAX_CACHED_PREVIEWS`, so it outlives the track's row), so a folder track keeps it across sessions
+  (rekordbox tracks read theirs from rekordbox's own files).
 - The waveform scaling (gamma, the overview's auto-gain) was tuned by eye against the
   rbxport screenshot, not measured.
 - The GUI's *Between tracks* menu offers 1-3 s, whose unit is unverified (see

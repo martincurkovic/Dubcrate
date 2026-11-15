@@ -468,7 +468,9 @@ def test_importing_rekordbox_reads_it_in_the_background(
         staticmethod(lambda *a, **k: (str(tmp_path / "master.db"), "")),
     )
     monkeypatch.setattr(
-        main_window, "read_master_db", lambda path: fake_rekordbox(tmp_path)
+        main_window,
+        "read_master_db",
+        lambda path, cancel=None: fake_rekordbox(tmp_path),
     )
     win.import_rekordbox()
     assert wait_for(lambda: not win._busy)
@@ -483,7 +485,7 @@ def test_a_failed_import_is_reported_and_leaves_the_window_usable(
 ):
     win, lib = window
 
-    def boom(path):
+    def boom(path, cancel=None):
         raise RekordboxError("could not open the database")
 
     monkeypatch.setattr(main_window, "default_master_db", lambda: None)
@@ -1194,3 +1196,78 @@ def test_with_no_disc_open_every_track_on_a_disc_is_an_outline(window):
     win.disc_view.set_disc(None)
     win._sync_disc_markers()
     assert dots(win) == ["○", "○", "", "", "", ""]
+
+
+# -- cancelling an import ----------------------------------------------------------------------------
+
+
+def slow_folder(tmp_path, count=40):
+    music = tmp_path / "big crate"
+    music.mkdir()
+    for n in range(count):
+        (music / f"{n:02d}.mp3").write_bytes(b"x")
+    return music
+
+
+def test_an_import_shows_how_far_it_is_and_cancel_stops_it_leaving_the_library_alone(
+    window, tmp_path, monkeypatch, wait_for
+):
+    import time
+
+    from dubcrate.library import folder
+    from dubcrate.render import SourceInfo
+
+    win, lib = window
+    before = [s.name for s in lib.sources()]
+    music = slow_folder(tmp_path)
+    info = SourceInfo(Path("x"), 60.0, 44100, 16, "t", "a", "")
+    monkeypatch.setattr(folder, "probe", lambda path: (time.sleep(0.03), info)[1])
+    win.start_import("folder", music)
+    assert win._busy and win.cancel_button.isVisibleTo(win) and not win.act_import_folder.isEnabled()  # fmt: skip
+    assert wait_for(
+        lambda: " of 40" in win.statusBar().currentMessage()
+    )  # per-file progress
+    assert "Scanning big crate" in win.statusBar().currentMessage()
+    win.cancel_button.click()
+    assert not win.cancel_button.isEnabled() and win.statusBar().currentMessage() == "Cancelling…"  # fmt: skip
+    assert wait_for(lambda: not win._busy)
+    assert win.statusBar().currentMessage() == "Import cancelled: nothing was changed."
+    assert [s.name for s in lib.sources()] == before  # nothing was stored
+    assert not win.cancel_button.isVisibleTo(win) and win.act_import_folder.isEnabled()
+    assert win.shown == []  # (a cancel is not an error: no box)
+
+
+def test_the_cancel_button_is_only_there_while_something_that_can_be_stopped_runs(
+    window,
+):
+    win, _ = window
+    assert not win.cancel_button.isVisibleTo(win)
+    win._set_busy(True, "Measuring…")  # (busy, but nothing that can be cancelled)
+    assert not win.cancel_button.isVisibleTo(win)
+    win._set_busy(False)
+
+
+def test_cancelling_the_rekordbox_read_stops_it_too(
+    window, tmp_path, monkeypatch, wait_for
+):
+    from dubcrate.cancel import Cancelled
+
+    win, lib = window
+    before = [s.name for s in lib.sources()]
+    started = []
+
+    def read(path, cancel=None):
+        started.append(True)
+        while True:
+            cancel.check()
+
+    monkeypatch.setattr(main_window, "default_master_db", lambda: None)
+    monkeypatch.setattr(QFileDialog, "getOpenFileName", staticmethod(lambda *a, **k: (str(tmp_path / "master.db"), "")))  # fmt: skip
+    monkeypatch.setattr(main_window, "read_master_db", read)
+    win.import_rekordbox()
+    assert wait_for(lambda: bool(started)) and win.cancel_button.isVisibleTo(win)
+    win.cancel_button.click()
+    assert wait_for(lambda: not win._busy)
+    assert win.statusBar().currentMessage() == "Import cancelled: nothing was changed."
+    assert [s.name for s in lib.sources()] == before and win.shown == []
+    assert Cancelled  # (what the stand-in raised)

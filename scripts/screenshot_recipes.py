@@ -460,6 +460,19 @@ def _sync(ctx):
 
 
 @shot(
+    "sync-waveforms",
+    "the Sync tab's Waveforms tab: each track's waveform as the CDJ will draw it",
+)
+def _sync_waveforms(ctx):
+    """The same staged Sync tab, with the picked disc's Waveforms tab showing (made-up music, real analysis)."""
+    window = _sync(ctx)
+    view = window.sync_view
+    view.detail_tabs.setCurrentIndex(1)
+    ctx.settle(8)
+    return window
+
+
+@shot(
     "format-card",
     "Format a Card…: the window that sets up a blank SD card (invented disks: nothing is listed or erased)",
 )

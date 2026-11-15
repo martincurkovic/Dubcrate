@@ -47,11 +47,13 @@ The first release: macOS (Apple Silicon and Intel), for the CDJ-1000MK3 and othe
 - **Sync also writes the player's waveform for each track**, so the player doesn't analyse a track when it loads. Dubcrate works the
   waveform out itself (from the low notes the player draws), usually while burning. *Tried: the player accepted, drew and kept
   waveforms written this way. The Sync tab's own waveform writing has not yet been tried on a card in a player.*
-- **Format a Card** sets up a blank SD card from scratch (FAT16, the PIONEER folder), so a card can be prepared at home.
-  *Not yet shown to a player.* Only plain SD cards of 2 GB or less work in the player.
+- **Format a Card** sets up a blank SD card from scratch (FAT16, the PIONEER folder), so a card can be prepared at home, on a Mac,
+  Linux or Windows. *Not yet shown to a player, and the Linux and Windows ways have not been tried on a real card.* Only plain SD cards of 2 GB or less work in the player.
+- The Sync tab has a **Waveforms** tab showing the waveform each track will get.
 
 ### Under the hood
 
+- Imports, length measuring, waveform analysis and level measuring show their progress and can be **cancelled**; a folder track's waveform strip is remembered between sessions.
 - A built-in **update check** (the only thing Dubcrate sends over the network: a request for GitHub's release list, once a day at
   start-up unless you switch it off), a **log file** (Help > Show Log File), and a **command-line tool** (`dubcrate`).
 - ffmpeg and ffprobe are bundled (LGPL builds), so there is nothing to install.

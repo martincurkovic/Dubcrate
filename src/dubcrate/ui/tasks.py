@@ -16,6 +16,7 @@ from typing import Any
 
 from PySide6.QtCore import QObject, QRunnable, QThreadPool, Signal, Slot
 
+from dubcrate.cancel import Cancelled
 from dubcrate.render import ToolMissingError
 
 log = logging.getLogger(__name__)
@@ -29,16 +30,29 @@ class TaskError(RuntimeError):
 class _Relay(QObject):
     done = Signal(object)
     failed = Signal(str)
+    cancelled = Signal(object)
     progress = Signal(int, int)
 
-    def __init__(self, on_done, on_error, on_progress):
+    def __init__(self, on_done, on_error, on_progress, on_cancel=None):
         super().__init__()
         self._on_done = on_done
         self._on_error = on_error
         self._on_progress = on_progress
+        self._on_cancel = on_cancel
         self.done.connect(self._finish_ok)
         self.failed.connect(self._finish_err)
+        self.cancelled.connect(self._finish_cancel)
         self.progress.connect(self._report)
+
+    @Slot(object)
+    def _finish_cancel(self, partial):
+        _live.discard(self)
+        if self._on_cancel is not None:
+            self._on_cancel(partial)
+        elif (
+            self._on_error is not None
+        ):  # (a caller that doesn't know about cancelling sees a failure)
+            self._on_error("Cancelled.")
 
     @Slot(object)
     def _finish_ok(self, result):
@@ -71,6 +85,9 @@ class _Task(QRunnable):
                 result = self._fn(self._relay.progress.emit)
             else:
                 result = self._fn()
+        except Cancelled as stopped:
+            log.info("task cancelled by the user")
+            self._relay.cancelled.emit(stopped.partial)
         except Exception as e:  # noqa: BLE001 - reported to the UI, never allowed to kill the pool thread
             if isinstance(
                 e, TaskError | ToolMissingError
@@ -92,11 +109,16 @@ def run_async(
     on_done: Callable[[Any], None] | None = None,
     on_error: Callable[[str], None] | None = None,
     on_progress: Callable[[int, int], None] | None = None,
+    on_cancel: Callable[[Any], None] | None = None,
 ) -> None:
     """Call from the GUI thread. The callbacks also run on the GUI thread.
 
     With `on_progress`, `fn` is called with one argument, `report(done, total)`.
+
+    A job that can be stopped is given a `CancelToken` by its caller (the Cancel button sets it) and raises
+    `dubcrate.cancel.Cancelled` between files; `on_cancel(partial)` then runs with what the job had
+    finished (or None). Without `on_cancel` a cancelled job is reported to `on_error` as "Cancelled."
     """
-    relay = _Relay(on_done, on_error, on_progress)
+    relay = _Relay(on_done, on_error, on_progress, on_cancel)
     _live.add(relay)
     QThreadPool.globalInstance().start(_Task(fn, relay, on_progress is not None))

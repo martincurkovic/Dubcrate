@@ -139,8 +139,10 @@ def test_a_failure_is_said_in_words_and_the_tick_must_be_given_again(make, wait_
 def test_no_disks_and_a_listing_failure_are_said_with_what_to_do(make):
     assert "No removable disks found" in make([]).status.text()
     assert (
-        "only done on a Mac"
-        in make(error="Formatting a card is only done on a Mac so far.").status.text()
+        "isn't done on this kind"
+        in make(
+            error="Formatting a card isn't done on this kind of computer yet."
+        ).status.text()
     )
 
 

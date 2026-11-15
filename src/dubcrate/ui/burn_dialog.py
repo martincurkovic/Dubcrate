@@ -54,6 +54,7 @@ from dubcrate.burn import (
     get_burner,
 )
 from dubcrate.burn_check import check_burn
+from dubcrate.cancel import CancelToken
 from dubcrate.cd import SECTORS_PER_SECOND, format_clock
 from dubcrate.drive_toc import can_read_toc
 from dubcrate.export import ExportError, ExportResult, export_plan
@@ -160,6 +161,7 @@ class BurnDialog(QDialog):
         # What the disc is without level matching; `_plan` is this, or this with a gain on each track
         self._base_plan = self._plan
         self._measuring = False
+        self._levels_cancel: CancelToken | None = None
         self._levels_error = ""
 
         title = QLabel(summary.name)
@@ -270,9 +272,17 @@ class BurnDialog(QDialog):
         self.close_button = QPushButton("Close")
         self.close_button.setAutoDefault(False)
         self.close_button.clicked.connect(self.reject)
+        self.cancel_levels_button = QPushButton("Cancel Measuring")
+        self.cancel_levels_button.setAutoDefault(False)
+        self.cancel_levels_button.setToolTip(
+            "Stop measuring the levels: what is measured is kept, and the burn waits until you untick Normalise or measure the rest"
+        )
+        self.cancel_levels_button.clicked.connect(self._cancel_levels)
+        self.cancel_levels_button.hide()
         buttons = QHBoxLayout()
         buttons.addWidget(self.export_button)
         buttons.addStretch(1)
+        buttons.addWidget(self.cancel_levels_button)
         buttons.addWidget(self.close_button)
         buttons.addWidget(self.burn_button)
 
@@ -344,6 +354,7 @@ class BurnDialog(QDialog):
             not working and not self._finished and self.levels_check.isChecked()
         )
         self.close_button.setEnabled(not working)
+        self.cancel_levels_button.setVisible(self._measuring)
         self.export_button.setEnabled(self._plan is not None and not working)
         if self._backend_problem:
             text, level = (
@@ -400,6 +411,8 @@ class BurnDialog(QDialog):
             self._levels_ready(ids, [])
             return
         self._measuring = True
+        token = self._levels_cancel = CancelToken()
+        self.cancel_levels_button.setEnabled(True)
         self.progress.setRange(0, len(todo))
         self.progress.setValue(0)
         self.progress.setVisible(True)
@@ -415,15 +428,41 @@ class BurnDialog(QDialog):
             self.progress.setValue(done)
 
         run_async(
-            _expected_failures(lambda report: measure_loudness(todo, report)),
+            _expected_failures(
+                lambda report: measure_loudness(todo, report, cancel=token)
+            ),
             lambda result: self._levels_measured(ids, result),
             self._levels_failed,
             report,
+            on_cancel=self._levels_cancelled,
         )
+
+    def _cancel_levels(self) -> None:
+        """The Cancel Measuring button: stop between tracks (what is measured stays measured)."""
+        if self._levels_cancel is not None:
+            self._levels_cancel.cancel()
+            self.cancel_levels_button.setEnabled(False)
+            self._set_level(self.levels_label, "Cancelling…", "normal")
+
+    def _levels_cancelled(self, partial) -> None:
+        """Stopped part way: keep the levels measured, burn without matching until it is settled."""
+        if partial:
+            store_loudness(self._lib, partial[0])
+        self._measuring = False
+        self._levels_cancel = None
+        self.progress.setVisible(False)
+        self._plan = self._base_plan
+        self._levels_error = (
+            "measuring the levels was cancelled (untick Normalise to burn without it, "
+            "or change the setting to measure the rest)"
+        )
+        self._say_levels("", "normal")
+        self._update()
 
     def _levels_measured(self, ids: list[int], result) -> None:
         found, problems = result
         store_loudness(self._lib, found)
+        self._levels_cancel = None
         self._measuring = False
         self.progress.setVisible(False)
         self._levels_ready(ids, problems)

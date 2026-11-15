@@ -184,10 +184,21 @@ def test_diskutils_complaint_is_said_with_its_last_line(tmp_path, on_a_mac):
         cf.format_card("disk4", run)
 
 
-def test_it_is_for_a_mac_only(tmp_path, monkeypatch):
-    monkeypatch.setattr(sys, "platform", "linux")
-    with pytest.raises(cf.FormatError, match="only done on a Mac"):
+def test_a_system_with_no_way_yet_says_so(monkeypatch):
+    monkeypatch.setattr(sys, "platform", "freebsd14")
+    with pytest.raises(cf.FormatError, match="isn't done on this kind of computer"):
         cf.format_card("disk4", lambda *a, **kw: finished())
+
+
+@pytest.mark.parametrize(
+    ("platform", "module"),
+    [("linux", "card_format_linux"), ("win32", "card_format_windows")],
+)
+def test_each_system_has_its_own_backend(monkeypatch, platform, module):
+    monkeypatch.setattr(sys, "platform", platform)
+    assert cf._backend().__name__ == f"dubcrate.{module}"
+    monkeypatch.setattr(sys, "platform", "darwin")
+    assert cf._backend() is None
 
 
 def test_only_removable_disks_are_listed(on_a_mac):

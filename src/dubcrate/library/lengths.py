@@ -1,9 +1,9 @@
 """Measure how long tracks are on a CD, so disc capacity can be exact."""
 
 from collections.abc import Callable, Iterable
-from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
+from dubcrate.cancel import Cancelled, CancelToken, cancellable_map
 from dubcrate.cd import measured_sectors
 from dubcrate.library.models import Track
 from dubcrate.library.store import Library
@@ -18,12 +18,16 @@ def needs_measuring(track: Track) -> bool:
 
 
 def probe_lengths(
-    tracks: Iterable[Track], progress: Progress | None = None, workers: int = 8
+    tracks: Iterable[Track],
+    progress: Progress | None = None,
+    workers: int = 8,
+    cancel: CancelToken | None = None,
 ) -> tuple[dict[int, int], list[str]]:
     """Probe tracks in parallel; returns ({track id: sectors}, problem messages).
 
     Touches no database, so it is safe to run on a worker thread. Store the
     result with `Library.set_cd_sectors` on the thread that owns the library.
+    If `cancel` is set it raises `Cancelled` whose `partial` is what was measured so far (still good).
     """
     todo = [t for t in tracks if needs_measuring(t)]
 
@@ -37,14 +41,18 @@ def probe_lengths(
 
     lengths: dict[int, int] = {}
     problems: list[str] = []
-    with ThreadPoolExecutor(max_workers=workers) as pool:
-        for done, (track, result) in enumerate(pool.map(run, todo), start=1):
+    try:
+        for done, (track, result) in enumerate(
+            cancellable_map(run, todo, workers, cancel), start=1
+        ):
             if isinstance(result, str):
                 problems.append(f"{track.path}: {result}")
             else:
                 lengths[track.id] = result
             if progress:
                 progress(done, len(todo))
+    except Cancelled:
+        raise Cancelled((lengths, problems)) from None
     return lengths, problems
 
 

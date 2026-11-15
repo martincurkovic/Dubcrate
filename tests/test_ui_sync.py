@@ -484,7 +484,7 @@ def test_the_lengths_of_unmeasured_tracks_can_be_measured_from_the_view(
     assert cue_view.measure_button.isEnabled()
     probed = []
 
-    def fake_probe(tracks, report=None):
+    def fake_probe(tracks, report=None, cancel=None):
         probed.append(len(list(tracks)))
         by_title = {t.title: t.id for t in tracks}
         return {by_title[f"A{i}"]: s for i, s in enumerate(cd2_lengths())}, []
@@ -981,7 +981,7 @@ def test_tracks_with_no_waveform_yet_are_analysed_before_the_question_is_asked(
     )  # fmt: skip
     calls = []
 
-    def fake(todo, report=None):
+    def fake(todo, report=None, cancel=None):
         calls.append([t.id for t in todo])
         return {t.id: saw() for t in todo}, []
 
@@ -1000,3 +1000,131 @@ def test_tracks_with_no_waveform_yet_are_analysed_before_the_question_is_asked(
     assert "waveforms written" in writing.asked[0]
     stored = {t.id for t in writing.lib.tracks() if t.waveform is not None}
     assert set(calls[0]) <= stored
+
+
+def test_the_waveforms_tab_shows_a_strip_per_track_as_the_player_will_draw_it(writing):
+    analyse_everything(writing.lib)
+    look_again(writing, "waveforms")
+    view = writing.view
+    item = next(i for i in view._disc_items() if i.text(0) == "A")
+    view.tree.setCurrentItem(item)
+    assert [r.state for r in view.waves.rows] == ["write"] * 12
+    assert len(view.waves.strips) == 12 and view.waves.strips[0].values == saw()
+    assert view.detail_tabs.tabText(1) == "Waveforms"
+    view.waves_check.setChecked(False)
+    assert {r.state for r in view.waves.rows} == {"none"} and view.waves.rows[0].note == "Write waveforms is off"  # fmt: skip
+
+
+def test_after_a_sync_the_tab_shows_the_cards_waveforms_as_already_there(writing):
+    analyse_everything(writing.lib)
+    look_again(writing, "waveforms")
+    writing.view._tick_all(Qt.CheckState.Checked)
+    writing.view.sync_button.click()
+    assert writing.finished()
+    assert wait_until(
+        writing.view, lambda: all(s == "In sync" for _n, s in shown(writing.view))
+    )
+    item = next(i for i in writing.view._disc_items() if i.text(0) == "A")
+    writing.view.tree.setCurrentItem(item)
+    assert {r.state for r in writing.view.waves.rows} == {"card"}
+    assert "kept" in writing.view.waves.rows[0].note
+
+
+def test_a_disc_that_cannot_be_synced_explains_in_the_waveforms_tab(writing):
+    add_disc(writing.lib, "C", measured=False)
+    look_again(writing, "Can't sync")
+    item = next(i for i in writing.view._disc_items() if i.text(0) == "C")
+    writing.view.tree.setCurrentItem(item)
+    assert writing.view.waves.rows == []
+    assert "can't be synced" in writing.view.waves.message.text()
+
+
+# -- cancelling ---------------------------------------------------------------------------------------
+
+
+def real_files(writing, tmp_path):
+    """The tracks' files exist now, so they can be analysed (the analysis itself is stood in for)."""
+    tracks = writing.lib.tracks()
+    for t in tracks:
+        (tmp_path / f"{t.ext_id}.flac").write_bytes(b"x")
+    source = writing.lib.sources()[0]
+    writing.lib.replace_source(
+        "rekordbox", source.path, "S0",
+        [TrackRecord(ext_id=t.ext_id, path=str(tmp_path / f"{t.ext_id}.flac"), title=t.title, duration=60.0) for t in tracks],
+    )  # fmt: skip
+
+
+def test_the_cancel_button_stops_the_analysis_keeps_what_was_done_and_writes_nothing(writing, monkeypatch, tmp_path):  # fmt: skip
+    import time
+
+    real_files(writing, tmp_path)
+    started = []
+
+    def slow(todo, report=None, cancel=None):
+
+        done = {}
+        for n, track in enumerate(todo, 1):
+            if n == 4:
+                started.append(True)
+                while True:  # (waits to be told)
+                    cancel.check((done, []))
+                    time.sleep(0.005)
+            done[track.id] = saw()
+            report(n, len(todo))
+        return done, []
+
+    monkeypatch.setattr(sync_view, "measure_waveforms", slow)
+    look_again(writing, "waveforms")
+    writing.view._tick_all(Qt.CheckState.Checked)
+    before = card_files(writing.card)
+    writing.view.sync_button.click()
+    assert wait_until(writing.view, lambda: bool(started))
+    assert writing.view.cancel_button.isVisibleTo(writing.view) and writing.view.cancel_button.isEnabled()  # fmt: skip
+    assert not writing.view.sync_button.isEnabled()
+    writing.view.cancel_button.click()
+    assert writing.view.subtitle.text() == "Cancelling…" and not writing.view.cancel_button.isEnabled()  # fmt: skip
+    assert wait_until(writing.view, lambda: not writing.view._analysing)
+    assert (
+        "Cancelled: 3 of" in writing.said[-1]
+        and "Nothing was written" in writing.said[-1]
+    )
+    assert (
+        writing.asked == [] and not writing.backup.exists()
+    )  # (no question: it went no further)
+    assert card_files(writing.card) == before
+    kept = [t for t in writing.lib.tracks() if t.waveform is not None]
+    assert len(kept) == 3  # what was worked out stays: the next sync only does the rest
+    assert not writing.view.cancel_button.isVisibleTo(writing.view)
+
+
+def test_the_cancel_button_stops_measuring_lengths_and_keeps_the_ones_measured(cue_view, lib, tmp_path, monkeypatch, wait_for):  # fmt: skip
+    import time
+
+    add_disc(lib, "A", measured=False)
+    card = card_folder(tmp_path)
+    monkeypatch.setattr(sync_view, "needs_measuring", lambda t: t.cd_sectors is None)
+    cue_view.look(card)
+    said = []
+    cue_view.message.connect(said.append)
+    started = []
+
+    def slow(tracks, report=None, cancel=None):
+        tracks = list(tracks)
+        got = {tracks[0].id: 5000, tracks[1].id: 5100}
+        started.append(True)
+        while True:
+            cancel.check((got, []))
+            time.sleep(0.005)
+
+    monkeypatch.setattr(sync_view, "probe_lengths", slow)
+    cue_view.measure_button.click()
+    assert wait_until(cue_view, lambda: bool(started)) and cue_view.cancel_button.isVisibleTo(cue_view)  # fmt: skip
+    cue_view.cancel_button.click()
+    assert wait_until(cue_view, lambda: not cue_view._measuring)
+    assert "Cancelled: 2 of 12 tracks measured, kept." in said[-1]
+    assert sum(t.cd_sectors is not None for t in lib.tracks()) == 2
+    assert not cue_view.cancel_button.isVisibleTo(cue_view)
+
+
+def test_the_cancel_button_is_hidden_when_nothing_is_running(cue_view):
+    assert not cue_view.cancel_button.isVisibleTo(cue_view)

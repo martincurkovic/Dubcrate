@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any
 
 from dubcrate.analysis import Cue
+from dubcrate.cancel import CancelToken
 from dubcrate.library.models import NodeRecord, TrackRecord
 
 Progress = Callable[[str], None]
@@ -172,9 +173,13 @@ def build_nodes(
 
 
 def read_master_db(
-    path: Path | None = None, progress: Progress | None = None
+    path: Path | None = None,
+    progress: Progress | None = None,
+    cancel: CancelToken | None = None,
 ) -> RekordboxLibrary:
-    """Read the rekordbox library at `path` (default: the installed one)."""
+    """Read the rekordbox library at `path` (default: the installed one).
+
+    If `cancel` is set it raises `Cancelled` between steps and every few hundred tracks."""
     source = path or default_master_db()
     if source is None or not source.is_file():
         raise RekordboxError(
@@ -197,7 +202,9 @@ def read_master_db(
         try:
             say("reading tracks")
             skipped_no_path = 0
-            for row in db.get_content():
+            for count, row in enumerate(db.get_content()):
+                if cancel is not None and count % 200 == 0:
+                    cancel.check()
                 if row.rb_local_deleted:
                     continue
                 track = track_from_content(row)
@@ -209,6 +216,8 @@ def read_master_db(
                 library.notes.append(
                     f"skipped {skipped_no_path} track(s) with no file path"
                 )
+            if cancel is not None:
+                cancel.check()
             say("reading playlists")
             library.nodes, notes = build_nodes(
                 db.get_playlist(),

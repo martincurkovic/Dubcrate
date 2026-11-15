@@ -31,7 +31,9 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QPlainTextEdit,
     QPushButton,
+    QScrollArea,
     QSizePolicy,
+    QTabWidget,
     QTreeWidget,
     QTreeWidgetItem,
     QVBoxLayout,
@@ -41,8 +43,15 @@ from PySide6.QtWidgets import (
 from dubcrate import cdj_card as cc
 from dubcrate import settings
 from dubcrate.analysis import Cue
+from dubcrate.cancel import CancelToken
 from dubcrate.card_apply import apply_sync, default_backup_dir
-from dubcrate.card_discs import DiscSurvey, RekordboxCues, survey_discs
+from dubcrate.card_discs import (
+    DiscSurvey,
+    RekordboxCues,
+    WaveRow,
+    survey_discs,
+    wave_rows,
+)
 from dubcrate.eject import EjectError, eject_card
 from dubcrate.library import Library
 from dubcrate.library.lengths import needs_measuring, probe_lengths
@@ -58,6 +67,7 @@ from .label_dialog import disc_paths
 from .models import _disc_icon, _folder_icon
 from .source_tabs import explorer_glyph, sd_card_glyph
 from .tasks import TaskError, run_async
+from .wave_strip import CdjWaveStrip
 
 log = logging.getLogger(__name__)
 
@@ -501,6 +511,64 @@ def _read_all(paths: Sequence[Path]) -> dict[Path, Mapping[str, Sequence[Cue]] |
     return found
 
 
+class WaveRows(QScrollArea):
+    """The **Waveforms** tab: a strip for each track of the picked disc, as the CDJ will draw it."""
+
+    def __init__(self, parent: QWidget | None = None):
+        super().__init__(parent)
+        self.setWidgetResizable(True)
+        self.setFrameShape(QScrollArea.Shape.NoFrame)
+        self._body = QWidget()
+        self._layout = QVBoxLayout(self._body)
+        self._layout.setContentsMargins(4, 4, 4, 4)
+        self._layout.setSpacing(6)
+        self.setWidget(self._body)
+        self.message = QLabel()
+        self.message.setObjectName("mutedLabel")
+        self.message.setWordWrap(True)
+        self.strips: list[CdjWaveStrip] = []
+        self.rows: list[WaveRow] = []
+        self.show_message(
+            "Pick a disc to see the waveform of each track as the player will draw it."
+        )
+
+    def _clear(self) -> None:
+        while self._layout.count():
+            item = self._layout.takeAt(0)
+            if (w := item.widget()) is not None and w is not self.message:
+                w.deleteLater()
+        self.strips, self.rows = [], []
+
+    def show_message(self, text: str) -> None:
+        self._clear()
+        self.message.setText(text)
+        self._layout.addWidget(self.message)
+        self._layout.addStretch(1)
+
+    def show_rows(self, rows: list[WaveRow]) -> None:
+        self._clear()
+        self.rows = list(rows)
+        self.message.setParent(None)
+        for row in rows:
+            line = QWidget()
+            box = QVBoxLayout(line)
+            box.setContentsMargins(0, 0, 0, 0)
+            box.setSpacing(1)
+            head = QHBoxLayout()
+            title = _ElidedLabel(f"{row.number}.  {row.title}")
+            note = QLabel(row.note)
+            note.setObjectName("mutedLabel")
+            head.addWidget(title, 1)
+            head.addWidget(note)
+            box.addLayout(head)
+            strip = CdjWaveStrip(row.values or None, row.state)
+            strip.setToolTip(f"{row.title}\n{row.note}")
+            box.addWidget(strip)
+            self.strips.append(strip)
+            self._layout.addWidget(line)
+        self._layout.addStretch(1)
+
+
 class SyncView(QWidget):
     """The middle: the discs, what a sync would do for each, and the dry run for the one picked."""
 
@@ -533,6 +601,9 @@ class SyncView(QWidget):
         self._serial = 0  # a newer refresh makes an older one's result stale
         self._measuring = False
         self._analysing = False
+        self._cancel: CancelToken | None = (
+            None  # set while measuring or analysing: the Cancel button's
+        )
         self._ticking = False
 
         layout = QVBoxLayout(self)
@@ -578,9 +649,13 @@ class SyncView(QWidget):
 
         self.detail = QPlainTextEdit()
         self.detail.setReadOnly(True)
-        self.detail.setMinimumHeight(150)
-        self.detail.setMaximumHeight(220)
-        layout.addWidget(self.detail)
+        self.waves = WaveRows()
+        self.detail_tabs = QTabWidget()
+        self.detail_tabs.addTab(self.detail, "What a sync does")
+        self.detail_tabs.addTab(self.waves, "Waveforms")
+        self.detail_tabs.setMinimumHeight(190)
+        self.detail_tabs.setMaximumHeight(260)
+        layout.addWidget(self.detail_tabs)
 
         self.footer_title = QLabel()
         self.footer_note = QLabel()
@@ -596,6 +671,12 @@ class SyncView(QWidget):
             "on the CD (a burn measures them too). Reads the files; changes nothing."
         )
         self.measure_button.clicked.connect(self.measure_lengths)
+        self.cancel_button = QPushButton("Cancel")
+        self.cancel_button.setToolTip(
+            "Stop measuring or analysing: what is already done is kept, and nothing is written to the card"
+        )
+        self.cancel_button.clicked.connect(self._cancel_work)
+        self.cancel_button.hide()
         self.sync_button = QPushButton("Sync")
         self.sync_button.clicked.connect(self._on_sync)
         self.eject_check = QCheckBox("Eject after syncing")
@@ -612,6 +693,7 @@ class SyncView(QWidget):
         foot.addLayout(words, 1)
         foot.addWidget(self.waves_check)
         foot.addWidget(self.eject_check)
+        foot.addWidget(self.cancel_button)
         foot.addWidget(self.measure_button)
         foot.addWidget(self.sync_button)
         layout.addLayout(foot)
@@ -856,8 +938,25 @@ class SyncView(QWidget):
 
     # -- the words -------------------------------------------------------------------
 
+    def _show_waves(self, survey: DiscSurvey | None) -> None:
+        """The Waveforms tab for the picked disc."""
+        if survey is None:
+            self.waves.show_message(
+                "Pick a disc to see the waveform of each track as the player will draw it."
+            )
+        elif survey.input.problems:
+            self.waves.show_message(
+                "This disc can't be synced: " + survey.input.problems[0]
+            )
+        else:
+            entries = self._lib.disc_entries(survey.disc.id)
+            self.waves.show_rows(
+                wave_rows(survey, entries, self.waves_check.isChecked())
+            )
+
     def _show_detail(self) -> None:
         survey = self._surveys.get(self._current_disc_id() or -1)
+        self._show_waves(survey)
         if survey is not None:
             self.detail.setPlainText("\n".join(survey.detail()))
             return
@@ -888,6 +987,7 @@ class SyncView(QWidget):
             )
         self.clear_button.setEnabled(bool(ticked))
         busy = self._measuring or self._writing or self._analysing
+        self.cancel_button.setVisible(self._measuring or self._analysing)
         self.measure_button.setEnabled(bool(self._unmeasured) and not busy)
         self.waves_check.setEnabled(not busy)
         card = self._card_path.name if self._card_path else ""
@@ -958,6 +1058,8 @@ class SyncView(QWidget):
         """Analyse the tracks that have no waveform yet (on a worker: the first time takes a few
         seconds a track), keep the results, look at the discs again, and then ask and write."""
         self._analysing = True
+        token = self._cancel = CancelToken()
+        self.cancel_button.setEnabled(True)
         self.subtitle.setText(f"Analysing {len(todo)} tracks for their waveforms…")
         self._update_buttons()
 
@@ -965,6 +1067,7 @@ class SyncView(QWidget):
             found, problems = result
             store_waveforms(self._lib, found)
             self._analysing = False
+            self._cancel = None
             if problems:
                 self.message.emit(
                     f"No waveform for {len(problems)} file(s): {problems[0]}"
@@ -976,16 +1079,31 @@ class SyncView(QWidget):
 
         def failed(text: str) -> None:
             self._analysing = False
+            self._cancel = None
             self.message.emit(f"Couldn't analyse the tracks: {text}")
             self._update_buttons()
 
+        def cancelled(partial) -> None:
+            """Stopped: keep the waveforms already worked out (they are as good as any), write nothing."""
+            found = partial[0] if partial else {}
+            store_waveforms(self._lib, found)
+            self._analysing = False
+            self._cancel = None
+            self.message.emit(
+                f"Cancelled: {len(found)} of {len(todo)} tracks analysed, kept for next time. "
+                "Nothing was written to the card."
+            )
+            self._update_buttons()
+            self._look_at_discs(self._loaded)
+
         run_async(
-            lambda report: measure_waveforms(todo, report),
+            lambda report: measure_waveforms(todo, report, cancel=token),
             done,
             failed,
             on_progress=lambda n, total: self.subtitle.setText(
                 f"Analysing waveforms: {n} of {total}"
             ),
+            on_cancel=cancelled,
         )
 
     def _confirm_and_write(self, surveys: list[DiscSurvey]) -> None:
@@ -1066,6 +1184,13 @@ class SyncView(QWidget):
 
         run_async(work, done, failed)
 
+    def _cancel_work(self) -> None:
+        """The Cancel button: stop measuring or analysing (between files, so it takes a moment)."""
+        if self._cancel is not None:
+            self._cancel.cancel()
+            self.cancel_button.setEnabled(False)
+            self.subtitle.setText("Cancelling…")
+
     # -- measuring lengths -------------------------------------------------------------
 
     def measure_lengths(self) -> None:
@@ -1074,6 +1199,8 @@ class SyncView(QWidget):
         if not todo or self._measuring:
             return
         self._measuring = True
+        token = self._cancel = CancelToken()
+        self.cancel_button.setEnabled(True)
         self._update_buttons()
         self.subtitle.setText(f"Measuring {len(todo)} tracks…")
 
@@ -1082,6 +1209,7 @@ class SyncView(QWidget):
             for track_id, sectors in lengths.items():
                 self._lib.set_cd_sectors(track_id, sectors)
             self._measuring = False
+            self._cancel = None
             if problems:
                 self.message.emit(
                     f"Couldn't measure {len(problems)} file(s): {problems[0]}"
@@ -1090,14 +1218,31 @@ class SyncView(QWidget):
 
         def failed(text: str) -> None:
             self._measuring = False
+            self._cancel = None
             self.message.emit(f"Couldn't measure the tracks: {text}")
             self._update_buttons()
 
+        def cancelled(partial) -> None:
+            lengths = partial[0] if partial else {}
+            for (
+                track_id,
+                sectors,
+            ) in lengths.items():  # (a length measured is a length, kept)
+                self._lib.set_cd_sectors(track_id, sectors)
+            self._measuring = False
+            self._cancel = None
+            self.message.emit(
+                f"Cancelled: {len(lengths)} of {len(todo)} tracks measured, kept."
+            )
+            self._update_buttons()
+            self.refresh()
+
         run_async(
-            lambda report: probe_lengths(todo, report),
+            lambda report: probe_lengths(todo, report, cancel=token),
             done,
             failed,
             on_progress=lambda n, total: self.subtitle.setText(
                 f"Measuring lengths: {n} of {total}"
             ),
+            on_cancel=cancelled,
         )

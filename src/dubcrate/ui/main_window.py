@@ -31,6 +31,7 @@ from PySide6.QtWidgets import (
 from dubcrate import logsetup, settings
 from dubcrate.analysis import read_preview, share_root
 from dubcrate.audio.player import AudioPlayer
+from dubcrate.cancel import CancelToken
 from dubcrate.library import Library
 from dubcrate.library.folder import (
     DirectoryScan,
@@ -154,6 +155,8 @@ class MainWindow(QMainWindow):
         self.shortcuts_dialog: ShortcutsDialog | None = None  # kept while it is open
         self._sort: tuple[str | None, bool] = (None, False)
         self._busy = False
+        self._busy_label = ""
+        self._cancel_token: CancelToken | None = None
         self._theme_actions: dict[str, QAction] = {}
         self._wave_actions: dict[str, QAction] = {}
         self.setWindowTitle("Dubcrate")
@@ -506,6 +509,12 @@ class MainWindow(QMainWindow):
         self.busy_bar.setTextVisible(False)
         self.busy_bar.hide()
         self.statusBar().addPermanentWidget(self.busy_bar)
+        self.cancel_button = QPushButton("Cancel")
+        self.cancel_button.setToolTip("Stop this: nothing is changed")
+        self.cancel_button.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.cancel_button.clicked.connect(self._cancel_busy)
+        self.cancel_button.hide()
+        self.statusBar().addPermanentWidget(self.cancel_button)
 
     def _build_menus(self) -> None:
         menus = self.menuBar()
@@ -730,11 +739,19 @@ class MainWindow(QMainWindow):
 
     # -- status / busy ----------------------------------------------------
 
-    def _set_busy(self, busy: bool, message: str = "") -> None:
+    def _set_busy(
+        self, busy: bool, message: str = "", cancel: CancelToken | None = None
+    ) -> None:
+        """Show (or clear) that something is running. With a `cancel` token the status bar offers a
+        Cancel button that sets it; the job stops between files and the window is told by `on_cancel`."""
         self._busy = busy
+        self._busy_label = message.rstrip("…").rstrip(".")
+        self._cancel_token = cancel if busy else None
         for action in self._import_actions:
             action.setEnabled(not busy)
         self.busy_bar.setVisible(busy)
+        self.cancel_button.setVisible(busy and cancel is not None)
+        self.cancel_button.setEnabled(True)
         if busy:
             self.busy_bar.setRange(
                 0, 0
@@ -747,6 +764,15 @@ class MainWindow(QMainWindow):
         if total > 0:
             self.busy_bar.setRange(0, total)
             self.busy_bar.setValue(done)
+            if self._busy and self._cancel_token is not None:
+                self.statusBar().showMessage(f"{self._busy_label}… {done} of {total}")
+
+    def _cancel_busy(self) -> None:
+        """The Cancel button: ask the running job to stop. It stops between files, so this takes a moment."""
+        if self._cancel_token is not None:
+            self._cancel_token.cancel()
+            self.cancel_button.setEnabled(False)
+            self.statusBar().showMessage("Cancelling…")
 
     def burn_current_disc(self) -> None:
         """Open the burn window for the open disc."""
@@ -1404,28 +1430,35 @@ class MainWindow(QMainWindow):
         """Read a source on a worker thread, then store it here on the GUI thread."""
         if self._busy:
             return
+        token = CancelToken()
         if kind == "folder":
             label = f"Scanning {path.name}…"
 
             def work(report):
-                return scan_folder(path, progress=report)
+                return scan_folder(path, progress=report, cancel=token)
         else:
             label = "Reading the rekordbox library…"
 
             def work(_report):
-                return read_master_db(path)
+                return read_master_db(path, cancel=token)
 
-        self._set_busy(True, label)
+        self._set_busy(True, label, token)
         run_async(
             work,
             lambda result: self._import_done(kind, path, name, result),
             self._import_failed,
             on_progress=self._on_progress,
+            on_cancel=self._import_cancelled,
         )
 
     def _import_failed(self, message: str) -> None:
         self._set_busy(False)
         self._warn("Import failed", message)
+
+    def _import_cancelled(self, _partial) -> None:
+        """The import was stopped: the library is exactly as it was (nothing is stored until a scan is whole)."""
+        self._set_busy(False)
+        self.statusBar().showMessage("Import cancelled: nothing was changed.", 8000)
 
     def _import_done(
         self,
@@ -1646,6 +1679,14 @@ class MainWindow(QMainWindow):
 
     def _on_preview_ready(self, track_id: int, waveform) -> None:
         self.track_model.set_preview(track_id, waveform)
+        # A strip computed from the audio is kept for the next session (rekordbox's own are read from its
+        # files in a fraction of a millisecond, so those aren't).
+        try:
+            (track,) = self._lib.tracks_by_ids([track_id])
+        except LibraryError:
+            return
+        if not track.analysis_path:
+            self._lib.set_preview(track.path, track.file_size, waveform)
 
     def _on_cues_changed(self) -> None:
         """rekordbox's cues were read (again): mark them on the rows on show."""
@@ -1665,11 +1706,14 @@ class MainWindow(QMainWindow):
             for s in self._lib.sources()
             if s.kind == "rekordbox"
         }
+        from_audio = []  # tracks with no rekordbox analysis: their strip may be in the library's cache
         for row in range(
             max(0, first - PREVIEW_ROWS_AROUND),
             min(model.rowCount(), last + PREVIEW_ROWS_AROUND + 1),
         ):
             track = model.track_at(row)
+            if not track.analysis_path and not model.has_preview(track.id):
+                from_audio.append(track)
             if not model.has_cues(track.id):
                 found = self.preview.cues.cues_for(
                     track, announce=False
@@ -1684,6 +1728,9 @@ class MainWindow(QMainWindow):
                 waveform = read_preview(roots[track.source_id], track.analysis_path)
                 if waveform is not None:
                     model.set_preview(track.id, waveform)
+        if from_audio:
+            for track_id, waveform in self._lib.previews_for(from_audio).items():
+                model.set_preview(track_id, waveform)
 
     def resizeEvent(self, event) -> None:
         super().resizeEvent(event)

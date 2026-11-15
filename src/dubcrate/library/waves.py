@@ -8,10 +8,10 @@ not depend on the gain a burn applied.
 """
 
 from collections.abc import Callable, Iterable
-from concurrent.futures import ThreadPoolExecutor
 
 from dubcrate import wave_model
 from dubcrate.audio.decode import DecodeError, decode_file
+from dubcrate.cancel import Cancelled, CancelToken, cancellable_map
 from dubcrate.library.models import Track
 from dubcrate.library.store import Library
 
@@ -29,12 +29,16 @@ def analyse(path: str) -> list[int]:
 
 
 def measure_waveforms(
-    tracks: Iterable[Track], progress: Progress | None = None, workers: int = 2
+    tracks: Iterable[Track],
+    progress: Progress | None = None,
+    workers: int = 2,
+    cancel: CancelToken | None = None,
 ) -> tuple[dict[int, list[int]], list[str]]:
     """Analyse the tracks that need it, a few at a time; returns ({track id: values}, problems).
 
     Two at a time by default: a track is decoded to memory and analysed a column at a time, but a
-    long one still holds a few hundred megabytes while it is."""
+    long one still holds a few hundred megabytes while it is. If `cancel` is set it raises `Cancelled`
+    whose `partial` is what was analysed so far (still good)."""
     todo = [t for t in tracks if needs_waveform(t)]
 
     def run(track: Track) -> tuple[Track, list[int] | str]:
@@ -45,14 +49,18 @@ def measure_waveforms(
 
     found: dict[int, list[int]] = {}
     problems: list[str] = []
-    with ThreadPoolExecutor(max_workers=workers) as pool:
-        for done, (track, result) in enumerate(pool.map(run, todo), start=1):
+    try:
+        for done, (track, result) in enumerate(
+            cancellable_map(run, todo, workers, cancel), start=1
+        ):
             if isinstance(result, str):
                 problems.append(result)
             else:
                 found[track.id] = result
             if progress:
                 progress(done, len(todo))
+    except Cancelled:
+        raise Cancelled((found, problems)) from None
     return found, problems
 
 

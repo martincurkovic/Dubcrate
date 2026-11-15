@@ -38,6 +38,7 @@ from dubcrate.library.models import (
 )
 from dubcrate.library.paths import default_library_path
 from dubcrate.planning import fit_tracks, split_sequential
+from dubcrate.waveform import Waveform, pack_preview, unpack_preview
 
 
 def _max_tracks(kind: str) -> int:
@@ -275,10 +276,23 @@ _SCHEMA_V11 = """
 ALTER TABLE track ADD COLUMN waveform BLOB
 """
 
+# The Preview strip of a folder track, computed when it is played, kept across sessions. Keyed by the
+# file (`path_key` and size), NOT by track id: the Explorer forgets its tracks at every start-up and a
+# re-import can give a file a new id, and neither should cost the strip.
+_SCHEMA_V12 = """
+CREATE TABLE preview_cache (
+    path_key TEXT PRIMARY KEY,
+    file_size INTEGER NOT NULL,
+    bands BLOB NOT NULL
+)
+"""
+
 _MIGRATIONS = (
     _SCHEMA_V1, _SCHEMA_V2, _SCHEMA_V3, _SCHEMA_V4, _SCHEMA_V5, _migrate_to_v6,
-    _SCHEMA_V7, _SCHEMA_V8, _SCHEMA_V9, _SCHEMA_V10, _SCHEMA_V11,
+    _SCHEMA_V7, _SCHEMA_V8, _SCHEMA_V9, _SCHEMA_V10, _SCHEMA_V11, _SCHEMA_V12,
 )  # fmt: skip
+
+MAX_CACHED_PREVIEWS = 20_000  # about 40 MB; past it the oldest are forgotten
 SCHEMA_VERSION = len(_MIGRATIONS)
 
 
@@ -819,6 +833,46 @@ class Library:
                 "UPDATE track SET waveform = ? WHERE id = ?",
                 (bytes(values), track_id),
             )
+
+    def set_preview(self, path: str, file_size: int | None, waveform: Waveform) -> None:
+        """Keep a file's whole-track Preview waveform. Not kept for a file whose size isn't known
+        (the cache can't tell if it changed). Past `MAX_CACHED_PREVIEWS` the oldest are forgotten."""
+        if not file_size:
+            return
+        with self._conn:
+            self._conn.execute(
+                "INSERT OR REPLACE INTO preview_cache (path_key, file_size, bands) VALUES (?, ?, ?)",
+                (path_key(path), file_size, pack_preview(waveform)),
+            )
+            self._conn.execute(
+                "DELETE FROM preview_cache WHERE rowid <= (SELECT MAX(rowid) FROM preview_cache) - ?",
+                (MAX_CACHED_PREVIEWS,),
+            )
+
+    def previews_for(self, tracks: Iterable[Track]) -> dict[int, Waveform]:
+        """The kept Preview waveform of each of these tracks that has one, by track id. A track whose
+        file has changed size since it was kept has none (the old one is stale); a bad row is skipped."""
+        wanted: dict[str, list[Track]] = {}
+        for track in tracks:
+            if track.file_size:
+                wanted.setdefault(path_key(track.path), []).append(track)
+        found: dict[int, Waveform] = {}
+        keys = list(wanted)
+        for start in range(0, len(keys), 500):
+            chunk = keys[start : start + 500]
+            marks = ", ".join("?" for _ in chunk)
+            for row in self._conn.execute(
+                f"SELECT path_key, file_size, bands FROM preview_cache WHERE path_key IN ({marks})",
+                chunk,
+            ):
+                try:
+                    wave = unpack_preview(row["bands"])
+                except ValueError:
+                    continue
+                for track in wanted[row["path_key"]]:
+                    if track.file_size == row["file_size"]:
+                        found[track.id] = wave
+        return found
 
     def tracks_by_ids(self, track_ids: Iterable[int]) -> list[Track]:
         """Tracks for `track_ids`, in that order (repeats allowed). Raises on unknown ids."""

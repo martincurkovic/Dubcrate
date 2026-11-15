@@ -11,9 +11,14 @@ SDHC above that to 32 GB, SDXC above that), which is all a Mac reports through a
 What differs from the player's own format: `diskutil` puts the partition 1 MiB in (sector 2048,
 the player's is at 32) and keeps 1 reserved sector (the player's 8). The player is untested on a
 card made this way, and **has not been shown the pre-made `PIONEER/CDJ` folder either**; the
-two-experiment checklist is in `dev_docs/card-sync.md`. macOS only; each platform's way (Linux
-`mkfs.fat`, Windows `format`) is a later helper, tagged not tried. The runner is injectable, so
-a test never touches a disk.
+two-experiment checklist is in `dev_docs/card-sync.md`.
+
+Each system has its own way, one module apiece, chosen in `_backend` (the one place that tests the
+platform): macOS `diskutil` (here), Linux `lsblk` + `sfdisk` + `mkfs.fat` (`card_format_linux`, which
+can match the player's layout exactly: partition at sector 32, 8 reserved sectors) and Windows
+PowerShell's storage cmdlets (`card_format_windows`). **The Linux and Windows ones are tried
+only against stand-in commands, never a real disk or card.** The runner is injectable, so a test
+never touches a disk.
 """
 
 import os
@@ -169,14 +174,44 @@ def device_name(text: str) -> str:
     raise FormatError(f"{text!r} is not a disk name such as disk4.")
 
 
+def _backend():
+    """The module that formats on this system, or None for macOS (this module's own `diskutil` code).
+
+    Raises `FormatError` on a system with no way yet."""
+    if sys.platform == "darwin":
+        return None
+    if sys.platform.startswith("linux"):
+        from dubcrate import card_format_linux
+
+        return card_format_linux
+    if sys.platform == "win32":
+        from dubcrate import card_format_windows
+
+        return card_format_windows
+    raise FormatError("Formatting a card isn't done on this kind of computer yet.")
+
+
+def eject_hint() -> str:
+    """How to eject a card on this system, in a few words for a message."""
+    if sys.platform == "darwin":
+        return "Finder, or `diskutil eject`"
+    if sys.platform == "win32":
+        return "the taskbar's Safely Remove Hardware"
+    return "your file manager, or `udisksctl power-off`"
+
+
 def inspect(device: str, run: Runner = subprocess.run) -> CardDisk:
-    """Ask the system about a disk (`disk4`, `/dev/disk4`)."""
+    """Ask the system about a disk (`disk4`, `/dev/disk4`; `sdb`; `disk3` on Windows)."""
+    if (backend := _backend()) is not None:
+        return backend.inspect(device, run)
     name = device_name(device)
     return parse_disk_info(_plist(run, "info", "-plist", f"/dev/{name}"))
 
 
 def list_disks(run: Runner = subprocess.run) -> list[CardDisk]:
     """The removable whole disks, a card slot's or a reader's, for the user to choose from."""
+    if (backend := _backend()) is not None:
+        return backend.list_disks(run)
     listing = plistlib.loads(_plist(run, "list", "-plist"))
     found = []
     for name in listing.get("WholeDisks", []):
@@ -194,6 +229,30 @@ class Formatted:
     disk: CardDisk
     volume: Path  # where the card is mounted now, ready for `card sync`
     folder: Path  # its empty PIONEER/CDJ
+
+
+def _format_mac(disk: CardDisk, run: Runner) -> Path:
+    """`diskutil`'s way: partition and format, and mount if it did not by itself. Returns the mount point."""
+    _diskutil(run, "partitionDisk", disk.node, "MBR", "MS-DOS FAT16", LABEL, "100%")
+    partition = _plist(run, "info", "-plist", f"{disk.node}s1")
+    info = plistlib.loads(partition)
+    if info.get("FilesystemName") != "MS-DOS FAT16":
+        raise FormatError(
+            f"The card came out as {info.get('FilesystemName') or 'unformatted'}, "
+            "not FAT16: it was not made ready."
+        )
+    mount = str(info.get("MountPoint") or "")
+    if not mount:
+        _diskutil(run, "mount", f"{disk.node}s1")
+        mount = str(
+            plistlib.loads(_plist(run, "info", "-plist", f"{disk.node}s1")).get(
+                "MountPoint"
+            )
+            or ""
+        )
+    if not mount:
+        raise FormatError("The card was formatted but would not mount.")
+    return Path(mount)
 
 
 def format_card(
@@ -218,26 +277,10 @@ def format_card(
         )
     if found := problems(disk, allow_images=allow_images):
         raise FormatError(found[0])
-    _diskutil(run, "partitionDisk", disk.node, "MBR", "MS-DOS FAT16", LABEL, "100%")
-    partition = _plist(run, "info", "-plist", f"{disk.node}s1")
-    info = plistlib.loads(partition)
-    if info.get("FilesystemName") != "MS-DOS FAT16":
-        raise FormatError(
-            f"The card came out as {info.get('FilesystemName') or 'unformatted'}, "
-            "not FAT16: it was not made ready."
-        )
-    mount = str(info.get("MountPoint") or "")
-    if not mount:
-        _diskutil(run, "mount", f"{disk.node}s1")
-        mount = str(
-            plistlib.loads(_plist(run, "info", "-plist", f"{disk.node}s1")).get(
-                "MountPoint"
-            )
-            or ""
-        )
-    if not mount:
-        raise FormatError("The card was formatted but would not mount.")
-    volume = Path(mount)
+    backend = _backend()
+    volume = (
+        _format_mac(disk, run) if backend is None else backend.format_disk(disk, run)
+    )
     try:
         folder = cc.make_card_folders(volume)
     except OSError as exc:

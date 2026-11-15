@@ -84,6 +84,8 @@ Re-importing keeps your discs intact. A track that has vanished from its source 
 
 Supported music: MP3, WAV, FLAC, AIFF, AAC/M4A, Ogg, Opus and WMA.
 
+A long job, such as an import, measuring track lengths or levels, or analysing waveforms, shows how far it has got (for example, "Measuring levels… 12 of 40") and has a **Cancel** button beside the message at the bottom of the window (in the Sync tab, and in the Burn window for level measuring). Cancelling an import changes nothing; for measuring and analysing, what was already worked out is kept, so the next try carries on from there.
+
 ---
 
 ## Browsing and searching
@@ -365,6 +367,8 @@ The CDJ-1000MK3 keeps the cue points you set on the player on its **SD card**, o
 
 ![The Sync tab: the card on the left, the audio discs in the middle with what a sync would do for each](screenshots/sync.png "The Sync tab")
 
+![The Sync tab's Waveforms tab: a strip for each track of the picked disc](screenshots/sync-waveforms.png "The waveforms a sync will write")
+
 1. **The card** (left). Put the player's SD card into your Mac: it appears in the list by itself a moment later (and goes when you take it out), found by the **PIONEER** folder on it. Each card shows its name, size and how many discs the player has put on it, with an **eject** button on the right that ejects it. Click **Refresh** if a card doesn't show up. For a copy of a card's folder, or a disk image of one, use **Choose Folder…**: it is listed with a **×** that takes it off the list again (the folder itself isn't touched).
 2. **Your discs** (middle). Every **audio** disc you have made is listed, in the folders you filed it in, with a **Status**:
    - **Not on the card: 12 cues and 14 waveforms to add**: the player has never seen this disc, or has no file for it yet.
@@ -372,7 +376,7 @@ The CDJ-1000MK3 keeps the cue points you set on the player on its **SD card**, o
    - **In sync**: the card already has them all.
    - **No rekordbox cues**: nothing to put on the card. Only tracks that are in rekordbox have cues (a file elsewhere that is the same file as one in rekordbox counts). A disc still gets its waveforms if the card has none for its tracks.
    - **Can't sync**: the reason is in the box below; see the next point.
-3. **Pick a disc** to read what a sync would add, track by track, with any warnings, in the box under the list. Hover over a status to see the same text.
+3. **Pick a disc** to read what a sync would add, track by track, with any warnings, in the box under the list (the **What a sync does** tab). Hover over a status to see the same text. The **Waveforms** tab next to it draws each track's waveform **as the player will**: blue for one that will be written, grey for one the card already has (the player draws that one, and a sync leaves it alone), a dashed line for a track not analysed yet (a sync does that first).
 4. **Measure Lengths.** A disc's entry on the card is its table of contents, which needs every track's exact length on the CD. A burn measures them; a disc you haven't burned yet may say *Can't sync: tracks have no measured length*. **Measure Lengths** reads those files (it changes nothing in them) and the list updates.
 5. **Tick the discs** to sync (a folder ticks the discs inside it); the line at the bottom adds up what it would do.
 6. **Write waveforms** (ticked unless you change it) also writes each track's waveform. **A burn works the waveforms out for you** (it has the audio in hand anyway), so for a disc you burned with Dubcrate there is nothing to wait for. For any track that has none (a disc you haven't burned here, say), Sync **analyses** it first, under a second each (the list says how far it is), and keeps the result, so the next sync doesn't. Untick it to write cues only.
@@ -396,9 +400,9 @@ You don't need the player to get a card ready. **Format a Card…** (under the c
 
 ![The Format a Card window: the removable disks, a card that can be used and one that can't](screenshots/format-card.png "Format a Card")
 
-- **Only plain SD cards of 2 GB or less.** The CDJ-1000MK3 can't read SDHC or SDXC cards (anything bigger than 2 GB is one of those), and the window greys those out with the reason. A card is told apart by its size, which is all the Mac reports.
-- **It erases the card, and only a card.** Only removable disks are listed (never your Mac's own disk), a locked card or a disk image is greyed out, you have to tick that you understand everything on it will be erased, and the disk is checked again, and checked to still be the one you picked, just before it is erased.
-- **Macs only so far.** On Linux and Windows the window says so.
+- **Only plain SD cards of 2 GB or less.** The CDJ-1000MK3 can't read SDHC or SDXC cards (anything bigger than 2 GB is one of those), and the window greys those out with the reason. A card is told apart by its size, which is all most card readers report.
+- **It erases the card, and only a card.** Only removable disks are listed (never the computer's own disk), a locked card or a disk image is greyed out, you have to tick that you understand everything on it will be erased, and the disk is checked again, and checked to still be the one you picked, just before it is erased.
+- **Mac, Linux and Windows.** On a Mac it uses the system's disk tool. On Linux it asks for your password (a desktop password window, or run Dubcrate as root) and needs `sfdisk` and `mkfs.fat` (`dosfstools`); on Windows it asks permission through Windows' own prompt. **The Linux and Windows ways have not yet been tried on a real card.**
 
 > **Not yet tried on a player.** The card it makes follows the layout of a card the player formatted itself (FAT16, 32 KB clusters, the same name), but a CDJ has not yet been shown a card made this way, and the player's own card has its partition 1 MiB closer to the start. If the player says *UNFORMAT* or *CARD ERROR* for a card made here, format it once in the player (the CDJ-1000MK3's own manual says how) and please tell us what the display said.
 

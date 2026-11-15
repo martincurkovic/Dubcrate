@@ -610,8 +610,8 @@ def test_matching_measures_once_then_shows_the_gains(
     monkeypatch.setattr(
         burn_dialog,
         "measure_loudness",
-        lambda tracks, progress=None: (
-            measured.append(len(tracks)) or real(tracks, progress)
+        lambda tracks, progress=None, cancel=None: (
+            measured.append(len(tracks)) or real(tracks, progress, cancel=cancel)
         ),
     )
     dialog, _ = make_dialog()
@@ -681,7 +681,7 @@ def test_a_failed_measurement_blocks_the_burn_and_says_how_to_get_past_it(make_d
     from dubcrate.render import RenderError
     from dubcrate.ui import burn_dialog
 
-    def broken(tracks, progress=None):
+    def broken(tracks, progress=None, cancel=None):
         raise RenderError("ffmpeg fell over")
 
     monkeypatch.setattr(burn_dialog, "measure_loudness", broken)
@@ -719,3 +719,45 @@ def test_exporting_with_matching_on_writes_matched_files(make_dialog, wait_for, 
         encoding="utf-8"
     )
     assert [measure(w).lufs for w in sorted(folder.glob("*.wav"))] == [pytest.approx(DEFAULT, abs=0.3)] * 2  # fmt: skip
+
+
+def test_measuring_the_levels_can_be_cancelled_what_was_measured_is_kept_and_the_burn_waits(
+    make_dialog, wait_for, lib, monkeypatch
+):
+    import time
+
+    from dubcrate.loudness import Loudness
+    from dubcrate.ui import burn_dialog
+
+    started = []
+    first = lib.disc_entries(lib.discs()[0].id)[0].track
+
+    def slow(tracks, progress=None, cancel=None):
+        started.append(True)
+        while True:
+            cancel.check(({first.id: Loudness(-12.0, -1.0)}, []))
+            time.sleep(0.005)
+
+    monkeypatch.setattr(burn_dialog, "measure_loudness", slow)
+    dialog, _ = make_dialog()
+    assert not dialog.cancel_levels_button.isVisibleTo(dialog)
+    choose_levels(dialog, str(DEFAULT))
+    assert wait_for(lambda: bool(started))
+    assert dialog._measuring and dialog.cancel_levels_button.isVisibleTo(dialog)
+    dialog.cancel_levels_button.click()
+    assert (
+        not dialog.cancel_levels_button.isEnabled()
+        and dialog.levels_label.text() == "Cancelling…"
+    )
+    assert wait_for(lambda: not dialog._measuring)
+    assert not dialog.cancel_levels_button.isVisibleTo(dialog)
+    assert next(t for t in lib.tracks() if t.id == first.id).loudness == Loudness(
+        -12.0, -1.0
+    )  # kept
+    dialog.confirm_check.setChecked(True)
+    assert (
+        not dialog.burn_button.isEnabled()
+    )  # the burn waits: it was asked to match levels
+    assert "was cancelled" in dialog.problems_label.text() and "untick Normalise" in dialog.problems_label.text()  # fmt: skip
+    choose_levels(dialog, None)  # the way out
+    assert dialog.burn_button.isEnabled() and dialog.problems_label.text() == ""

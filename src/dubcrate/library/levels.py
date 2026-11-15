@@ -1,9 +1,9 @@
 """Measure the loudness of tracks, for level matching (see `dubcrate.loudness`)."""
 
 from collections.abc import Callable, Iterable
-from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
+from dubcrate.cancel import Cancelled, CancelToken, cancellable_map
 from dubcrate.library.models import Track
 from dubcrate.library.store import Library
 from dubcrate.loudness import Loudness, measure
@@ -18,12 +18,16 @@ def needs_loudness(track: Track) -> bool:
 
 
 def measure_loudness(
-    tracks: Iterable[Track], progress: Progress | None = None, workers: int = 4
+    tracks: Iterable[Track],
+    progress: Progress | None = None,
+    workers: int = 4,
+    cancel: CancelToken | None = None,
 ) -> tuple[dict[int, Loudness], list[str]]:
     """Measure the tracks that need it, in parallel; returns ({track id: loudness}, problems).
 
     Touches no database, so it is safe on a worker thread. Store the result with
     `Library.set_loudness` on the thread that owns the library (`store_loudness`).
+    If `cancel` is set it raises `Cancelled` whose `partial` is what was measured so far (still good).
     """
     todo = [t for t in tracks if needs_loudness(t)]
 
@@ -37,14 +41,18 @@ def measure_loudness(
 
     found: dict[int, Loudness] = {}
     problems: list[str] = []
-    with ThreadPoolExecutor(max_workers=workers) as pool:
-        for done, (track, result) in enumerate(pool.map(run, todo), start=1):
+    try:
+        for done, (track, result) in enumerate(
+            cancellable_map(run, todo, workers, cancel), start=1
+        ):
             if isinstance(result, str):
                 problems.append(result)
             else:
                 found[track.id] = result
             if progress:
                 progress(done, len(todo))
+    except Cancelled:
+        raise Cancelled((found, problems)) from None
     return found, problems
 
 

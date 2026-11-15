@@ -77,8 +77,8 @@
 - [ ] Give each app library its own Library tab once a second library exists ([roadmap.md](dev_docs/roadmap.md)).
 - [ ] Remember what the Explorer read across sessions (keyed by path, size and modified time) so each folder isn't probed again on its first visit ([roadmap.md](dev_docs/roadmap.md)).
 - [ ] Recognise the same song when it is a copy, or when the rekordbox library points at another drive's path ([roadmap.md](dev_docs/roadmap.md)).
-- [ ] Cache computed waveforms in SQLite so folder tracks keep their Preview strip across sessions ([roadmap.md](dev_docs/roadmap.md)).
-- [ ] Make imports and loudness measuring cancellable and show per-file progress ([roadmap.md](dev_docs/roadmap.md)).
+- [x] Cache computed waveforms in SQLite so folder tracks keep their Preview strip across sessions ([roadmap.md](dev_docs/roadmap.md)).
+- [x] Make imports and loudness measuring cancellable and show per-file progress ([roadmap.md](dev_docs/roadmap.md)).
 - [ ] Try `tinytag` as a faster folder scan, since `ffprobe` per file manages about 120 files a second ([roadmap.md](dev_docs/roadmap.md)).
 - [x] Port AKAISDS's `wheel_guard` so scrolling over a spin box can't change it ([roadmap.md](dev_docs/roadmap.md)).
 - [ ] Finish the logging follow-ups: a Settings switch for verbose logging, logging in the store and the CLI, and a dialog for an uncaught exception ([roadmap.md](dev_docs/roadmap.md)).
@@ -90,6 +90,7 @@
 
 ### Linux and Windows
 
+- [ ] Try Format a Card on a spare 2 GB card on Linux and on Windows (built, tested against stand-in commands only: `card_format_linux.py`, `card_format_windows.py`; the Linux layout was checked with the real `sfdisk` and `mkfs.fat` on an image file).
 - [ ] Detect "permission denied" on the drive and say how to get access (the `cdrom` or `optical` group, or a udev rule) ([cross-platform.md](dev_docs/cross-platform.md)).
 - [ ] Decide between `cdrdao` and `xorriso -as cdrecord` for writing MP3 discs by trying both on a real drive ([linux-test-plan.md](dev_docs/linux-test-plan.md)).
 - [ ] Tell Linux users in the guide that the rekordbox importer has no default path there (folders only, or pick a copied `master.db`) ([cross-platform.md](dev_docs/cross-platform.md)).

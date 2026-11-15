@@ -6,6 +6,7 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from dubcrate.cancel import CancelToken, cancellable_map
 from dubcrate.library.models import NodeRecord, TrackRecord
 from dubcrate.render import RenderError, SourceInfo, ToolMissingError, probe
 
@@ -109,9 +110,14 @@ def _build_nodes(root: Path, by_dir: dict[Path, list[Path]]) -> list[NodeRecord]
 
 
 def scan_folder(
-    root: Path, progress: Progress | None = None, workers: int = 8
+    root: Path,
+    progress: Progress | None = None,
+    workers: int = 8,
+    cancel: CancelToken | None = None,
 ) -> FolderScan:
-    """Probe every audio file under `root`; unreadable files land in `errors`."""
+    """Probe every audio file under `root`; unreadable files land in `errors`.
+
+    If `cancel` is set it raises `Cancelled` (an import's half is of no use, so there is no partial)."""
     root = root.expanduser().resolve()
     if not root.is_dir():
         raise NotADirectoryError(str(root))
@@ -128,15 +134,16 @@ def scan_folder(
             return path, str(exc)
 
     readable: set[Path] = set()
-    with ThreadPoolExecutor(max_workers=workers) as pool:
-        for done, (path, result) in enumerate(pool.map(run, files), start=1):
-            if isinstance(result, str):
-                scan.errors.append((str(path), result))
-            else:
-                scan.tracks.append(_record(path, result))
-                readable.add(path)
-            if progress:
-                progress(done, len(files))
+    for done, (path, result) in enumerate(
+        cancellable_map(run, files, workers, cancel), start=1
+    ):
+        if isinstance(result, str):
+            scan.errors.append((str(path), result))
+        else:
+            scan.tracks.append(_record(path, result))
+            readable.add(path)
+        if progress:
+            progress(done, len(files))
 
     # Keep nodes consistent with what could actually be read.
     by_dir = {d: [f for f in fs if f in readable] for d, fs in by_dir.items()}

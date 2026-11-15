@@ -204,7 +204,7 @@ def cmd_format(_: Library, args: argparse.Namespace) -> int:
         return 1
     print(
         f"\nformatted: the card is at {done.volume}, ready for `dubcrate card sync ... "
-        f"--card {done.volume}`.\nEject it (Finder, or `diskutil eject`) before taking it "
+        f"--card {done.volume}`.\nEject it ({card_format.eject_hint()}) before taking it "
         "out: a card pulled early can be left unreadable."
     )
     return 0

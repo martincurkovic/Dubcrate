@@ -177,7 +177,7 @@ class FormatCardDialog(QDialog):
             self.status.setText(problem)
         elif not disks:
             self.status.setText(
-                "No removable disks found. Put the card in its reader (or the Mac's card slot) and press Refresh."
+                "No removable disks found. Put the card in its reader (or the computer's card slot) and press Refresh."
             )
         else:
             n = len(usable)

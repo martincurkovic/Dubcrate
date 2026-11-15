@@ -11,6 +11,7 @@ fitted to rekordbox's own colour and blue waveforms on 60 real tracks (see
 dev_docs/rekordbox-analysis.md): they come out similar, not identical.
 """
 
+import zlib
 from dataclasses import dataclass
 
 import numpy as np
@@ -90,6 +91,25 @@ def from_bytes(raw: bytes, columns_per_second: float) -> Waveform:
     usable = len(raw) - len(raw) % 3
     data = np.frombuffer(raw[:usable], dtype=np.uint8).reshape(-1, 3).astype(np.float32)
     return Waveform(np.clip(data / _RAW_MAX, 0.0, 1.0), columns_per_second)
+
+
+def pack_preview(wave: Waveform) -> bytes:
+    """A whole-track waveform as the library keeps it: each band of each column in one byte (a step
+    of 1/255 is far under what the strip's few pixels can show), then compressed (about 2 KB)."""
+    data = np.clip(np.rint(wave.bands * 255.0), 0, 255).astype(np.uint8)
+    return zlib.compress(data.tobytes(), 6)
+
+
+def unpack_preview(raw: bytes) -> Waveform:
+    """The waveform `pack_preview` made (a whole-track one: its rate in columns per second is 0).
+    Raises `ValueError` for bytes that are not one."""
+    try:
+        data = np.frombuffer(zlib.decompress(raw), dtype=np.uint8)
+    except zlib.error as exc:
+        raise ValueError("not a stored waveform") from exc
+    if len(data) == 0 or len(data) % 3:
+        raise ValueError("not a stored waveform")
+    return Waveform(data.reshape(-1, 3).astype(np.float32) / 255.0, 0.0)
 
 
 def compute_waveform(
