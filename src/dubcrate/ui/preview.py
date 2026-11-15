@@ -162,6 +162,10 @@ class PreviewController(QObject):
             self._previewing = True
             self.player.seek(self.deck.cue_point)
             self.player.play()
+        elif abs(self.player.position - self.deck.cue_point) > 0.001:
+            self.player.seek(
+                self.deck.cue_point
+            )  # (quantised: the playhead goes onto the beat it was set on)
         self._show_session()
 
     def cue_released(self) -> None:
@@ -228,7 +232,10 @@ class PreviewController(QObject):
                 else "OUT has to come after IN"
             )
         else:
+            # OUT is pressed with the playhead already at (or past) the loop's end, so it goes back to IN at
+            # once, as a CDJ's does: otherwise it would play straight on out of the loop.
             self.player.set_loop(*found)
+            self.player.seek(found[0])
         self._show_session()
 
     def reloop(self) -> None:

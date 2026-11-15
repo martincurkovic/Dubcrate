@@ -5,8 +5,9 @@ buttons decide, given where the playhead is and the track's beat grid.
 track is loaded. The preview player (`ui/preview.py`) does what a `Deck` says to the audio engine.
 
 - **CUE** (`cue_press`): while playing, it goes back to the cue point and stops; while stopped on the cue
-  point, holding it plays from there (let go: back and stop); while stopped elsewhere, it sets the cue point
-  to the playhead. The cue point starts at the beginning of the track.
+  point (with quantise on, anywhere that snaps to its beat), holding it plays from there (let go: back and
+  stop); while stopped elsewhere, it sets the cue point to the playhead, and with quantise on the playhead
+  moves onto that beat. The cue point starts at the beginning of the track.
 - **Auto loop** (`auto_loop`): a loop of a chosen number of beats from the playhead; the size keys halve or
   double a loop that is on (`resize_auto`). It needs a tempo: the beat grid, else the BPM.
 - **Manual loop**: IN (`mark_in`), OUT (`mark_out`, which starts the loop) and RELOOP (`reloop`, which leaves
@@ -106,12 +107,19 @@ class Deck:
 
     # -- CUE ----------------------------------------------------------------------------
 
+    def on_cue_point(self, position: float) -> bool:
+        """Whether the playhead is on the cue point: within a hair of it, or, with quantise on, anywhere that
+        snaps to its beat (the cue point is on a beat, and the playhead need not be exactly there)."""
+        if abs(position - self.cue_point) < SAME_PLACE:
+            return True
+        return self.quantise and abs(self.snap(position) - self.cue_point) < SAME_PLACE
+
     def cue_press(self, position: float, playing: bool) -> str:
         """What pressing CUE does: `return` (back to the cue point, and stop), `preview` (play from it while
         held) or `set` (the cue point is now the playhead, on the beat if quantise is on)."""
         if playing:
             return "return"
-        if abs(position - self.cue_point) < SAME_PLACE:
+        if self.on_cue_point(position):
             return "preview"
         self.cue_point = self.snap(position)
         self.cue_set = True

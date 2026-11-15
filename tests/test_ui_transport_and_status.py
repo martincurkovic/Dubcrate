@@ -334,7 +334,7 @@ def test_the_play_triangle_is_optically_centred_in_its_circle(qapp):
     button = TransportButton("play")
     button.show()
     points, (mx, my) = glyph_pixels(
-        button, QColor(theme.current_palette()["text_on_accent"])
+        button, QColor(theme.current_palette()["text_bright"])
     )
     assert len(points) > 40  # (the glyph is there)
     xs, ys = [p[0] for p in points], [p[1] for p in points]
@@ -369,7 +369,7 @@ def test_the_pause_bars_are_centred_too(qapp):
     button.show()
     button.set_playing(True)
     points, (mx, my) = glyph_pixels(
-        button, QColor(theme.current_palette()["text_on_accent"])
+        button, QColor(theme.current_palette()["text_bright"])
     )
     xs, ys = [p[0] for p in points], [p[1] for p in points]
     assert abs((min(xs) + max(xs)) / 2 - mx) <= 0.6 and abs((min(ys) + max(ys)) / 2 - my) <= 0.6  # fmt: skip

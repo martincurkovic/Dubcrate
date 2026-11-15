@@ -290,9 +290,9 @@ class DetailView(QWidget):
         theme.notifier.changed.connect(self.update)
         wave_notifier.changed.connect(self.update)
         # zoom + / RST / -, over the waveform's left edge (a press on one is its own, not a scratch)
-        self.zoom_in_button = PillButton("+", self, width=30, height=22, bold=True)
-        self.zoom_reset_button = PillButton("RST", self, width=30, height=22)
-        self.zoom_out_button = PillButton("−", self, width=30, height=22, bold=True)
+        self.zoom_in_button = PillButton("+", self, width=22, height=22, bold=True, shape="circle")  # fmt: skip
+        self.zoom_reset_button = PillButton("RST", self, width=30, height=16, shape="text")  # fmt: skip
+        self.zoom_out_button = PillButton("−", self, width=22, height=22, bold=True, shape="circle")  # fmt: skip
         self.zoom_in_button.setToolTip("Zoom in (a shorter stretch of the track)")
         self.zoom_reset_button.setToolTip("Zoom back to the usual stretch")
         self.zoom_out_button.setToolTip("Zoom out (a longer stretch of the track)")
@@ -304,14 +304,16 @@ class DetailView(QWidget):
         self._place_zoom_buttons()
 
     def _place_zoom_buttons(self) -> None:
-        y = 6
+        y = 8
         for button in (
             self.zoom_in_button,
             self.zoom_reset_button,
             self.zoom_out_button,
         ):
-            button.move(8, y)
-            y += button.height() + 4
+            button.move(
+                8 + (30 - button.width()) // 2, y
+            )  # (centred on a 30 pixel column)
+            y += button.height() + 6
 
     # -- content ----------------------------------------------------------
 

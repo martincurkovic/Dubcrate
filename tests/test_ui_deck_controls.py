@@ -127,6 +127,28 @@ def test_quantise_snaps_the_cue_point_to_a_beat(rig):
     assert not rig.c.deck.quantise
 
 
+def test_a_quantised_cue_puts_the_playhead_on_the_beat_and_then_cue_previews_from_it(
+    rig,
+):
+    rig.strip.quantise_button.click()
+    at(rig, 10.3)
+    QTest.mousePress(
+        rig.strip.cue_button, Qt.MouseButton.LeftButton
+    )  # sets it on the beat at 10.5
+    QTest.mouseRelease(rig.strip.cue_button, Qt.MouseButton.LeftButton)
+    assert rig.c.deck.cue_point == pytest.approx(10.5)
+    assert (
+        rig.player.position == pytest.approx(10.5, abs=0.01) and not rig.player.playing
+    )
+    rig.player.seek(10.7)  # a little way off the cue point, on the same beat
+    QTest.mousePress(rig.strip.cue_button, Qt.MouseButton.LeftButton)
+    assert rig.player.playing and rig.player.position == pytest.approx(10.5, abs=0.5)
+    QTest.mouseRelease(rig.strip.cue_button, Qt.MouseButton.LeftButton)
+    assert not rig.player.playing and rig.player.position == pytest.approx(
+        10.5, abs=0.01
+    )
+
+
 def test_quantise_on_a_track_with_no_tempo_says_there_is_nothing_to_snap_to(rig):
     rig.load("b", tempo=False)
     rig.strip.quantise_button.click()
@@ -197,6 +219,44 @@ def test_manual_in_then_out_loops_and_reloop_leaves_and_comes_back(rig):
     at(rig, 20.0)
     rig.strip.reloop.click()  # back to its start, looping
     assert rig.player.looping and rig.player.position == 3.0 and rig.strip.reloop.isChecked()  # fmt: skip
+
+
+def test_out_jumps_back_to_in_so_the_loop_really_plays_and_does_not_run_on(rig):
+    from dubcrate.audio.player import render_block
+
+    at(rig, 3.0, playing=True)
+    rig.strip.loop_in.click()
+    rig.player.seek(
+        5.0
+    )  # (the track played on; OUT is pressed with the playhead at the loop's end)
+    rig.strip.loop_out.click()
+    assert rig.player.looping and rig.player.position == pytest.approx(3.0, abs=0.01)
+    state = rig.player._state
+    lowest, highest = state.frame, state.frame
+    for _ in range(int(7.0 * 44_100 / 2048)):  # three and a half passes of the 2 s loop
+        render_block(state, 2048)
+        lowest, highest = min(lowest, state.frame), max(highest, state.frame)
+    assert lowest >= round(3.0 * 44_100) - 2048 and highest <= round(5.0 * 44_100)
+    assert state.playing and rig.player.looping
+
+
+def test_a_quantised_out_that_rounds_to_before_the_playhead_still_loops(rig):
+    rig.strip.quantise_button.click()
+    at(rig, 3.0, playing=True)
+    rig.strip.loop_in.click()
+    rig.player.seek(5.2)  # (the beat nearest is 5.0: behind the playhead)
+    rig.strip.loop_out.click()
+    assert rig.c.deck.loop == (3.0, pytest.approx(5.0))
+    assert rig.player.position == pytest.approx(3.0, abs=0.01) and rig.player.looping
+
+
+def test_out_while_stopped_also_puts_the_playhead_at_in_ready_to_loop_when_played(rig):
+    at(rig, 3.0)
+    rig.strip.loop_in.click()
+    at(rig, 5.0)  # stopped
+    rig.strip.loop_out.click()
+    assert rig.player.position == pytest.approx(3.0, abs=0.01)
+    assert not rig.player.playing and rig.player.looping
 
 
 def test_out_needs_an_in_before_it_and_a_new_in_leaves_the_loop(rig):

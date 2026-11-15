@@ -258,3 +258,68 @@ def test_the_player_is_wired_to_load_a_dropped_track_and_to_jump(qapp, monkeypat
     win.close()
     win.deleteLater()
     lib.close()
+
+
+# -- the look of the left column ---------------------------------------------------------------
+
+
+def test_the_beat_jump_menu_ticks_the_current_size_and_picking_one_saves_it(strip):
+    strip.set_beat_jump(8)
+    menu = strip.jump_combo.menu()
+    actions = menu.actions()
+    assert [a.text() for a in actions][:3] == ["1 Beat", "2 Beats", "4 Beats"]
+    assert [a.text() for a in actions if a.isChecked()] == ["8 Beats"]
+    picked = []
+    strip.jump_combo.activated.connect(picked.append)
+    next(a for a in actions if a.text() == "8 Bars").trigger()  # 32 beats
+    assert settings.get_beat_jump() == 32 and strip.jump_combo.currentText() == "8 Bars"  # fmt: skip
+    assert picked == [strip.jump_combo.findData(32)]
+    assert [a.text() for a in strip.jump_combo.menu().actions() if a.isChecked()] == ["8 Bars"]  # fmt: skip
+    strip.set_beat_jump(4)  # (the program choosing is not the user picking)
+    assert picked == [strip.jump_combo.findData(32)]
+
+
+def test_the_beat_jump_button_is_as_wide_as_the_column_and_shows_a_menu_caret(strip):
+    assert strip.jump_combo.width() == strip.cue_button.parent().width()
+    assert strip.jump_combo.text().endswith("▾")
+
+
+def test_a_button_shape_must_be_one_of_the_four(qapp):
+    from dubcrate.ui.player_controls import PillButton
+
+    for shape in ("pill", "tile", "circle", "text"):
+        assert PillButton("x", shape=shape).shape == shape
+    with pytest.raises(ValueError, match="shape"):
+        PillButton("x", shape="star")
+
+
+def colours_in(widget):
+    from PySide6.QtGui import QColor
+
+    image = widget.grab().toImage()
+    return {QColor(image.pixel(x, y)).name() for x in range(image.width()) for y in range(image.height())}  # fmt: skip
+
+
+def test_play_and_cue_are_rings_the_same_size_in_green_and_orange(strip):
+    from PySide6.QtGui import QColor
+
+    from dubcrate.ui.player_controls import CUE_RING, PLAY_RING, RING_SIZE
+
+    strip._enable(True)
+    assert (strip.play_button.width(), strip.cue_button.width()) == (
+        RING_SIZE,
+        RING_SIZE,
+    )
+    assert QColor(PLAY_RING).name() in colours_in(strip.play_button)
+    assert QColor(CUE_RING).name() in colours_in(strip.cue_button)
+    assert QColor(PLAY_RING).name() not in colours_in(strip.cue_button)
+    strip.set_playing(True)  # (brighter while it plays)
+    assert QColor(PLAY_RING).name() not in colours_in(strip.play_button)  # lighter(130)
+
+
+def test_the_zoom_buttons_are_two_rings_and_a_label_in_one_column(strip):
+    detail = strip.detail
+    shapes = [b.shape for b in (detail.zoom_in_button, detail.zoom_reset_button, detail.zoom_out_button)]  # fmt: skip
+    assert shapes == ["circle", "text", "circle"]
+    centres = {b.geometry().center().x() for b in (detail.zoom_in_button, detail.zoom_reset_button, detail.zoom_out_button)}  # fmt: skip
+    assert max(centres) - min(centres) <= 1

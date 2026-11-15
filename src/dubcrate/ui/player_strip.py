@@ -17,7 +17,6 @@ import json
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
-    QComboBox,
     QHBoxLayout,
     QLabel,
     QSizePolicy,
@@ -36,7 +35,7 @@ from . import key_style
 from .gear_button import GearButton
 from .knob import Knob
 from .models import TRACK_MIME
-from .player_controls import CueRing, PillButton
+from .player_controls import RING_SIZE, ChoiceButton, CueRing, PillButton
 from .player_side import HOT_SLOTS, SidePanel
 from .transport_button import TransportButton
 from .wave_style import hot_cue_color
@@ -96,22 +95,26 @@ class PlayerStrip(QWidget):
         # -- the left column -----------------------------------------------------
         self.prev_button = TransportButton("previous")
         self.prev_button.setToolTip("Previous track")
-        self.play_button = TransportButton("play", size=48)
+        self.play_button = TransportButton("play", size=RING_SIZE)
         self.play_button.setToolTip("Play / pause (Space)")
         self.next_button = TransportButton("next")
         self.next_button.setToolTip("Next track")
         self.prev_button.clicked.connect(self.previous_requested)
         self.play_button.clicked.connect(self.play_toggled)
         self.next_button.clicked.connect(self.next_requested)
-        self.jump_back_button = PillButton("‹", width=28, height=24, bold=True)
-        self.jump_forward_button = PillButton("›", width=28, height=24, bold=True)
+        self.jump_back_button = PillButton(
+            "‹", width=28, height=24, bold=True, shape="tile"
+        )
+        self.jump_forward_button = PillButton(
+            "›", width=28, height=24, bold=True, shape="tile"
+        )
         self.jump_back_button.setToolTip("Beat jump back (←)")
         self.jump_forward_button.setToolTip("Beat jump forward (→)")
         self.jump_back_button.clicked.connect(lambda: self.beat_jump_requested.emit(-1))
         self.jump_forward_button.clicked.connect(
             lambda: self.beat_jump_requested.emit(1)
         )
-        self.jump_combo = QComboBox()
+        self.jump_combo = ChoiceButton(width=LEFT_WIDTH)  # (as wide as the column)
         for beats in settings.BEAT_JUMP_SIZES:
             self.jump_combo.addItem(settings.beat_jump_label(beats), beats)
         self.jump_combo.setToolTip("How far a beat jump goes")
@@ -259,11 +262,11 @@ class PlayerStrip(QWidget):
         self.manual_button.setToolTip("Manual loop: set the in and out points")
         cue_row.addWidget(self.auto_button)
         cue_row.addWidget(self.manual_button)
-        self.loop_size_back = PillButton("‹", width=24)
+        self.loop_size_back = PillButton("‹", width=24, shape="tile")
         self.loop_size = PillButton(
             size_label(DEFAULT_AUTO), checkable=True, width=40, bold=True
         )
-        self.loop_size_forward = PillButton("›", width=24)
+        self.loop_size_forward = PillButton("›", width=24, shape="tile")
         self.loop_size_back.clicked.connect(lambda: self._step_loop_size(-1))
         self.loop_size_forward.clicked.connect(lambda: self._step_loop_size(1))
         self.loop_size.clicked.connect(

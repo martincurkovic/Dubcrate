@@ -52,6 +52,28 @@ def test_quantise_snaps_to_the_nearest_beat_of_the_grid_and_off_it_does_not(deck
     assert deck.snap(500.0) == 120.0  # (held to the track; the grid's reach is clipped)
 
 
+def test_with_quantise_on_the_playhead_need_only_be_near_the_cue_points_beat_to_preview(
+    deck,
+):
+    deck.quantise = True
+    deck.cue_press(10.3, playing=False)  # the cue point is the beat at 10.5
+    assert deck.cue_point == pytest.approx(10.5)
+    assert (
+        deck.cue_press(10.3, playing=False) == "preview"
+    )  # (a fifth of a second off: still "on" it)
+    assert deck.cue_press(10.74, playing=False) == "preview"
+    assert (
+        deck.cue_press(10.1, playing=False) == "set"
+    )  # (the nearest beat is another one: a new cue point)
+    assert deck.cue_point == pytest.approx(10.0)
+
+
+def test_without_quantise_only_a_hair_off_the_cue_point_counts_as_on_it(deck):
+    deck.cue_press(10.3, playing=False)
+    assert deck.cue_press(10.3, playing=False) == "preview"
+    assert deck.cue_press(10.5, playing=False) == "set"  # (a fifth of a second away)
+
+
 def test_a_quantised_cue_is_set_on_the_beat(deck):
     deck.quantise = True
     deck.cue_press(20.4, playing=False)

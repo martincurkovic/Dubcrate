@@ -1,8 +1,9 @@
 """The player's previous, play/pause and next buttons, drawn in code so they take the theme.
 
-Play is a round accent button (its glyph turns into pause while playing); previous and next are
-quieter rounded squares. In the Macintosh System 6 look they are plain black outlines that invert
-when pressed. Like the cog beside the volume knob they have no image files and are crisp at any size.
+Play is a round button with a green ring and a dark middle (the ring brightens and the middle warms while it
+plays, and its glyph turns into pause), like the CDJ's lit buttons; previous and next are flat dark tiles.
+In the Macintosh System 6 look they are plain black outlines that invert when pressed. Like the cog beside
+the volume knob they have no image files and are crisp at any size.
 """
 
 from PySide6.QtCore import QPointF, QRectF, QSize, Qt
@@ -10,6 +11,7 @@ from PySide6.QtGui import QColor, QPainter, QPainterPath, QPen
 from PySide6.QtWidgets import QAbstractButton
 
 from . import theme
+from .player_controls import PLAY_RING, mix
 
 SKIP_SIZE = 28
 PLAY_SIZE = 34
@@ -56,19 +58,17 @@ class TransportButton(QAbstractButton):
                     QColor(palette["text_disabled"]),
                 )
             return (ink, paper, ink) if down else (paper, ink, ink)
-        if self.kind == "play":
-            if not enabled:
-                return QColor(palette["bg_disabled"]), QColor(palette["text_disabled"]), QColor(palette["border_disabled"])  # fmt: skip
-            fill = QColor(palette["accent"])
-            if down:
-                fill = fill.darker(120)
-            elif hot:
-                fill = fill.lighter(112)
-            return fill, QColor(palette["text_on_accent"]), None
         if not enabled:
             return QColor(palette["bg_disabled"]), QColor(palette["text_disabled"]), QColor(palette["border_disabled"])  # fmt: skip
-        fill = palette["bg_button_pressed"] if down else palette["bg_button_hover"] if hot else palette["bg_button"]  # fmt: skip
-        return QColor(fill), QColor(palette["text_bright"] if hot else palette["text"]), QColor(palette["border_hover"] if hot else palette["border"])  # fmt: skip
+        if (
+            self.kind == "play"
+        ):  # (the ring is drawn by `_paint_ring`; this is its middle and glyph)
+            inside = QColor(palette["bg_button_pressed" if down else "bg_input"])
+            if self._playing:
+                inside = mix(inside, QColor(PLAY_RING), 0.18)
+            return inside, QColor(palette["text_bright"]), None
+        fill = QColor(palette["bg_button_pressed" if down else "bg_button_hover" if hot else "bg_input"])  # fmt: skip
+        return fill, QColor(palette["text_bright" if hot else "text"]), None
 
     def paintEvent(self, _event) -> None:
         painter = QPainter(self)
@@ -82,7 +82,16 @@ class TransportButton(QAbstractButton):
         else:
             painter.setPen(Qt.PenStyle.NoPen)
         if self.kind == "play":
-            painter.drawEllipse(box)
+            if not palette.get("mono_icons") and self.isEnabled():
+                ring = QColor(PLAY_RING)
+                if self._playing:
+                    ring = ring.lighter(130)
+                elif self.underMouse() or self.hasFocus():
+                    ring = ring.lighter(115)
+                painter.setPen(QPen(ring, 2.5))
+            elif not palette.get("mono_icons"):
+                painter.setPen(QPen(QColor(palette["border_disabled"]), 2.5))
+            painter.drawEllipse(box.adjusted(1.2, 1.2, -1.2, -1.2))
         else:
             radius = 0 if palette.get("hard_edges") else 7
             painter.drawRoundedRect(box, radius, radius)
