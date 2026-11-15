@@ -9,8 +9,11 @@ Three steps, each a pure function:
 * `map_cues`: rekordbox's cues for a disc's tracks -> `WantedCue`s at card positions (the
   track's start in the disc's TOC plus the time in the track, in 1/75 s frames).
 * `merge_cues`: those into the cues a disc's file already holds.
-* `plan_card`: a whole plan for a card (which discs get a new entry, a new file or new cues), with
-  what would be written, ready for `cdj_card.write_card`.
+* `merge_waveforms`: a disc's waveforms (`wave_model`, one 100-value record per track) into the records
+  its file already holds: **a track that already has a record keeps it** (the player's own or ours; the
+  player itself never changes a column that has a value), and only a track with none gets ours.
+* `plan_card`: a whole plan for a card (which discs get a new entry, a new file, new cues or new
+  waveforms), with what would be written, ready for `cdj_card.write_card`.
 
 Whether the player accepts a file written this way is **not yet shown** (Phase 0 of the plan).
 """
@@ -20,6 +23,7 @@ from dataclasses import dataclass, field, replace
 from enum import Enum
 
 from dubcrate import cdj_card as cc
+from dubcrate import wave_model
 from dubcrate.analysis import Cue
 
 # Two cues at the same track and kind within this many frames (1/75 s) are one: rekordbox's are
@@ -142,23 +146,86 @@ def merge_cues(existing: Sequence[cc.CueEntry], wanted: Sequence[WantedCue]) -> 
     return result
 
 
+def _has_record(
+    coarse: Sequence[cc.WaveRecord], fine: Sequence[cc.WaveRecord], track: int
+) -> bool:
+    """Whether the file already holds a waveform (even a part-filled one) for a 1-based track number.
+
+    A slot the player left before a track it played (track 0, all zero) is no record."""
+    slot = track - 1
+    return any(
+        any(records[slot].data) for records in (coarse, fine) if slot < len(records)
+    )
+
+
+@dataclass
+class WaveMerge:
+    coarse: list[
+        cc.WaveRecord
+    ]  # the whole new W001 list: what was there, unchanged, then ours
+    fine: list[cc.WaveRecord]
+    added: list[int]  # the tracks given a waveform
+    kept: list[int]  # wanted tracks that already had one
+    pending: list[int]  # wanted tracks with no values yet
+
+
+def merge_waveforms(
+    coarse: Sequence[cc.WaveRecord],
+    fine: Sequence[cc.WaveRecord],
+    wanted: Mapping[int, Sequence[int] | None],
+) -> WaveMerge:
+    """Add `wanted` waveforms (by 1-based track number) to a file's records.
+
+    A track that already has a record (any value set: the player's own, ours, or one it part-filled)
+    is **never changed**. Records are slots, slot `n - 1` for track `n`, filled up to the highest
+    track written; a slot between is the empty one the player leaves (`WaveRecord.unplayed`). The two
+    lists stay the same length, as the player's do."""
+    new_coarse, new_fine = list(coarse), list(fine)
+    result = WaveMerge(new_coarse, new_fine, [], [], [])
+    for track in sorted(wanted):
+        values = wanted[track]
+        if _has_record(coarse, fine, track):
+            result.kept.append(track)
+            continue
+        if values is None:
+            result.pending.append(track)
+            continue
+        slot = track - 1
+        while len(new_coarse) <= slot:
+            new_coarse.append(cc.WaveRecord.unplayed())
+        while len(new_fine) <= slot:
+            new_fine.append(cc.WaveRecord.unplayed())
+        new_coarse[slot], new_fine[slot] = wave_model.records(track, list(values))
+        result.added.append(track)
+    length = max(len(new_coarse), len(new_fine))
+    while len(new_coarse) < length:
+        new_coarse.append(cc.WaveRecord.unplayed())
+    while len(new_fine) < length:
+        new_fine.append(cc.WaveRecord.unplayed())
+    return result
+
+
 class Status(Enum):
     NEW_DISC = "not on the card"  # an index entry and a file are made
     NEW_FILE = (
         "on the card, no file yet"  # the player makes a file later; we make one now
     )
-    UPDATE = "cues to add"
+    UPDATE = "cues or waveforms to add"
     IN_SYNC = "already there"
     NOTHING = "no cues to write"  # no entry or file is made
 
 
 @dataclass
 class DiscRequest:
-    """One disc to sync: its ID, the cues wanted, and what `map_cues` left out."""
+    """One disc to sync: its ID, the cues wanted, and what `map_cues` left out.
+
+    `waves` are the waveforms wanted, by 1-based track number: 100 values (1 to 15, in time order) or
+    None for a track not analysed yet (counted, but nothing can be written for it)."""
 
     disc_id: cc.DiscId
     wanted: Sequence[WantedCue]
     notes: Sequence[str] = ()
+    waves: Mapping[int, Sequence[int] | None] = field(default_factory=dict)
 
 
 @dataclass
@@ -172,6 +239,11 @@ class DiscPlan:
     already_there: int
     overflow: list[WantedCue]
     notes: list[str]
+    waves_added: list[int] = field(default_factory=list)  # tracks that get a waveform
+    waves_kept: list[int] = field(
+        default_factory=list
+    )  # tracks that already have one: left alone
+    waves_pending: list[int] = field(default_factory=list)  # wanted, not analysed yet
 
 
 @dataclass
@@ -202,7 +274,8 @@ def plan_card(
     """Plan a sync of these discs onto a card (`index` and `files` as `cdj_card.read_card` gives).
 
     Nothing given is changed. A disc with nothing to add gets no entry and no file. A disc already
-    on the card keeps every cue, its hot cues and its waveform; only new cues are added.
+    on the card keeps every cue, its hot cues and every waveform record it has; only new cues are
+    added, and a waveform only for a track that has none (`merge_waveforms`).
     """
     work = cc.IndexFile(
         [cc.IndexEntry(e.name, e.disc_id) for e in index.entries], index.version
@@ -213,8 +286,13 @@ def plan_card(
         entry = work.find(request.disc_id)
         existing = current.get(entry.name) if entry else None
         merge = merge_cues(existing.cues if existing else [], request.wanted)
+        waves = merge_waveforms(
+            existing.coarse if existing else [],
+            existing.fine if existing else [],
+            request.waves,
+        )
         notes = list(request.notes)
-        if not merge.added and existing is None:
+        if not merge.added and not waves.added and existing is None:
             plans.append(
                 DiscPlan(
                     Status.NOTHING,
@@ -226,6 +304,9 @@ def plan_card(
                     merge.already_there,
                     merge.overflow,
                     notes,
+                    [],
+                    waves.kept,
+                    waves.pending,
                 )
             )
             continue
@@ -235,9 +316,15 @@ def plan_card(
         elif existing is None:
             status = Status.NEW_FILE
         else:
-            status = Status.UPDATE if merge.added else Status.IN_SYNC
+            status = Status.UPDATE if merge.added or waves.added else Status.IN_SYNC
         base = existing or cc.TrackFile.new(request.disc_id)
-        file = replace(base, cues=merge.cues, hot_cues=list(base.hot_cues))
+        file = replace(
+            base,
+            cues=merge.cues,
+            hot_cues=list(base.hot_cues),
+            coarse=waves.coarse,
+            fine=waves.fine,
+        )
         current[entry.name] = file  # a second request for the same disc sees this one
         plans.append(
             DiscPlan(
@@ -250,6 +337,9 @@ def plan_card(
                 merge.already_there,
                 merge.overflow,
                 notes,
+                waves.added,
+                waves.kept,
+                waves.pending,
             )
         )
     return CardPlan(work, plans)

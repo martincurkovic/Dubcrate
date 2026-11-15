@@ -399,7 +399,7 @@ def _burn(ctx):
 )
 def _sync(ctx):
     """Staged: the made-up tracks are not in rekordbox, so they are given invented cues; the card is an empty
-    folder of the right shape, with Saturday Peak already written to it so one disc says "In sync"."""
+    folder of the right shape, with Saturday Peak already written to it (cues and waveforms) so one disc says "In sync"."""
     from unittest import mock
 
     from PySide6.QtCore import Qt
@@ -430,7 +430,15 @@ def _sync(ctx):
     folder = card / "PIONEER" / "CDJ"
     folder.mkdir(parents=True, exist_ok=True)
     (folder / cc.INDEX_NAME).write_bytes(cc.IndexFile().to_bytes())
-    peak = prepare_disc(ctx.lib, ctx.demo.discs["peak"], RekordboxCues(ctx.lib))
+    from dubcrate.library.waves import ensure_waveforms
+
+    ids = [  # the made-up tracks are real (synthesised) files: their waveforms are analysed for real
+        e.track.id for d in ctx.demo.discs.values() for e in ctx.lib.disc_entries(d)
+    ]
+    ensure_waveforms(ctx.lib, ids)
+    peak = prepare_disc(
+        ctx.lib, ctx.demo.discs["peak"], RekordboxCues(ctx.lib), waves=True
+    )
     apply_sync(card, [peak.request], work / "card-backups")
     patches.enter_context(
         mock.patch("dubcrate.ui.sync_view.mounted_volumes", return_value=[card])

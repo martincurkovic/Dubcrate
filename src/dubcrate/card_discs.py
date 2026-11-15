@@ -37,6 +37,7 @@ class DiscInput:
     warnings: list[str] = field(default_factory=list)  # synced, but be careful
     cue_tracks: int = 0  # tracks that had rekordbox cues
     from_drive: bool = False  # the TOC is the disc in the drive's, not computed
+    to_analyse: list[Track] = field(default_factory=list)  # tracks with no waveform yet
 
 
 def disc_toc(
@@ -101,6 +102,7 @@ def prepare_disc(
     disc_id: int,
     cues: RekordboxCues | None = None,
     toc: tuple[Sequence[int], int] | None = None,
+    waves: bool = False,
 ) -> DiscInput:
     """Everything `plan_card` needs for one disc, or the reasons it can't be synced.
 
@@ -108,6 +110,10 @@ def prepare_disc(
     With `toc` (the disc in the drive, from `drive_toc`) the ID and the cue positions come from the
     real disc: the tracks need no measured length, and the plan says if the disc differs from the
     one planned now (edited since it was burned, or another disc).
+
+    With `waves`, each track's CDJ waveform (`wave_model`, cached on the track by `library.waves`) is
+    wanted too: `DiscInput.to_analyse` lists the tracks that have none yet, and the request holds None
+    for them until they are analysed.
     """
     cues = cues or RekordboxCues(lib)
     summary = lib.disc(disc_id)
@@ -157,8 +163,21 @@ def prepare_disc(
             cues_by_track[entry.position + 1] = found
     result.cue_tracks = len(cues_by_track)
     mapped = map_cues(cues_by_track, starts, lead_out)
+    wanted_waves: dict[int, list[int] | None] = {}
+    if waves:
+        for entry in entries:
+            track = entry.track
+            if track.waveform is not None:
+                wanted_waves[entry.position + 1] = list(track.waveform)
+            elif track.missing:
+                mapped.notes.append(
+                    f"Track {entry.position + 1} has no waveform: its file is missing."
+                )
+            else:
+                wanted_waves[entry.position + 1] = None
+                result.to_analyse.append(track)
     result.request = DiscRequest(
-        cc.DiscId.from_toc(starts, lead_out), mapped.cues, mapped.notes
+        cc.DiscId.from_toc(starts, lead_out), mapped.cues, mapped.notes, wanted_waves
     )
     if toc is not None:
         return result
@@ -192,12 +211,18 @@ class DiscSurvey:
         return len(self.plan.added) if self.plan else 0
 
     @property
+    def waves_to_add(self) -> int:
+        """Waveforms a sync would write, counting the tracks it would analyse first."""
+        if not self.plan:
+            return 0
+        return len(self.plan.waves_added) + len(self.plan.waves_pending)
+
+    @property
     def writable(self) -> bool:
         """Whether a sync would write something for this disc."""
-        return self.plan is not None and self.plan.status in (
-            Status.NEW_DISC,
-            Status.NEW_FILE,
-            Status.UPDATE,
+        return self.plan is not None and (
+            self.plan.status in (Status.NEW_DISC, Status.NEW_FILE, Status.UPDATE)
+            or bool(self.plan.waves_pending)
         )
 
     @property
@@ -207,7 +232,16 @@ class DiscSurvey:
             return "Can't sync"
         if self.plan is None:
             return "Choose a card"
-        n = f"{self.to_add} cue{'s' if self.to_add != 1 else ''} to add"
+        parts = []
+        if self.to_add or not self.waves_to_add:
+            parts.append(f"{self.to_add} cue{'s' if self.to_add != 1 else ''}")
+        if self.waves_to_add:
+            parts.append(
+                f"{self.waves_to_add} waveform{'s' if self.waves_to_add != 1 else ''}"
+            )
+        n = " and ".join(parts) + " to add"
+        if self.plan.status is Status.NOTHING and self.plan.waves_pending:
+            return n
         match self.plan.status:
             case Status.NEW_DISC:
                 return f"Not on the card: {n}"
@@ -240,15 +274,17 @@ def survey_discs(
     card: tuple[cc.IndexFile, Mapping[str, cc.TrackFile | None]] | None,
     cues: RekordboxCues,
     paths: Mapping[int, str],
+    waves: bool = False,
 ) -> list[DiscSurvey]:
     """Every audio disc with a track, looked at against `card` (as `cdj_card.read_card` gives it;
-    None: no card yet, so no plan). `paths` names each disc with its folders."""
+    None: no card yet, so no plan). `paths` names each disc with its folders. `waves`: waveforms
+    are wanted too (`prepare_disc`)."""
     surveys = []
     for disc in lib.discs():
         if disc.kind != "audio" or disc.track_count == 0:
             continue  # (only Dubcrate's own audio discs are synced)
         try:
-            found = prepare_disc(lib, disc.id, cues)
+            found = prepare_disc(lib, disc.id, cues, waves=waves)
         except RekordboxError as exc:
             found = DiscInput(
                 disc.id, disc.name, problems=[f"Couldn't read rekordbox's cues: {exc}"]

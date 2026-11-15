@@ -94,8 +94,19 @@ def describe_card(
     return out
 
 
+def track_list(tracks: list[int]) -> str:
+    """Track numbers as a person writes them: `1-4, 7, 9-10`."""
+    runs: list[tuple[int, int]] = []
+    for n in sorted(tracks):
+        if runs and n == runs[-1][1] + 1:
+            runs[-1] = (runs[-1][0], n)
+        else:
+            runs.append((n, n))
+    return ", ".join(str(a) if a == b else f"{a}-{b}" for a, b in runs)
+
+
 def describe_plan(plan: DiscPlan) -> list[str]:
-    """What a sync will do for one disc, in words: the status, the cues added, and what stays."""
+    """What a sync will do for one disc, in words: the status, the cues and waveforms added, and what stays."""
     where = f"card file {plan.name}" if plan.name else "the card"
     out = [f"{plan.status.value} ({where})"]
     for cue in plan.added:
@@ -107,6 +118,24 @@ def describe_plan(plan: DiscPlan) -> list[str]:
         out.append(
             f"  {plan.kept} already on the card kept, {plan.already_there} wanted "
             f"cues were there already, {len(plan.overflow)} didn't fit"
+        )
+    if plan.waves_added:
+        n = len(plan.waves_added)
+        out.append(
+            f"  + waveform{'s' if n != 1 else ''} for track{'s' if n != 1 else ''} "
+            f"{track_list(plan.waves_added)}"
+        )
+    if plan.waves_kept:
+        n = len(plan.waves_kept)
+        out.append(
+            f"  {n} track{'s' if n != 1 else ''} already {'have' if n != 1 else 'has'} a waveform "
+            f"on the card ({track_list(plan.waves_kept)}): left alone"
+        )
+    if plan.waves_pending:
+        n = len(plan.waves_pending)
+        out.append(
+            f"  {n} track{'s' if n != 1 else ''} still to be analysed for a waveform "
+            f"({track_list(plan.waves_pending)})"
         )
     for want in plan.overflow:
         out.append(

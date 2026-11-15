@@ -34,6 +34,7 @@ SILENCE_DB = (
     -41.0
 )  # a column whose full-range peak is under this reads 1, else at least 2
 MAX_BOOST_DB = 24.0  # the most a quiet track is scaled up (12 values): a hiss must not fill the view
+MAX_BASS_GAP_DB = 30.0  # no scaling when the loudest bass is this far under the same column's peak: no bass
 
 
 def _butterworth2(f: np.ndarray, corner: float, high: bool) -> np.ndarray:
@@ -60,41 +61,78 @@ def bass_band(audio: np.ndarray) -> np.ndarray:
     return np.fft.irfft(spectrum * response, len(mono))
 
 
-def column_values(audio: np.ndarray, scale_to_top: bool = True) -> list[int]:
-    """The 100 values (1 to 15) the player would show for a track, in time order (the first column first).
+LEAD_SECONDS = (
+    0.3  # the band-pass's memory: a column is filtered with this much audio before it
+)
 
-    `audio` is the track as the player decodes it: stereo at 44.1 kHz, shape (samples, 2).
 
-    `scale_to_top` raises a track that would not reach the top of the view so that its **loudest column reads
-    15** (every value moves up by the same number of 2 dB steps, never more than `MAX_BOOST_DB`, and a track
-    that is silent throughout is left alone). A track already at the top is not changed (it is never scaled
-    down). That makes the waveform the same whatever gain the burn applied: a track turned down by level
-    matching (`loudness.gain_for`, up to 12 dB) is not a thin line. `False` gives the player's absolute scale.
-    """
+def _mono(audio: np.ndarray) -> np.ndarray:
+    """The mean of the two channels as float32 in units of full scale (integers are 16-bit)."""
+    a = np.asarray(audio)
+    scale = 32768.0 if np.issubdtype(a.dtype, np.integer) else 1.0
+    return ((a[:, 0].astype(np.float32) + a[:, 1]) / np.float32(2 * scale)).astype(
+        np.float32
+    )
+
+
+def _levels(audio: np.ndarray) -> tuple[list[float], list[int], list[float]]:
+    """For each column: its level in dB (before the scale to 2 dB steps), its floor (1 or 2) and the
+    full-range peak of the column in dBFS.
+
+    Each column is band-passed on its own, with `LEAD_SECONDS` of the audio before it (the filter's
+    response dies away within a tenth of that) and silence before the start of the track, so a track
+    of any length is filtered a window at a time: the whole-track version needed 4 GB for a 7-minute
+    track."""
     samples = len(audio)
     if samples < COLUMNS:
         raise ValueError("The track is too short for a waveform.")
-    scale = 32768.0 if np.issubdtype(np.asarray(audio).dtype, np.integer) else 1.0
-    stereo = np.asarray(audio, dtype=np.float64) / scale
-    y = np.abs(bass_band(stereo))
-    power = np.concatenate([[0.0], np.cumsum(y**POWER)])
-    peak = np.abs(
-        (stereo[:, 0] + stereo[:, 1]) / 2
-    )  # the mono mix: opposite channels cancel to silence
-    levels, floors = [], []
+    mono = _mono(audio)
+    lead_samples = round(LEAD_SECONDS * RATE)
+    responses: dict[int, np.ndarray] = {}
+    levels, floors, peaks = [], [], []
     for k in range(COLUMNS):
         start = round(k * samples / COLUMNS)
-        end = max(start + 1, round((k + WINDOW) * samples / COLUMNS))
-        mean = (power[min(end, samples)] - power[start]) / max(
-            1, min(end, samples) - start
-        )
+        end = min(samples, max(start + 1, round((k + WINDOW) * samples / COLUMNS)))
+        lead = min(start, lead_samples)
+        segment = mono[start - lead : end].astype(np.float64)
+        size = 1 << int(np.ceil(np.log2(len(segment) + lead_samples)))
+        if size not in responses:
+            f = np.fft.rfftfreq(size, 1 / RATE)
+            responses[size] = _butterworth2(f, HIGH_PASS_HZ, True) * _butterworth2(
+                f, LOW_PASS_HZ, False
+            )
+        y = np.fft.irfft(np.fft.rfft(segment, size) * responses[size], size)
+        mean = np.mean(np.abs(y[lead : lead + end - start]) ** POWER)
         levels.append(20 * np.log10(max(mean ** (1 / POWER), 1e-9)) + OFFSET_DB)
-        column_peak = peak[start : round((k + 1) * samples / COLUMNS)].max(initial=0)
-        floors.append(2 if 20 * np.log10(max(column_peak, 1e-9)) > SILENCE_DB else 1)
+        # the floor looks at the mono mix (opposite channels cancel to silence) over the whole column
+        column_end = max(start + 1, round((k + 1) * samples / COLUMNS))
+        column_peak = float(np.abs(mono[start:column_end]).max(initial=0))
+        peaks.append(20 * np.log10(max(column_peak, 1e-9)))
+        floors.append(2 if peaks[-1] > SILENCE_DB else 1)
+    return levels, floors, peaks
+
+
+def column_values(audio: np.ndarray, scale_to_top: bool = True) -> list[int]:
+    """The 100 values (1 to 15) the player would show for a track, in time order (the first column first).
+
+    `audio` is the track as the player decodes it: stereo at 44.1 kHz, shape (samples, 2), 16-bit
+    integers or floats in units of full scale.
+
+    `scale_to_top` raises a track that would not reach the top of the view so that its **loudest column reads
+    15** (every value moves up by the same number of 2 dB steps, never more than `MAX_BOOST_DB`, and a track
+    that is silent throughout, or has no bass to show, is left alone: the loudest bass must be within
+    `MAX_BASS_GAP_DB` of its column's full-range peak, else it is only the filter's leakage of a high tone).
+    A track already at the top is not changed (it is never scaled down). That makes the waveform the same whatever gain the burn applied: a track turned down by level
+    matching (`loudness.gain_for`, up to 12 dB) is not a thin line. `False` gives the player's absolute scale.
+    """
+    levels, floors, peaks = _levels(audio)
     boost = 0.0
-    if scale_to_top and max(floors) > 1:
-        # the step is 2 dB, so the loudest column lands on 15 when it sits exactly at 2 * MAX_VALUE
-        boost = float(np.clip(2 * MAX_VALUE - max(levels), 0.0, MAX_BOOST_DB))
+    loudest = int(np.argmax(levels))
+    bass_gap = peaks[loudest] - (levels[loudest] - OFFSET_DB)
+    if scale_to_top and max(floors) > 1 and bass_gap <= MAX_BASS_GAP_DB:
+        # whole 2 dB steps, so every column moves up by the same number of values and the loudest lands on 15
+        steps = int(np.ceil((2 * MAX_VALUE - max(levels)) / 2))
+        boost = 2.0 * min(max(steps, 0), MAX_BOOST_DB // 2)
     return [
         max(floor, min(MAX_VALUE, int(np.floor((level + boost) / 2))))
         for level, floor in zip(levels, floors)

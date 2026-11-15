@@ -26,6 +26,7 @@ from dubcrate.drive_toc import DriveTocError, read_drive_toc
 from dubcrate.library import Library
 from dubcrate.library.lengths import measure_tracks
 from dubcrate.library.rekordbox import RekordboxError
+from dubcrate.library.waves import ensure_waveforms
 
 
 def cmd_show(_: Library, args: argparse.Namespace) -> int:
@@ -88,6 +89,14 @@ def cmd_toc(lib: Library, args: argparse.Namespace) -> int:
     return 0
 
 
+def _analysis_progress(done: int, total: int) -> None:
+    """One line on the terminal while tracks are analysed for their waveforms (the first time takes a while)."""
+    if total:
+        print(f"\ranalysing waveforms: {done} of {total}", end="", file=sys.stderr)
+        if done == total:
+            print(file=sys.stderr)
+
+
 def cmd_sync(lib: Library, args: argparse.Namespace) -> int:
     card = Path(args.card).expanduser()
     if args.from_drive and len(args.disc) != 1:
@@ -107,13 +116,17 @@ def cmd_sync(lib: Library, args: argparse.Namespace) -> int:
     rekordbox = RekordboxCues(
         lib
     )  # rekordbox's database is read once, when first needed
+    waves = not args.no_waveforms
     try:
         for disc_id in args.disc:
+            ids = [e.track.id for e in lib.disc_entries(disc_id)]
             if lib.disc(disc_id).kind == "audio" and drive is None:
-                ids = [e.track.id for e in lib.disc_entries(disc_id)]
                 for problem in measure_tracks(lib, ids):
                     print(f"warning: couldn't measure {problem}", file=sys.stderr)
-            inputs.append(prepare_disc(lib, disc_id, rekordbox, drive))
+            if waves and lib.disc(disc_id).kind == "audio":
+                for problem in ensure_waveforms(lib, ids, _analysis_progress):
+                    print(f"warning: no waveform for {problem}", file=sys.stderr)
+            inputs.append(prepare_disc(lib, disc_id, rekordbox, drive, waves=waves))
     except RekordboxError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
@@ -146,7 +159,8 @@ def cmd_sync(lib: Library, args: argparse.Namespace) -> int:
         print(f"error: {exc}", file=sys.stderr)
         return 1
     print(
-        f"\nwrote {len(outcome.written)} file(s); the card's old files are in {outcome.backup}"
+        f"\nwrote {len(outcome.written)} file(s) ({outcome.cues_written} cues, "
+        f"{outcome.waveforms_written} waveforms); the card's old files are in {outcome.backup}"
         "\nEject the card (Finder, or `diskutil eject`) before taking it out: a card pulled early "
         "can be left unreadable."
     )
@@ -238,6 +252,12 @@ def add_parsers(sub: argparse._SubParsersAction) -> None:
         "--from-drive",
         action="store_true",
         help="take the disc's ID from the CD in the drive (one disc), not from its tracks",
+    )
+    p.add_argument(
+        "--no-waveforms",
+        action="store_true",
+        help="cues only: don't write waveforms (by default a track with no waveform on the card gets one, "
+        "so the player doesn't analyse it; a waveform already there is never changed)",
     )
     p.add_argument("--yes", action="store_true", help="really write to the card")
     p.set_defaults(fn=cmd_sync)

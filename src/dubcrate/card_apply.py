@@ -5,7 +5,7 @@ they can't differ. The order is the safety: **the card is read again and planned
 list on screen may be stale), **its files are copied aside before anything is written**, and
 `cdj_card.write_card` writes each file through a temporary name, the index last, and reads
 everything back and compares. Cues already on the card, its hot cues and its waveforms are kept
-(`card_sync.merge_cues`).
+(`card_sync.merge_cues`); a waveform is added only for a track with none (`card_sync.merge_waveforms`).
 
 **No file written this way has been loaded by a player yet** (`dev_docs/card-sync.md`, Phase 0).
 """
@@ -35,6 +35,14 @@ class SyncOutcome:
     @property
     def wrote(self) -> bool:
         return bool(self.written)
+
+    @property
+    def cues_written(self) -> int:
+        return sum(len(d.added) for d in self.plan.discs)
+
+    @property
+    def waveforms_written(self) -> int:
+        return sum(len(d.waves_added) for d in self.plan.discs)
 
 
 def apply_sync(

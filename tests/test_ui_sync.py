@@ -373,7 +373,7 @@ def test_yes_copies_the_card_aside_writes_and_the_list_then_says_in_sync(writing
         2,
     ]
     assert (
-        "Wrote 2 disc files to “CARD”" in writing.said[-1]
+        "Wrote 2 disc files (3 cues) to “CARD”" in writing.said[-1]
         and str(backup) in writing.said[-1]
     )
     assert wait_until(
@@ -893,3 +893,108 @@ def test_a_card_rows_text_is_shortened_with_an_ellipsis_not_cut_off(qapp, plugge
     panel.resize(600, 400)
     qapp.processEvents()
     assert row.title.text() == "A very long volume name for a card"
+
+
+# -- waveforms -----------------------------------------------------------------------------------
+
+
+@pytest.fixture(autouse=True)
+def waveforms_on_again():
+    """The tick box is a saved setting: every test starts, and ends, with it on."""
+    from dubcrate import settings
+
+    settings.set_sync_waveforms(True)
+    yield
+    settings.set_sync_waveforms(True)
+
+
+def saw():
+    return [1 + k % 15 for k in range(100)]
+
+
+def analyse_everything(lib):
+    for track in lib.tracks():
+        lib.set_waveform(track.id, saw())
+
+
+def look_again(writing, text):
+    """Look at the card again and wait until the list says `text` somewhere (the cues are read on a worker)."""
+    writing.view.set_card(writing.card)
+    assert wait_until(
+        writing.view, lambda: any(text in s for _n, s in shown(writing.view))
+    ), shown(writing.view)
+
+
+def test_waveforms_are_counted_in_the_list_the_question_and_the_card(writing):
+    analyse_everything(writing.lib)
+    look_again(writing, "waveforms")
+    assert writing.view.waves_check.isChecked()
+    assert [s for _n, s in shown(writing.view)] == [
+        "Not on the card: 2 cues and 12 waveforms to add",
+        "Not on the card: 1 cue and 12 waveforms to add",
+    ]
+    writing.view._tick_all(Qt.CheckState.Checked)
+    assert writing.view.footer_note.text() == "3 cues and 24 waveforms to add."
+    writing.view.sync_button.click()
+    (text,) = writing.asked
+    assert "3 cues will be added as memory cues and 24 waveforms written" in text
+    assert "a track that already has a waveform keeps it" in text
+    assert writing.finished()
+    _, files = cc.read_card(writing.card)
+    written = [f for f in files.values() if f is not None and f.fine]
+    assert sorted(len(f.fine) for f in written) == [12, 12]
+    assert written[0].fine[0].time_values() == saw()
+    assert "(3 cues, 24 waveforms)" in writing.said[-1]
+
+
+def test_unticking_write_waveforms_goes_back_to_cues_only_and_remembers(writing):
+    analyse_everything(writing.lib)
+    look_again(writing, "waveforms")
+    writing.view.waves_check.setChecked(False)
+    assert [s for _n, s in shown(writing.view)] == [
+        "Not on the card: 2 cues to add",
+        "Not on the card: 1 cue to add",
+    ]
+    from dubcrate import settings
+
+    assert settings.get_sync_waveforms() is False
+    writing.view._tick_all(Qt.CheckState.Checked)
+    writing.view.sync_button.click()
+    assert writing.finished()
+    _, files = cc.read_card(writing.card)
+    assert all(f.fine == [] for f in files.values() if f is not None)
+
+
+def test_tracks_with_no_waveform_yet_are_analysed_before_the_question_is_asked(
+    writing, monkeypatch, tmp_path
+):
+    # the tracks' files exist now, so they can be analysed (the analysis itself is stood in for)
+    tracks = writing.lib.tracks()
+    for t in tracks:
+        (tmp_path / f"{t.ext_id}.flac").write_bytes(b"x")
+    source = writing.lib.sources()[0]
+    writing.lib.replace_source(
+        "rekordbox", source.path, "S0",
+        [TrackRecord(ext_id=t.ext_id, path=str(tmp_path / f"{t.ext_id}.flac"), title=t.title, duration=60.0) for t in tracks],  # (same size as before, so the measured lengths stay)
+    )  # fmt: skip
+    calls = []
+
+    def fake(todo, report=None):
+        calls.append([t.id for t in todo])
+        return {t.id: saw() for t in todo}, []
+
+    monkeypatch.setattr(sync_view, "measure_waveforms", fake)
+    look_again(writing, "waveforms")
+    writing.view._tick_all(Qt.CheckState.Checked)
+    pending = [t for s in writing.view._surveys.values() for t in s.input.to_analyse]
+    assert pending, "tracks should be waiting for their analysis"
+    writing.view.sync_button.click()
+    assert wait_until(
+        writing.view, lambda: bool(writing.asked) or bool(writing.problems)
+    )
+    assert writing.finished()
+    assert calls and not writing.problems
+    assert len(writing.asked) == 1  # asked once, after the analysis
+    assert "waveforms written" in writing.asked[0]
+    stored = {t.id for t in writing.lib.tracks() if t.waveform is not None}
+    assert set(calls[0]) <= stored

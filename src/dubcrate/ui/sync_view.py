@@ -48,6 +48,7 @@ from dubcrate.library import Library
 from dubcrate.library.lengths import needs_measuring, probe_lengths
 from dubcrate.library.models import Track
 from dubcrate.library.rekordbox import RekordboxError, read_cues
+from dubcrate.library.waves import measure_waveforms, store_waveforms
 
 from . import theme
 from .explorer import mounted_volumes
@@ -104,12 +105,24 @@ def confirmation_text(
 ) -> str:
     """What the question before a write says: each disc and what it adds, what is kept, the backup."""
     cues = sum(s.to_add for s in surveys)
+    waves = sum(s.waves_to_add for s in surveys)
     added = f"{cues} cue{'s' if cues != 1 else ''} will be added as memory cues."
+    if waves:
+        added = (
+            f"{cues} cue{'s' if cues != 1 else ''} will be added as memory cues and "
+            f"{waves} waveform{'s' if waves != 1 else ''} written, so the player doesn't analyse those tracks."
+        )
     lines = [f"Write rekordbox cues to “{card_name}”?", ""]
     lines += [f"  {s.disc.name}: {s.status[0].lower()}{s.status[1:]}" for s in surveys]
+    kept = "The cues already on the card, its hot cues and its waveforms are kept."
+    if waves:
+        kept = (
+            "The cues already on the card and its hot cues are kept, and a track that already has "
+            "a waveform keeps it."
+        )
     lines += [
         "",
-        f"{added} The cues already on the card, its hot cues and its waveforms are kept.",
+        f"{added} {kept}",
         f"The card's files are copied to {backup_dir} first.",
     ]
     if eject:
@@ -483,8 +496,10 @@ class SyncView(QWidget):
         self._card_note = ""  # why the card couldn't be read, if it couldn't
         self._surveys: dict[int, DiscSurvey] = {}
         self._unmeasured: list[Track] = []
+        self._loaded: dict = {}  # rekordbox's cues as last read, for looking at the discs again
         self._serial = 0  # a newer refresh makes an older one's result stale
         self._measuring = False
+        self._analysing = False
         self._ticking = False
 
         layout = QVBoxLayout(self)
@@ -553,8 +568,16 @@ class SyncView(QWidget):
         self.eject_check = QCheckBox("Eject after syncing")
         self.eject_check.setChecked(settings.get_sync_eject())
         self.eject_check.toggled.connect(settings.set_sync_eject)
+        self.waves_check = QCheckBox("Write waveforms")
+        self.waves_check.setChecked(settings.get_sync_waveforms())
+        self.waves_check.setToolTip(
+            "Also write each track's waveform to the card, so the player doesn't analyse the track "
+            "when the disc loads. A track that already has a waveform on the card keeps it."
+        )
+        self.waves_check.toggled.connect(self._waves_toggled)
         foot = QHBoxLayout()
         foot.addLayout(words, 1)
+        foot.addWidget(self.waves_check)
         foot.addWidget(self.eject_check)
         foot.addWidget(self.measure_button)
         foot.addWidget(self.sync_button)
@@ -597,7 +620,13 @@ class SyncView(QWidget):
 
         run_async(lambda: _read_all(databases), done, failed)
 
+    def _waves_toggled(self, on: bool) -> None:
+        settings.set_sync_waveforms(on)
+        self._look_at_discs(self._loaded)
+
     def _look_at_discs(self, loaded: dict) -> None:
+        self._loaded = loaded
+
         def load(path: Path) -> Mapping[str, Sequence[Cue]]:
             found = loaded.get(path)
             if not isinstance(found, Mapping):
@@ -609,6 +638,7 @@ class SyncView(QWidget):
             self._card,
             RekordboxCues(self._lib, load=load),
             disc_paths(self._lib),
+            waves=self.waves_check.isChecked(),
         )
         self._surveys = {s.disc.id: s for s in surveys}
         self._unmeasured = self._tracks_to_measure(surveys)
@@ -807,40 +837,48 @@ class SyncView(QWidget):
                 "Pick a disc to see what a sync would do for it.\n\n"
                 "Every rekordbox cue (memory cues, hot cues and loops) becomes a memory cue on the "
                 "card. The player's hot cues A, B and C are never touched, and cues already on "
-                "the card are kept."
+                "the card are kept. With “Write waveforms” ticked, each track also gets its "
+                "waveform on the card (the player then doesn't analyse it), unless the card "
+                "already has one for it."
             )
 
     def _update_buttons(self) -> None:
         writable = [s for s in self._surveys.values() if s.writable]
         ticked = [self._surveys[i] for i in self.ticked_ids()]
-        if not self._measuring and not self._writing:  # (which have their own to show)
+        if not (
+            self._measuring or self._writing or self._analysing
+        ):  # (which have their own to show)
             self.subtitle.setText(
                 f"{len(ticked)} of {len(writable)} disc{'s' if len(writable) != 1 else ''} selected"
                 if self._surveys
                 else "No audio discs"
             )
         self.clear_button.setEnabled(bool(ticked))
-        busy = self._measuring or self._writing
+        busy = self._measuring or self._writing or self._analysing
         self.measure_button.setEnabled(bool(self._unmeasured) and not busy)
+        self.waves_check.setEnabled(not busy)
         card = self._card_path.name if self._card_path else ""
         if self._card is None:
             self.footer_title.setText("No card")
             self.footer_note.setText(self._card_note or "Choose a card on the left.")
         else:
             cues = sum(s.to_add for s in ticked)
+            waves = sum(s.waves_to_add for s in ticked)
             self.footer_title.setText(
                 f"{len(ticked)} disc{'s' if len(ticked) != 1 else ''} → {card or 'the card'}"
             )
+            said = f"{cues} cue{'s' if cues != 1 else ''}"
+            if waves:
+                said += f" and {waves} waveform{'s' if waves != 1 else ''}"
             self.footer_note.setText(
-                f"{cues} cue{'s' if cues != 1 else ''} to add."
-                if ticked
-                else "Tick the discs to sync."
+                f"{said} to add." if ticked else "Tick the discs to sync."
             )
         self.sync_button.setEnabled(
             WRITING_ENABLED
             and bool(ticked)
             and self._card is not None
             and not self._writing
+            and not self._analysing
         )
         self.sync_button.setToolTip("" if WRITING_ENABLED else WAITING_NOTE)
         can_eject = (
@@ -869,6 +907,58 @@ class SyncView(QWidget):
         surveys = [self._surveys[i] for i in self.ticked_ids()]
         if not surveys:
             return
+        todo = self._tracks_to_analyse(surveys)
+        if todo:
+            self._analyse_then_write(todo, [s.disc.id for s in surveys])
+            return
+        self._confirm_and_write(surveys)
+
+    def _tracks_to_analyse(self, surveys: Sequence[DiscSurvey]) -> list[Track]:
+        found: dict[int, Track] = {}
+        if self.waves_check.isChecked():
+            for survey in surveys:
+                for track in survey.input.to_analyse:
+                    found[track.id] = track
+        return list(found.values())
+
+    def _analyse_then_write(self, todo: list[Track], disc_ids: list[int]) -> None:
+        """Analyse the tracks that have no waveform yet (on a worker: the first time takes a few
+        seconds a track), keep the results, look at the discs again, and then ask and write."""
+        self._analysing = True
+        self.subtitle.setText(f"Analysing {len(todo)} tracks for their waveforms…")
+        self._update_buttons()
+
+        def done(result: tuple[dict[int, list[int]], list[str]]) -> None:
+            found, problems = result
+            store_waveforms(self._lib, found)
+            self._analysing = False
+            if problems:
+                self.message.emit(
+                    f"No waveform for {len(problems)} file(s): {problems[0]}"
+                )
+            self._look_at_discs(self._loaded)
+            surveys = [self._surveys[i] for i in disc_ids if i in self._surveys]
+            if surveys:
+                self._confirm_and_write(surveys)
+
+        def failed(text: str) -> None:
+            self._analysing = False
+            self.message.emit(f"Couldn't analyse the tracks: {text}")
+            self._update_buttons()
+
+        run_async(
+            lambda report: measure_waveforms(todo, report),
+            done,
+            failed,
+            on_progress=lambda n, total: self.subtitle.setText(
+                f"Analysing waveforms: {n} of {total}"
+            ),
+        )
+
+    def _confirm_and_write(self, surveys: list[DiscSurvey]) -> None:
+        card = self._card_path
+        if card is None or self._card is None or self._writing:
+            return
         eject = self.eject_check.isChecked() and self.eject_check.isEnabled()
         text = confirmation_text(
             surveys, card.name or str(card), self._backup_dir, eject
@@ -890,12 +980,17 @@ class SyncView(QWidget):
         def done(outcome) -> None:
             if outcome.wrote:
                 n = len(outcome.written)
+                what = f"{outcome.cues_written} cues"
+                if outcome.waveforms_written:
+                    what += f", {outcome.waveforms_written} waveforms"
                 said = (
-                    f"Wrote {n} disc file{'s' if n != 1 else ''} to “{card.name}”; its old files "
-                    f"are copied to {outcome.backup}."
+                    f"Wrote {n} disc file{'s' if n != 1 else ''} ({what}) to “{card.name}”; its old "
+                    f"files are copied to {outcome.backup}."
                 )
             else:
-                said = "Nothing to write: the card already has these cues."
+                said = (
+                    "Nothing to write: the card already has these cues and waveforms."
+                )
             if eject:
                 self._eject_card(card, said)
                 return

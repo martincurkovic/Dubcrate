@@ -23,10 +23,11 @@
   - [ ] Maybe use some real songs, not fake ones
 - [ ] Clean up user facing docs (readme, user guide)
 - [x] SD card waveform, hotcue, memory cue, loop point reverse engineering
-  - [ ] The waveform's 0 to 15 amplitude scale is still unknown: burn and play the test disc (made, in ~/cdj-card/wave-test-disc; dev_docs/wave-test-disc.md), then run its `fit`
+  - [x] The waveform's 0 to 15 amplitude scale is still unknown: burn and play the test disc (made, in ~/cdj-card/wave-test-disc; dev_docs/wave-test-disc.md), then run its `fit`
 - [x] SD card sync metadata tab
   - [ ] Try the Sync tab itself on a real card (the command line is proven on hardware; the tab shares its write)
-  - [ ] Waveform pre-writing (needs the amplitude scale)
+  - [x] Waveform pre-writing (needs the amplitude scale)
+    - [ ] Try Sync's "Write waveforms" on a Dubcrate-burned disc and the real card (the CDJ should load every track with its waveform drawn, none analysed)
 - [ ] Try `dubcrate card format` on a spare 2 GB card (dev_docs/card-sync.md, "Formatting a card": does the player accept it, and cues synced straight onto it?), then build a GUI for it
 - [ ] Clean up long text labels in settings and add cm/in units (maybe in print dialog too)
   - [x] Check on real paper (and say if the vertical line spacing should shrink too)

@@ -114,7 +114,7 @@
    Intel build (needs `nasm`, only the workflow does it), the build in CI, the `.dmg` opened on a clean
    Mac (Gatekeeper and quarantine on the nested programs), and the FFmpeg tarball's GPG signature (the
    hash was taken from the first download, not from a signed source).
-7. **Card sync** (the CDJ-1000MK3's SD card). *The format is decoded; the reader/writer, the cue mapping and merge, `dubcrate card show | backup | toc | sync` and the
+7. **Card sync** (the CDJ-1000MK3's SD card; **waveforms are written too since 2026-11-15**, see card-sync.md, "Waveform sync"). *The format is decoded; the reader/writer, the cue mapping and merge, `dubcrate card show | backup | toc | sync` and the
    **Sync tab** (writing on, with eject) are built, and a CDJ-1000MK3 showed the cues of files they wrote (2026-11-14).
    Left: waveform pre-writing (a test disc is made: [wave-test-disc.md](wave-test-disc.md)), and the tab itself on a real card.* A **Sync**
    tab, pinned at the bottom of the tab strip, writes a Dubcrate audio disc's rekordbox cues to the card as

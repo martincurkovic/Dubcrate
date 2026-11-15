@@ -252,12 +252,29 @@ is the model's first held-out check.
   96% within two, mean error 0.73, bias +0.13** (the three misses of 3+ are dips: the player read 6, 2, 6 where the model said 12, 10, 10).
 - **The screen draws the stored record.** Track 1 showed the **sawtooth** on the player; tracks 2 and 4 looked like ordinary waveforms (the
   model is close to what the player would have drawn). So a record we write is what the owner sees, which is the point of pre-writing.
-- **Not explained: track 4 was played all the way through, yet the player filled only columns 50 to 56** of the empty half (the rest of it
-  is still 0). Fully played tracks on discs 1 and 2 were filled in all 100 columns, so something about a record that is already part-written
-  (or the 50 columns we wrote) changes what the player does for the rest. It does not matter if we write complete records.
+- **Track 4 (explained):** the owner played the start of the track and then **scrubbed to the end**, not all the way through. The player filled
+  columns 50 to 56 of the empty half, probably from analysing the track in the background or while scrubbing; columns it did not reach stayed 0.
+  It never changes a column that already has a value.
 - **The owner's decision (2026-11-15):** the model need not match the player 1:1, what it makes is good enough, and **quiet tracks must be scaled
   up so the loudest column reaches the top of the view** (a track turned down by level matching would otherwise be a thin line). Done in
   `wave_model.column_values(scale_to_top=True)`, the default.
+
+## Waveform sync (built 2026-11-15)
+
+Every owner decision: the model need not be 1:1 with the player; **a quiet track is scaled up so its loudest column reaches the top, never
+down**; the card's waveform is written for every track of a disc so the player never analyses it.
+
+- **Rule.** A track whose card slot has any waveform data is left alone (the player never changes a column that has a value, so neither do we); only a
+  track with none gets ours. That covers the player's own, ours, and a part-filled one. A disc with no rekordbox cues is still synced for its waveforms.
+- **Where the audio comes from.** The track's source file (`audio.decode.decode_file`), not the burn's rendered audio: the scale-to-top makes the result
+  independent of the gain a burn applied. Analysed once and cached on the track (`track.waveform`, schema v11).
+- **Flow.** Sync tab: tick the discs, press Sync; tracks with no waveform are analysed on a worker (progress in the subtitle), the list is looked at again,
+  the question says "N cues will be added as memory cues and M waveforms written", the card is backed up and written as before. The tick box **Write
+  waveforms** (on) and `dubcrate card sync --no-waveforms` skip it. Pure core: `card_sync.merge_waveforms` / `plan_card`.
+- **Checked on real data.** The command line, on a copy of a card image, analysed the 20 FLACs of the first test disc (about 20 s) and wrote 20 records;
+  on that disc the absolute model is within one value of the player's own record for 79 to 100% of the columns of every track. **Not tried:** the Sync
+  tab on a real card, a Dubcrate-burned disc whose ID the burn check has confirmed, and the player loading a disc synced this way (the player did accept
+  records written by `wave_model.records` in the write test).
 
 ## Order of work
 

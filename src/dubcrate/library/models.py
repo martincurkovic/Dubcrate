@@ -59,6 +59,9 @@ class Track(TrackRecord):
         None  # integrated loudness once measured (level matching)
     )
     true_peak_db: float | None = None  # its true peak, dBTP
+    waveform: bytes | None = (
+        None  # the CDJ waveform once analysed: 100 values, 1 to 15 (`wave_model`)
+    )
 
     @property
     def length_sectors(self) -> int:

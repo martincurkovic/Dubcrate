@@ -9,7 +9,7 @@ is rebuilt.
 import os
 import sqlite3
 import unicodedata
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
@@ -271,9 +271,13 @@ ALTER TABLE track ADD COLUMN loudness_lufs REAL;
 ALTER TABLE track ADD COLUMN true_peak_db REAL
 """
 
+_SCHEMA_V11 = """
+ALTER TABLE track ADD COLUMN waveform BLOB
+"""
+
 _MIGRATIONS = (
     _SCHEMA_V1, _SCHEMA_V2, _SCHEMA_V3, _SCHEMA_V4, _SCHEMA_V5, _migrate_to_v6,
-    _SCHEMA_V7, _SCHEMA_V8, _SCHEMA_V9, _SCHEMA_V10,
+    _SCHEMA_V7, _SCHEMA_V8, _SCHEMA_V9, _SCHEMA_V10, _SCHEMA_V11,
 )  # fmt: skip
 SCHEMA_VERSION = len(_MIGRATIONS)
 
@@ -477,13 +481,14 @@ class Library:
         if rec.ext_id in existing:
             track_id = existing[rec.ext_id]
             assignments = ", ".join(f"{f} = ?" for f in _TRACK_FIELDS)
-            # A changed file size means the measured CD length and loudness are out of date.
+            # A changed file size means the measured CD length, loudness and waveform are out of date.
             self._conn.execute(
                 "UPDATE track SET cd_sectors = CASE WHEN file_size IS ? THEN cd_sectors END,"
                 " loudness_lufs = CASE WHEN file_size IS ? THEN loudness_lufs END,"
                 " true_peak_db = CASE WHEN file_size IS ? THEN true_peak_db END,"
+                " waveform = CASE WHEN file_size IS ? THEN waveform END,"
                 f" {assignments}, missing = ?, stale = 0 WHERE id = ?",
-                [rec.file_size] * 3 + [*values, missing, track_id],
+                [rec.file_size] * 4 + [*values, missing, track_id],
             )
             return track_id, False
         columns = ", ".join(_TRACK_FIELDS)
@@ -782,6 +787,7 @@ class Library:
             cd_sectors=r["cd_sectors"],
             loudness_lufs=r["loudness_lufs"],
             true_peak_db=r["true_peak_db"],
+            waveform=r["waveform"],
             **fields,
         )
 
@@ -801,6 +807,17 @@ class Library:
             self._conn.execute(
                 "UPDATE track SET loudness_lufs = ?, true_peak_db = ? WHERE id = ?",
                 (lufs, true_peak_db, track_id),
+            )
+
+    def set_waveform(self, track_id: int, values: Sequence[int]) -> None:
+        """Record a track's CDJ waveform (`wave_model.column_values`: 100 values, 1 to 15). It is
+        forgotten when the file's size changes at a re-import, like the loudness."""
+        if len(values) != 100 or not all(0 <= v <= 15 for v in values):
+            raise ValueError("A waveform is 100 values, 0 to 15.")
+        with self._conn:
+            self._conn.execute(
+                "UPDATE track SET waveform = ? WHERE id = ?",
+                (bytes(values), track_id),
             )
 
     def tracks_by_ids(self, track_ids: Iterable[int]) -> list[Track]:

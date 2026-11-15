@@ -155,10 +155,24 @@ def test_a_track_already_at_the_top_is_not_changed_and_never_scaled_down():
     assert max(wave_model.column_values(loud)) == 15
 
 
-def test_the_boost_is_limited_and_a_silent_track_is_left_alone():
-    faint = tone(125, -60)  # about -75 dB in the band: needs far more than the limit
-    assert max(wave_model.column_values(faint)) <= 2 + wave_model.MAX_BOOST_DB // 2 + 1
+def test_a_silent_track_is_left_alone_and_the_boost_never_passes_its_limit():
     assert set(wave_model.column_values(np.zeros((wave_model.RATE * 10, 2)))) == {1}
+    faint = tone(
+        125, -50
+    )  # about -54 dB in the band: needs 14 values to reach the top, the limit is 12
+    raw = max(wave_model.column_values(faint, scale_to_top=False))
+    assert max(wave_model.column_values(faint)) <= raw + wave_model.MAX_BOOST_DB // 2
+
+
+def test_a_track_with_no_bass_is_not_scaled_up_though_it_is_quiet_in_the_band():
+    # a 1 kHz tone shows in the 125 Hz band only as the filter's skirt, 35 dB under its own peak
+    high = tone(1000, -6)
+    assert wave_model.column_values(high) == wave_model.column_values(
+        high, scale_to_top=False
+    )
+    assert (
+        max(wave_model.column_values(high)) <= 3
+    )  # the player's floor, as on the first test disc
 
 
 def test_the_waveform_does_not_depend_on_the_gain_a_burn_applied():
@@ -167,3 +181,36 @@ def test_the_waveform_does_not_depend_on_the_gain_a_burn_applied():
     quieter = music * 10 ** (-10 / 20)  # turned down 10 dB by level matching
     a, b = wave_model.column_values(music), wave_model.column_values(quieter)
     assert all(abs(x - y) <= 1 for x, y in zip(a, b))
+
+
+def test_filtering_a_column_at_a_time_gives_the_levels_of_filtering_the_whole_track():
+    rng = np.random.default_rng(3)
+    t = np.arange(wave_model.RATE * 30) / wave_model.RATE
+    audio = np.stack(
+        [
+            0.2 * np.sin(2 * np.pi * 130 * t) * (1 + np.sin(2 * np.pi * 0.3 * t))
+            + 0.05 * rng.standard_normal(len(t)),
+            0.1 * np.sin(2 * np.pi * 140 * t) + 0.02 * rng.standard_normal(len(t)),
+        ],
+        axis=1,
+    )
+    levels, _, _ = wave_model._levels(audio)
+    y = np.abs(wave_model.bass_band(audio))
+    n = len(audio)
+    for k in range(wave_model.COLUMNS):
+        a = round(k * n / wave_model.COLUMNS)
+        b = min(n, round((k + wave_model.WINDOW) * n / wave_model.COLUMNS))
+        whole = (
+            20 * np.log10(np.mean(y[a:b] ** wave_model.POWER) ** (1 / wave_model.POWER))
+            + wave_model.OFFSET_DB
+        )
+        assert abs(levels[k] - whole) < 0.3, (k, levels[k], whole)
+
+
+def test_a_long_track_is_analysed_without_holding_it_all_in_float64():
+    audio = (
+        np.random.default_rng(1).standard_normal((wave_model.RATE * 400, 2)) * 3000
+    ).astype(np.int16)
+    assert (
+        len(wave_model.column_values(audio)) == 100
+    )  # 400 s: the whole-track version needed ~4 GB

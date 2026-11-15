@@ -359,27 +359,30 @@ Your choices are remembered for next time.
 
 ## Syncing cues to the card
 
-The CDJ-1000MK3 keeps the cue points you set on the player on its **SD card**, one file per disc, and it recognises a disc by its table of contents (how many tracks it has and where each begins). So a disc you burned with Dubcrate can load in the player with your **rekordbox cues** already on it, if those cues are put on the card. That is what the **Sync** tab is for: the last tab on the left, fixed below the others.
+The CDJ-1000MK3 keeps the cue points you set on the player on its **SD card**, one file per disc, and it recognises a disc by its table of contents (how many tracks it has and where each begins). So a disc you burned with Dubcrate can load in the player with your **rekordbox cues** already on it, if those cues are put on the card. The card also holds the **waveform** of each track, which the player otherwise works out the first time you load a track (you wait while it does). Dubcrate can write those too, so a track loads at once with its waveform drawn. That is what the **Sync** tab is for: the last tab on the left, fixed below the others.
 
-> **Sync has been tried on one setup**: a CDJ-1000MK3 (firmware 2.20) and a plain 2 GB SD card showed every cue written this way, for discs that were already on the card and for ones it had never seen. It is new, though: Dubcrate copies the card's files aside before it writes anything, and you should still **eject the card before you pull it** (the tab can do it for you). A card pulled too early can be left unreadable by the player.
+> **Sync has been tried on one setup**: a CDJ-1000MK3 (firmware 2.20) and a plain 2 GB SD card showed every cue written this way, for discs that were already on the card and for ones it had never seen, and loaded tracks with a waveform written this way without working them out again. It is new, though: Dubcrate copies the card's files aside before it writes anything, and you should still **eject the card before you pull it** (the tab can do it for you). A card pulled too early can be left unreadable by the player.
 
 ![The Sync tab: the card on the left, the audio discs in the middle with what a sync would do for each](screenshots/sync.png "The Sync tab")
 
 1. **The card** (left). Put the player's SD card into your Mac: it appears in the list by itself a moment later (and goes when you take it out), found by the **PIONEER** folder on it. Each card shows its name, size and how many discs the player has put on it, with an **eject** button on the right that ejects it. Click **Refresh** if a card doesn't show up. For a copy of a card's folder, or a disk image of one, use **Choose Folder…**: it is listed with a **×** that takes it off the list again (the folder itself isn't touched).
 2. **Your discs** (middle). Every **audio** disc you have made is listed, in the folders you filed it in, with a **Status**:
-   - **Not on the card: 12 cues to add**: the player has never seen this disc, or has no file for it yet.
-   - **12 cues to add**: the disc is on the card, and these cues are not.
+   - **Not on the card: 12 cues and 14 waveforms to add**: the player has never seen this disc, or has no file for it yet.
+   - **12 cues to add** (or **3 waveforms to add**): the disc is on the card, and these are not.
    - **In sync**: the card already has them all.
-   - **No rekordbox cues**: nothing to put on the card. Only tracks that are in rekordbox have cues (a file elsewhere that is the same file as one in rekordbox counts).
+   - **No rekordbox cues**: nothing to put on the card. Only tracks that are in rekordbox have cues (a file elsewhere that is the same file as one in rekordbox counts). A disc still gets its waveforms if the card has none for its tracks.
    - **Can't sync**: the reason is in the box below; see the next point.
 3. **Pick a disc** to read what a sync would add, track by track, with any warnings, in the box under the list. Hover over a status to see the same text.
 4. **Measure Lengths.** A disc's entry on the card is its table of contents, which needs every track's exact length on the CD. A burn measures them; a disc you haven't burned yet may say *Can't sync: tracks have no measured length*. **Measure Lengths** reads those files (it changes nothing in them) and the list updates.
 5. **Tick the discs** to sync (a folder ticks the discs inside it); the line at the bottom adds up what it would do.
+6. **Write waveforms** (ticked unless you change it) also writes each track's waveform. The first time, Sync **analyses** the tracks that have no waveform yet, a few seconds each (a bar in the list says how far it is), and keeps the result, so the next sync doesn't. Untick it to write cues only.
 
 The rules it follows:
 
 - **Every rekordbox cue becomes a memory cue** on the card: memory cues, hot cues (their letters and colours are dropped; the card has no place for them) and loops (as memory loops). The player's own three hot cue buttons are never written or touched.
 - **What is already on the card is kept**: cues you set on the player, its hot cues, its waveforms. Cues are only added, and one that is already there (within a fraction of a second) is skipped. The player holds **100 cues per disc**; if more would be added, the list says how many don't fit.
+- **A track that already has a waveform on the card keeps it**, whether the player made it or Dubcrate did; a waveform is only written for a track with none. The player never changes a waveform it has, so if you want a track's waveform redrawn, the card's copy has to be removed first (the player rebuilds it).
+- **The waveform is Dubcrate's own version of the player's**, worked out from the track's low notes (roughly 100 to 200 Hz), which is what the CDJ-1000MK3 draws. It matches the player's within a step of its height for about three columns in four on real music, which is close enough to look right. **A quiet track is drawn taller**: its loudest point is raised to the top of the view (a track you turned down when normalising its level would otherwise be a thin line), so the waveform doesn't depend on a burn's volume. A track with no low notes at all is left as it is.
 - **Only audio CDs** are listed. MP3 discs, and discs that came from somewhere else, are not.
 - **A disc's ID is worked out from its tracks' lengths**, so a disc you changed after burning it no longer matches the one in the drive; the list warns when a disc isn't marked as burned. Reading the ID from the disc in the drive is available on the command line (`dubcrate card toc` and `dubcrate card sync --from-drive`), which is where to look if the player doesn't show the cues; see the developer notes for the options.
 - **Sync asks first**, saying what will be added and what is kept. Then it copies the card's files to a `card-backups` folder next to your library, writes, flushes the card, and reads everything back to check it. If anything goes wrong, the old files can be put back from that folder.

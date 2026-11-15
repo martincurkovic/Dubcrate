@@ -197,6 +197,16 @@ def set_sync_eject(on: bool) -> None:
     _qs().setValue("sync/eject", bool(on))
 
 
+def get_sync_waveforms() -> bool:
+    """Whether Sync writes waveforms for the tracks the card has none for (on unless switched off:
+    the player then skips analysing them when the disc loads)."""
+    return _as_bool(_qs().value("sync/waveforms", True), True)
+
+
+def set_sync_waveforms(on: bool) -> None:
+    _qs().setValue("sync/waveforms", bool(on))
+
+
 def get_levels_choice() -> str:
     """The key of the chosen `loudness.PRESETS` entry (club, -10 LUFS, unless changed). A target saved
     before there were presets (`levels/target`, any LUFS) becomes the nearest preset."""

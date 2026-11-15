@@ -304,3 +304,43 @@ def test_sync_without_the_flag_never_asks_the_drive(db, card, monkeypatch):
 
     monkeypatch.setattr(cli_card, "read_drive_toc", refuse)
     assert run(db, "card", "sync", 1, "--card", card) == 0
+
+
+# -- waveforms ------------------------------------------------------------------------------------
+
+
+def give_waveforms(db):
+    """Every track already analysed (the analysis itself is tested apart), with a sawtooth."""
+    with Library.open(db) as lib:
+        for t in lib.tracks():
+            lib.set_waveform(t.id, [1 + k % 15 for k in range(100)])
+
+
+def test_sync_adds_a_waveform_for_each_track_and_a_second_run_has_nothing_to_do(db, card, tmp_path, capsys):  # fmt: skip
+    give_waveforms(db)
+    bk = tmp_path / "bk"
+    assert run(db, "card", "sync", 1, "--card", card, "--backup-dir", bk) == 0
+    out = capsys.readouterr().out
+    assert "+ waveforms for tracks 1-12" in out and "dry run" in out
+    assert run(db, "card", "sync", 1, "--card", card, "--backup-dir", bk, "--yes") == 0
+    assert "3 cues, 12 waveforms" in capsys.readouterr().out
+    _, files = cc.read_card(card)
+    written = files["CDJ00002"]
+    assert [r.track for r in written.fine] == list(range(1, 13))
+    assert written.fine[0].time_values() == [1 + k % 15 for k in range(100)]
+    assert run(db, "card", "sync", 1, "--card", card, "--backup-dir", bk, "--yes") == 0
+    out = capsys.readouterr().out
+    assert "Nothing to write" in out and len(list(bk.iterdir())) == 1
+
+
+def test_no_waveforms_leaves_them_out_and_the_players_own_are_never_changed(db, card, tmp_path, capsys):  # fmt: skip
+    give_waveforms(db)
+    bk = tmp_path / "bk"
+    assert run(db, "card", "sync", 1, "--card", card, "--backup-dir", bk, "--yes", "--no-waveforms") == 0  # fmt: skip
+    _, files = cc.read_card(card)
+    assert files["CDJ00002"].fine == []  # cues only, as before
+    before = card_bytes(card)["CDJ00001.PDJ"]
+    assert run(db, "card", "sync", 1, "--card", card, "--backup-dir", bk, "--yes") == 0
+    assert (
+        card_bytes(card)["CDJ00001.PDJ"] == before
+    )  # the file the player made for another disc
