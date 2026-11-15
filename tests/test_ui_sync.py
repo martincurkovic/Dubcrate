@@ -1388,3 +1388,19 @@ def test_right_click_sync_to_another_card_waits_for_the_discs_to_be_looked_at_ag
     assert wait_until(writing.view, lambda: bool(writing.asked))
     assert writing.view._card_path == other and len(writing.asked) == 1
     assert writing.finished()
+
+
+def test_the_browser_strip_marks_the_picked_tracks_memory_cues_where_they_fall(writing):
+    analyse_everything(writing.lib)
+    look_again(writing, "waveforms")
+    view = writing.view
+    pick_disc(view)
+    length = (
+        writing.lib.disc_entries(view._current_disc_id())[0].track.length_sectors / 75
+    )
+    first = view.browser.strip.marks
+    assert first == pytest.approx(
+        sorted([15.0 / length, 40.0 / length]), abs=1e-3
+    )  # (every cue is a memory cue)
+    view.browser.table.setCurrentItem(view.browser.table.topLevelItem(1))
+    assert view.browser.strip.marks == []  # (track 2 has none)

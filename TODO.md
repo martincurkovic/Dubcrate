@@ -45,7 +45,7 @@
 - [ ] Try MP3 disc folders on the CDJ, starting with two nested folders, then the 999-file and 8-level limits and whether `MAX_DEPTH` should be 9 ([burning.md](dev_docs/burning.md)).
 - [ ] Burn a nearly full MP3 disc to check the size estimate and `FILESYSTEM_OVERHEAD_SECTORS` ([burning.md](dev_docs/burning.md)).
 - [ ] Check the new Peak to full scale preset on the CDJ for clipping at -0.3 dBTP ([roadmap.md](dev_docs/roadmap.md)).
-- [ ] Listen to previews at 256 and 128 frame buffers after the audio fixes and decide the default buffer size ([audio.md](dev_docs/audio.md)).
+- [x] Listen to previews at 256 and 128 frame buffers after the audio fixes and decide the default buffer size ([audio.md](dev_docs/audio.md)).
 - [ ] If 128 frames still crackles, paint the zoomed waveform from a cached image so the GUI holds the GIL for less time ([audio.md](dev_docs/audio.md)).
 - [ ] Try the things only simulated so far by hand: the Explorer (permission prompts, slow or unplugged drives), pinned tab dragging, drag-to-change spin boxes, trackpad pinch in the label preview and mouse drag and drop ([roadmap.md](dev_docs/roadmap.md)).
 - [ ] Look at the app on a real display in all four looks, including the splash and the label window in System 6 ([roadmap.md](dev_docs/roadmap.md)).
@@ -93,7 +93,7 @@
 - [x] Phase 2 of the player: **CUE** (a temporary cue point), the **auto and manual loops** (AU / MA, IN, OUT, RELOOP, the loop size) and **Q** (quantise) work in the preview engine, session-only, never saved to rekordbox (`deck.py`, `audio/player.py`, `ui/preview.py`).
 - [ ] Listen to the loops on a real track: the wrap has no crossfade (a hard cut at the loop's end), so a loop not on a zero crossing may click; add a few milliseconds of fade if it does (`audio/player.py: _take`).
 - [ ] Try the new player by hand: dragging a track onto it, the hot cue and memory buttons on a real rekordbox track, the zoom buttons, and how it looks on a small screen.
-- [ ] Read cover art from Ogg / Opus (base64 `METADATA_BLOCK_PICTURE`) and the `ID3 ` chunk of AIFF and WAV files, which the Info tab does not show yet (`artwork.py`).
+- [ ] Read cover art from Ogg / Opus (base64 `METADATA_BLOCK_PICTURE`) and the `ID3` chunk of AIFF and WAV files, which the Info tab does not show yet (`artwork.py`).
 
 ### Linux and Windows
 

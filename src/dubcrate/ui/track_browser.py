@@ -221,5 +221,5 @@ class TrackBrowser(QWidget):
             self.strip.set_values(None, NONE)
             self.wave_note.setText("")
             return
-        self.strip.set_values(row.values or None, STRIP_STATES[row.state])
+        self.strip.set_values(row.values or None, STRIP_STATES[row.state], row.marks)
         self.wave_note.setText(row.note)

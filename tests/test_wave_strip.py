@@ -1,5 +1,7 @@
 """The CDJ waveform drawn in the Sync tab: the strip widget, and which waveform each track shows."""
 
+import math
+
 import pytest
 from PySide6.QtGui import QColor
 
@@ -10,6 +12,9 @@ from dubcrate.ui.wave_strip import (
     CARD,
     DASH,
     LIT,
+    MARK,
+    MARK_ROWS,
+    MAX_PITCH,
     NONE,
     PADDING,
     PANEL,
@@ -59,7 +64,11 @@ def test_the_display_is_a_hundred_columns_and_the_bars_grow_from_the_bottom(qapp
         max(x for x, _ in lit) < PADDING + (560 - 2 * PADDING) / 100 + 1
     )  # only the first column is lit
     height = image.height()
-    assert max(y for _, y in lit) > height - PADDING - 3 and min(y for _, y in lit) < PADDING + 3  # fmt: skip
+    row = (
+        (560 - 2 * PADDING) / 100 * ROW_PITCH
+    )  # (a row's height; the dashes' row sits under the dots)
+    assert max(y for _, y in lit) > height - PADDING - (MARK_ROWS + 1.5) * row  # fmt: skip
+    assert min(y for _, y in lit) < PADDING + 3
     short = sized(CdjWaveStrip([2] + [0] * 99, WRITE))
     image = short.grab().toImage()
     ys = [
@@ -71,17 +80,112 @@ def test_the_display_is_a_hundred_columns_and_the_bars_grow_from_the_bottom(qapp
     assert min(ys) > image.height() / 2  # a quiet column lights only the bottom rows
 
 
-def test_the_matrix_keeps_the_players_proportions_at_any_width(qapp):
+def test_the_matrix_keeps_the_players_proportions_and_a_pane_that_is_very_wide_gets_no_bigger(
+    qapp,
+):
     strip = CdjWaveStrip(saw())
-    for width in (300, 560, 900):
+    rows = ROWS + MARK_ROWS  # (the dashes' row is always kept under the matrix)
+    for width in (300, 560, 800):
         pitch = (width - 2 * PADDING) / 100
-        assert strip.heightForWidth(width) == round(pitch * ROW_PITCH * ROWS) + 2 * PADDING  # fmt: skip
-    # a thin strip, as on the player (about twelve times as wide as it is tall), not a block
+        assert strip.heightForWidth(width) == math.ceil(pitch * ROW_PITCH * rows) + 2 * PADDING + 1  # fmt: skip
+    # no bigger than MAX_PITCH a column: a very wide pane does not make a very tall strip
+    assert strip.heightForWidth(5000) == strip.heightForWidth(1000)
+    assert (
+        strip.heightForWidth(5000)
+        == math.ceil(MAX_PITCH * ROW_PITCH * rows) + 2 * PADDING + 1
+    )
+    # a thin strip, as on the player, not a block
     inner_w, inner_h = 560 - 2 * PADDING, strip.heightForWidth(560) - 2 * PADDING
-    assert 11 < inner_w / inner_h < 14
+    assert 10 < inner_w / inner_h < 14
     assert (
         strip.hasHeightForWidth() and strip.minimumWidth() == 0
     )  # (its width is never the pane's)
+
+
+def lit_box(strip, colour):
+    """The bounding box of the pixels of `colour` in the strip's picture, or None."""
+    image = strip.grab().toImage()
+    hits = [
+        (x, y)
+        for x in range(image.width())
+        for y in range(image.height())
+        if QColor(image.pixel(x, y)).name() == colour.name()
+    ]
+    if not hits:
+        return None
+    xs, ys = [h[0] for h in hits], [h[1] for h in hits]
+    return min(xs), min(ys), max(xs), max(ys)
+
+
+def test_a_strip_squeezed_short_still_shows_the_whole_matrix_smaller_and_centred(qapp):
+    strip = CdjWaveStrip([15] * 100, WRITE, marks=[0.5])
+    strip.resize(1000, strip.heightForWidth(1000))
+    full = lit_box(strip, LIT[WRITE])
+    strip.resize(1000, 60)  # (the layout gave it less height than its width asks for)
+    squeezed = lit_box(strip, LIT[WRITE])
+    assert squeezed is not None and full is not None
+    left, top, right, bottom = squeezed
+    assert (
+        top >= PADDING - 1 and bottom <= 60 - PADDING
+    )  # (all inside: nothing cut off the top)
+    assert (right - left) < (
+        full[2] - full[0]
+    )  # (it shrank to fit, it was not clipped)
+    centre = (left + right) / 2
+    assert abs(centre - 500) < 3  # (centred in the wide panel)
+    # all seven rows are there: the full-height columns reach the top of the matrix
+    assert bottom - top > 7 * 2
+
+
+def test_a_very_wide_strip_keeps_the_matrix_at_its_largest_size_in_the_middle(qapp):
+    strip = CdjWaveStrip([15] * 100, WRITE)
+    strip.resize(3000, strip.heightForWidth(3000))
+    left, _top, right, _bottom = lit_box(strip, LIT[WRITE])
+    assert (
+        100 * MAX_PITCH - 14 < (right - left) < 100 * MAX_PITCH + 2
+    )  # (the end dots are partly covered)
+    assert abs((left + right) / 2 - 1500) < 3
+
+
+def test_memory_cues_are_red_dashes_under_the_matrix_at_their_columns(qapp):
+    strip = CdjWaveStrip([15] * 100, WRITE, marks=[0.0, 0.25, 0.5, 1.0])
+    strip.resize(560, strip.heightForWidth(560))
+    assert strip.marks == [0.0, 0.25, 0.5, 1.0]
+    dots = lit_box(strip, LIT[WRITE])
+    dashes = lit_box(strip, MARK)
+    assert dashes is not None
+    assert dashes[1] > dots[3]  # (every dash is below the lowest dot)
+    assert (
+        dashes[0] >= dots[0] - 1 and dashes[2] <= dots[2] + 1
+    )  # (and within the matrix's width)
+    image = strip.grab().toImage()
+    pitch = (dots[2] - dots[0] + 1) / 100
+    row = (dashes[1] + dashes[3]) // 2
+    for mark in (0.25, 0.5):
+        x = round(dots[0] + mark * 100 * pitch + pitch)  # (a dash is two columns wide)
+        assert QColor(image.pixel(x, row)).name() == MARK.name(), mark
+    assert (
+        QColor(image.pixel(round(dots[0] + 0.4 * 100 * pitch), row)).name()
+        != MARK.name()
+    )
+
+
+def test_no_marks_means_no_red_and_the_same_size_strip(qapp):
+    plain = CdjWaveStrip([15] * 100, WRITE)
+    marked = CdjWaveStrip([15] * 100, WRITE, marks=[0.5])
+    for strip in (plain, marked):
+        strip.resize(560, strip.heightForWidth(560))
+    assert lit_box(plain, MARK) is None and lit_box(marked, MARK) is not None
+    assert plain.heightForWidth(560) == marked.heightForWidth(560)
+    marked.set_values([15] * 100, WRITE)  # (set again with none)
+    assert marked.marks == []
+
+
+def test_marks_are_held_to_the_track_and_shown_for_an_unanalysed_track_too(qapp):
+    strip = CdjWaveStrip(None, PENDING, marks=[-1.0, 2.0, 0.5])
+    assert strip.marks == [0.0, 1.0, 0.5]
+    strip.resize(560, strip.heightForWidth(560))
+    assert lit_box(strip, MARK) is not None and lit_box(strip, DASH) is not None
 
 
 def colours(strip):
@@ -235,3 +339,67 @@ def test_a_track_whose_file_is_missing_says_so(lib, tmp_path):
     assert (
         rows[1].state == card_discs.WAVE_NONE and rows[1].note == "its file is missing"
     )
+
+
+# -- the memory cues' places ------------------------------------------------------------------------
+
+
+def with_cues(monkeypatch):
+    """rekordbox's cues for the first track (its ext_id is t0): a memory cue at 15 s and a hot cue at 30 s of 60."""
+    from dubcrate.analysis import Cue
+
+    def found(self, track):
+        return (
+            [Cue("memory", 15.0), Cue("hot", 30.0, slot=1)]
+            if track.ext_id == "t0"
+            else ()
+        )
+
+    monkeypatch.setattr(card_discs.RekordboxCues, "for_track", found)
+
+
+def test_a_tracks_cues_become_places_in_it_and_every_cue_counts(
+    lib, tmp_path, monkeypatch
+):
+    with_cues(monkeypatch)
+    disc = disc_of(lib, tmp_path)
+    survey = survey_of(lib, disc, (cc.IndexFile(), {}))
+    rows = card_discs.wave_rows(survey, lib.disc_entries(disc))
+    assert rows[0].marks == (0.25, 0.5)  # (15 s and 30 s of a 60 second track)
+    assert rows[1].marks == () and rows[2].marks == ()  # (the others have none)
+    assert survey.input.starts == [150, 150 + 4500, 150 + 9000]
+
+
+def test_with_no_card_the_marks_are_the_cues_that_are_wanted(
+    lib, tmp_path, monkeypatch
+):
+    with_cues(monkeypatch)
+    disc = disc_of(lib, tmp_path)
+    rows = card_discs.wave_rows(survey_of(lib, disc, None), lib.disc_entries(disc))
+    assert rows[0].marks == (0.25, 0.5)
+
+
+def test_a_cue_already_on_the_card_is_marked_too_with_those_that_will_be_added(lib, tmp_path, monkeypatch):  # fmt: skip
+    with_cues(monkeypatch)
+    disc = disc_of(lib, tmp_path)
+    request = card_discs.prepare_disc(lib, disc, waves=True).request
+    index = cc.IndexFile()
+    entry = index.add(request.disc_id)
+    file = cc.TrackFile.new(request.disc_id)
+    file.cues.append(
+        cc.CueEntry.memory(0, 150 + 45 * 75, 1)
+    )  # the player's own, at 45 s into track 1
+    survey = survey_of(lib, disc, (index, {entry.name: file}))
+    rows = card_discs.wave_rows(survey, lib.disc_entries(disc))
+    assert rows[0].marks == (0.25, 0.5, 0.75)
+
+
+def test_a_cue_is_placed_by_its_track_and_a_disc_with_no_tracks_known_has_no_marks():
+    assert card_discs._marks([], 1, [150, 4650], 4500) == ()
+    cue = type("C", (), {"track": 2, "position": 4650 + 2250})()
+    assert card_discs._marks([cue], 2, [150, 4650], 4500) == (0.5,)
+    assert card_discs._marks([cue], 1, [150, 4650], 4500) == ()  # (track 1's cues only)
+    assert (
+        card_discs._marks([cue], 3, [150, 4650], 4500) == ()
+    )  # (a track beyond the disc)
+    assert card_discs._marks([cue], 2, [150, 4650], 0) == ()

@@ -39,6 +39,9 @@ class DiscInput:
     cue_tracks: int = 0  # tracks that had rekordbox cues
     from_drive: bool = False  # the TOC is the disc in the drive's, not computed
     to_analyse: list[Track] = field(default_factory=list)  # tracks with no waveform yet
+    starts: list[int] = field(
+        default_factory=list
+    )  # where each track starts on the disc, absolute frames
 
 
 def disc_toc(
@@ -158,6 +161,7 @@ def prepare_disc(
         return result
     else:
         starts, lead_out = disc_toc(entries, summary.pregap_sectors)
+    result.starts = list(starts)
     cues_by_track: dict[int, Sequence[Cue]] = {}
     for entry in entries:
         if found := cues.for_track(entry.track):
@@ -288,6 +292,24 @@ class WaveRow:
     artist: str = ""
     seconds: float = 0.0
     cues: str = ""
+    marks: tuple[
+        float, ...
+    ] = ()  # where the memory cues fall in the track (0 to 1), for the strip's red dashes
+
+
+def _marks(
+    cues: Sequence, number: int, starts: Sequence[int], length: int
+) -> tuple[float, ...]:
+    """Where track `number`'s cues fall in it, as 0 to 1 (a loop at its start): positions are absolute frames."""
+    if not 0 < number <= len(starts) or length <= 0:
+        return ()
+    start = starts[number - 1]
+    found = {
+        round(min(1.0, max(0.0, (c.position - start) / length)), 4)
+        for c in cues
+        if c.track == number
+    }
+    return tuple(sorted(found))
 
 
 def wave_rows(
@@ -302,6 +324,9 @@ def wave_rows(
     request = survey.input.request
     wanted = Counter(c.track for c in request.wanted) if request else Counter()
     added = Counter(c.track for c in plan.added) if plan else Counter()
+    # the cues the track will have on the card (what is there already and what is added), else those wanted
+    placed = plan.file.cues if plan is not None and plan.file is not None else (request.wanted if request else ())  # fmt: skip
+    starts = survey.input.starts
     for entry in entries:
         number = entry.position + 1
         title = " – ".join(p for p in (entry.artist, entry.title) if p) or "Untitled"
@@ -346,6 +371,7 @@ def wave_rows(
                 artist=entry.artist,
                 seconds=entry.track.length_sectors / cc.FRAMES_PER_SECOND,
                 cues=cues,
+                marks=_marks(placed, number, starts, entry.track.length_sectors),
             )
         )
     return rows
