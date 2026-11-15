@@ -6,11 +6,15 @@ from PySide6.QtGui import QColor
 from dubcrate import card_discs, wave_model
 from dubcrate import cdj_card as cc
 from dubcrate.library import Library, TrackRecord
-from dubcrate.ui import theme
 from dubcrate.ui.wave_strip import (
     CARD,
+    DASH,
+    LIT,
     NONE,
+    PADDING,
+    PANEL,
     PENDING,
+    ROW_PITCH,
     ROWS,
     WRITE,
     CdjWaveStrip,
@@ -35,34 +39,49 @@ def test_fifteen_lights_all_seven_rows_zero_none_and_anything_audible_at_least_o
     assert strip.lit_rows()[:5] == [7, 0, 2, 7, 0]
 
 
+def sized(strip, width=560):
+    strip.resize(width, strip.heightForWidth(width))
+    return strip
+
+
 def test_the_display_is_a_hundred_columns_and_the_bars_grow_from_the_bottom(qapp):
-    palette = theme.current_palette()
-    strip = CdjWaveStrip([15] + [0] * 99, WRITE)
-    strip.resize(400, 96)
+    strip = sized(CdjWaveStrip([15] + [0] * 99, WRITE))
     image = strip.grab().toImage()
-    accent = QColor(palette["accent"]).name()
+    white = LIT[WRITE].name()
     lit = [
         (x, y)
         for x in range(image.width())
         for y in range(image.height())
-        if QColor(image.pixel(x, y)).name() == accent
+        if QColor(image.pixel(x, y)).name() == white
     ]
     assert lit  # (the first column, full height)
-    xs = {x for x, _ in lit}
-    assert max(xs) < 6 + (400 - 12) / 100 + 2  # only the first column is lit
     assert (
-        max(y for _, y in lit) > 96 - 12 and min(y for _, y in lit) < 14
-    )  # bottom to top
-    short = CdjWaveStrip([2] + [0] * 99, WRITE)
-    short.resize(400, 96)
+        max(x for x, _ in lit) < PADDING + (560 - 2 * PADDING) / 100 + 1
+    )  # only the first column is lit
+    height = image.height()
+    assert max(y for _, y in lit) > height - PADDING - 3 and min(y for _, y in lit) < PADDING + 3  # fmt: skip
+    short = sized(CdjWaveStrip([2] + [0] * 99, WRITE))
     image = short.grab().toImage()
     ys = [
         y
         for x in range(image.width())
         for y in range(image.height())
-        if QColor(image.pixel(x, y)).name() == accent
+        if QColor(image.pixel(x, y)).name() == white
     ]
-    assert min(ys) > 96 / 2  # a quiet column lights only the bottom rows
+    assert min(ys) > image.height() / 2  # a quiet column lights only the bottom rows
+
+
+def test_the_matrix_keeps_the_players_proportions_at_any_width(qapp):
+    strip = CdjWaveStrip(saw())
+    for width in (300, 560, 900):
+        pitch = (width - 2 * PADDING) / 100
+        assert strip.heightForWidth(width) == round(pitch * ROW_PITCH * ROWS) + 2 * PADDING  # fmt: skip
+    # a thin strip, as on the player (about twelve times as wide as it is tall), not a block
+    inner_w, inner_h = 560 - 2 * PADDING, strip.heightForWidth(560) - 2 * PADDING
+    assert 11 < inner_w / inner_h < 14
+    assert (
+        strip.hasHeightForWidth() and strip.minimumWidth() == 0
+    )  # (its width is never the pane's)
 
 
 def colours(strip):
@@ -74,26 +93,37 @@ def colours(strip):
     }
 
 
-def test_a_waveform_to_write_is_drawn_in_the_accent_and_one_on_the_card_muted(qapp):
-    palette = theme.current_palette()
-    write = CdjWaveStrip(saw(), WRITE)
-    write.resize(400, 96)
-    card = CdjWaveStrip(saw(), CARD)
-    card.resize(400, 96)
-    assert QColor(palette["accent"]).name() in colours(write)
-    assert QColor(palette["accent"]).name() not in colours(card)
-    assert QColor(palette["text_disabled"]).name() in colours(card)
+def test_a_waveform_to_write_is_white_and_one_on_the_card_dimmer(qapp):
+    write = sized(CdjWaveStrip(saw(), WRITE))
+    card = sized(CdjWaveStrip(saw(), CARD))
+    assert LIT[WRITE].name() in colours(write) and LIT[CARD].name() not in colours(write)  # fmt: skip
+    assert LIT[CARD].name() in colours(card) and LIT[WRITE].name() not in colours(card)  # fmt: skip
 
 
 def test_an_unanalysed_track_is_a_dashed_line_and_a_track_with_none_is_empty(qapp):
-    palette = theme.current_palette()
-    pending = CdjWaveStrip(None, PENDING)
-    pending.resize(400, 96)
-    assert QColor(palette["text_disabled"]).name() in colours(pending)
-    none = CdjWaveStrip(None, NONE)
-    none.resize(400, 96)
-    assert QColor(palette["accent"]).name() not in colours(none)
-    assert QColor(palette["text_disabled"]).name() not in colours(none)
+    pending = sized(CdjWaveStrip(None, PENDING))
+    assert DASH.name() in colours(pending)
+    assert LIT[WRITE].name() not in colours(pending)
+    none = sized(CdjWaveStrip(None, NONE))
+    seen = colours(none)
+    assert LIT[WRITE].name() not in seen and LIT[CARD].name() not in seen
+    assert DASH.name() not in seen
+
+
+def test_the_look_is_the_players_not_the_themes(qapp):
+    from dubcrate.ui import theme
+
+    accents = set()
+    for name in ("dark", "light"):
+        theme.apply_to_app(qapp, name)
+        accents.add(QColor(theme.current_palette()["accent"]).name())
+        seen = colours(sized(CdjWaveStrip(saw(), WRITE)))
+        assert (
+            LIT[WRITE].name() in seen and PANEL.name() in seen
+        )  # (the same panel and dots in each)
+        assert QColor(theme.current_palette()["accent"]).name() not in seen
+    theme.apply_to_app(qapp, "dark")
+    assert len(accents) == 2  # (the themes did differ)
 
 
 def test_a_strip_can_be_given_new_values(qapp):

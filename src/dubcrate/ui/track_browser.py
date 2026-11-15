@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QPlainTextEdit,
     QPushButton,
+    QSizePolicy,
     QTreeWidget,
     QTreeWidgetItem,
     QVBoxLayout,
@@ -49,6 +50,14 @@ WAVE_WORDS = {
 }
 
 
+def unsized(label: QLabel) -> QLabel:
+    """A label whose text never decides how wide its pane is: a long disc name, track name or note
+    would otherwise push the pane wider and squeeze its neighbours."""
+    label.setMinimumWidth(0)
+    label.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+    return label
+
+
 def time_text(seconds: float) -> str:
     whole = round(seconds)
     return f"{whole // 60}:{whole % 60:02d}"
@@ -67,7 +76,7 @@ class TrackBrowser(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(12, 12, 12, 12)
         layout.setSpacing(8)
-        self.title = QLabel("Tracks")
+        self.title = unsized(QLabel("Tracks"))
         self.title.setObjectName("panelTitle")
         self.details_button = QPushButton("Details")
         self.details_button.setCheckable(True)
@@ -80,11 +89,13 @@ class TrackBrowser(QWidget):
         head.addWidget(self.title, 1)
         head.addWidget(self.details_button)
         layout.addLayout(head)
-        self.message = QLabel()  # the disc's one line, or why there is no disc to show
+        self.message = unsized(
+            QLabel()
+        )  # the disc's one line, or why there is no disc to show
         self.message.setObjectName("mutedLabel")
         self.message.setWordWrap(True)
         layout.addWidget(self.message)
-        self.warnings = QLabel()
+        self.warnings = unsized(QLabel())
         self.warnings.setWordWrap(True)
         self.warnings.hide()
         layout.addWidget(self.warnings)
@@ -114,12 +125,8 @@ class TrackBrowser(QWidget):
         self.table.currentItemChanged.connect(lambda *_: self._show_wave())
         layout.addWidget(self.table, 1)
 
-        # the waveform of the picked track, at the bottom
-        self.caption = QLabel()
-        font = self.caption.font()
-        font.setBold(True)
-        self.caption.setFont(font)
-        self.analyse_note = QLabel()
+        # the waveform of the picked track, at the bottom (its name is the highlighted row above it)
+        self.analyse_note = unsized(QLabel())
         self.analyse_note.setObjectName("mutedLabel")
         self.analyse_button = QPushButton("Analyse Waveforms")
         self.analyse_button.setToolTip(
@@ -127,13 +134,12 @@ class TrackBrowser(QWidget):
             "files, and keep it. Writes nothing to the card; a sync (or a burn) would do the same."
         )
         wave_head = QHBoxLayout()
-        wave_head.addWidget(self.caption, 1)
-        wave_head.addWidget(self.analyse_note)
+        wave_head.addWidget(self.analyse_note, 1)
         wave_head.addWidget(self.analyse_button)
         layout.addLayout(wave_head)
         self.strip = CdjWaveStrip(None, NONE)
         layout.addWidget(self.strip)
-        self.wave_note = QLabel()
+        self.wave_note = unsized(QLabel())
         self.wave_note.setObjectName("mutedLabel")
         layout.addWidget(self.wave_note)
         self.show_message("Pick a disc on the right to look through its tracks.")
@@ -209,13 +215,11 @@ class TrackBrowser(QWidget):
         return next((r for r in self.rows if r.number == number), None)
 
     def _show_wave(self) -> None:
-        """The picked track's waveform, with its name and what a sync does with it."""
+        """The picked track's waveform, with what a sync does with it."""
         row = self.selected_row()
         if row is None:
-            self.caption.setText("Waveform")
             self.strip.set_values(None, NONE)
             self.wave_note.setText("")
             return
-        self.caption.setText(f"{row.number}.  {row.title}")
         self.strip.set_values(row.values or None, STRIP_STATES[row.state])
         self.wave_note.setText(row.note)

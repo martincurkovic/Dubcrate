@@ -1017,7 +1017,7 @@ def test_the_waveforms_tab_shows_a_strip_per_track_as_the_player_will_draw_it(wr
     view.tree.setCurrentItem(item)
     assert [r.state for r in view.waves.rows] == ["write"] * 12
     assert view.browser.strip.values == saw()  # (the picked track's: the first)
-    assert view.browser.caption.text().startswith("1.")
+    assert view.browser.selected_row().number == 1
     view.waves_check.setChecked(False)
     assert {r.state for r in view.waves.rows} == {"none"} and view.waves.rows[0].note == "Write waveforms is off"  # fmt: skip
 
@@ -1269,9 +1269,9 @@ def test_only_the_picked_tracks_waveform_is_drawn_at_the_bottom(writing):
     view = writing.view
     pick_disc(view)
     browser = view.browser
-    assert browser.strip.values == saw() and browser.caption.text().startswith("1.")
+    assert browser.strip.values == saw() and browser.selected_row().number == 1
     browser.table.setCurrentItem(browser.table.topLevelItem(1))
-    assert browser.strip.values == shifted and browser.caption.text().startswith("2.")
+    assert browser.strip.values == shifted and browser.selected_row().number == 2
     assert browser.wave_note.text() == "will be written"
     assert not hasattr(browser, "strips")  # (one strip, not one for each track)
 
@@ -1328,6 +1328,32 @@ def test_the_sync_tab_swaps_the_right_hand_list_and_a_disc_click_stays_on_sync(q
     win.source_tabs.set_current("library")
     assert win.right_stack.currentWidget() is win._discs_page
     assert win.splitter.sizes() == before  # (the room it took comes back)
+    win.close()
+    win.deleteLater()
+    lib.close()
+
+
+def test_a_long_title_never_changes_how_wide_the_panes_are(qapp, tmp_path, monkeypatch):
+    card = card_folder(tmp_path)
+    monkeypatch.setattr(sync_view, "mounted_volumes", lambda: [card])
+    lib = Library.open(":memory:")
+    disc = add_disc(lib, "A" * 70)  # (a long disc name too)
+    lib.set_entry_text(disc, 3, "title", "A very long track title " * 8)
+    lib.set_entry_text(disc, 3, "artist", "An artist with a very long name " * 5)
+    win = MainWindow(lib)
+    win.resize(1500, 900)
+    win.show()
+    win.source_tabs.set_current("sync")
+    view = win.sync_view
+    assert wait_until(view, lambda: bool(view._disc_items()))
+    view.tree.setCurrentItem(view._disc_items()[0])
+    qapp.processEvents()
+    widths = (win.splitter.sizes(), view.browser.minimumSizeHint().width())
+    table = view.browser.table
+    for row in (3, 0, 5, 3):  # the long one, short ones, the long one again
+        table.setCurrentItem(table.topLevelItem(row))
+        qapp.processEvents()
+        assert (win.splitter.sizes(), view.browser.minimumSizeHint().width()) == widths
     win.close()
     win.deleteLater()
     lib.close()

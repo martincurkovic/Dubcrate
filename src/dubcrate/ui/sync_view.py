@@ -64,7 +64,7 @@ from .label_dialog import disc_paths
 from .models import _disc_icon, _folder_icon
 from .source_tabs import explorer_glyph, sd_card_glyph
 from .tasks import TaskError, run_async
-from .track_browser import TrackBrowser
+from .track_browser import TrackBrowser, unsized
 
 log = logging.getLogger(__name__)
 
@@ -609,7 +609,7 @@ class SyncView(QWidget):
         head.addStretch(1)
         head.addWidget(self.clear_button)
         panel.addLayout(head)
-        self.subtitle = QLabel()
+        self.subtitle = unsized(QLabel())
         self.subtitle.setObjectName("mutedLabel")
         panel.addWidget(self.subtitle)
         self.search = QLineEdit()
@@ -636,8 +636,8 @@ class SyncView(QWidget):
         self.tree.currentItemChanged.connect(lambda *_: self._show_detail())
         panel.addWidget(self.tree, 1)
 
-        self.footer_title = QLabel()
-        self.footer_note = QLabel()
+        self.footer_title = unsized(QLabel())
+        self.footer_note = unsized(QLabel())
         self.footer_note.setObjectName("mutedLabel")
         self.footer_note.setWordWrap(True)
         panel.addWidget(self.footer_title)
