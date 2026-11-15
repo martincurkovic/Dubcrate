@@ -44,5 +44,5 @@ QT_QPA_PLATFORM=offscreen src/Dubcrate.app/Contents/MacOS/main --smoke-test=repo
 
 ## CI
 
-- `.github/workflows/test.yml`: lint (`ruff`) and the tests, on every push, to any branch.
+- `.github/workflows/test.yml`: lint (`ruff`) and the tests on Linux, on every push, to any branch. `test-macos.yml` and `test-windows.yml` run the same tests on those systems, by hand only (Actions tab > Run workflow), to spare the Actions quota; a release (`build.yml`) also runs the macOS one.
 - `.github/workflows/build.yml`: on a `v*.*.*` tag (or by hand): the tests, then the macOS Apple Silicon and Intel builds, each smoke-tested, then a **draft** GitHub release with both DMGs. Publish the draft to release.

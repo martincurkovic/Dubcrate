@@ -1,0 +1,29 @@
+name: Test (Windows)
+
+on:
+  workflow_dispatch: # by hand only: Actions tab > Test (Windows) > Run workflow
+
+concurrency:
+  group: test-windows-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: test (windows-latest)
+    runs-on: windows-latest
+    timeout-minutes: 30
+    # Windows is being brought up (dev_docs/cross-platform.md): a failure here is information, not a blocker
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version-file: ".python-version"
+      - uses: astral-sh/setup-uv@v6
+      - name: Install ffmpeg
+        run: choco install ffmpeg -y --no-progress
+
+      - name: Sync environment
+        run: uv sync --no-group build
+      - name: Run tests
+        # the lint is not repeated: it runs on Linux in test.yml and does not depend on the OS
+        run: uv run --no-group build pytest tests/ -v -ra -o faulthandler_timeout=90

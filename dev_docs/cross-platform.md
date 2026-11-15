@@ -57,7 +57,7 @@ until a person with that OS and an optical drive has checked it.
 | `burn/cdrdao.py` | `media_info` returns everything unknown (no free-space check); first device only; progress is raw lines; `burn_data` raises "audio CDs only" | Harden (Phase 3) |
 | `ui/app.py: extend_tool_path`, `TOOL_DIRS` | Adds Homebrew's folders so a Finder-launched app finds ffmpeg | Generalise: Linux needs nothing; Windows needs the bundled tools' folder |
 | `scripts/build_macos.sh`, `scripts/dmg_settings.py`, `assets/dmg/`, `BUILDING.md` | Packaging is a macOS app and a DMG | One build per OS (Phase 5) |
-| `.github/workflows/test.yml` | Runs on `macos-15` only, and says so in a comment | Matrix (Phase 1) |
+| `.github/workflows/test.yml` | Linux only on every push (the Actions quota); `test-macos.yml` and `test-windows.yml` are run by hand, and a release runs the macOS one | Done (Phase 1) |
 | `.github/workflows/build.yml` | macOS arm and Intel builds; the release job is the only Linux one | Add per-OS builds (Phase 5) |
 | `ui/explorer.py: mounted_volumes()` | Finds drives in macOS's `/Volumes` (dropping the boot-disk link and the system's own `com.apple.*` folders); Linux and Windows have their own helpers | Linux (`/media`, `/run/media`, `/mnt`) and Windows (drive letters) **[not tried]**. Plugging a drive in while the app runs is noticed by a `QFileSystemWatcher` on `volume_parents()`: tried on a Mac with a mounted disk image; Linux **[not tried]**; Windows has no folder to watch, so its list is read again when the tab opens |
 | `ui/smoke_test.py` | Has a `darwin` check (DiscRecording, built-app specifics) | Per-OS smoke test |
@@ -113,7 +113,7 @@ was run on a Windows desktop or drive. What they showed:
 
 ### Phase 1: CI on Linux and Windows (finds problems cheaply)
 
-- [x] `test.yml`: a matrix of `macos-15`, `ubuntu-latest`, `windows-latest`, ffmpeg installed per
+- [x] (**Since 2026-11-15 the push-time run is Linux only, to spare the Actions quota; macOS and Windows are `test-macos.yml` / `test-windows.yml`, run by hand from the Actions tab, and a release also runs the macOS one. The paragraph below is how it was first set up.**) `test.yml`: a matrix of `macos-15`, `ubuntu-latest`, `windows-latest`, ffmpeg installed per
   OS (`brew`, `apt-get` with Qt's system libraries, `choco`). **Linux is the default leg** (first,
   gates the run, runs the lint); macOS gates too (the shipped app is a Mac one). Windows is
   `experimental` (its failures show but don't fail the run, so can't block a release) until green:

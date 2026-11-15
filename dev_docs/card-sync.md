@@ -163,8 +163,8 @@ Two different discs with the same track lengths share an ID and so their cues.
   makes itself), through a temporary name and a rename, then **read everything back** and check the
   checksums.
 - Refuse a volume that is not a card: it needs `PIONEER/CDJ/CDJINDX0.PDJ`, or to be empty and
-  FAT16. **A card must be formatted by the player**; creating `PIONEER/CDJ` on an empty card is a
-  test not yet made.
+  FAT16. **A card was assumed to need formatting by the player**; `dubcrate card format` (below) is the
+  attempt to avoid that trip, and is untested on a player.
 - Offer to eject afterwards. macOS writes `.Spotlight-V100` and `.fseventsd` on a card it mounts;
   the player ignored them, but the write test should confirm that holds for files we write too.
 
@@ -184,6 +184,31 @@ tick box, track count, **cues found in rekordbox**, and a status per disc: not o
 card and in sync, differs (cues to add), cues on the card that are not ours (kept), or skipped with
 the reason (unmeasured lengths, one track, MP3). Buttons: Sync Selected, Sync All, Show Card, Back
 Up, and a dry-run list before anything is written. Tests use a temporary folder as the card.
+
+## Formatting a card (`card_format.py`, `dubcrate card format`; 2026-11-15)
+
+The goal (owner): format a blank card on the Mac and sync cues onto it at once, without first putting it in the
+player and back. Built: MBR + one FAT16 partition (`diskutil partitionDisk`, 32 KB clusters, volume `DISK_IMG`),
+an empty `PIONEER/CDJ`, left mounted. Only a **plain SD card (2 GiB or less)** is ever erased: the player reads no
+SDHC or SDXC, and the class is told from the size (SDSC is at most 2 GiB; SDHC starts above it). Linux has the
+card's real answer in sysfs (`/sys/block/mmcblk0/device/type`, and `ocr` bit 30 for high capacity): use it there as
+a cross-check. A Mac reader hides it.
+
+What differs from the player's own format (`00-blank.img`: partition at sector 32, 8 reserved sectors, OEM
+`MSWIN4.1`-like): `diskutil` starts the partition at sector 2048 (1 MiB) with 1 reserved sector, and a "Free Space"
+partition first did not move it. Matching exactly needs the MBR and boot sector written raw, which means `sudo`.
+cdjmerge's notes say a card formatted elsewhere is refused by the player; this is **unproven either way**.
+
+**Hardware test (the owner; a SPARE 2 GB card, not the working one; do these in order, stop at the first failure):**
+
+1. `dubcrate card format` (lists), then `dubcrate card format diskN --yes`. Eject it, put it in the player.
+   Expect no `UNFORMAT` or `CARD ERROR`. If there is one: reformat in the player, and the fallback is the exact
+   layout (raw MBR and boot sector, `sudo`).
+2. Format again, `dubcrate card sync DISC --card /Volumes/DISK_IMG --yes` straight away (the index and file are
+   written onto the empty `PIONEER/CDJ`), eject, load that disc in the player: do the cues show? If the player
+   ignores them, try the card as the player leaves it (no pre-made folder: `write_card(create=True)` makes it).
+3. Image the card after (`spikes/cdj_card_snap.sh`) and add a row to the experiments table in
+   `cdj1000mk3-card.md` (`f1-formatted-by-dubcrate`, `f2-synced-straight-away`).
 
 ## Order of work
 

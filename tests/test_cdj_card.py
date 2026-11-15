@@ -327,10 +327,14 @@ def test_find_cards_keeps_the_volumes_that_hold_a_card_in_order(tmp_path):
     (card / "PIONEER" / "CDJ" / cc.INDEX_NAME).write_bytes(b"x")
     plain = tmp_path / "Backup"
     plain.mkdir()
+    fresh = tmp_path / "Fresh"
+    (fresh / "PIONEER" / "CDJ").mkdir(
+        parents=True
+    )  # (no index yet: a card just formatted)
     other = tmp_path / "Other"
-    (other / "PIONEER" / "CDJ").mkdir(parents=True)  # (no index: not a card)
+    (other / "PIONEER" / "MPJ").mkdir(parents=True)  # (not the audio CD folder)
     gone = tmp_path / "Unplugged"
-    assert cc.find_cards([plain, card, other, gone]) == [card]
+    assert cc.find_cards([plain, card, fresh, other, gone]) == [card, fresh]
 
 
 def test_a_write_asks_the_system_to_flush_the_card_before_it_returns(

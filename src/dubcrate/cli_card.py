@@ -1,4 +1,4 @@
-"""`dubcrate card ...`: look at the CDJ-1000MK3's SD card, back it up, and sync discs' cues to it.
+"""`dubcrate card ...`: look at the CDJ-1000MK3's SD card, back it up, format one, and sync discs' cues to it.
 
 `card sync` is a dry run unless `--yes`, like `burn`: it shows what would change, and with `--yes`
 copies the card's files aside first, writes, and reads back. Rules (dev_docs/card-sync.md): every
@@ -11,6 +11,7 @@ import argparse
 import sys
 from pathlib import Path
 
+from dubcrate import card_format
 from dubcrate import cdj_card as cc
 from dubcrate.card_apply import apply_sync, default_backup_dir
 from dubcrate.card_discs import (
@@ -152,6 +153,49 @@ def cmd_sync(lib: Library, args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_format(_: Library, args: argparse.Namespace) -> int:
+    """List the cards that could be formatted, or check one and (with --yes) erase it."""
+    try:
+        if args.disk is None:
+            disks = card_format.list_disks()
+            if not disks:
+                print("No removable disks found: put the card in its reader.")
+                return 1
+            for disk in disks:
+                why = card_format.problems(disk)
+                print(card_format.describe(disk) + (f"  ({why[0]})" if why else "  OK"))
+            return 0
+        disk = card_format.inspect(args.disk)
+        print(card_format.describe(disk))
+        if why := card_format.problems(disk):
+            for line in why:
+                print(f"error: {line}", file=sys.stderr)
+            return 1
+        print(
+            f"\nThis would ERASE everything on {disk.device} and make it a CDJ-1000MK3 card: "
+            f"MBR, FAT16, named {card_format.LABEL}, with an empty PIONEER/CDJ folder."
+        )
+        if not args.yes:
+            print("dry run: re-run with --yes to erase it.")
+            return 0
+        typed = args.confirm
+        if typed is None:
+            typed = input(f"Type {disk.device} to erase it: ").strip()
+        if typed != disk.device:
+            print("error: not confirmed; nothing was erased.", file=sys.stderr)
+            return 1
+        done = card_format.format_card(disk.device)
+    except card_format.FormatError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    print(
+        f"\nformatted: the card is at {done.volume}, ready for `dubcrate card sync ... "
+        f"--card {done.volume}`.\nEject it (Finder, or `diskutil eject`) before taking it "
+        "out: a card pulled early can be left unreadable."
+    )
+    return 0
+
+
 def add_parsers(sub: argparse._SubParsersAction) -> None:
     card = sub.add_parser("card", help="the CDJ-1000MK3's SD card").add_subparsers(
         dest="action", required=True
@@ -197,3 +241,20 @@ def add_parsers(sub: argparse._SubParsersAction) -> None:
     )
     p.add_argument("--yes", action="store_true", help="really write to the card")
     p.set_defaults(fn=cmd_sync)
+
+    p = card.add_parser(
+        "format",
+        help="erase a blank SD card and make it ready for the CDJ-1000MK3 (macOS; dry run unless --yes)",
+    )
+    p.add_argument(
+        "disk",
+        nargs="?",
+        help="the whole card, such as disk4 (see: diskutil list); omit to list removable disks",
+    )
+    p.add_argument("--yes", action="store_true", help="really erase the card")
+    p.add_argument(
+        "--confirm",
+        metavar="DISK",
+        help="the disk's name again, instead of being asked to type it",
+    )
+    p.set_defaults(fn=cmd_format)

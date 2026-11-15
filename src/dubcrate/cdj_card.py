@@ -423,9 +423,17 @@ class IndexFile:
 
 
 def card_dir(path: Path) -> Path:
-    """The folder with `CDJINDX0.PDJ` for a card's root, its `PIONEER` folder or that folder."""
-    for candidate in (path, path / CARD_DIR[0] / CARD_DIR[1], path / CARD_DIR[1]):
+    """The folder with `CDJINDX0.PDJ` for a card's root, its `PIONEER` folder or that folder.
+
+    A `CDJ` folder with no index yet is a card too: `card_format` makes cards that way (the
+    player makes the index itself when it first loads a disc), so it reads as having no discs.
+    """
+    candidates = (path, path / CARD_DIR[0] / CARD_DIR[1], path / CARD_DIR[1])
+    for candidate in candidates:
         if (candidate / INDEX_NAME).is_file():
+            return candidate
+    for candidate in candidates:
+        if candidate.name == CARD_DIR[1] and candidate.is_dir():
             return candidate
     raise CardFormatError(
         f"No {INDEX_NAME} found at {path}: is this the player's card?"
@@ -450,7 +458,12 @@ def read_card(path: Path) -> tuple[IndexFile, dict[str, TrackFile | None]]:
     A disc in the index with no file yet (the player makes the file later) maps to `None`.
     """
     folder = card_dir(path)
-    index = IndexFile.parse((folder / INDEX_NAME).read_bytes())
+    index_file = folder / INDEX_NAME
+    index = (
+        IndexFile.parse(index_file.read_bytes())
+        if index_file.is_file()
+        else IndexFile()
+    )
     files: dict[str, TrackFile | None] = {}
     for entry in index.entries:
         file = folder / entry.file_name
@@ -458,6 +471,17 @@ def read_card(path: Path) -> tuple[IndexFile, dict[str, TrackFile | None]]:
             TrackFile.parse(file.read_bytes()) if file.is_file() else None
         )
     return index, files
+
+
+def make_card_folders(path: Path) -> Path:
+    """Make the empty `PIONEER/CDJ` folder on a freshly formatted card (no files); return it.
+
+    What the player leaves on a card it formatted is nothing at all (`PIONEER/CDJ` appears when
+    it first saves), so **a player has not been shown this folder made ahead of it**.
+    """
+    folder = path / CARD_DIR[0] / CARD_DIR[1]
+    folder.mkdir(parents=True, exist_ok=True)
+    return folder
 
 
 def write_card(

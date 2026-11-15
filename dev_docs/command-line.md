@@ -94,6 +94,9 @@ A real burn marks the disc as burned (a note on the disc, which stays editable);
 dubcrate card show /Volumes/DISK_IMG          # the discs, cues, loops, hot cues and waveforms on a card
 dubcrate card show ~/cdj-card/files/X --waveforms
 dubcrate card backup /Volumes/DISK_IMG        # copy the card's few kilobytes aside
+dubcrate card format                          # removable disks, and whether each could be a CDJ card (macOS)
+dubcrate card format disk4                    # dry run: checks it (plain SD, 2 GB or less) and says what would be erased
+dubcrate card format disk4 --yes              # ERASES it: asks you to type disk4; MBR + FAT16 + PIONEER/CDJ, left mounted
 dubcrate card sync 3 4 --card /Volumes/DISK_IMG          # dry run: what would be written
 dubcrate card sync 3 4 --card /Volumes/DISK_IMG --yes    # back up, write, read back
 dubcrate card toc                              # the TOC of the audio CD in the drive (macOS) and its card ID

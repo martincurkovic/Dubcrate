@@ -480,7 +480,9 @@ the writer can leave `W001`/`W002` out.
   seen on it, and a different version or a CDJ-1000MK2 may lay the file out differently.
 - **Cards**: one 2 GB card, formatted by the player. SDHC and larger sizes, cards formatted
   elsewhere (cdjmerge says the player will not accept them), and a card with other files on it
-  were not tried.
+  were not tried. `dubcrate card format` (2026-11-15) makes a card on a Mac; **the player has not seen one**
+  (`card-sync.md`, "Formatting a card"). `00-blank.img`'s layout: MBR, one type-0x06 partition from sector 32,
+  3,932,128 sectors, 64 sectors per cluster, 8 reserved, 2 FATs, 512 root entries, label `DISK_IMG`.
 
 ### 7. What the sample is
 

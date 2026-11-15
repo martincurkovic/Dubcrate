@@ -15,6 +15,14 @@ TEST_WORKFLOW = (ROOT / ".github" / "workflows" / "test.yml").read_text(
 )
 
 
+MACOS_WORKFLOW = (ROOT / ".github" / "workflows" / "test-macos.yml").read_text(
+    encoding="utf-8"
+)
+WINDOWS_WORKFLOW = (ROOT / ".github" / "workflows" / "test-windows.yml").read_text(
+    encoding="utf-8"
+)
+
+
 def numbers(text: str) -> list[int]:
     return [int(n) for n in re.findall(r"\d+", text)]
 
@@ -101,7 +109,8 @@ def test_the_dmg_names_the_script_makes_are_the_ones_the_workflow_uploads():
 
 def test_the_build_is_gated_on_the_tests_and_only_releases_from_a_tag():
     assert "uses: ./.github/workflows/test.yml" in BUILD_WORKFLOW
-    assert "workflow_call:" in TEST_WORKFLOW
+    assert "uses: ./.github/workflows/test-macos.yml" in BUILD_WORKFLOW
+    assert "workflow_call:" in TEST_WORKFLOW and "workflow_call:" in MACOS_WORKFLOW
     assert "if: github.ref_type == 'tag'" in BUILD_WORKFLOW
     assert (
         "--smoke-test=" in BUILD_WORKFLOW
@@ -119,6 +128,18 @@ def test_the_tests_run_on_every_push():
     assert "--no-group build" in TEST_WORKFLOW  # the tests don't need Nuitka
     # ... and `uv run` would put it back, so every uv call after the sync says so too
     assert TEST_WORKFLOW.count("uv run --no-group build") == 3 and "uv run pytest" not in TEST_WORKFLOW  # fmt: skip
+
+
+def test_the_push_run_is_linux_only_and_the_other_systems_are_run_by_hand():
+    # (the Actions quota: macOS minutes cost ten times Linux's)
+    assert "runs-on: ubuntu-latest" in TEST_WORKFLOW
+    assert re.findall(r"runs-on: (\S+)", TEST_WORKFLOW) == ["ubuntu-latest"]
+    for text, runner in ((MACOS_WORKFLOW, "macos-15"), (WINDOWS_WORKFLOW, "windows-latest")):  # fmt: skip
+        on = text.split("jobs:")[0]
+        assert "workflow_dispatch:" in on
+        assert "push:" not in on and "pull_request" not in on and "schedule:" not in on
+        assert f"runs-on: {runner}" in text
+        assert "pytest tests/" in text and text.count("uv run --no-group build") == 1
 
 
 def test_the_packaging_tools_are_a_dependency_group_not_a_runtime_dependency():
