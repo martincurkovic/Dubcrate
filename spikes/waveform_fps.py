@@ -4,7 +4,7 @@
 
 Offscreen, with a made-up track (`--seconds` long, a beat grid, cues and phrases) at a chosen display scale (2 is a
 Retina Mac). Times `DetailView` in each look (3-band, RGB, blue) and the whole player strip's tick, then profiles the
-3-band look, and times a numpy-built 3-band image (one palette lookup per pixel) as a candidate for a cheaper look.
+3-band look.
 Written for the 60 FPS question (`dev_docs/audio.md`, "60 FPS waveform scrolling"): 60 FPS is 16.7 ms a frame.
 """
 
@@ -32,7 +32,7 @@ def main() -> None:
 
     import numpy as np
     from PySide6.QtCore import QSettings
-    from PySide6.QtGui import QImage, QPixmap
+    from PySide6.QtGui import QPixmap
     from PySide6.QtWidgets import QApplication
 
     QSettings.setDefaultFormat(QSettings.Format.IniFormat)
@@ -120,47 +120,6 @@ def main() -> None:
     profile.disable()
     print("\n3-band look, 60 frames:")
     pstats.Stats(profile).sort_stats("tottime").print_stats(4)
-
-    # a candidate: the 3-band look as an image, the colour of each pixel looked up from which band is on top
-    cols, rows = round(detail.width() * dpr), round(detail.height() * dpr)
-    view = np.clip(
-        rng.random((cols, 3)) * np.array([0.9, 0.5, 0.3]) + 0.2, 0, 1
-    ).astype(np.float32)
-    colours = np.array(
-        [[0x30, 0x60, 0xFF, 255], [0xE8, 0x90, 0x20, 255], [0xFF, 0xFF, 0xFF, 255]],
-        dtype=np.uint8,
-    )
-    palette = (
-        np.array([[0, 0, 0, 0], *colours.tolist()], dtype=np.uint8)
-        .view(np.uint32)
-        .reshape(-1)
-    )
-    reach = rows / 2 - 6 * dpr
-
-    def lookup(rows_scale: int):
-        ay = (
-            np.abs(
-                np.arange(rows * rows_scale, dtype=np.float32)
-                + 0.5
-                - rows * rows_scale / 2
-            )[:, None]
-            / rows_scale
-        )
-        h = (view * reach).T
-        idx = np.zeros((rows * rows_scale, cols), dtype=np.uint8)
-        for b in range(3):  # painter's order: a later band covers an earlier one
-            np.putmask(idx, ay <= h[b][None, :], b + 1)
-        px = palette[idx].view(np.uint8).reshape(rows * rows_scale, cols, 4)
-        if rows_scale == 2:  # two rows averaged into one: smoother top and bottom edges
-            px = ((px[0::2].astype(np.uint16) + px[1::2]) // 2).astype(np.uint8)
-        pixels = np.ascontiguousarray(px)
-        return QImage(
-            pixels.data, cols, rows, cols * 4, QImage.Format.Format_RGBA8888
-        ).copy()
-
-    print("\na numpy-built 3-band image (not used by the app):")
-    for label, scale in (("hard edges", 1), ("2x rows averaged", 2)):
-        bench(f"  lookup, {label}", lambda _p, s=scale: lookup(s), runs=120)
 
 
 if __name__ == "__main__":

@@ -17,6 +17,7 @@ class _Changes(QObject):
 
     rekordbox_editing = Signal()
     units = Signal()  # millimetres, centimetres or inches: what sizes are shown in
+    wave_fps = Signal(int)  # how often the playing waveform moves (60 or 30 a second)
 
 
 changes = _Changes()
@@ -286,6 +287,10 @@ def set_label_options(options: labels.LabelOptions) -> None:
 
 
 WAVE_STYLES = ("bands", "rgb", "blue")
+WAVE_FPS = (
+    60,
+    30,
+)  # frames a second the playing waveform moves at: smooth, or light for a slow computer
 WAVE_BACKGROUNDS = ("theme", "dark")
 
 
@@ -297,6 +302,21 @@ def get_wave_style() -> str:
 
 def set_wave_style(style: str) -> None:
     _qs().setValue("waveform/style", style)
+
+
+def get_wave_fps() -> int:
+    """How many times a second the playing waveform moves (60 unless lowered for a slower computer)."""
+    try:
+        value = int(_qs().value("waveform/fps", WAVE_FPS[0]))
+    except (TypeError, ValueError):
+        return WAVE_FPS[0]
+    return value if value in WAVE_FPS else WAVE_FPS[0]
+
+
+def set_wave_fps(fps: int) -> None:
+    if fps in WAVE_FPS and fps != get_wave_fps():
+        _qs().setValue("waveform/fps", fps)
+        changes.wave_fps.emit(fps)
 
 
 def get_wave_background() -> str:

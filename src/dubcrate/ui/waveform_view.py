@@ -26,6 +26,7 @@ from .wave_style import (
     is_mono,
     normalized,
     phrase_color,
+    render_bands,
     render_columns,
 )
 from .wave_style import notifier as wave_notifier
@@ -396,7 +397,7 @@ class DetailView(QWidget):
         per_second = w / self._window
         self._paint_zero_line(p, w, middle)
         if current_style() == STYLE_BANDS:
-            self._paint_bands(p, w, centre, middle, per_second)
+            self._paint_bands(p, w, h, centre, per_second)
         else:
             self._paint_columns(p, w, h, centre, per_second)
         self._paint_beats(p, w, h, centre, per_second)
@@ -462,34 +463,36 @@ class DetailView(QWidget):
         p.drawImage(QPointF(0, 0), image)
 
     def _paint_bands(
-        self, p: QPainter, width: int, centre: float, middle: float, per_second: float
+        self, p: QPainter, width: int, height: int, centre: float, per_second: float
     ) -> None:
+        """The 3-band look: an image with one pixel column per device pixel, each band's height
+        interpolated between the waveform's columns so it scrolls smoothly."""
         wf = self._waveform
         assert wf is not None
-        rate = wf.columns_per_second
-        first = max(0, math.floor((self._position - self._window / 2) * rate))
-        last = min(
-            wf.columns, math.ceil((self._position + self._window / 2) * rate) + 1
-        )
-        step = max(1, round(rate / per_second))  # about one column per pixel
-        index = np.arange(first, last, step)
-        if len(index) < 2:
+        if wf.columns < 2:
             return
-        xs = centre + (index / rate - self._position) * per_second
-        reach = middle - 6
-        p.setPen(Qt.PenStyle.NoPen)
-        for band, key in _BANDS:
-            half = wf.bands[index, band] * reach
-            top = [
-                QPointF(x, middle - v)
-                for x, v in zip(xs.tolist(), half.tolist(), strict=True)
-            ]
-            bottom = [
-                QPointF(x, middle + v)
-                for x, v in zip(xs[::-1].tolist(), half[::-1].tolist(), strict=True)
-            ]
-            p.setBrush(color(key))
-            p.drawPolygon(QPolygonF(top + bottom))
+        dpr = self.devicePixelRatioF()
+        pixels, rows = round(width * dpr), round(height * dpr)
+        seconds = (
+            self._position + ((np.arange(pixels) + 0.5) / dpr - centre) / per_second
+        )
+        where = seconds * wf.columns_per_second
+        inside = (where >= 0) & (where <= wf.columns - 1)
+        low = np.clip(np.floor(where).astype(np.int64), 0, wf.columns - 2)
+        along = (where - low).astype(np.float32)[inside, None]
+        heights = np.zeros((pixels, 3), dtype=np.float32)
+        heights[inside] = (
+            wf.bands[low[inside]] * (1 - along) + wf.bands[low[inside] + 1] * along
+        )
+        image = render_bands(
+            heights,
+            [color(key) for _band, key in _BANDS],
+            rows=rows,
+            extent=rows / 2 - 6 * dpr,
+            smooth=not theme.current_palette().get("hard_edges"),
+        )
+        image.setDevicePixelRatio(dpr)
+        p.drawImage(QPointF(0, 0), image)
 
     def _paint_beats(
         self, p: QPainter, width: int, height: int, centre: float, per_second: float

@@ -175,6 +175,9 @@ def test_the_settings_tabs_the_guide_names_exist(qapp):
     assert "Burn speed" in MANUAL and dialog.speed_combo.currentData() == 10  # "10x"
     assert "Waveform style" in MANUAL and "Waveform background" in MANUAL
     assert dialog.wave_style_combo.itemText(0) == "3-Band"
+    assert (
+        "Waveform speed" in MANUAL and dialog.wave_fps_combo.currentData() == 60
+    )  # "60 times a second"
 
 
 def test_the_column_menu_item_the_guide_names_exists():

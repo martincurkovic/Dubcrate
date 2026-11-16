@@ -1,7 +1,40 @@
 # 60 FPS waveform scrolling
 
-**Status (2026-11-16): investigated, not built.** This is everything the investigation found, so the work can be picked up
-later without redoing it. The short version is in `audio.md` ("60 FPS waveform scrolling: investigation") and `TODO.md`.
+**Status (2026-11-16): BUILT, measured offscreen; NOT yet seen or heard on a real display.** The first half of this file is
+the investigation that led to it (kept as it was, so the reasoning is on record); **"What was built" below says what is in
+the app and how it measured.** The short version is in `audio.md` and `TODO.md`.
+
+## What was built (2026-11-16)
+
+| Piece | Where |
+|---|---|
+| **The 3-band look is an image, not three polygons** | `ui/wave_style.py: render_bands` (numpy: a palette lookup per pixel, the top half worked out and mirrored, premultiplied pixels), used by `waveform_view.DetailView._paint_bands`, which interpolates each band's height between the waveform's columns at every device pixel. System 6 keeps hard edges (`smooth=False`); every other look is smoothed (twice the rows, averaged). The old polygon path is gone from the zoomed view (the overview still paints polygons, but into a cached pixmap, not per frame). |
+| **Position moves between audio blocks** | `audio/player.py: moving_frame(state, now)`: the head moves along the block it is in (start when the block was asked for, end one block length later; never past it, never backwards; not when paused, after a seek/load, or when a loop wrapped in the block). `render_block` records `state.block = (start, end, asked, frames)`; `AudioPlayer.position` uses it; `_close_device` clears it. |
+| **The tick** | `player.tick_ms(fps)`: 16 ms for 60, 33 ms for 30, `PreciseTimer`. Set from `settings.get_wave_fps()` (`waveform/fps`, default 60) and changed live through `settings.changes.wave_fps`. |
+| **A setting** | Settings > Appearance > **Waveform speed**: *Smooth (60 a second)* or *Light (30 a second)*, for slower computers (the sound is not affected). |
+
+**Measured (offscreen, scale 2, `spikes/waveform_fps.py`):** 3-band frame **16.0 ms -> 3.4 ms** (RGB 3.3, Blue 5.9). At 60 FPS that is
+about 20% of one core for the 3-band look, against 96% for the polygons.
+
+**Audio (`spikes/audio_jitter.py full ... --gc freeze --switch-ms 0.2 --seconds 12`, the whole window playing a silent track, real output
+device, new `--fps`):**
+
+| Buffer | FPS | Late callbacks (over 1.5 x the period) | Max gap |
+|---|---|---|---|
+| 256 | bare player | 1 | 10.2 ms |
+| 256 | 30 | 0 | 6.9 ms |
+| 256 | 60 | 0 | 7.4 ms |
+| 256 | 60, with the `--worker` background load | 0 | 6.6 ms |
+| 256 | 30, with `--worker` | 0 | 6.5 ms |
+| 128 | 60 | 0 | 4.2 ms |
+| 128 | 30 | 0 | 4.0 ms |
+
+So the acceptance test passed offscreen, even at the smallest buffer. **Still to do, by eye and ear on a real Mac:** is the scroll
+smooth (no judder, no tearing), does the waveform stay in step with the sound (the position now follows the block the audio
+thread is in, so it should be a little *less* ahead of the sound than before, by half a buffer), does the Light setting feel
+right, and is a 120 Hz display fine (the tick stays at 60). The timer ticks at 62.5 Hz for "60" (16 ms is the nearest whole
+millisecond), against a 60 Hz display: if a rare doubled or dropped frame shows, the next step is to follow the screen's
+refresh (`QScreen.refreshRate()`), or to compute the position at paint time rather than at the tick.
 
 **The question.** rbxport and rekordbox both scroll the zoomed waveform at 60 FPS. Dubcrate's does about 33. Is 60 possible,
 and is it a good idea?

@@ -6,6 +6,8 @@ The look (3-band, RGB or blue) is a setting too; changing either emits
 `notifier.changed` so every waveform on screen redraws.
 """
 
+from collections.abc import Sequence
+
 import numpy as np
 from PySide6.QtCore import QObject, Signal
 from PySide6.QtGui import QColor, QImage
@@ -50,6 +52,7 @@ HOT_CUE_RGB = (
 
 
 WAVE_STYLE_LABELS = (("3-Band", "bands"), ("RGB", "rgb"), ("Blue", "blue"))
+WAVE_FPS_LABELS = (("Smooth (60 a second)", 60), ("Light (30 a second)", 30))
 WAVE_BACKGROUND_LABELS = (("Match the theme", "theme"), ("Always dark", "dark"))
 
 
@@ -164,6 +167,56 @@ def render_columns(
         QImage.Format.Format_RGBA8888,
     )
     return image.copy()  # the copy owns its pixels: `pixels` is about to go
+
+
+def render_bands(
+    heights: np.ndarray,
+    colours: Sequence[QColor],
+    *,
+    rows: int,
+    extent: float,
+    smooth: bool,
+) -> QImage:
+    """The 3-band look as an image: `heights` is (pixel columns, 3) in 0 to 1 (low, mid, high), each band a
+    bar mirrored about the middle, a later band covering an earlier one (as filling three polygons did, at
+    a fraction of the cost: no long paint calls, and numpy lets go of the GIL while it works).
+
+    Only the top half is worked out, then mirrored. `smooth` works it out at twice the rows and averages
+    pairs, which softens the top and bottom edges (a mono look keeps them hard). The pixels are premultiplied,
+    so a half-covered edge pixel blends with what is under it instead of darkening it."""
+    columns = len(heights)
+    top_rows = (rows + 1) // 2
+    oversample = 2 if smooth else 1
+    # each sub-row's distance from the middle (the row's centre), in device pixels
+    distance = (
+        rows / 2
+        - (np.arange(top_rows * oversample, dtype=np.float32) + 0.5) / oversample
+    )[:, None]
+    reach = (heights * extent).T.astype(np.float32)  # (3, columns)
+    index = np.zeros((top_rows * oversample, columns), dtype=np.uint8)
+    for band in range(3):  # painter's order: low first, high last
+        np.putmask(index, distance <= reach[band][None, :], band + 1)
+    table = np.zeros(4, dtype=np.uint32)  # 0: nothing here
+    for band, colour in enumerate(colours, start=1):
+        table[band] = np.array(
+            [colour.red(), colour.green(), colour.blue(), 255], dtype=np.uint8
+        ).view(np.uint32)[0]  # (opaque: premultiplied is the same)
+    top = table[index]
+    if (
+        oversample == 2
+    ):  # two rows into one, a byte at a time without leaving the integers
+        half = np.uint32(0xFEFEFEFE)
+        top = ((top[0::2] & half) >> 1) + ((top[1::2] & half) >> 1)
+    image = np.empty((rows, columns), dtype=np.uint32)
+    image[:top_rows] = top
+    image[top_rows:] = top[: rows - top_rows][::-1]
+    return QImage(
+        image.data,
+        columns,
+        rows,
+        columns * 4,
+        QImage.Format.Format_RGBA8888_Premultiplied,
+    ).copy()  # (the copy owns its pixels: `image` is about to go)
 
 
 def phrase_color(label: str, index: int) -> QColor:

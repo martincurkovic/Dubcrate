@@ -391,6 +391,21 @@ class SettingsDialog(QDialog):
         )
         form.addRow("Waveform background:", self.wave_background_combo)
 
+        self.wave_fps_combo = QComboBox()
+        for label, value in wave_style.WAVE_FPS_LABELS:
+            self.wave_fps_combo.addItem(label, value)
+        self.wave_fps_combo.setCurrentIndex(
+            max(0, self.wave_fps_combo.findData(settings.get_wave_fps()))
+        )
+        self.wave_fps_combo.setToolTip(
+            "How many times a second the playing waveform moves. 60 is smooth; choose 30 on a slower"
+            " computer to use less of it (the sound is not affected either way)."
+        )
+        self.wave_fps_combo.activated.connect(
+            lambda _i: settings.set_wave_fps(self.wave_fps_combo.currentData())
+        )
+        form.addRow("Waveform speed:", self.wave_fps_combo)
+
         hint = QLabel(
             "3-Band is rekordbox's look (lows blue, mids amber, highs white), RGB colours each moment by"
             " its content, and Blue is the classic blue. System 6 always draws 3-Band in black and white."

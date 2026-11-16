@@ -274,3 +274,115 @@ def test_system6_has_no_faint_line(qapp):
     image = detail.grab().toImage()
     assert pixel(image, 100, detail.height() // 2) == wave_style.color("wave_bg")
     detail.close()
+
+
+# -- the 3-band look as an image (what the zoomed view draws every frame) ------------------------------------
+
+LOW, MID, HIGH = QColor("#0000ff"), QColor("#00ff00"), QColor("#ff0000")
+
+
+def bands_image(heights, rows=20, extent=8.0, smooth=False):
+    return wave_style.render_bands(
+        np.array(heights, dtype=np.float32),
+        [LOW, MID, HIGH],
+        rows=rows,
+        extent=extent,
+        smooth=smooth,
+    )
+
+
+def column(image, x):
+    return [QColor(image.pixelColor(x, y)).name() for y in range(image.height())]
+
+
+def test_each_band_is_a_bar_mirrored_about_the_middle_with_the_later_band_on_top():
+    # one pixel column: low reaches 8 rows from the middle, mid 4, high 2
+    image = bands_image([[1.0, 0.5, 0.25]])
+    assert (image.width(), image.height()) == (1, 20)
+    names = column(image, 0)
+    assert names == names[::-1]  # (mirrored)
+    assert names[10:12] == ["#ff0000"] * 2  # the two rows each side of the middle: high
+    assert names[6:10] == ["#00ff00"] * 2 + ["#ff0000"] * 2  # mid beyond high
+    assert (
+        names[2:6] == ["#0000ff"] * 4 and names[6:8] == ["#00ff00"] * 2
+    )  # low beyond mid
+    assert (
+        names[:2] == ["#000000"] * 2
+    )  # nothing past the reach: transparent (reads as black)
+    assert image.pixelColor(0, 0).alpha() == 0
+
+
+def test_a_silent_column_is_empty_and_a_band_taller_than_the_view_fills_it():
+    image = bands_image([[0.0, 0.0, 0.0], [10.0, 0.0, 0.0]], rows=10, extent=4.0)
+    assert all(image.pixelColor(0, y).alpha() == 0 for y in range(10))
+    assert all(image.pixelColor(1, y).alpha() == 255 for y in range(10))
+
+
+def test_an_odd_number_of_rows_stays_mirrored_with_the_middle_row_filled():
+    image = bands_image([[0.0, 0.0, 1.0]], rows=9, extent=2.0)
+    names = column(image, 0)
+    assert names == names[::-1]
+    assert names[4] == "#ff0000"
+
+
+def test_smooth_edges_blend_a_half_covered_row_instead_of_a_hard_step():
+    hard = bands_image([[0.0, 0.0, 0.5]], rows=20, extent=9.0, smooth=False)
+    smooth = bands_image([[0.0, 0.0, 0.5]], rows=20, extent=9.0, smooth=True)
+    alphas = lambda image: [image.pixelColor(0, y).alpha() for y in range(20)]
+    assert set(alphas(hard)) == {0, 255}
+    assert 0 < min(a for a in alphas(smooth) if a) < 255 or set(alphas(smooth)) - {
+        0,
+        255,
+    }
+    assert alphas(smooth) == alphas(smooth)[::-1]  # (still mirrored)
+
+
+def test_a_smoothed_edge_keeps_the_colour_it_only_loses_cover():
+    image = bands_image([[0.0, 0.0, 0.55]], rows=20, extent=9.0, smooth=True)
+    edge = [
+        image.pixelColor(0, y)
+        for y in range(20)
+        if 0 < image.pixelColor(0, y).alpha() < 255
+    ]
+    assert edge, "the half-covered row is there"
+    for c in (
+        edge
+    ):  # premultiplied, read back straight: still the band's red, not a darker red
+        assert c.red() >= 250 and c.green() <= 2 and c.blue() <= 2
+
+
+def test_the_zoomed_view_draws_the_bands_look_through_the_image(qapp):
+    use("dark", "bands")
+    view = DetailView()
+    view.resize(300, view.HEIGHT)
+    view.set_track(
+        wave([[0.0, 0.0, 0.0]] * 300 + [[0.9, 0.5, 0.3]] * 2700)
+    )  # 2 s of nothing, then sound
+    view.show()
+    middle = view.height() // 2
+    view.set_position(
+        0.5
+    )  # (an 8 s window: the left of the view is before the track, the right inside it)
+    image = view.grab().toImage()
+    bare = wave_style.color("wave_bg")
+    assert pixel(image, 5, 4) == bare
+    assert pixel(image, 290, middle) != bare and pixel(image, 290, 4) == bare  # (sound, but not to the top)  # fmt: skip
+    view.set_position(10.0)  # well inside the loud part: sound all the way across
+    image = view.grab().toImage()
+    assert pixel(image, 5, middle) != bare and pixel(image, 290, middle) != bare
+
+
+def test_settings_offers_a_waveform_speed_that_starts_smooth_and_applies_at_once(qapp):
+    dialog = SettingsDialog()
+    assert [dialog.wave_fps_combo.itemText(i) for i in range(2)] == [
+        "Smooth (60 a second)",
+        "Light (30 a second)",
+    ]
+    assert dialog.wave_fps_combo.currentData() == 60
+    seen = []
+    settings.changes.wave_fps.connect(seen.append)
+    dialog.wave_fps_combo.setCurrentIndex(dialog.wave_fps_combo.findData(30))
+    dialog.wave_fps_combo.activated.emit(dialog.wave_fps_combo.currentIndex())
+    assert settings.get_wave_fps() == 30 and seen == [30]
+    again = SettingsDialog()  # (remembered)
+    assert again.wave_fps_combo.currentData() == 30

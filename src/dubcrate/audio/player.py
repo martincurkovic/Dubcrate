@@ -37,7 +37,9 @@ from dataclasses import dataclass, field
 
 import miniaudio
 import numpy as np
-from PySide6.QtCore import QObject, QTimer, Signal
+from PySide6.QtCore import QObject, Qt, QTimer, Signal
+
+from dubcrate import settings
 
 from .decode import CHANNELS, DecodedAudio
 from .devices import DEFAULT_BUFFER, SAMPLE_RATE, buffer_msec, resolve_output_device
@@ -45,7 +47,13 @@ from .devices import DEFAULT_BUFFER, SAMPLE_RATE, buffer_msec, resolve_output_de
 log = logging.getLogger(__name__)
 
 _LIVE_PLAYERS: "weakref.WeakSet[AudioPlayer]" = weakref.WeakSet()
-_TICK_MS = 30  # how often the playhead is re-emitted: smooth enough, and costs nothing
+
+
+def tick_ms(fps: int) -> int:
+    """The timer interval (milliseconds) that re-emits the playhead `fps` times a second: 16 for 60, 33 for 30."""
+    return max(1, int(1000 / fps))
+
+
 # Scratching. Speeds are in source frames per output frame (1.0 is normal speed).
 # About the fastest the head may move:
 MAX_SCRATCH_RATE = 16.0
@@ -100,7 +108,28 @@ class PlaybackState:
     loop_on: bool = False
     loop_start: int = 0
     loop_end: int = 0
+    # the last block rendered while playing: (frame it started at, frame it ended at, the clock reading
+    # when it was asked for, its length in frames); one tuple, so the GUI thread reads it whole without the lock
+    block: tuple[int, int, float, int] | None = None
     lock: threading.Lock = field(default_factory=threading.Lock)
+
+
+def moving_frame(state: PlaybackState, now: float) -> float:
+    """Where the playhead is at clock time `now`, a fraction of a frame included.
+
+    The audio thread moves `frame` a block at a time (3 to 23 ms), so reading it alone shows a staircase,
+    which is a stutter once the waveform is redrawn 60 times a second. Between two blocks the head is
+    taken to move along the block it is in: the block's start when it was asked for, its end one block
+    length later (never past it: a stalled device holds still). Not while paused, after a seek or a
+    load (the end no longer matches `frame`), or when a loop wrapped inside the block."""
+    block = state.block
+    if block is None or not state.playing:
+        return float(state.frame)
+    start, end, asked, frames = block
+    if end != state.frame or end <= start or frames <= 0:
+        return float(state.frame)
+    along = (now - asked) * SAMPLE_RATE / frames
+    return start + (end - start) * min(1.0, max(0.0, along))
 
 
 def note_scratch_target(state: PlaybackState, target: float, now: float) -> None:
@@ -226,8 +255,15 @@ def render_block(state: PlaybackState, frames: int, now: float | None = None) ->
         if state.samples is None or (not state.playing and state.gain <= 0.0):
             return out.tobytes()
         total = len(state.samples)
+        started = state.frame
         chunk = _take(state, frames, total)
         n = len(chunk)
+        state.block = (
+            started,
+            state.frame,
+            time.monotonic() if now is None else now,
+            frames,
+        )
         if n:
             target = state.volume if state.playing else 0.0
             chunk = chunk.astype(np.float32)
@@ -277,9 +313,18 @@ class AudioPlayer(QObject):
         self._buffer_frames = DEFAULT_BUFFER
         self._was_playing = False
         self._timer = QTimer(self)
-        self._timer.setInterval(_TICK_MS)
+        self._timer.setTimerType(
+            Qt.TimerType.PreciseTimer
+        )  # (the coarse one can be 5% out)
+        self.set_wave_fps(settings.get_wave_fps())
         self._timer.timeout.connect(self._on_tick)
+        settings.changes.wave_fps.connect(self.set_wave_fps)
         _LIVE_PLAYERS.add(self)
+
+    def set_wave_fps(self, fps: int) -> None:
+        """How many times a second the playhead is re-emitted (so the waveform moves): 60, or 30 for a
+        slower computer. Takes effect at once, even while playing."""
+        self._timer.setInterval(tick_ms(fps))
 
     # -- configuration ----------------------------------------------------
 
@@ -313,7 +358,9 @@ class AudioPlayer(QObject):
     @property
     def position(self) -> float:
         state = self._state
-        return (state.scratch_pos if state.scratching else state.frame) / SAMPLE_RATE
+        if state.scratching:
+            return state.scratch_pos / SAMPLE_RATE
+        return moving_frame(state, time.monotonic()) / SAMPLE_RATE
 
     @property
     def scratching(self) -> bool:
@@ -497,6 +544,9 @@ class AudioPlayer(QObject):
 
     def _close_device(self) -> None:
         device, self._device = self._device, None
+        self._state.block = (
+            None  # (no device asking for blocks: the head is where `frame` says)
+        )
         if device is not None:
             try:
                 device.stop()

@@ -10,6 +10,7 @@ collections (about every 6 s, triggered by the zoomed waveform's painting) were 
     uv run spikes/audio_jitter.py bare --buffer 128          # the player alone
     uv run spikes/audio_jitter.py full --buffer 1024         # the whole window, playing
     uv run spikes/audio_jitter.py full --buffer 1024 --gc freeze   # as the app now starts
+    uv run spikes/audio_jitter.py full --buffer 256 --fps 30 --gc freeze   # the Light waveform speed
 
 Settings, the library and the theme's icons go to a scratch folder; nothing of yours is read.
 Opens the real output device (silently). No sound is made.
@@ -57,6 +58,13 @@ def main() -> None:
         default=None,
         help="sys.setswitchinterval, in ms (Python's default is 5): how long a thread may keep the GIL "
         "before another one that is waiting gets it",
+    )
+    parser.add_argument(
+        "--fps",
+        type=int,
+        choices=[30, 60],
+        default=60,
+        help="how often the playing waveform moves (the Settings > Appearance > Waveform speed choice)",
     )
     parser.add_argument(
         "--worker",
@@ -138,6 +146,7 @@ def main() -> None:
     from dubcrate import settings
 
     settings.set_audio_buffer(args.buffer)
+    settings.set_wave_fps(args.fps)
     if args.mode == "bare":
         player = player_module.AudioPlayer()
         player.configure(None, args.buffer)
@@ -221,7 +230,7 @@ def main() -> None:
     ms = lambda x: f"{x * 1000:.1f}"
     worst = sorted(((g, a - starts[0]) for g, a in zip(gaps, starts, strict=False)), reverse=True)[:6]  # fmt: skip
     print(
-        f"{args.mode}, buffer {args.buffer} frames ({args.buffer / 44.1:.1f} ms), gc {args.gc},"
+        f"{args.mode}, buffer {args.buffer} frames ({args.buffer / 44.1:.1f} ms), {args.fps} fps, gc {args.gc},"
         f" switch interval {sys.getswitchinterval() * 1000:g} ms"
     )
     print(f"  callbacks {len(starts)}, median gap {ms(period)} ms, p99 {ms(sorted(gaps)[int(len(gaps) * 0.99)])} ms, MAX {ms(max(gaps))} ms")  # fmt: skip

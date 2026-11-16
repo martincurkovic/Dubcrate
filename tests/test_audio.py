@@ -154,12 +154,13 @@ def test_play_opens_the_device_at_the_cd_rate_and_the_configured_buffer(player):
     assert len(device.pull(1024)) == 1024 * 2 * 2  # frames x channels x 2 bytes
 
 
-def test_position_follows_what_the_device_has_pulled(player):
+def test_position_follows_what_the_device_has_pulled(player, monkeypatch):
     player.load(audio(2.0))
     player.play()
     device = player.opened[0]
     for _ in range(4):
         device.pull(SAMPLE_RATE // 4)
+    monkeypatch.setattr("dubcrate.audio.player.time.monotonic", lambda: 1e9)  # (the next block is due)  # fmt: skip
     assert abs(player.position - 1.0) < 1e-6 and player.duration == 2.0
     player._on_tick()
     assert abs(player.events["position"][-1] - 1.0) < 1e-6
@@ -749,3 +750,107 @@ def test_the_player_sets_and_clears_a_loop_in_seconds_and_a_new_track_drops_it(p
 def test_a_loop_cannot_be_set_without_a_track(player):
     player.set_loop(0.0, 1.0)
     assert not player.looping
+
+
+# -- the moving playhead: smooth between blocks, and the frame rate ------------------------------------------
+
+
+def playing_state(frames=44_100):
+    return PlaybackState(samples=tone(frames * 4), playing=True, gain=1.0)
+
+
+def test_between_two_blocks_the_playhead_moves_along_the_block_it_is_in():
+    from dubcrate.audio.player import moving_frame
+
+    state = playing_state()
+    render_block(state, 256, now=10.0)  # frames 0 to 256, asked for at t = 10 s
+    assert moving_frame(state, 10.0) == 0  # (just asked for: the block's start)
+    half = 128 / SAMPLE_RATE
+    assert moving_frame(state, 10.0 + half) == pytest.approx(128)
+    render_block(state, 256, now=10.0 + 256 / SAMPLE_RATE)
+    assert moving_frame(state, 10.0 + 256 / SAMPLE_RATE) == 256  # (carries on from where it was: no step back)  # fmt: skip
+
+
+def test_the_playhead_never_runs_past_the_end_of_the_block_when_the_device_stalls():
+    from dubcrate.audio.player import moving_frame
+
+    state = playing_state()
+    render_block(state, 256, now=10.0)
+    assert moving_frame(state, 12.0) == 256  # two seconds on, nothing new asked for
+    assert (
+        moving_frame(state, 5.0) == 0
+    )  # (a clock reading before the block: the start)
+
+
+def test_the_moving_playhead_never_goes_backwards_from_block_to_block():
+    from dubcrate.audio.player import moving_frame
+
+    state = playing_state()
+    last, clock = 0.0, 100.0
+    for _ in range(40):
+        render_block(state, 256, now=clock)
+        for step in range(8):
+            seen = moving_frame(state, clock + step * 256 / SAMPLE_RATE / 8)
+            assert seen >= last
+            last = seen
+        clock += 256 / SAMPLE_RATE
+
+
+def test_a_paused_player_or_one_just_seeked_shows_exactly_where_it_is():
+    from dubcrate.audio.player import moving_frame
+
+    state = playing_state()
+    render_block(state, 256, now=10.0)
+    state.playing = False
+    assert moving_frame(state, 10.001) == state.frame == 256
+    state.playing = True
+    state.frame = 20_000  # a seek: the last block no longer ends here
+    assert moving_frame(state, 10.001) == 20_000
+
+
+def test_a_loop_that_wrapped_inside_the_block_is_shown_where_it_is():
+    from dubcrate.audio.player import moving_frame
+
+    state = playing_state()
+    state.loop_on, state.loop_start, state.loop_end, state.frame = True, 0, 1000, 900
+    render_block(state, 256, now=10.0)  # 900 to 1000, then 0 to 156
+    assert state.frame == 156
+    assert moving_frame(state, 10.001) == 156  # (no sweep backwards through the loop)
+
+
+def test_the_player_reports_the_moving_position_while_playing(player, monkeypatch):
+    player.load(audio(2.0))
+    player.play()
+    device = player.opened[0]
+    device.pull(256) if hasattr(device, "pull") else None
+    player._state.block = (0, 256, 50.0, 256)
+    player._state.frame = 256
+    monkeypatch.setattr("dubcrate.audio.player.time.monotonic", lambda: 50.0 + 128 / SAMPLE_RATE)  # fmt: skip
+    assert player.position == pytest.approx(128 / SAMPLE_RATE)
+
+
+def test_the_tick_is_16_ms_for_60_a_second_and_33_for_30():
+    from dubcrate.audio.player import tick_ms
+
+    assert (tick_ms(60), tick_ms(30)) == (16, 33)
+
+
+def test_a_new_player_ticks_at_the_remembered_rate_and_follows_a_change(player):
+    from dubcrate import settings
+
+    assert settings.get_wave_fps() == 60 and player._timer.interval() == 16
+    settings.set_wave_fps(30)
+    assert player._timer.interval() == 33  # (at once, as it plays)
+    settings.set_wave_fps(60)
+    assert player._timer.interval() == 16
+
+
+def test_the_frame_rate_setting_keeps_to_60_or_30(qapp):
+    from dubcrate import settings
+
+    settings.set_wave_fps(45)  # (not on offer)
+    assert settings.get_wave_fps() == 60
+    settings.set_wave_fps(30)
+    assert settings.get_wave_fps() == 30
+    settings._qs().setValue("waveform/fps", "banana")
+    assert settings.get_wave_fps() == 60

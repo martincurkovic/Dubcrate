@@ -201,6 +201,8 @@ For rekordbox tracks the waveforms, beat grid and phrases come from rekordbox's 
 
 The look applies to the overview, the detail view and the Preview column, and works for every track, with or without rekordbox's analysis. For RGB and Blue, Dubcrate works the colours out from the same three bands rather than reading rekordbox's own colour waveform, so they resemble rekordbox's without being identical.
 
+**Waveform speed.** The playing waveform moves 60 times a second, as rekordbox's does. On a slower computer, or to save a little battery, choose **Light (30 a second)** under **Settings > Appearance > Waveform speed**; the sound is the same either way.
+
 **Waveform background.** The waveform follows your theme, so it is light in the light theme. If you prefer rekordbox's dark waveform whatever the theme, choose **Always dark** under **Settings > Appearance**. The Macintosh System 6 theme always draws the 3-band look in black and white.
 
 Choose where previews play, and test it, in [Settings](#settings).
@@ -467,7 +469,7 @@ You don't need the player to get a card ready. **Format a Card…** (right-click
 - **Burning:** the **Burn speed** a burn starts with (10x unless you change it). Old players read discs burned slowly more reliably, and 10x to 16x is a good range. Your drive may not offer every speed. You can still pick another speed for a single burn in the burn window. **Normalise the levels of tracks on audio CDs** chooses whether a burn starts with normalising on, and **Normalise to** what to bring the tracks to; see [Burning a disc](#burning-a-disc).
 - **Audio:** the **Output device** for previews and the **Buffer size**, and the **Beat jump** distance for the arrow keys.
 - **Library:** whether Dubcrate updates your rekordbox library each time it starts (on by default), whether memory cue and loop changes you make in the player are **saved into your rekordbox library** (see [Listening to tracks](#listening-to-tracks); asked the first time you edit one), and whether it checks for a newer version of Dubcrate when it starts (also on by default; see [Updates](#updates-and-what-dubcrate-sends)).
-- **Appearance:** the **Theme** (the same choice as **View > Theme**), the **Waveform style** (the same as **View > Waveform**), the **Waveform background**, the **Key notation**: **Camelot** (8A) or **Musical** (A min), and the **Units** sizes are shown in: **Millimetres**, **Centimetres** or **Inches**. Only what is shown changes; your library, rekordbox and the files keep what they have (sizes are stored in millimetres, so changing the unit loses nothing, and the label window follows at once).
+- **Appearance:** the **Theme** (the same choice as **View > Theme**), the **Waveform style** (the same as **View > Waveform**), the **Waveform background**, the **Waveform speed** (**Smooth**, 60 frames a second, or **Light**, 30), the **Key notation**: **Camelot** (8A) or **Musical** (A min), and the **Units** sizes are shown in: **Millimetres**, **Centimetres** or **Inches**. Only what is shown changes; your library, rekordbox and the files keep what they have (sizes are stored in millimetres, so changing the unit loses nothing, and the label window follows at once).
 
 ---
 
