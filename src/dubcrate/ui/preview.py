@@ -13,7 +13,13 @@ from dubcrate.audio.player import AudioPlayer
 from dubcrate.beatjump import jump_time
 from dubcrate.deck import Deck
 from dubcrate.library import Library
-from dubcrate.library.cue_edits import MAX_MEMORY_CUES, memory_list
+from dubcrate.library.cue_edits import (
+    MAX_MEMORY_CUES,
+    SAME_LOOP_MS,
+    is_memory_loop,
+    memory_count,
+    memory_list,
+)
 from dubcrate.library.models import Track
 from dubcrate.waveform import PREVIEW_COLUMNS, Waveform, compute_waveform
 
@@ -268,9 +274,10 @@ class PreviewController(QObject):
 
     # -- memory cues: kept in Dubcrate, then saved into rekordbox if the user allowed it ----------------
 
-    def _memory_cues(self) -> list[tuple[int, str]] | None:
+    def _memory_cues(self, *, ask: bool = True) -> list[tuple[int, str]] | None:
         """The loaded track's memory cues now, (milliseconds, label), or None if they can't be changed yet
-        (nothing loaded, or rekordbox's are still being read: an edit then would drop them)."""
+        (nothing loaded, or rekordbox's are still being read: an edit then would drop them). `ask`: the
+        first-edit question about saving into rekordbox may be asked (not for a loop: loops stay in Dubcrate)."""
         if not self._usable():
             return None
         found = self.cues.cues_for(self._track)
@@ -279,10 +286,57 @@ class PreviewController(QObject):
                 "rekordbox's cues are still being read: try again in a moment"
             )
             return None
-        self.editor.allow(
-            self._track
-        )  # asks the first time a rekordbox track is edited
+        if ask:
+            self.editor.allow(
+                self._track
+            )  # asks the first time a rekordbox track is edited
         return memory_list(found)
+
+    def _memory_places(self) -> int:
+        """How many of the ten memory places the loaded track uses now (cues and loops)."""
+        found = self.cues.cues_for(self._track)
+        return memory_count(found or ())
+
+    def _loop_to_save(self) -> tuple[int, int] | None:
+        """The loop that is on, in milliseconds, if there is one (what MEMORY saves)."""
+        found = self.deck.loop
+        if not self.deck.loop_active or found is None:
+            return None
+        return round(found[0] * 1000), round(found[1] * 1000)
+
+    def _memory_loop_add(self, start: int, end: int) -> None:
+        """MEMORY with a loop on: save the loop as a memory loop (in Dubcrate only: loops are not written to
+        rekordbox). The loop stays on."""
+        if self._memory_cues(ask=False) is None:
+            return
+        found = self.cues.cues_for(self._track) or ()
+        if any(
+            is_memory_loop(c)
+            and c.end is not None
+            and abs(c.time * 1000 - start) < SAME_LOOP_MS
+            and abs(c.end * 1000 - end) < SAME_LOOP_MS
+            for c in found
+        ):
+            self.message.emit("This loop is saved already")
+        elif self._memory_places() >= MAX_MEMORY_CUES:
+            self.message.emit(
+                f"A track can have {MAX_MEMORY_CUES} memory cues and loops: delete one first"
+            )
+        else:
+            mine = self._lib.memory_loops(self._track.path)
+            self._lib.set_memory_loops(self._track.path, [*mine, (start, end, "")])
+            self._show_cues()
+            self.message.emit("Loop saved in Dubcrate (not in rekordbox)")
+
+    def _delete_memory_loop(self, start: int) -> bool:
+        """Delete the loop saved here that starts at `start` (ms). False: there is none."""
+        mine = self._lib.memory_loops(self._track.path)
+        kept = [m for m in mine if abs(m[0] - start) > 1]
+        if len(kept) == len(mine):
+            return False
+        self._lib.set_memory_loops(self._track.path, kept)
+        self._show_cues()
+        return True
 
     def _save_memory(self, cues: list[tuple[int, str]]) -> None:
         self._lib.set_memory_cues(self._track.path, cues)
@@ -290,41 +344,65 @@ class PreviewController(QObject):
         self.editor.saved(self._track)
 
     def memory_add(self) -> None:
-        """MEMORY: a memory cue at the playhead (on the nearest beat with quantise on)."""
+        """MEMORY: a memory cue at the playhead (on the nearest beat with quantise on), or, with a loop on,
+        a memory loop of that loop."""
+        loop = self._loop_to_save()
+        if loop is not None:
+            return self._memory_loop_add(*loop)
         current = self._memory_cues()
         if current is None:
             return
         ms = round(self.deck.snap(self.player.position) * 1000)
         if any(abs(ms - other) < SAME_MEMORY_MS for other, _ in current):
             self.message.emit("There is a memory cue here already")
-        elif len(current) >= MAX_MEMORY_CUES:
+        elif self._memory_places() >= MAX_MEMORY_CUES:
             self.message.emit(
-                f"A track can have {MAX_MEMORY_CUES} memory cues: delete one first"
+                f"A track can have {MAX_MEMORY_CUES} memory cues and loops: delete one first"
             )
         else:
             self._save_memory([*current, (ms, "")])
 
     def memory_delete(self, seconds: float) -> None:
-        """Delete the memory cue at `seconds` (a row's ✕)."""
-        current = self._memory_cues()
+        """Delete the memory cue (or a loop saved here) at `seconds` (a row's ✕)."""
+        current = self._memory_cues(ask=False)
         if current is None:
             return
         ms = round(seconds * 1000)
+        if not any(abs(m - ms) <= 1 for m, _ in current) and self._delete_memory_loop(
+            ms
+        ):
+            return
+        self.editor.allow(self._track)
         kept = [(m, label) for m, label in current if abs(m - ms) > 1]
         if len(kept) != len(current):
             self._save_memory(kept)
 
     def memory_delete_near(self) -> None:
-        """The ✕ by MEMORY: delete the memory cue nearest the playhead, if one is within a second of it."""
-        current = self._memory_cues()
+        """The ✕ by MEMORY: delete the memory cue nearest the playhead, if one is within a second of it. A loop
+        saved here that the playhead is inside, or starts within a second of it, goes first."""
+        current = self._memory_cues(ask=False)
         if current is None:
             return
         here = self.player.position
+        loops = self._lib.memory_loops(self._track.path)
+        inside = [m for m in loops if m[0] / 1000 <= here <= m[1] / 1000]
         near = min(current, key=lambda c: abs(c[0] / 1000 - here), default=None)
-        if near is None or abs(near[0] / 1000 - here) > NEAR_MEMORY_SECONDS:
-            self.message.emit("No memory cue near the playhead")
-            return
-        self._save_memory([c for c in current if c is not near])
+        cue_gap = abs(near[0] / 1000 - here) if near else None
+        loop_near = min(loops, key=lambda m: abs(m[0] / 1000 - here), default=None)
+        loop_gap = abs(loop_near[0] / 1000 - here) if loop_near else None
+        if inside and (cue_gap is None or cue_gap > NEAR_MEMORY_SECONDS):
+            self._delete_memory_loop(inside[0][0])
+        elif (
+            loop_gap is not None
+            and loop_gap <= NEAR_MEMORY_SECONDS
+            and (cue_gap is None or loop_gap < cue_gap)
+        ):
+            self._delete_memory_loop(loop_near[0])
+        elif near is None or cue_gap > NEAR_MEMORY_SECONDS:
+            self.message.emit("No memory cue or loop near the playhead")
+        else:
+            self.editor.allow(self._track)
+            self._save_memory([c for c in current if c is not near])
 
     def memory_move(self, seconds: float) -> None:
         """Move the memory cue at `seconds` to the playhead (on the nearest beat with quantise on)."""
@@ -374,10 +452,11 @@ class PreviewController(QObject):
         return added
 
     def memory_reset(self) -> None:
-        """Forget the edits: rekordbox's memory cues again."""
+        """Forget the edits: rekordbox's memory cues again, and the loops saved here are gone."""
         if self._track is None:
             return
         self._lib.clear_memory_cues(self._track.path)
+        self._lib.clear_memory_loops(self._track.path)
         self._show_cues()
 
     def beat_jump(self, direction: int) -> None:
@@ -427,7 +506,9 @@ class PreviewController(QObject):
         found = self.cues.cues_for(self._track)
         if found is None:
             return  # (rekordbox's are still being read)
-        edited = self._lib.memory_cues(self._track.path) is not None
+        edited = self._lib.memory_cues(self._track.path) is not None or bool(
+            self._lib.memory_loops(self._track.path)
+        )
         cues = tuple(found)
         if not cues and not edited and self._analysis is not None:
             cues = tuple(

@@ -8,7 +8,8 @@ bordered frame like the other two pages.
 
 The Memory page is also where **memory cues are edited** (the rekordbox library itself is never written): a row's ✕
 deletes it, right-click moves it to the playhead, and an edited track says so with a **Reset** that goes back to
-rekordbox's. Hot cues and memory loops are rekordbox's and are only shown.
+rekordbox's. A **memory loop saved in Dubcrate** (MEMORY with a loop on) is listed with its ✕ too (no move); hot
+cues and rekordbox's own loops are only shown.
 """
 
 from PySide6.QtCore import QRectF, Qt, Signal
@@ -39,7 +40,8 @@ HOT_SLOTS = 8  # A to H
 TIME_ROLE = Qt.ItemDataRole.UserRole + 40
 DELETABLE_ROLE = (
     Qt.ItemDataRole.UserRole + 41
-)  # a plain memory cue: one that can be edited here
+)  # a memory cue or a loop saved here: one that can be deleted here
+MOVABLE_ROLE = Qt.ItemDataRole.UserRole + 42  # a plain memory cue (a loop has no move)
 
 
 def cue_clock(seconds: float) -> str:
@@ -293,14 +295,17 @@ class SidePanel(QWidget):
         for cue in sorted((c for c in cues if c.slot is None), key=lambda c: c.time):
             text = cue_clock(cue.time)
             plain = cue.kind == "memory"
+            deletable = plain or cue.local
             if cue.kind == "loop" and cue.end:
                 text += f"  →  {cue_clock(cue.end)}"
-            item = QTreeWidgetItem([text, "✕" if plain else ""])
+            item = QTreeWidgetItem([text, "✕" if deletable else ""])
             item.setData(0, TIME_ROLE, cue.time)
-            item.setData(0, DELETABLE_ROLE, plain)
+            item.setData(0, DELETABLE_ROLE, deletable)
+            item.setData(0, MOVABLE_ROLE, plain)
             item.setTextAlignment(1, Qt.AlignmentFlag.AlignCenter)
-            if plain:
-                item.setToolTip(1, "Delete this memory cue (rekordbox is not changed)")
+            if deletable:
+                what = "memory cue" if plain else "loop"
+                item.setToolTip(1, f"Delete this {what} (rekordbox is not changed)")
             self.memory.addTopLevelItem(item)
         self.hot.clear()
         by_slot = {c.slot: c for c in cues if c.slot}
@@ -328,15 +333,16 @@ class SidePanel(QWidget):
         self.jump_requested.emit(float(seconds))
 
     def memory_menu(self, item: QTreeWidgetItem | None) -> QMenu:
-        """The right-click menu of the Memory list: move to the playhead and delete (a plain memory cue only), and
-        Reset when the track's memory cues are edited."""
+        """The right-click menu of the Memory list: move to the playhead (a plain memory cue only) and delete (a
+        memory cue or a loop saved here), and Reset when the track's memory cues or loops are edited."""
         menu = QMenu(self)
         seconds = item.data(0, TIME_ROLE) if item is not None else None
         if seconds is not None and item.data(0, DELETABLE_ROLE):
-            move = menu.addAction("Move to Playhead")
-            move.triggered.connect(
-                lambda: self.memory_move_requested.emit(float(seconds))
-            )
+            if item.data(0, MOVABLE_ROLE):
+                move = menu.addAction("Move to Playhead")
+                move.triggered.connect(
+                    lambda: self.memory_move_requested.emit(float(seconds))
+                )
             delete = menu.addAction("Delete")
             delete.triggered.connect(
                 lambda: self.memory_delete_requested.emit(float(seconds))

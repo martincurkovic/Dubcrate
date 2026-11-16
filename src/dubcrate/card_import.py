@@ -26,7 +26,7 @@ from dubcrate.analysis import Cue
 from dubcrate.card_discs import DiscSurvey, RekordboxCues
 from dubcrate.card_sync import DUPLICATE_FRAMES
 from dubcrate.library import Library
-from dubcrate.library.cue_edits import MAX_MEMORY_CUES, memory_list
+from dubcrate.library.cue_edits import MAX_MEMORY_CUES, memory_count
 from dubcrate.library.models import Track
 
 
@@ -154,7 +154,7 @@ def survey_new_cues(
             wanted = found.by_track.get(e.position + 1)
             if not wanted:
                 continue
-            room = max(0, MAX_MEMORY_CUES - len(memory_list(known[e.position + 1])))
+            room = max(0, MAX_MEMORY_CUES - memory_count(known[e.position + 1]))
             finding.tracks.append(
                 TrackFinding(
                     e.track,

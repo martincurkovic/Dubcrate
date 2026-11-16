@@ -106,7 +106,10 @@
 - [ ] Try Import Cues… with cues really set on the player; then decide whether moves and deletions on the player should be noticed (needs a baseline saved at sync time: the card's cues after each sync) and whether the player's hot cues should come back as memory cues (`dev_docs/card-sync.md`, "Importing cues from the card").
 - [x] Right-click a card in the Sync tab's list: **Import Cues from “NAME”…** beside Sync and Eject (the button in the discs panel is the only way now).
 - [x] Write the edits that are waiting in Dubcrate (made while rekordbox was open, or before editing was allowed) in one go from the app: File > Save Waiting Memory Cue Edits to rekordbox (not tried live).
-- [ ] Hot cues and loops: edit them in the player and write them to rekordbox (`dev_docs/rekordbox-cue-writes.md` has the `Kind` numbers; only memory cues are written so far).
+- [x] Save memory loops in Dubcrate: MEMORY with a loop on (`memory_loop` table; shown in the player, on the card as memory loops, counted in the ten; not written to rekordbox).
+- [ ] Try memory loops by hand: set a loop, press MEMORY, check the Memory tab row and ✕, sync to the card and see the loop on the player.
+- [ ] Make three memory loops in rekordbox (different sizes, one named) and run `spikes/rekordbox_loop_rows.py --title TRACK`, so the writer can copy real rows (`dev_docs/rekordbox-cue-writes.md`, "Memory loops"); then write loops to rekordbox.
+- [ ] Hot cues and loops: edit hot cues in the player and write them to rekordbox (`dev_docs/rekordbox-cue-writes.md` has the `Kind` numbers; only memory cues are written so far).
 
 ### Linux and Windows
 

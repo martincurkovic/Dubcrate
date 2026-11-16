@@ -393,7 +393,7 @@ def test_the_x_by_memory_deletes_the_one_near_the_playhead_and_says_when_there_i
     rig.strip.memory_delete_button.click()
     assert (
         stored(rig) == [(5000, "")]
-        and rig.messages[-1] == "No memory cue near the playhead"
+        and rig.messages[-1] == "No memory cue or loop near the playhead"
     )
     at(rig, 5.6)
     rig.strip.memory_delete_button.click()
@@ -476,3 +476,125 @@ def test_hot_cues_and_loops_stay_rekordboxs_whatever_is_edited(rig, monkeypatch)
         30.0,
     ]  # (the memory loop is listed, and unchanged)
     assert rig.strip._hot_times == {1: 20.0} and rig.strip.hot_buttons[0].isEnabled()
+
+
+# -- memory loops: MEMORY with a loop on ------------------------------------------------------------
+
+
+def saved_loops(rig):
+    return rig.lib.memory_loops(rig.c.track.path)
+
+
+def loop_on(rig, start=4.0):
+    at(rig, start)
+    rig.strip.loop_size.click()  # (an auto loop from here)
+    assert rig.c.deck.loop_active
+    return rig.c.deck.loop
+
+
+def test_memory_with_a_loop_on_saves_a_memory_loop_and_the_loop_stays_on(rig):
+    start, end = loop_on(rig)
+    rig.strip.memory_button.click()
+    assert saved_loops(rig) == [(round(start * 1000), round(end * 1000), "")]
+    assert (
+        stored(rig) is None
+    )  # (no memory cue was made, and rekordbox's cues are not an edit)
+    assert rig.c.deck.loop_active and rig.player.looping
+    assert [(c.kind, c.local) for c in rig.strip._cues if c.kind == "loop"] == [("loop", True)]  # fmt: skip
+    assert rig.strip.side.edited_row.isVisibleTo(rig.strip.side)
+    assert "Dubcrate" in rig.messages[-1]
+
+
+def test_memory_with_no_loop_on_is_still_a_memory_cue_even_if_a_loop_was_set(rig):
+    loop_on(rig)
+    rig.strip.loop_size.click()  # (leave it: a loop that is off is a gesture, not something to save)
+    at(rig, 12.5)
+    rig.strip.memory_button.click()
+    assert stored(rig) == [(12500, "")] and saved_loops(rig) == []
+
+
+def test_the_same_loop_twice_is_said_and_saved_once(rig):
+    loop_on(rig)
+    rig.strip.memory_button.click()
+    rig.strip.memory_button.click()
+    assert (
+        len(saved_loops(rig)) == 1 and rig.messages[-1] == "This loop is saved already"
+    )
+
+
+def test_a_loop_counts_towards_the_ten_memory_places(rig):
+    for n in range(9):
+        at(rig, float(n * 2 + 1))
+        rig.strip.memory_button.click()
+    loop_on(rig, 20.0)
+    rig.strip.memory_button.click()
+    assert len(saved_loops(rig)) == 1  # (the tenth place)
+    rig.strip.loop_size.click()
+    at(rig, 27.0)
+    rig.strip.memory_button.click()
+    assert len(stored(rig)) == 9 and "10 memory cues and loops" in rig.messages[-1]
+    loop_on(rig, 24.0)
+    rig.strip.memory_button.click()
+    assert len(saved_loops(rig)) == 1 and "10 memory cues and loops" in rig.messages[-1]
+
+
+def test_saving_a_loop_never_asks_about_or_queues_a_rekordbox_write(rig, monkeypatch):
+    calls = []
+    monkeypatch.setattr(rig.c.editor, "allow", lambda track: calls.append("allow"))
+    monkeypatch.setattr(rig.c.editor, "saved", lambda track: calls.append("saved"))
+    loop_on(rig)
+    rig.strip.memory_button.click()
+    assert saved_loops(rig) and calls == []
+
+
+def test_a_saved_loop_has_a_row_with_x_but_no_move_and_the_x_deletes_it(rig):
+    loop_on(rig)
+    rig.strip.memory_button.click()
+    side = rig.strip.side
+    row = side.memory.topLevelItem(0)
+    assert row.text(1) == "✕"
+    assert [a.text() for a in side.memory_menu(row).actions() if a.text()] == ["Delete", "Reset to rekordbox's"]  # fmt: skip
+    side._clicked(row, 1)
+    assert saved_loops(rig) == [] and memory_times(rig) == []
+
+
+def test_the_x_by_memory_deletes_a_loop_the_playhead_is_inside_or_next_to(rig):
+    loop_on(
+        rig, 4.0
+    )  # 4.0 to 6.0 s at 4 beats of 120 bpm... whatever the size, it is saved
+    rig.strip.memory_button.click()
+    start, end = saved_loops(rig)[0][:2]
+    rig.strip.loop_size.click()  # (leave the loop)
+    at(rig, (start + end) / 2000)
+    rig.strip.memory_delete_button.click()
+    assert saved_loops(rig) == []
+    rig.lib.set_memory_loops(rig.c.track.path, [(10_000, 12_000, "")])
+    at(rig, 10.4)  # (near its start)
+    rig.strip.memory_delete_button.click()
+    assert saved_loops(rig) == []
+    at(rig, 25.0)
+    rig.strip.memory_delete_button.click()
+    assert rig.messages[-1] == "No memory cue or loop near the playhead"
+
+
+def test_reset_forgets_saved_loops_too(rig):
+    loop_on(rig)
+    rig.strip.memory_button.click()
+    rig.strip.side.reset_button.click()
+    assert saved_loops(rig) == [] and not rig.strip.side.edited_row.isVisibleTo(rig.strip.side)  # fmt: skip
+
+
+def test_a_loop_saved_here_is_added_to_rekordboxs_loops_not_in_place_of_them(
+    rig, monkeypatch
+):
+    from dubcrate.analysis import Cue
+
+    rekordbox = [Cue("loop", 20.0, end=22.0), Cue("loop", 25.0, end=26.0, slot=4)]
+    monkeypatch.setattr(
+        rig.c.cues, "_rekordbox_cues", lambda track, announce: rekordbox
+    )
+    loop_on(rig, 4.0)
+    rig.strip.memory_button.click()
+    loops = [c for c in rig.strip._cues if c.kind == "loop"]
+    assert sum(c.local for c in loops) == 1 and len(loops) == 3
+    assert sorted(c.time for c in loops if not c.local) == [20.0, 25.0]

@@ -34,6 +34,7 @@ class Cue:
     end: float | None = None  # a loop's end
     slot: int | None = None  # a hot cue's number, 1 = A
     label: str = ""
+    local: bool = False  # a memory loop saved in Dubcrate (not rekordbox's): it can be deleted in the player
 
 
 @dataclass(frozen=True)

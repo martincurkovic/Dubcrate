@@ -308,10 +308,24 @@ CREATE TABLE memory_cue (
 CREATE INDEX memory_cue_path ON memory_cue (path_key)
 """
 
+# Memory loops saved in Dubcrate (MEMORY pressed with a loop on). Kept apart from `memory_cue` on purpose: they
+# are added to a track's cues, never replace rekordbox's loops, and are not written to rekordbox (yet), so
+# nothing that reads `memory_cue` can send one there as a plain cue. Keyed by `path_key` like the cues.
+_SCHEMA_V14 = """
+CREATE TABLE memory_loop (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    path_key TEXT NOT NULL,
+    start_ms INTEGER NOT NULL,
+    end_ms INTEGER NOT NULL,
+    label TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX memory_loop_path ON memory_loop (path_key)
+"""
+
 _MIGRATIONS = (
     _SCHEMA_V1, _SCHEMA_V2, _SCHEMA_V3, _SCHEMA_V4, _SCHEMA_V5, _migrate_to_v6,
     _SCHEMA_V7, _SCHEMA_V8, _SCHEMA_V9, _SCHEMA_V10, _SCHEMA_V11, _SCHEMA_V12,
-    _SCHEMA_V13,
+    _SCHEMA_V13, _SCHEMA_V14,
 )  # fmt: skip
 
 MAX_CACHED_PREVIEWS = 20_000  # about 40 MB; past it the oldest are forgotten
@@ -931,6 +945,38 @@ class Library:
         ):
             found.setdefault(row["path_key"], []).append((row["time_ms"], row["label"]))
         return found
+
+    # -- memory loops saved in Dubcrate ------------------------------------------------
+
+    def memory_loops(self, path: str) -> list[tuple[int, int, str]]:
+        """The memory loops saved here for the file at `path` as (start ms, end ms, label), in time order."""
+        rows = self._conn.execute(
+            "SELECT start_ms, end_ms, label FROM memory_loop WHERE path_key = ? ORDER BY start_ms, id",
+            (path_key(path),),
+        ).fetchall()
+        return [(r["start_ms"], r["end_ms"], r["label"]) for r in rows]
+
+    def set_memory_loops(
+        self, path: str, loops: Iterable[tuple[int, int, str]]
+    ) -> None:
+        """Make these (start ms, end ms, label) the file's saved memory loops. A loop has to end after it
+        starts (others are dropped) and the same start and end is kept once."""
+        key = path_key(path)
+        unique: dict[tuple[int, int], str] = {}
+        for start, end, label in loops:
+            start = max(0, int(start))
+            if int(end) > start:
+                unique.setdefault((start, int(end)), label)
+        with self._conn:
+            self._conn.execute("DELETE FROM memory_loop WHERE path_key = ?", (key,))
+            self._conn.executemany(
+                "INSERT INTO memory_loop (path_key, start_ms, end_ms, label) VALUES (?, ?, ?, ?)",
+                [(key, s, e, label) for (s, e), label in sorted(unique.items())],
+            )
+
+    def clear_memory_loops(self, path: str) -> None:
+        """Forget the file's saved memory loops."""
+        self.set_memory_loops(path, [])
 
     def previews_for(self, tracks: Iterable[Track]) -> dict[int, Waveform]:
         """The kept Preview waveform of each of these tracks that has one, by track id. A track whose

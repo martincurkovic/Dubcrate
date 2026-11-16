@@ -8,6 +8,8 @@ from dubcrate.library import Library, TrackRecord
 from dubcrate.library.cue_edits import (
     MAX_MEMORY_CUES,
     is_memory,
+    is_memory_loop,
+    memory_count,
     memory_list,
     with_edits,
 )
@@ -125,3 +127,66 @@ def test_sync_writes_the_edited_memory_cues_to_the_card(lib):
     lib.set_memory_cues(first.path, [(15_000, "")])
     found = card_discs.prepare_disc(lib, disc, card_discs.RekordboxCues(lib))
     assert [(c.track, c.position) for c in found.request.wanted] == [(1, 150 + 15 * 75)]
+
+
+# -- memory loops saved in Dubcrate ------------------------------------------------------------
+
+
+def test_saved_loops_are_kept_in_time_order_once_each_and_only_if_they_end_after_they_start(
+    lib,
+):
+    track = one_track(lib)
+    assert lib.memory_loops(track.path) == []
+    lib.set_memory_loops(track.path, [(9000, 12000, "b"), (1000, 3000, "a"), (9000, 12000, "dup"), (5000, 5000, "empty"), (7000, 6000, "back"), (-5, 500, "early")])  # fmt: skip
+    assert lib.memory_loops(track.path) == [(0, 500, "early"), (1000, 3000, "a"), (9000, 12000, "b")]  # fmt: skip
+    lib.clear_memory_loops(track.path)
+    assert lib.memory_loops(track.path) == []
+
+
+def test_saved_loops_are_added_and_leave_rekordboxs_loops_and_memory_cues_alone(lib):
+    track = one_track(lib)
+    lib.set_memory_loops(track.path, [(10_000, 14_000, "mine")])
+    layered = with_edits(lib, track, RK)
+    assert layered != list(RK) and len(layered) == len(RK) + 1
+    assert [c for c in layered if not c.local] == sorted(RK, key=lambda c: c.time)  # (rekordbox's, all of them)  # fmt: skip
+    [mine] = [c for c in layered if c.local]
+    assert (mine.kind, mine.time, mine.end, mine.slot, mine.label) == ("loop", 10.0, 14.0, None, "mine")  # fmt: skip
+    assert (
+        lib.memory_cues(track.path) is None
+    )  # (saving a loop is not a memory cue edit)
+
+
+def test_saved_loops_and_edited_memory_cues_work_together(lib):
+    track = one_track(lib)
+    lib.set_memory_cues(track.path, [(2000, "")])
+    lib.set_memory_loops(track.path, [(10_000, 14_000, "")])
+    kinds = [(c.kind, c.local) for c in with_edits(lib, track, RK)]
+    assert kinds.count(("memory", False)) == 1 and kinds.count(("loop", True)) == 1
+    assert kinds.count(("loop", False)) == 1  # (rekordbox's own loop stays)
+
+
+def test_a_saved_loop_rekordbox_has_by_now_is_not_shown_twice(lib):
+    track = one_track(lib)
+    lib.set_memory_loops(track.path, [(60_010, 64_000, "")])
+    assert with_edits(lib, track, RK) == sorted(RK, key=lambda c: c.time)
+
+
+def test_loops_belong_to_the_file_like_memory_cues(lib):
+    track = one_track(lib, "/m/Café.mp3")
+    lib.set_memory_loops(track.path, [(1000, 2000, "")])
+    assert lib.memory_loops("/M/CAFÉ.MP3") == [(1000, 2000, "")]
+
+
+def test_memory_count_counts_cues_and_memory_loops_but_not_hot_cues_or_hot_loops():
+    cues = [Cue("memory", 1.0), Cue("loop", 2.0, end=3.0), Cue("hot", 4.0, slot=1), Cue("loop", 5.0, end=6.0, slot=2)]  # fmt: skip
+    assert memory_count(cues) == 2
+    assert is_memory_loop(cues[1]) and not is_memory_loop(cues[3])
+
+
+def test_the_rekordbox_writer_is_never_handed_a_saved_loop(lib):
+    """The writer's input is `memory_cue_sets()`: loops are kept in another table, so one cannot be written as a cue."""
+    track = one_track(lib)
+    lib.set_memory_loops(track.path, [(1000, 2000, "")])
+    assert lib.memory_cue_sets() == {}
+    lib.set_memory_cues(track.path, [(5000, "")])
+    assert list(lib.memory_cue_sets().values()) == [[(5000, "")]]

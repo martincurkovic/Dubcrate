@@ -324,7 +324,10 @@ def test_an_opus_file_ffmpeg_wrote_with_a_picture_comment_is_read_back(tmp_path)
     big = b"\x89PNG\r\n\x1a\n" + bytes(range(256)) * 800  # (several Ogg pages)
     comment = base64.b64encode(flac_picture(big)).decode()
     out = tmp_path / "a.opus"
-    done = ffmpeg("-f", "lavfi", "-i", "sine=frequency=440:duration=1", "-c:a", "libopus", "-metadata", f"METADATA_BLOCK_PICTURE={comment}", str(out))  # fmt: skip
+    # (through a metadata file: one command-line argument is capped at 128 KiB on Linux, and this one is bigger)
+    meta = tmp_path / "meta.txt"
+    meta.write_text(f";FFMETADATA1\nMETADATA_BLOCK_PICTURE={comment.replace('=', chr(92) + '=')}\n", encoding="utf-8")  # fmt: skip
+    done = ffmpeg("-f", "lavfi", "-i", "sine=frequency=440:duration=1", "-i", str(meta), "-map", "0:a", "-map_metadata", "1", "-c:a", "libopus", str(out))  # fmt: skip
     if done.returncode != 0 or not out.exists():
         pytest.skip(f"this ffmpeg can't write Opus: {done.stderr.strip()[:80]}")
     assert read_artwork(out) == big

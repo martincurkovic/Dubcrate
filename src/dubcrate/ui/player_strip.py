@@ -268,8 +268,8 @@ class PlayerStrip(QWidget):
         )
         self.memory_button.setEnabled(False)
         self.memory_button.setToolTip(
-            "Add a memory cue at the playhead (on the nearest beat with Q on). "
-            + KEPT_HERE
+            "Add a memory cue at the playhead (on the nearest beat with Q on); with a loop on, "
+            "save that loop as a memory loop. " + KEPT_HERE
         )
         self.memory_button.clicked.connect(self.memory_add_requested)
         self.memory_back_button = PillButton("◀", width=30, height=ROW_HEIGHT)
@@ -277,7 +277,7 @@ class PlayerStrip(QWidget):
         self.memory_delete_button = PillButton("✕", width=30, height=ROW_HEIGHT)
         self.memory_delete_button.setEnabled(False)
         self.memory_delete_button.setToolTip(
-            "Delete the memory cue at the playhead. " + KEPT_HERE
+            "Delete the memory cue (or a loop saved here) at the playhead. " + KEPT_HERE
         )
         self.memory_delete_button.clicked.connect(self.memory_delete_requested)
         self.memory_back_button.setToolTip("Jump to the memory cue before this point")
