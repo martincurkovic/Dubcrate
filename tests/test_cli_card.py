@@ -137,6 +137,12 @@ def test_sync_with_yes_backs_up_then_writes_and_a_second_run_has_nothing_to_do(
         (12, True),
     ]
     assert written.hot_cues == [None, None, None]  # a hot cue becomes a memory cue
+    with Library.open(
+        db
+    ) as lib:  # (what the card holds now is recorded for Import Cues)
+        key = written.disc_id.key
+        baseline = lib.card_baseline(key)
+    assert baseline is not None and [(t, e > 0) for t, _p, e in baseline] == [(1, False), (1, False), (12, True)]  # fmt: skip
 
     capsys.readouterr()
     assert (

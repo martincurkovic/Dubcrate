@@ -406,6 +406,21 @@ def card_files(card):
     }
 
 
+def test_a_sync_records_what_the_card_holds_as_each_discs_baseline(writing):
+    surveys = list(writing.view._surveys.values())
+    keys = [s.input.request.disc_id.key for s in surveys]
+    assert all(writing.lib.card_baseline(k) is None for k in keys)
+    writing.view.sync_button.click()
+    assert writing.finished()
+    by_name = {s.disc.name: writing.lib.card_baseline(s.input.request.disc_id.key) for s in surveys}  # fmt: skip
+    assert [len(by_name["A"]), len(by_name["B"])] == [
+        2,
+        1,
+    ]  # (the cues wanted: a memory cue and a hot cue; a loop)
+    loop = by_name["B"][0]
+    assert loop[2] > loop[1]  # (a loop keeps its end)
+
+
 def test_the_sync_button_is_on_when_the_switch_is_and_discs_are_ticked(writing):
     assert (
         writing.view.sync_button.isEnabled()

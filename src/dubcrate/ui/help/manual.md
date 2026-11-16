@@ -427,11 +427,17 @@ Two discs whose tracks are exactly the same lengths would look like the same dis
 
 ![The review of memory cues found on the card: ticked per disc, track and cue](screenshots/card-import.png "Import Cues…")
 
-**Bringing cues back from the card.** Memory cues you set on the player itself are on the card, and **Import Cues…** (beside **Measure Lengths**) brings them back. It looks at every disc of yours that is on the card and lists the memory cues that Dubcrate doesn't already have, track by track, all ticked: untick any you don't want, then press **Import**. They become memory cues in Dubcrate, and in rekordbox too if you have allowed that (**Settings > Library**; rekordbox must be closed for that part, otherwise they wait in Dubcrate). Things to know:
+**Bringing changes back from the card.** What you do on the player itself ends up on the card: cues and loops you set, and cues you delete or move. **Import Cues…** (beside **Measure Lengths**) brings them back. It looks at every disc of yours that is on the card and lists, track by track, what Dubcrate doesn't have: untick any you don't want (a disc, a track or one change), then press **Import**. New cues and loops become **memory cues and loops in Dubcrate**, and in rekordbox too if you have allowed that (**Settings > Library**; rekordbox must be closed for that part, otherwise they wait in Dubcrate). The review lists:
 
-- **Only new memory cues are imported.** A cue Dubcrate put on the card (from rekordbox, hot cues and loops included) is recognised by its place and is not offered again. Loops and the player's three hot cue buttons are not imported (the review says how many there were).
-- **Moves and deletions on the player are not noticed.** A cue you moved on the player shows up as a new one beside the old one (delete the old one in the player), and a cue you deleted on the player stays where it is in Dubcrate and rekordbox. Nothing is ever removed by an import.
-- A track keeps at most **ten** memory cues and loops together; if more are new, the earliest fit and the review says how many were left out.
+- **New memory cues** and **new loops** you set on the player. A cue Dubcrate put on the card (from rekordbox, hot cues and loops included) is recognised by its place and is not offered again.
+- **Hot cues** you set on the player's three hot cue buttons, as memory cues. These are **not ticked**: tick the ones you want.
+- **Deleted on the player**: a cue Dubcrate put on the card at the last sync that you then deleted there. Ticking it deletes that memory cue in Dubcrate (and in rekordbox, if you have allowed that). Only a **memory cue**, or a loop you saved in Dubcrate that rekordbox doesn't have yet, can be deleted this way; a deleted hot cue or a loop that is in rekordbox is left alone (the review says how many).
+- **Moved on the player**: when a track has as many deleted cues as new ones, they are shown as moves (the old time, then the new). A move is a deletion and an addition, and ticking it does both.
+
+Things to know:
+
+- **Deletions and moves are noticed from the next sync on.** Each sync records what it left on the card, and the review compares the card with that. A disc that has not been synced since this was added shows only new things, and says so. If you delete a cue in Dubcrate or move it there after a sync, it is not offered back as new.
+- A track keeps at most **ten** memory cues and loops together; if more are new, the earliest fit and the review says how many were left out. A deletion makes room.
 - It only reads the card; nothing on it changes. This is new and has not been tried with cues set on a real player.
 
 ### Setting up a blank card

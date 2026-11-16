@@ -11,6 +11,7 @@ from dubcrate.artwork import read_artwork
 from dubcrate.audio.decode import DecodedAudio, decode_file
 from dubcrate.audio.player import AudioPlayer
 from dubcrate.beatjump import jump_time
+from dubcrate.card_import import ImportChoice, ImportResult
 from dubcrate.deck import Deck
 from dubcrate.library import Library
 from dubcrate.library.cue_edits import (
@@ -427,36 +428,85 @@ class PreviewController(QObject):
             return
         self._save_memory([*rest, (target, moving[0][1])])
 
-    def import_memory(self, items: list[tuple[Track, list[int]]]) -> int | None:
-        """Add memory cues set on the player (the card's, `card_import`) to tracks: `items` are (track, new times in
-        milliseconds). They are saved like any edit (Dubcrate's own table, then rekordbox if that is allowed; the
-        question is asked once if it hasn't been). Returns how many were added, or None if rekordbox's cues are
-        still being read (nothing is changed then, so no cue is dropped)."""
+    def import_memory(self, choices: list[ImportChoice]) -> ImportResult | None:
+        """Bring changes from the card (`card_import`, ticked in the review) into tracks' memory cues and loops: cues
+        and loops set on the player are added (two cues within 50 ms are one, ten memory cues and loops at most),
+        and cues deleted on the player are deleted (a memory cue, or a loop saved in Dubcrate). They are saved like
+        any edit: Dubcrate's own tables, then rekordbox if that is allowed (the question is asked once if it hasn't
+        been). Returns what was done, or None if rekordbox's cues are still being read (nothing is changed then, so
+        no cue is dropped)."""
         current = []
-        for track, _ in items:
-            found = self.cues.cues_for(track)
+        for choice in choices:
+            found = self.cues.cues_for(choice.track)
             if found is None:
                 self.message.emit(
                     "rekordbox's cues are still being read: try again in a moment"
                 )
                 return None
-            current.append(memory_list(found))
-        added = 0
-        for (track, times), have in zip(items, current, strict=True):
-            merged = list(have)
-            for ms in times:
-                if len(merged) >= MAX_MEMORY_CUES:
-                    break
-                if all(abs(ms - other) >= SAME_MEMORY_MS for other, _ in merged):
-                    merged.append((ms, ""))
-                    added += 1
-            if merged == have:
+            current.append(found)
+        result = ImportResult()
+        for choice, found in zip(choices, current, strict=True):
+            track = choice.track
+            cues = memory_list(found)
+            loops = self._lib.memory_loops(track.path)
+            before_cues, before_loops = list(cues), list(loops)
+            used = memory_count(found)
+            for ms in choice.remove:  # deleted on the player
+                hit = next((c for c in cues if abs(c[0] - ms) <= 1), None)
+                if hit is not None:
+                    cues.remove(hit)
+                    used -= 1
+                    result.removed += 1
+            for start, end in choice.remove_loops:
+                hit = next(
+                    (
+                        m
+                        for m in loops
+                        if abs(m[0] - start) <= 1 and abs(m[1] - end) <= 1
+                    ),
+                    None,
+                )
+                if hit is not None:
+                    loops.remove(hit)
+                    used -= 1
+                    result.removed += 1
+            for ms in choice.add:  # set on the player
+                if any(abs(ms - other) < SAME_MEMORY_MS for other, _ in cues):
+                    continue
+                if used >= MAX_MEMORY_CUES:
+                    result.left_out += 1
+                    continue
+                cues.append((ms, ""))
+                used += 1
+                result.added += 1
+            for start, end in choice.loops:
+                if any(
+                    is_memory_loop(c)
+                    and c.end is not None
+                    and abs(c.time * 1000 - start) < SAME_LOOP_MS
+                    and abs(c.end * 1000 - end) < SAME_LOOP_MS
+                    for c in found
+                ) or any(
+                    abs(s - start) < SAME_LOOP_MS and abs(e - end) < SAME_LOOP_MS
+                    for s, e, _ in loops
+                ):
+                    continue
+                if used >= MAX_MEMORY_CUES:
+                    result.left_out += 1
+                    continue
+                loops.append((start, end, ""))
+                used += 1
+                result.loops += 1
+            if cues == before_cues and loops == before_loops:
                 continue
             self.editor.allow(track)  # asks the first time a rekordbox track is edited
-            self._lib.set_memory_cues(track.path, sorted(merged))
+            if cues != before_cues:
+                self._lib.set_memory_cues(track.path, sorted(cues))
+            if loops != before_loops:
+                self._lib.set_memory_loops(track.path, sorted(loops))
             self.editor.saved(track)
         self._show_cues()
-        return added
+        return result
 
     def memory_reset(self) -> None:
         """Forget the edits: rekordbox's memory cues again, and the loops saved here are gone."""

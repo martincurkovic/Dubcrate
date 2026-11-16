@@ -1888,15 +1888,12 @@ class MainWindow(QMainWindow):
             settings.get_beat_jump()
         )  # (it may have been changed there)
 
-    def _import_card_cues(self, items: list) -> None:
-        """Memory cues picked from the card (Sync > Import Cues…) become memory cues in Dubcrate (and rekordbox)."""
-        added = self.preview.import_memory(items)
-        if added is None:
+    def _import_card_cues(self, choices: list) -> None:
+        """What was ticked in Sync > Import Cues… becomes memory cues and loops in Dubcrate (and rekordbox)."""
+        result = self.preview.import_memory(choices)
+        if result is None:
             return
-        self.statusBar().showMessage(
-            f"Imported {added} memory cue{'s' if added != 1 else ''} from the card",
-            8000,
-        )
+        self.statusBar().showMessage(result.summary(), 8000)
         self.sync_view.refresh()
 
     def _load_dropped_track(self, track_id: int) -> None:

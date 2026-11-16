@@ -279,30 +279,45 @@ down**; the card's waveform is written for every track of a disc so the player n
   tab on a real card, a Dubcrate-burned disc whose ID the burn check has confirmed, and the player loading a disc synced this way (the player did accept
   records written by `wave_model.records` in the write test).
 
-## Importing cues from the card (built 2026-11-15; `card_import.py`, Sync tab's **Import Cues…**)
+## Importing changes from the card (built 2026-11-15, extended 2026-11-16; `card_import.py`, Sync tab's **Import Cues…**)
 
-The reverse of Sync, for **memory cues set on the player**. `card_import.new_cues(file, starts, lead_out, known)` takes a disc's file from the
-card and the disc's TOC and returns the memory cues (a track and milliseconds into it: position minus the track's start, `map_cues` backwards)
-that no cue Dubcrate has for that track is within `DUPLICATE_FRAMES` of. "Dubcrate has" means `RekordboxCues.for_track`: rekordbox's memory cues,
-hot cues and loop starts, with memory cues edited in Dubcrate laid over (`cue_edits.with_edits`), so what Sync wrote from rekordbox (hot cues and
-loops as memory cues too) is never offered back. `survey_new_cues` maps the card onto the audio discs of the Sync tab (the card entry is found by
-the disc's ID, tracks are the disc's entries in order) and caps a track at `MAX_MEMORY_CUES` (ten).
+The reverse of Sync. `card_import.changes_on_card(file, starts, lead_out, known, baseline)` compares a disc's file on the card (with the disc's TOC) with
+what Dubcrate has for each track (`known`: `RekordboxCues.for_track`, rekordbox's cues with the memory cues **and loops** edited or saved in Dubcrate
+laid over, `cue_edits.with_edits`) and with the **baseline**. It returns typed `Row`s per track (a card position is converted to milliseconds into its track,
+`map_cues` backwards; a cue is placed by its position when the track it names is wrong):
 
-- **Additions only**, on purpose: there is **no baseline** of what a sync wrote, so a cue deleted or moved on the player can't be told from one
-  rekordbox never had. A moved cue arrives as a new one beside the old; a deleted one is not deleted anywhere. Nothing is ever removed by an import.
-  A baseline (the card's cues after each sync, kept in Dubcrate's library per disc ID) would allow moves and deletions: **not built**, the owner has
-  not asked for it.
-- **Loops and the three player hot cues are counted, not imported** (memory loops are never written to rekordbox; hot cue slots are never touched).
-  A later option could turn the player's hot cues into memory cues.
-- A cue the user imports and later deletes in Dubcrate or rekordbox is offered again at the next import (nothing remembers a refusal).
-- **The flow:** `SyncView.import_from_card` (reads nothing new from the card: the surveys already hold it) opens the review
-  (`ui/card_import_dialog.py`, ticks per disc / track / cue), `cues_chosen` -> `MainWindow._import_card_cues` -> `PreviewController.import_memory`:
-  the chosen times join the track's memory cues (rekordbox's, with Dubcrate's edits; refused while rekordbox's are still being read, so none is dropped;
-  two cues within 50 ms are one; ten at most), are saved into Dubcrate's table and handed to `RekordboxEditor` like any edit, so they reach rekordbox
-  if the user allowed that, and the Sync list is looked at again.
-- Tests: `tests/test_card_import.py` (the pure half and the library half), `tests/test_ui_card_import.py` (the review, the button, `import_memory`).
-  **Not tried with cues set on a real player**: how the player stores a cue set while a track is cued, a cue's rounding to frames, and whether the
-  player ever rewrites the memory cues Dubcrate wrote are the open questions.
+| Row | Meaning | Ticked |
+|---|---|---|
+| `add` | a memory cue on the card, none of Dubcrate's cues or the baseline within `DUPLICATE_FRAMES` (2) of it | yes |
+| `loop` | a loop on the card with no known loop (or baseline loop) within 2 frames at both ends (a hot cue's loop counts as known: sync writes it as a memory loop) | yes |
+| `hot` | one of the player's three hot cues (a `HC11` slot), as a memory cue, if neither Dubcrate nor a card memory cue is there | **no** (opt in) |
+| `remove` | in the baseline, gone from the card, and Dubcrate has a **plain memory cue** there | yes |
+| `remove_loop` | in the baseline, gone from the card, and Dubcrate has a loop **saved in Dubcrate** (`Cue.local`: not in rekordbox yet) there | yes |
+| `move` / `move_loop` | a track with as many `remove`s as `add`s (or `remove_loop`s as `loop`s): paired in time order and shown as moves; **only a display**, a move is both | yes |
+
+**The baseline** (schema v15, `card_baseline` / `card_baseline_disc`, keyed by the disc's ID key = its TOC; `Library.card_baseline` / `set_card_baseline`): what a sync
+left on the card for the disc = the wanted cues less the overflow (`card_apply.baselines_of`, in `SyncOutcome.baselines`; **saved on the GUI thread** by
+`SyncView._confirm_and_write.done`, and by `dubcrate card sync --yes`). An empty list is a sync that left no cues; `None` is no sync recorded, and then only
+additions can be found. It does two jobs: a baseline cue that is gone from the card was **deleted on the player**; and a card cue that is in the baseline but
+that Dubcrate doesn't have any more was **deleted or moved in Dubcrate** after the sync, so it is **not offered back as new** (before the baseline it was).
+
+- **What can't be deleted:** a baseline cue gone from the card that is a hot cue of rekordbox's, a loop start, or one of rekordbox's loops (`Cue.local` False) is only
+  counted (`CardCues.kept`, said in the review): hot cues and rekordbox's own loops are never changed, and **a loop that has been written into rekordbox
+  becomes rekordbox's and can't be deleted from Dubcrate** (the known limit in `rekordbox-cue-writes.md`).
+- **One baseline per disc, not per card:** the cards have no ID of their own (a formatted card is always `DISK_IMG`). Syncing a disc to another card replaces its baseline.
+  A cue Dubcrate wanted that was already on the card is in the baseline too. After an import the baseline is not touched: a cue imported from the player is not in it
+  until the next sync, so deleting *that* cue on the player is not noticed until then (it would be, as a plain deletion, after a sync).
+- **The review** (`ui/card_import_dialog.py`: per disc, track and row, `ask_import` -> `[ImportChoice]`): `ImportChoice` has `add` (ms), `loops`, `remove`, `remove_loops`
+  (a move is a removal and an addition: `card_import.choice_from`). `SyncView.import_from_card` -> `cues_chosen` -> `MainWindow._import_card_cues` ->
+  `PreviewController.import_memory(choices)`: deletions first (a cue by its time, a loop by its ends, ±1 ms), then additions (two cues within 50 ms are one, a loop within
+  `SAME_LOOP_MS` of one is one, **ten memory cues and loops at most**, a deletion makes room), saved into Dubcrate's tables like any edit and handed to `RekordboxEditor`
+  (so they reach rekordbox if allowed). Returns an `ImportResult` (`summary()` is the status bar's line). It refuses while rekordbox's cues are being read, so none is dropped.
+- A cue the user imports and later deletes in Dubcrate or rekordbox is not offered again once a sync has recorded it (it was in the baseline); one imported from the player and
+  then deleted before any sync is offered again.
+- Tests: `tests/test_card_import.py` (the pure rows, the baseline, the library half, the store), `tests/test_ui_card_import.py` (the review, the button, `import_memory`),
+  `tests/test_card_apply.py` / `tests/test_ui_sync.py` / `tests/test_cli_card.py` (the baseline is recorded). **Not tried with cues set on a real player**: how the player
+  stores a cue set while a track is cued, a cue's rounding to frames, whether the player ever rewrites the cues Dubcrate wrote, and what a delete or a move on the player does to
+  the file (the "Deleting" item in `cdj1000mk3-card.md`, section 4, is still untried) are the open questions.
 
 ## Order of work
 

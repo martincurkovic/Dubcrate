@@ -572,22 +572,31 @@ def _settings_library(ctx):
 
 @shot(
     "card-import",
-    "Sync > Import Cues…: the review of memory cues set on the player (invented), over the Sync tab",
+    "Sync > Import Cues…: the review of what changed on the player (invented), over the Sync tab",
 )
 def _card_import(ctx):
     """The made-up tracks have no cues on a card, so the findings are invented from a disc's real tracks."""
-    from dubcrate.card_import import DiscFinding, TrackFinding
+    from dubcrate.card_import import (
+        ADD,
+        HOT,
+        LOOP,
+        MOVE,
+        REMOVE,
+        DiscFinding,
+        Row,
+        TrackFinding,
+    )
     from dubcrate.ui.card_import_dialog import CardImportDialog
 
     window = _sync(ctx)
     disc_id = ctx.demo.discs["peak"]
     entries = ctx.lib.disc_entries(disc_id)
     tracks = [
-        TrackFinding(entries[1].track, 2, entries[1].title, entries[1].artist, [41500, 97000]),
-        TrackFinding(entries[4].track, 5, entries[4].title, entries[4].artist, [18000]),
+        TrackFinding(entries[1].track, 2, entries[1].title, entries[1].artist, [Row(ADD, 41500), Row(LOOP, 97000, 101000), Row(REMOVE, 12000)]),
+        TrackFinding(entries[4].track, 5, entries[4].title, entries[4].artist, [Row(MOVE, 18000, old_ms=15500), Row(HOT, 64000, slot=1, ticked=False)]),
     ]  # fmt: skip
     summary = ctx.lib.disc(disc_id)
-    finding = DiscFinding(disc_id, summary.name, f"CDJ CDs / {summary.name}", tracks, loops=1, hot_cues=2)  # fmt: skip
+    finding = DiscFinding(disc_id, summary.name, f"CDJ CDs / {summary.name}", tracks, kept=1, has_baseline=True)  # fmt: skip
     dialog = CardImportDialog([finding], window)
     dialog.resize(600, 420)
     dialog.show()

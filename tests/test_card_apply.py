@@ -100,3 +100,33 @@ def test_a_folder_that_is_not_a_card_is_a_plain_error_and_nothing_is_made(tmp_pa
 
 def test_the_default_backup_folder_is_next_to_the_library():
     assert card_apply.default_backup_dir().name == "card-backups"
+
+
+def test_a_sync_says_what_the_card_holds_afterwards_as_the_discs_baseline(
+    card, tmp_path
+):
+    request = cd2_request(
+        WantedCue(1, 1000), WantedCue(2, 90_000), WantedCue(2, 95_000, 99_000)
+    )
+    out = card_apply.apply_sync(card, [request], tmp_path / "bk")
+    assert out.baselines == {
+        request.disc_id.key: [(1, 1000, 0), (2, 90_000, 0), (2, 95_000, 99_000)]
+    }
+    again = card_apply.apply_sync(
+        card, [request], tmp_path / "bk"
+    )  # nothing to write: still said
+    assert not again.wrote and again.baselines == out.baselines
+
+
+def test_the_baseline_leaves_out_what_the_card_had_no_room_for(card, tmp_path):
+    request = cd2_request(
+        *[WantedCue(1, 1000 + 10 * n) for n in range(cc.MAX_CUES + 5)]
+    )
+    out = card_apply.apply_sync(card, [request], tmp_path / "bk")
+    assert len(out.baselines[request.disc_id.key]) == cc.MAX_CUES
+
+
+def test_a_disc_that_gets_no_file_has_no_baseline(card, tmp_path):
+    request = cd2_request()  # nothing wanted, nothing on the card: no entry, no file
+    out = card_apply.apply_sync(card, [request], tmp_path / "bk")
+    assert out.baselines == {} and not out.wrote

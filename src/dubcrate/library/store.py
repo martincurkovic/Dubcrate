@@ -322,10 +322,29 @@ CREATE TABLE memory_loop (
 CREATE INDEX memory_loop_path ON memory_loop (path_key)
 """
 
+# What each sync left on a card, per disc (by its table of contents, the way the card tells discs apart): the cues
+# Dubcrate wanted that are on the card afterwards (track, position in absolute frames, a loop's end or 0). Import Cues
+# compares the card with it: a cue in it that is gone from the card was deleted on the player, and a cue on the card
+# that is in it but not in Dubcrate any more was deleted or moved in Dubcrate (so it is not offered back as new).
+# `card_baseline_disc` says a disc has a baseline even when it has no cues.
+_SCHEMA_V15 = """
+CREATE TABLE card_baseline_disc (
+    disc_key TEXT PRIMARY KEY,
+    saved_at TEXT NOT NULL
+);
+CREATE TABLE card_baseline (
+    disc_key TEXT NOT NULL,
+    track INTEGER NOT NULL,
+    position INTEGER NOT NULL,
+    end_pos INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX card_baseline_key ON card_baseline (disc_key)
+"""
+
 _MIGRATIONS = (
     _SCHEMA_V1, _SCHEMA_V2, _SCHEMA_V3, _SCHEMA_V4, _SCHEMA_V5, _migrate_to_v6,
     _SCHEMA_V7, _SCHEMA_V8, _SCHEMA_V9, _SCHEMA_V10, _SCHEMA_V11, _SCHEMA_V12,
-    _SCHEMA_V13, _SCHEMA_V14,
+    _SCHEMA_V13, _SCHEMA_V14, _SCHEMA_V15,
 )  # fmt: skip
 
 MAX_CACHED_PREVIEWS = 20_000  # about 40 MB; past it the oldest are forgotten
@@ -947,6 +966,40 @@ class Library:
         ):
             found.setdefault(row["path_key"], []).append((row["time_ms"], row["label"]))
         return found
+
+    # -- what a sync left on a card (the baseline for Import Cues) ---------------------
+
+    @staticmethod
+    def _disc_key(key: tuple[int, ...]) -> str:
+        return ",".join(str(n) for n in key)
+
+    def card_baseline(self, key: tuple[int, ...]) -> list[tuple[int, int, int]] | None:
+        """The cues a sync left on the card for the disc with this ID key (`DiscId.key`): (track, position, end),
+        in the order saved. None: no sync has been recorded for it (an empty list is a sync that left no cues)."""
+        text = self._disc_key(key)
+        if self._conn.execute("SELECT 1 FROM card_baseline_disc WHERE disc_key = ?", (text,)).fetchone() is None:  # fmt: skip
+            return None
+        rows = self._conn.execute(
+            "SELECT track, position, end_pos FROM card_baseline WHERE disc_key = ? ORDER BY rowid",
+            (text,),
+        ).fetchall()
+        return [(r["track"], r["position"], r["end_pos"]) for r in rows]
+
+    def set_card_baseline(
+        self, key: tuple[int, ...], cues: Iterable[tuple[int, int, int]]
+    ) -> None:
+        """Record what a sync left on the card for this disc, replacing the last one: (track, position, end)."""
+        text = self._disc_key(key)
+        with self._conn:
+            self._conn.execute("DELETE FROM card_baseline WHERE disc_key = ?", (text,))
+            self._conn.execute(
+                "INSERT OR REPLACE INTO card_baseline_disc (disc_key, saved_at) VALUES (?, ?)",
+                (text, _now()),
+            )
+            self._conn.executemany(
+                "INSERT INTO card_baseline (disc_key, track, position, end_pos) VALUES (?, ?, ?, ?)",
+                [(text, int(t), int(p), int(e)) for t, p, e in cues],
+            )
 
     # -- memory loops saved in Dubcrate ------------------------------------------------
 

@@ -103,7 +103,8 @@
 - [x] Memory cue edits in the app are saved into rekordbox as they are made, after a one-time question and with a Settings > Library checkbox (`ui/rekordbox_editor.py`).
 - [ ] Try that in-app path by hand with rekordbox closed (edit a cue in the player, accept the question, open rekordbox), and with it open (the edit should wait, with a status message).
 - [x] Import memory cues set on the CDJ back from the card (additions only: Sync tab > Import Cues…, `card_import.py`).
-- [ ] Try Import Cues… with cues really set on the player; then decide whether moves and deletions on the player should be noticed (needs a baseline saved at sync time: the card's cues after each sync) and whether the player's hot cues should come back as memory cues (`dev_docs/card-sync.md`, "Importing cues from the card").
+- [x] Import Cues… also brings back loops and the player's hot cues (unticked), and notices cues deleted or moved on the player, against a baseline each sync records (`card_import.py`, schema v15; 2026-11-16, tested offscreen only).
+- [ ] Try Import Cues… with cues really set, deleted and moved on the player (sync a disc, change it on the player, import): what does the player do to the card's file when a cue is deleted or moved (`dev_docs/card-sync.md`, "Importing changes from the card")?
 - [x] Right-click a card in the Sync tab's list: **Import Cues from “NAME”…** beside Sync and Eject (the button in the discs panel is the only way now).
 - [x] Write the edits that are waiting in Dubcrate (made while rekordbox was open, or before editing was allowed) in one go from the app: File > Save Waiting Memory Cue Edits to rekordbox (not tried live).
 - [x] Save memory loops in Dubcrate: MEMORY with a loop on (`memory_loop` table; shown in the player, on the card as memory loops, counted in the ten; not written to rekordbox).

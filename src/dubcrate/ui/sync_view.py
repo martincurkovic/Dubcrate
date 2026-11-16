@@ -689,7 +689,7 @@ class SyncView(QWidget):
     busy_changed = Signal(bool)  # a sync is writing (or ejecting): leave the card alone
     cues_chosen = Signal(
         object
-    )  # [(Track, [ms, ...])]: memory cues from the card to bring in
+    )  # [ImportChoice]: the changes from the card to bring in (`card_import`)
 
     def __init__(
         self,
@@ -789,8 +789,8 @@ class SyncView(QWidget):
         self.cancel_button.hide()
         self.import_button = QPushButton("Import Cues…")
         self.import_button.setToolTip(
-            "Look for memory cues set on the player that Dubcrate doesn't have, and bring in the ones you "
-            "pick. Reads the card; changes nothing on it."
+            "Look for what changed on the player (cues and loops set, deleted or moved) that Dubcrate doesn't "
+            "have, and bring in the ones you pick. Reads the card; changes nothing on it."
         )
         self.import_button.clicked.connect(self.import_from_card)
         self.sync_button = QPushButton("Sync")
@@ -1176,8 +1176,9 @@ class SyncView(QWidget):
         )
 
     def import_from_card(self) -> None:
-        """Find the memory cues on the card that Dubcrate doesn't have, let the user pick, and hand them on
-        (`cues_chosen`). Reads the card's files as already read; writes nothing."""
+        """Find what changed on the card that Dubcrate doesn't have (cues and loops set on the player, and, after a
+        recorded sync, cues deleted or moved there), let the user pick, and hand the choices on (`cues_chosen`).
+        Reads the card's files as already read; writes nothing."""
         if self._card is None or not self._surveys:
             self.message.emit("Choose a card first")
             return
@@ -1188,7 +1189,7 @@ class SyncView(QWidget):
             list(self._surveys.values()),
         )
         if not findings:
-            self.message.emit("No new memory cues on the card")
+            self.message.emit("Nothing new on the card")
             return
         chosen = ask_import(self, findings)
         if chosen:
@@ -1361,6 +1362,13 @@ class SyncView(QWidget):
                 raise TaskError(str(exc)) from exc
 
         def done(outcome) -> None:
+            for (
+                key,
+                cues,
+            ) in (
+                outcome.baselines.items()
+            ):  # (this is the GUI thread: the library is ours)
+                self._lib.set_card_baseline(key, cues)
             if outcome.wrote:
                 n = len(outcome.written)
                 what = f"{outcome.cues_written} cues"

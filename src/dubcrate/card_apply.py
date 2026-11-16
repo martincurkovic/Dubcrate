@@ -11,11 +11,11 @@ everything back and compares. Cues already on the card, its hot cues and its wav
 """
 
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from dubcrate import cdj_card as cc
-from dubcrate.card_sync import CardPlan, DiscRequest, plan_card
+from dubcrate.card_sync import CardPlan, DiscRequest, Status, plan_card
 from dubcrate.library.paths import default_library_path
 
 
@@ -31,6 +31,12 @@ class SyncOutcome:
         Path | None
     )  # the copy of the card's files; None when there was nothing to write
     written: list[str]  # the disc files written (the index is written too, after them)
+    # What the card holds afterwards of the cues Dubcrate wanted, per disc (by `DiscId.key`): (track, position, end).
+    # Dubcrate saves it as the disc's baseline (`Library.set_card_baseline`, on the GUI thread: this runs on a
+    # worker), so Import Cues can tell what the player has changed since.
+    baselines: dict[tuple[int, ...], list[tuple[int, int, int]]] = field(
+        default_factory=dict
+    )
 
     @property
     def wrote(self) -> bool:
@@ -45,6 +51,22 @@ class SyncOutcome:
         return sum(len(d.waves_added) for d in self.plan.discs)
 
 
+def baselines_of(
+    requests: Sequence[DiscRequest], plan: CardPlan
+) -> dict[tuple[int, ...], list[tuple[int, int, int]]]:
+    """The wanted cues each disc has on the card after `plan`: all of them but the overflow (a disc at the
+    player's limit). A disc that got no file has none."""
+    found: dict[tuple[int, ...], list[tuple[int, int, int]]] = {}
+    for request, disc in zip(requests, plan.discs, strict=True):
+        if disc.status is Status.NOTHING:
+            continue
+        left_out = set(disc.overflow)
+        found[request.disc_id.key] = [
+            (w.track, w.position, w.end) for w in request.wanted if w not in left_out
+        ]
+    return found
+
+
 def apply_sync(
     card: Path, requests: Sequence[DiscRequest], backup_dir: Path | None = None
 ) -> SyncOutcome:
@@ -53,8 +75,9 @@ def apply_sync(
     try:
         index, files = cc.read_card(card)
         plan = plan_card(index, files, requests)
+        baselines = baselines_of(requests, plan)
         if not plan.changes:
-            return SyncOutcome(plan, None, [])
+            return SyncOutcome(plan, None, [], baselines)
         backup = cc.backup_card(card, backup_dir or default_backup_dir())
         writes = plan.writes()
         cc.write_card(card, plan.index, writes)
@@ -62,4 +85,6 @@ def apply_sync(
         raise cc.CardFormatError(
             f"The card couldn't be read or written: {exc}"
         ) from exc
-    return SyncOutcome(plan, backup, [f"{name}.PDJ" for name in sorted(writes)])
+    return SyncOutcome(
+        plan, backup, [f"{name}.PDJ" for name in sorted(writes)], baselines
+    )

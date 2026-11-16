@@ -158,6 +158,13 @@ def cmd_sync(lib: Library, args: argparse.Namespace) -> int:
     except cc.CardFormatError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
+    for (
+        key,
+        cues,
+    ) in (
+        outcome.baselines.items()
+    ):  # (what the card holds now: Import Cues compares with it)
+        lib.set_card_baseline(key, cues)
     print(
         f"\nwrote {len(outcome.written)} file(s) ({outcome.cues_written} cues, "
         f"{outcome.waveforms_written} waveforms); the card's old files are in {outcome.backup}"
