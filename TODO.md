@@ -4,6 +4,7 @@ Open items by area; finished work is under **Completed** at the bottom (same hea
 
 ## General
 
+- [ ] Review every window, dialog, message and menu in the UI gallery for layout and wording (`uv run python scripts/ui_snapshots.py`, then open `build/ui_snapshots/index.html`: mark each screen, write notes, Export notes). Each screen lists the layout flags the checker found.
 - [ ] Auto download update (maybe once code signing in place...)
 - [ ] Try on a real Linux machine + drive (dev_docs/linux-test-plan.md) (follow-up to: Linux burn support)
 - [ ] Windows burn support
@@ -128,6 +129,7 @@ Open items by area; finished work is under **Completed** at the bottom (same hea
 - [x] Guard Windows' reserved names in MP3 folder names and the disc's staging folder (`mp3.dir_name`, `mp3.volume_name`).
 - [x] Detect "permission denied" on the drive on Linux and say how to get access, naming the drive's group (`cdrdao.access_problem`, 2026-11-16).
 - [x] Cancel a burn while the disc is being prepared (2026-11-16: a Cancel button in the burn window that stops the rendering at once and removes what it made; it goes once writing starts). Tested with fakes and real ffmpeg.
+- [x] A UI review gallery like Cobalt's (2026-11-16: `scripts/ui_snapshots.py`): every window, dialog, message box and menu rendered in all three looks, with layout checks, a searchable inventory of every text and tooltip, per-screen status and notes.
 - [x] Sync tab tidy-up (2026-11-16): no help text under an empty card list, no Status / Cues / Waveform columns or Details button, waveforms always written (no tick box), the disc list's tick boxes on the left of each name and a select-all box in its heading.
 - [x] A badge in the status bar's bottom right corner: yellow "Library read-only" or orange "Library writable" (only with a rekordbox library imported); the status bar is a shade of its own with a rule on top (`ui/status_bar.py`).
 - [x] Add a drive picker to the burn window (2026-11-16: a menu shown only with two or more drives, remembered by name; `Burner.drives()`; tested with fakes). ([roadmap.md](dev_docs/roadmap.md))

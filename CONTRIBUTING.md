@@ -64,6 +64,10 @@ dev_docs/                                command-line reference, burning and har
   that is why the Explorer's tracks live in a hidden source rather than a separate list.
 - **Tests never open a sound card.** `tests/conftest.py` swaps in a fake device.
 - Look at the window in all three looks (dark, light, system6) after changing it.
+  `uv run python scripts/ui_snapshots.py` renders **every window, dialog, message and menu** in all three looks to
+  `build/ui_snapshots/index.html` (about five minutes; `--quick` for dark only, `--only NAME` for some scenes), marks text
+  that doesn't fit, lists every piece of text on each screen, and lets you mark each screen and add notes. A new window or
+  dialog needs a scene in `scripts/ui_snapshot_scenes.py` (`tests/test_ui_snapshot_harness.py` fails without one).
 
 ## Documentation
 
