@@ -87,6 +87,15 @@ def shutdown() -> None:
     _handler = _console = None
 
 
+def set_verbose(on: bool) -> None:
+    """Log fine detail from now on (or stop), without starting the log again: the Settings switch."""
+    level = logging.DEBUG if on else logging.INFO
+    for handler in (_handler, _console):
+        if handler is not None:
+            handler.setLevel(level)
+    _logger.info("fine detail is now %s", "logged" if on else "not logged")
+
+
 def is_verbose() -> bool:
     return _handler is not None and _handler.level <= logging.DEBUG
 

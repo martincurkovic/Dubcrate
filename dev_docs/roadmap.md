@@ -124,7 +124,7 @@
 
 ## Later
 
-- Logging follow-ups (the log file itself is done: `logsetup.py`): a Settings switch for verbose logging (only `--verbose` today), logging inside the library store and the CLI, and a dialog for an uncaught exception (it is only logged).
+- Logging follow-ups (the log file itself is done: `logsetup.py`): (the Settings switch for verbose logging is done: Settings > Library, `logging/verbose`, `logsetup.set_verbose`), logging inside the library store and the CLI, and a dialog for an uncaught exception (it is only logged).
 
 - MP3 CDs: *built, never burned.* A disc is an audio CD or an MP3 CD (`disc.kind`, schema
   v7). See Decisions, and [burning.md](burning.md) for the hardware check. Still to do: split

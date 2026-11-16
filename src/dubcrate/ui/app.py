@@ -9,7 +9,7 @@ import sys
 from PySide6.QtGui import QIcon, QPixmap
 from PySide6.QtWidgets import QApplication
 
-from dubcrate import logsetup, tools
+from dubcrate import logsetup, settings, tools
 from dubcrate.library import Library
 
 from . import dialog_log, spinbox_drag, theme, wheel_guard
@@ -115,6 +115,10 @@ def _run(args: argparse.Namespace, qt_args: list[str]) -> int:
     app = QApplication([sys.argv[0], *qt_args])
     app.setOrganizationName("Dubcrate")
     app.setApplicationName("Dubcrate")
+    if (
+        settings.get_verbose_logging()
+    ):  # (the log started before the settings could be read)
+        logsetup.set_verbose(True)
     icon = icon_path()
     if icon:
         app.setWindowIcon(QIcon(str(icon)))

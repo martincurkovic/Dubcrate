@@ -345,6 +345,18 @@ def set_auto_import(enabled: bool) -> None:
     _qs().setValue("import/auto_rekordbox", bool(enabled))
 
 
+def get_verbose_logging() -> bool:
+    """Whether the log records fine detail too (off by default; `dubcrate-gui --verbose` does it for one run)."""
+    value = _qs().value("logging/verbose", False)
+    if isinstance(value, str):  # an ini file keeps a bool as text
+        return value.strip().lower() in ("true", "1", "yes", "on")
+    return bool(value)
+
+
+def set_verbose_logging(on: bool) -> None:
+    _qs().setValue("logging/verbose", bool(on))
+
+
 def get_auto_update_check() -> bool:
     """Whether Dubcrate asks GitHub for a newer version when it starts (on by default). It is the
     only time the app uses the network."""

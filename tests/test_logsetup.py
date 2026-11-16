@@ -106,3 +106,40 @@ def test_the_crash_log_gets_a_header_for_each_run(tmp_path):
         assert "started" in path.read_text(encoding="utf-8")
     finally:
         faulthandler.disable()
+
+
+def test_detail_can_be_switched_on_and_off_while_logging(tmp_path):
+    try:
+        path = logsetup.setup(directory=tmp_path)
+        logsetup.set_verbose(True)
+        logging.getLogger("dubcrate.test").debug("now in the log")
+        assert "now in the log" in text(path) and logsetup.is_verbose()
+        logsetup.set_verbose(False)
+        logging.getLogger("dubcrate.test").debug("not in the log")
+        assert "not in the log" not in text(path) and not logsetup.is_verbose()
+    finally:
+        logsetup.shutdown()
+
+
+def test_switching_detail_without_a_log_is_harmless():
+    logsetup.shutdown()
+    logsetup.set_verbose(True)
+    assert not logsetup.is_verbose()
+
+
+def test_the_verbose_log_switch_is_in_the_settings_window_and_remembered(
+    qapp, tmp_path
+):
+    from dubcrate import settings
+    from dubcrate.ui.settings_dialog import SettingsDialog
+
+    try:
+        logsetup.setup(directory=tmp_path)
+        dialog = SettingsDialog()
+        assert dialog.verbose_check.isChecked() is False
+        dialog.verbose_check.setChecked(True)
+        assert settings.get_verbose_logging() is True and logsetup.is_verbose()
+        dialog.verbose_check.setChecked(False)
+        assert settings.get_verbose_logging() is False and not logsetup.is_verbose()
+    finally:
+        logsetup.shutdown()

@@ -13,7 +13,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from dubcrate import keys, loudness, mp3, settings, tools
+from dubcrate import keys, logsetup, loudness, mp3, settings, tools
 from dubcrate.audio import devices
 from dubcrate.audio.devices import BUFFER_SIZES, buffer_msec
 
@@ -313,7 +313,25 @@ class SettingsDialog(QDialog):
         tools_hint.setWordWrap(True)
         tools_hint.setObjectName("mutedLabel")
         form.addRow(tools_hint)
+        self.verbose_check = QCheckBox("Record more detail in the log file")
+        self.verbose_check.setChecked(
+            settings.get_verbose_logging() or logsetup.is_verbose()
+        )
+        self.verbose_check.toggled.connect(self._set_verbose)
+        form.addRow(self.verbose_check)
+        verbose_hint = QLabel(
+            "For when something goes wrong: the log (Help > Show Log File) then says what Dubcrate was doing"
+            " step by step. It lists file paths, never your audio, and takes effect at once."
+        )
+        verbose_hint.setWordWrap(True)
+        verbose_hint.setObjectName("mutedLabel")
+        form.addRow(verbose_hint)
         return page
+
+    @staticmethod
+    def _set_verbose(on: bool) -> None:
+        settings.set_verbose_logging(on)
+        logsetup.set_verbose(on)
 
     # -- appearance -------------------------------------------------------
 
