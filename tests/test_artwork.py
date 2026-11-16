@@ -1,5 +1,6 @@
-"""Embedded cover art: the readers for ID3, FLAC and MP4 (built by hand), and real files made by ffmpeg."""
+"""Embedded cover art: the readers for ID3, FLAC, MP4, Ogg, WAV and AIFF (built by hand), and real files made by ffmpeg."""
 
+import base64
 import struct
 import subprocess
 
@@ -150,6 +151,103 @@ def test_an_mp4_without_a_cover_has_no_artwork(tmp_path):
     assert read_artwork(write(tmp_path, "a.m4a", data)) is None
 
 
+def ogg_pages(packets, serial=1, other=None):
+    """Packets as Ogg pages, a long one carried over several (no checksums: they are not read)."""
+    out, sequence = b"", 0
+    for number, packet in enumerate(packets):
+        step = 255 * 200  # (a page that carries on has only full segments)
+        pieces = [packet[i : i + step] for i in range(0, len(packet), step)] or [b""]
+        for index, piece in enumerate(pieces):
+            last = index == len(pieces) - 1
+            laces = [255] * (len(piece) // 255) + ([len(piece) % 255] if last else [])
+            flags = (1 if index else 0) | (2 if number == 0 else 0)
+            out += b"OggS" + bytes([0, flags]) + b"\0" * 8 + struct.pack("<II", serial, sequence) + b"\0" * 4  # fmt: skip
+            out += bytes([len(laces)]) + bytes(laces) + piece
+            sequence += 1
+        if other is not None and number == 0:  # a page of another stream in between
+            out += b"OggS" + bytes([0, 2]) + b"\0" * 8 + struct.pack("<II", other, 0) + b"\0" * 4 + bytes([1, 3]) + b"xyz"  # fmt: skip
+    return out
+
+
+def vorbis_comments(*pictures, vendor=b"test"):
+    entries = [b"TITLE=Song"] + [b"METADATA_BLOCK_PICTURE=" + base64.b64encode(p) for p in pictures]  # fmt: skip
+    out = struct.pack("<I", len(vendor)) + vendor + struct.pack("<I", len(entries))
+    for entry in entries:
+        out += struct.pack("<I", len(entry)) + entry
+    return out
+
+
+def test_an_opus_cover_is_found_and_the_front_one_preferred(tmp_path):
+    packets = [b"OpusHead" + b"\x01" * 11, b"OpusTags" + vorbis_comments(flac_picture(OTHER, kind=0), flac_picture(COVER))]  # fmt: skip
+    assert read_artwork(write(tmp_path, "a.opus", ogg_pages(packets))) == COVER
+
+
+def test_a_vorbis_cover_bigger_than_a_page_is_put_back_together(tmp_path):
+    big = b"\x89PNG\r\n\x1a\n" + bytes(range(256)) * 1000  # (over four pages)
+    packets = [b"\x01vorbis" + b"\0" * 23, b"\x03vorbis" + vorbis_comments(flac_picture(big)) + b"\x01", b"\x05vorbis" + b"\0" * 50]  # fmt: skip
+    assert read_artwork(write(tmp_path, "a.ogg", ogg_pages(packets))) == big
+
+
+def test_an_ogg_cover_is_found_among_the_pages_of_another_stream(tmp_path):
+    packets = [b"OpusHead" + b"\x01" * 11, b"OpusTags" + vorbis_comments(flac_picture(COVER))]  # fmt: skip
+    assert read_artwork(write(tmp_path, "a.opus", ogg_pages(packets, other=9))) == COVER  # fmt: skip
+
+
+def test_an_ogg_flac_cover_is_found_as_a_comment_or_a_block_of_its_own(tmp_path):
+    def block(kind, body, last=False):
+        return (
+            bytes([kind | (0x80 if last else 0)]) + len(body).to_bytes(3, "big") + body
+        )
+
+    head = b"\x7fFLAC\x01\x00\x00\x02fLaC" + block(0, b"\0" * 34)
+    comment = block(4, vorbis_comments(flac_picture(COVER)), last=True)
+    assert read_artwork(write(tmp_path, "a.oga", ogg_pages([head, comment]))) == COVER
+    picture = block(6, flac_picture(COVER), last=True)
+    assert read_artwork(write(tmp_path, "b.oga", ogg_pages([head, picture]))) == COVER
+
+
+def test_an_ogg_with_no_picture_or_a_bad_one_has_no_artwork(tmp_path):
+    none = [b"OpusHead" + b"\x01" * 11, b"OpusTags" + vorbis_comments()]
+    assert read_artwork(write(tmp_path, "a.opus", ogg_pages(none))) is None
+    bad = b"OpusTags" + vorbis_comments(b"nonsense")
+    assert read_artwork(write(tmp_path, "b.opus", ogg_pages([none[0], bad]))) is None
+
+
+def riff(tag, chunks, order):
+    form, kind = (b"RIFF", b"WAVE") if order == "little" else (b"FORM", b"AIFF")
+    body = kind
+    for name, data in chunks:
+        body += name + len(data).to_bytes(4, order) + data + (b"\0" if len(data) % 2 else b"")  # fmt: skip
+    return form + len(body).to_bytes(4, order) + body
+
+
+@pytest.mark.parametrize(
+    ("order", "name", "id3_name"),
+    [
+        ("little", "a.wav", b"id3 "),
+        ("little", "b.wav", b"ID3 "),
+        ("big", "c.aiff", b"ID3 "),
+    ],
+)
+def test_a_wav_or_aiff_cover_is_found_in_its_id3_chunk(tmp_path, order, name, id3_name):  # fmt: skip
+    tag = id3([frame(b"APIC", apic(COVER))])
+    chunks = [
+        (b"fmt ", b"\0" * 17),
+        (b"data", b"\x01" * 1001),
+        (id3_name, tag),
+    ]  # (odd sizes: padded)
+    assert read_artwork(write(tmp_path, name, riff(None, chunks, order))) == COVER
+
+
+def test_a_wav_or_aiff_without_an_id3_chunk_or_with_a_bad_one_has_no_artwork(tmp_path):  # fmt: skip
+    plain = riff(None, [(b"fmt ", b"\0" * 16), (b"data", b"\x01" * 100)], "little")
+    assert read_artwork(write(tmp_path, "a.wav", plain)) is None
+    bad = riff(None, [(b"fmt ", b"\0" * 16), (b"id3 ", b"not a tag at all")], "little")
+    assert read_artwork(write(tmp_path, "b.wav", bad)) is None
+    runaway = b"RIFF\x00\x00\x00\x00WAVE" + b"data" + b"\xff\xff\xff\xff" + b"\0" * 20
+    assert read_artwork(write(tmp_path, "c.wav", runaway)) is None
+
+
 @pytest.mark.parametrize(
     "data",
     [
@@ -160,6 +258,10 @@ def test_an_mp4_without_a_cover_has_no_artwork(tmp_path):
         b"fLaC\x06\x00\x10\x00",
         b"\x00\x00\x00\x08ftyp",
         b"RIFF" + b"\x00" * 100,
+        b"RIFF\x00\x00\x00\x00WAVEid3 \x10\x00\x00\x00ID3",
+        b"OggS",
+        b"OggS\x00\x02" + b"\x00" * 30,
+        b"OggS" + b"\xff" * 40,
         b"not audio at all",
     ],
 )
@@ -201,6 +303,7 @@ def ffmpeg(*args):
         ("a.mp3", ["-c:a", "libmp3lame"]),
         ("a.flac", ["-c:a", "flac"]),
         ("a.m4a", ["-c:a", "aac"]),
+        ("a.aiff", ["-c:a", "pcm_s16be", "-write_id3v2", "1"]),
     ],
 )
 def test_a_cover_ffmpeg_embedded_is_read_back_whole(tmp_path, qapp, name, codec):
@@ -214,3 +317,14 @@ def test_a_cover_ffmpeg_embedded_is_read_back_whole(tmp_path, qapp, name, codec)
     found = read_artwork(out)
     assert found is not None and found[:8] == b"\x89PNG\r\n\x1a\n"
     assert found == (tmp_path / "cover.png").read_bytes()
+
+
+@needs_ffmpeg
+def test_an_opus_file_ffmpeg_wrote_with_a_picture_comment_is_read_back(tmp_path):
+    big = b"\x89PNG\r\n\x1a\n" + bytes(range(256)) * 800  # (several Ogg pages)
+    comment = base64.b64encode(flac_picture(big)).decode()
+    out = tmp_path / "a.opus"
+    done = ffmpeg("-f", "lavfi", "-i", "sine=frequency=440:duration=1", "-c:a", "libopus", "-metadata", f"METADATA_BLOCK_PICTURE={comment}", str(out))  # fmt: skip
+    if done.returncode != 0 or not out.exists():
+        pytest.skip(f"this ffmpeg can't write Opus: {done.stderr.strip()[:80]}")
+    assert read_artwork(out) == big
