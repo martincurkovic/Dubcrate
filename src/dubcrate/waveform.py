@@ -58,6 +58,20 @@ class Waveform:
             self.columns / self.columns_per_second if self.columns_per_second else 0.0
         )
 
+    def peak_pooled(self, factor: int) -> np.ndarray:
+        """The bands with every `factor` columns reduced to their loudest (the last group may be shorter):
+        columns that stay put as the track scrolls, so a zoomed-out view that draws them does not shimmer."""
+        if factor <= 1:
+            return self.bands
+        groups = -(-self.columns // factor)
+        padded = np.zeros(
+            (groups * factor, self.bands.shape[1]), dtype=self.bands.dtype
+        )
+        padded[: self.columns] = (
+            self.bands
+        )  # (zeros: bands are never negative, so they never win)
+        return padded.reshape(groups, factor, -1).max(axis=1)
+
     def resampled(self, columns: int, how: str = "max") -> "Waveform":
         """This waveform at `columns` columns.
 

@@ -386,3 +386,58 @@ def test_settings_offers_a_waveform_speed_that_starts_smooth_and_applies_at_once
     assert settings.get_wave_fps() == 30 and seen == [30]
     again = SettingsDialog()  # (remembered)
     assert again.wave_fps_combo.currentData() == 30
+
+
+# -- zoomed far out: peaks stay, and the outline does not shimmer as it scrolls -----------------------------
+
+
+def spiky_track():
+    """A hit every 0.5 s that is one column wide, over a quiet floor: a pixel zoomed out covers
+    several columns, so which one a pixel reads decides whether the hit is drawn."""
+    rows = np.full((150 * 60, 3), 0.1, dtype=np.float32)
+    rows[::75] = [1.0, 1.0, 1.0]
+    return Waveform(rows, 150.0)
+
+
+def hits_drawn(view, position):
+    """How many separate hits reach a row well above the quiet floor (runs of lit pixels)."""
+    view.set_position(position)
+    image = view.grab().toImage()
+    bare = wave_style.color("wave_bg")
+    lit = [
+        x > 45 and image.pixelColor(x, 10) != bare for x in range(image.width())
+    ]  # (past the zoom buttons)
+    return sum(1 for x, on in enumerate(lit) if on and (x == 0 or not lit[x - 1]))
+
+
+@pytest.mark.parametrize("style", ["bands", "rgb"])
+def test_zoomed_out_every_hit_is_drawn_wherever_the_playhead_is(qapp, style):
+    use("dark", style)
+    view = DetailView()
+    view.resize(300, view.HEIGHT)
+    view.set_track(spiky_track())
+    view.set_window_seconds(32.0)  # ~ 4800 columns across 300 pixels: 16 to a pixel
+    view.show()
+    counts = [hits_drawn(view, 20.0 + step * 0.013) for step in range(12)]
+    assert min(counts) >= 50 and max(counts) - min(counts) <= 2, counts  # (about 64 hits in 32 s, all of them, every frame; one may cross the zoom buttons)  # fmt: skip
+
+
+def test_pooled_columns_are_chosen_so_a_pixel_never_skips_one(qapp):
+    use("dark", "bands")
+    view = DetailView()
+    view.resize(300, view.HEIGHT)
+    view.set_track(spiky_track())
+    for per_pixel, factor in (
+        (0.5, 1),
+        (1.0, 1),
+        (1.3, 2),
+        (2.7, 4),
+        (16.0, 16),
+        (17.0, 32),
+    ):
+        _pooled, got = view._level(per_pixel)
+        assert got == factor
+    assert view._level(2.7)[0].shape[0] == -(
+        -9000 // 4
+    )  # (and it is kept for the next frame)
+    assert view._level(2.7)[0] is view._pooled[4]

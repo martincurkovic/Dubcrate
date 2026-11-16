@@ -323,3 +323,20 @@ def test_raster_gives_each_column_its_own_colour_and_a_lighter_core():
     assert img[19, 0, :3].tolist() == [255, 255, 255]  # near the floor, the core
     assert img[0, 1, :3].tolist() == [0, 0, 255]
     assert img[19, 1, :3].tolist() == [128, 128, 255]
+
+
+# -- peak pooling (what the zoomed-out view draws) ---------------------------------------------------------
+
+
+def test_peak_pooling_keeps_the_loudest_of_each_group_and_pads_the_last():
+    bands = np.array([[0.1, 0.0, 0.0], [0.9, 0.2, 0.0], [0.3, 0.8, 0.0], [0.2, 0.1, 0.5], [0.4, 0.0, 0.0]], dtype=np.float32)  # fmt: skip
+    pooled = Waveform(bands, 150.0).peak_pooled(2)
+    assert pooled.shape == (3, 3)
+    np.testing.assert_allclose(
+        pooled, [[0.9, 0.2, 0.0], [0.3, 0.8, 0.5], [0.4, 0.0, 0.0]]
+    )  # (the short last group is only itself)
+
+
+def test_pooling_by_one_is_the_waveform_itself():
+    wf = Waveform(np.random.default_rng(0).random((50, 3)).astype(np.float32), 150.0)
+    assert wf.peak_pooled(1) is wf.bands

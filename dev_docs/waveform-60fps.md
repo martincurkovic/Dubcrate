@@ -13,6 +13,17 @@ the app and how it measured.** The short version is in `audio.md` and `TODO.md`.
 | **The tick** | `player.tick_ms(fps)`: 16 ms for 60, 33 ms for 30, `PreciseTimer`. Set from `settings.get_wave_fps()` (`waveform/fps`, default 60) and changed live through `settings.changes.wave_fps`. |
 | **A setting** | Settings > Appearance > **Waveform speed**: *Smooth (60 a second)* or *Light (30 a second)*, for slower computers (the sound is not affected). |
 
+**Zoomed all the way out (found by the owner on a screen recording, 2026-11-16, fixed the same day):** at the 32 s zoom a pixel
+covers about 2.7 waveform columns, and the first version picked one of them by position, so as the track scrolled a different
+column was picked each frame: peaks came and went and the outline shimmered (the old polygon code sampled a fixed set of
+columns, so it had been stable). Fix: `Waveform.peak_pooled(factor)` (the loudest of every `factor` columns, cached per factor
+in `DetailView._pooled`), `DetailView._level(per_pixel)` picks the smallest power of two that makes a pooled column at least a
+pixel wide, and zoomed out each pixel reads its own pooled column (no blending: blending two columns shrinks a narrow peak
+by however far it sits from the pixel centre, which flickers). About a column or less to a pixel (the default 8 s zoom and
+closer) it still interpolates between columns, as before. The RGB and Blue looks use the pooled columns too. Measured frame to
+frame change (after allowing for the scroll) on a spiky test track: 3.8 before, 1.7 after; every hit drawn in every frame
+(`tests/test_ui_wave_styles.py`, "zoomed far out"). No cost: 3.3 ms a frame.
+
 **Measured (offscreen, scale 2, `spikes/waveform_fps.py`):** 3-band frame **16.0 ms -> 3.4 ms** (RGB 3.3, Blue 5.9). At 60 FPS that is
 about 20% of one core for the 3-band look, against 96% for the polygons.
 

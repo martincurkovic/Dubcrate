@@ -277,6 +277,7 @@ class DetailView(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._waveform: Waveform | None = None
+        self._pooled: dict[int, np.ndarray] = {}
         self._beat_times = np.zeros(0)
         self._beat_numbers = np.zeros(0, dtype=np.int8)
         self._cues: tuple[Cue, ...] = ()
@@ -328,6 +329,7 @@ class DetailView(QWidget):
         cues: tuple[Cue, ...] = (),
     ) -> None:
         self._waveform = waveform
+        self._pooled = {}  # the peak-pooled bands by factor, for this waveform
         self._cues = tuple(sorted(cues, key=lambda c: c.time))
         self._beat_times = np.zeros(0) if beat_times is None else np.asarray(beat_times)
         self._beat_numbers = (
@@ -439,6 +441,18 @@ class DetailView(QWidget):
         y = math.floor(middle) + 0.5  # on a pixel row, so it stays one crisp line
         p.drawLine(QPointF(0, y), QPointF(width, y))
 
+    def _level(self, per_pixel: float) -> tuple[np.ndarray, int]:
+        """The waveform's bands pooled by the smallest power of two that makes a pooled column at least as
+        wide as a pixel (`per_pixel` columns), and that factor. Zoomed far out a pixel spans several columns:
+        picking one of them by position makes the outline change shape from frame to frame as it scrolls
+        (a shimmer), so the view reads columns pooled to their peaks, which stay where they are."""
+        wf = self._waveform
+        assert wf is not None
+        factor = 1 << max(0, math.ceil(math.log2(max(per_pixel, 1.0))))
+        if factor not in self._pooled:
+            self._pooled[factor] = wf.peak_pooled(factor)
+        return self._pooled[factor], factor
+
     def _paint_columns(
         self, p: QPainter, width: int, height: int, centre: float, per_second: float
     ) -> None:
@@ -448,10 +462,11 @@ class DetailView(QWidget):
         dpr = self.devicePixelRatioF()
         pixels, rows = round(width * dpr), round(height * dpr)
         seconds = self._position + (np.arange(pixels) / dpr - centre) / per_second
-        index = np.floor(seconds * wf.columns_per_second).astype(np.int64)
-        inside = (index >= 0) & (index < wf.columns)
+        pooled, factor = self._level(wf.columns_per_second / (per_second * dpr))
+        index = np.floor(seconds * wf.columns_per_second / factor).astype(np.int64)
+        inside = (index >= 0) & (index < len(pooled))
         bands = np.zeros((pixels, 3), dtype=np.float32)
-        bands[inside] = wf.bands[index[inside]]
+        bands[inside] = pooled[index[inside]]
         image = render_columns(
             bands,
             current_style(),
@@ -476,14 +491,25 @@ class DetailView(QWidget):
         seconds = (
             self._position + ((np.arange(pixels) + 0.5) / dpr - centre) / per_second
         )
-        where = seconds * wf.columns_per_second
-        inside = (where >= 0) & (where <= wf.columns - 1)
-        low = np.clip(np.floor(where).astype(np.int64), 0, wf.columns - 2)
-        along = (where - low).astype(np.float32)[inside, None]
+        pooled, factor = self._level(wf.columns_per_second / (per_second * dpr))
         heights = np.zeros((pixels, 3), dtype=np.float32)
-        heights[inside] = (
-            wf.bands[low[inside]] * (1 - along) + wf.bands[low[inside] + 1] * along
-        )
+        if factor > 1:
+            # zoomed out: a pooled column is at least a pixel wide, so reading each pixel's own column
+            # draws every peak at its full height (blending two columns would shrink a narrow one by
+            # however far it sits from the pixel's centre, and that changes as it scrolls)
+            index = np.floor(seconds * wf.columns_per_second / factor).astype(np.int64)
+            inside = (index >= 0) & (index < len(pooled))
+            heights[inside] = pooled[index[inside]]
+        else:  # about a column or less to a pixel: slopes between the columns, as a polygon drew them
+            if len(pooled) < 2:
+                return
+            where = seconds * wf.columns_per_second
+            inside = (where >= 0) & (where <= len(pooled) - 1)
+            low = np.clip(np.floor(where).astype(np.int64), 0, len(pooled) - 2)
+            along = (where - low).astype(np.float32)[inside, None]
+            heights[inside] = (
+                pooled[low[inside]] * (1 - along) + pooled[low[inside] + 1] * along
+            )
         image = render_bands(
             heights,
             [color(key) for _band, key in _BANDS],
