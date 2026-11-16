@@ -107,7 +107,7 @@ def test_an_explorer_track_can_go_on_a_disc_like_any_other(lib):
     assert lib.tracks_on_discs() == set(ids)
 
 
-def test_pruning_forgets_what_no_disc_uses(lib):
+def test_pruning_with_no_room_forgets_what_no_disc_uses(lib):
     node = lib.sync_directory(
         "/m/a", [rec("/m/a", "used.mp3"), rec("/m/a", "free.mp3")]
     )
@@ -115,11 +115,19 @@ def test_pruning_forgets_what_no_disc_uses(lib):
     used = next(t for t in lib.tracks(node_id=node) if t.title == "used.mp3")
     disc = lib.create_disc("D")
     lib.add_to_disc(disc, [used.id])
-    assert lib.prune_explorer() == 2  # free.mp3 and other.mp3
+    assert lib.prune_explorer(keep=0) == 2  # free.mp3 and other.mp3
     assert names(lib, node) == ["used.mp3"]
     assert lib.explorer_node("/m/b") is None  # a folder with nothing left is forgotten
     assert lib.explorer_node("/m/a") == node
     assert [e.track.title for e in lib.disc_entries(disc)] == ["used.mp3"]
+
+
+def test_pruning_keeps_the_newest_reads_and_by_default_everything_that_fits(lib):
+    node = lib.sync_directory("/m/a", [rec("/m/a", f"{n}.mp3") for n in range(5)])
+    assert lib.prune_explorer() == 0  # (what was read is kept for the next session)
+    assert len(names(lib, node)) == 5
+    assert lib.prune_explorer(keep=2) == 3
+    assert names(lib, node) == ["3.mp3", "4.mp3"]
 
 
 def test_pruning_with_nothing_read_does_nothing(lib):
@@ -128,7 +136,7 @@ def test_pruning_with_nothing_read_does_nothing(lib):
 
 def test_reading_after_a_prune_starts_clean(lib):
     lib.sync_directory("/m/a", [rec("/m/a", "one.mp3")])
-    lib.prune_explorer()
+    lib.prune_explorer(keep=0)
     node = lib.sync_directory("/m/a", [rec("/m/a", "one.mp3")])
     assert names(lib, node) == ["one.mp3"]
 

@@ -75,7 +75,7 @@
 - [ ] Let the window split a long list across MP3 discs, move an MP3 folder to another place on its disc, and pick the disc kind from the + button ([roadmap.md](dev_docs/roadmap.md)).
 - [ ] Add a way to print labels straight after a burn, and the album or year on a label if wanted ([roadmap.md](dev_docs/roadmap.md)).
 - [ ] Give each app library its own Library tab once a second library exists ([roadmap.md](dev_docs/roadmap.md)).
-- [ ] Remember what the Explorer read across sessions (keyed by path, size and modified time) so each folder isn't probed again on its first visit ([roadmap.md](dev_docs/roadmap.md)).
+- [x] Remember what the Explorer read across sessions (keyed by path, size and modified time) so each folder isn't probed again on its first visit ([roadmap.md](dev_docs/roadmap.md)).
 - [ ] Recognise the same song when it is a copy, or when the rekordbox library points at another drive's path ([roadmap.md](dev_docs/roadmap.md)).
 - [x] Cache computed waveforms in SQLite so folder tracks keep their Preview strip across sessions ([roadmap.md](dev_docs/roadmap.md)).
 - [x] Make imports and loudness measuring cancellable and show per-file progress ([roadmap.md](dev_docs/roadmap.md)).

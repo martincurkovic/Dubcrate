@@ -665,7 +665,9 @@ def test_explorer_tracks_go_on_a_disc_and_survive_the_next_start(
     assert wait_for(lambda: lib.discs() and lib.discs()[0].track_count == 1)
     [disc] = lib.discs()
     assert [e.track.title for e in lib.disc_entries(disc.id)] == ["b"]
-    assert lib.prune_explorer() == 2  # the next start: a and c were only a cache
+    assert (
+        lib.prune_explorer(keep=0) == 2
+    )  # no room for a and c, which were only a cache
     assert [e.track.title for e in lib.disc_entries(disc.id)] == ["b"]
 
 

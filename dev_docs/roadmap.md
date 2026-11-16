@@ -258,9 +258,8 @@
   of "Next".
 
 ## Known rough edges
-- The Explorer re-reads a folder (ffprobe per new or changed file) on the first visit of each
-  session, because what it read is forgotten at start-up (`prune_explorer`). A cache across sessions,
-  keyed by path, size and modified time, would fix that. It shows only the files directly inside a
+- The Explorer keeps what it read across sessions (capped at `MAX_EXPLORER_TRACKS`, oldest first, by
+  `prune_explorer`); a file is probed again only when its size changed (not its modified time). It shows only the files directly inside a
   folder (not recursive), does not watch folders. A drive plugged in or taken out is picked up by a watch on `/Volumes`
   (`ExplorerTree(watch=volume_parents())`, a moment after the change; Windows has nothing to watch and
   lists its drives again when the Explorer tab is opened; Linux's folders are watched but **not tried**, and

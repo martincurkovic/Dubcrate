@@ -68,6 +68,9 @@ class _Slot:
 # other, so a disc can hold them (`Library.sync_directory`, `prune_explorer`).
 EXPLORER_PATH = "explorer:"
 EXPLORER_NAME = "Explorer"
+# What the Explorer has read is kept between sessions (a folder opens at once and only new or changed files
+# are probed); past this many tracks that no disc uses, the oldest read are forgotten (`prune_explorer`).
+MAX_EXPLORER_TRACKS = 20_000
 
 
 class LibraryError(RuntimeError):
@@ -641,9 +644,10 @@ class Library:
             )
         return node_id
 
-    def prune_explorer(self) -> int:
-        """Forget what the Explorer has read, except the tracks that are on discs. Returns how
-        many tracks went. (What was read is only a cache: opening a folder reads it again.)"""
+    def prune_explorer(self, keep: int = MAX_EXPLORER_TRACKS) -> int:
+        """Forget the oldest of what the Explorer has read, keeping the newest `keep` tracks and every track
+        that is on a disc. Returns how many tracks went. (What was read is only a cache, kept so a folder
+        opens at once next session: opening a folder reads it again anyway, probing only what changed.)"""
         with self._conn:
             row = self._conn.execute(
                 "SELECT id FROM source WHERE path = ? AND hidden = 1", (EXPLORER_PATH,)
@@ -652,8 +656,10 @@ class Library:
                 return 0
             dropped = self._conn.execute(
                 "DELETE FROM track WHERE source_id = ?"
-                " AND id NOT IN (SELECT track_id FROM disc_track)",
-                (row["id"],),
+                " AND id NOT IN (SELECT track_id FROM disc_track)"
+                " AND id NOT IN (SELECT id FROM track WHERE source_id = ?"
+                " ORDER BY id DESC LIMIT ?)",
+                (row["id"], row["id"], max(0, keep)),
             ).rowcount
             self._conn.execute(
                 "DELETE FROM node WHERE source_id = ?"
