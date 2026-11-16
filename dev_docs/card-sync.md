@@ -4,16 +4,21 @@ Goal: a **Sync** tab that writes a Dubcrate disc's cues onto the CDJ-1000MK3's S
 disc loads in the player with its rekordbox cues already set. The card format is in
 [cdj1000mk3-card.md](cdj1000mk3-card.md) (read that first: what is measured, and its
 **"Gaps, and where more testing is indicated"**). The module that reads and writes it is
-`src/dubcrate/cdj_card.py`. **Update 2026-11-15 (read this before the older status below): waveform pre-writing (Phase 4) is built and in Sync (see "Waveform sync"), blank cards can be formatted (see "Formatting a card"), and the way back is built: memory cues set on the player can be imported (see "Importing cues from the card"; additions only, not tried with a real player's cues). The Sync tab was redesigned (card list left, tracks and the CDJ-style waveform in the middle, discs to tick right).** **Status 2026-11-14: Phases 0 to 3 are done: the core, the command line and the Sync tab are built, and a CDJ-1000MK3 showed the
-cues of files our writer produced (details in the Handover below). Waveform pre-writing (Phase 4) is not started: it needs the
-amplitude scale, for which a test disc is made and waiting (`wave-test-disc.md`).** Built: `cdj_card.py` (the format, `write_card`, `backup_card`), `card_sync.py` (cue
-mapping, merge, plan), `card_discs.py` (a Dubcrate disc's TOC and rekordbox cues), `card_report.py`,
-`cli_card.py` (`dubcrate card show | backup | toc | sync`, a dry run unless `--yes`), `drive_toc.py` (the TOC of the
-audio CD in the drive, macOS), and the Phase 0 tooling
-(`spikes/cdj_card_testimage.py`, `cdj_card_restore.sh`, with test images made). **Files written by it have been loaded by a
-player** (2026-11-14, firmware 2.20).
+`src/dubcrate/cdj_card.py`.
 
-## Handover (end of 2026-11-13, with 2026-11-14's additions: read this first)
+**Where it stands (2026-11-16).** Phases 0 to 4 are done. Built: the format and its reader/writer (`cdj_card.py`: `write_card`, `backup_card`), the cue mapping,
+merge and plan (`card_sync.py`), the library half (`card_discs.py`: a disc's TOC and its rekordbox cues), reports (`card_report.py`), the command line
+(`cli_card.py`: `dubcrate card show | backup | toc | sync | format | check-waveforms`, a dry run unless `--yes`), the shared write (`card_apply.py`), `drive_toc.py`,
+`eject.py`, `burn_check.py`, and the **Sync tab** (`ui/sync_view.py`, writing on): a card list on the left, the picked disc's tracks and the CDJ-style waveform in the
+middle, the discs to tick on the right. Also built, each with its own section below:
+**waveforms** are written too (Phase 4, "Waveform sync"; analysed when a track goes on an audio disc, again from a burn's audio, and Sync does what is left),
+blank cards can be **formatted** ("Formatting a card"), and the way back is built: **Import Cues…** brings back new cues and loops, the player's hot cues (unticked), and
+cues **deleted or moved** on the player, against a **baseline** each sync records ("Importing cues from the card").
+**Proven on hardware** (a CDJ-1000MK3, firmware 2.20, a plain 2 GB card): the player loaded and showed cues of files our writer produced (2026-11-14) and accepted,
+drew and kept waveform records we wrote. **Not tried**: the Sync tab on a real card (the command line is), a card formatted by Dubcrate in a player, Import Cues… with cues
+set on a real player, and the post-burn TOC check on a real burn. The older status paragraphs below are kept for the reasoning; where they say a phase is "not started", this paragraph wins.
+
+## Handover (written 2026-11-13 and 2026-11-14: the status above is newer; this holds the test results and the open questions)
 
 **State (2026-11-14, end of day).** Built: the card format and its reader/writer (`cdj_card.py`), the cue mapping,
 merge and plan (`card_sync.py`), the library glue (`card_discs.py`), reports (`card_report.py`), the command line

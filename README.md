@@ -25,12 +25,14 @@ with CD-TEXT so track titles appear on the CDJ.
 
 ## What it does
 
-- **Imports your rekordbox library** (read-only), with your existing playlists.
-- **Previews tracks** with a waveform. For rekordbox tracks it shows rekordbox's own waveform, beat
-  grid, phrases and any cue points.
-- **Edits memory cues** in the preview player, and (if you allow it) saves them into rekordbox's library. **Syncs cues and waveforms to a CDJ-1000MK3's SD card**, and brings memory cues you set on the player back.
+- **Imports your rekordbox library** (read-only), with your existing playlists, or any folder of music.
+- **Previews tracks** with a smooth 60 frames a second waveform (30 on a slower computer). For rekordbox tracks it shows
+  rekordbox's own waveform, beat grid, phrases and cue points.
+- **Edits memory cues and loops** in the preview player, and (if you allow it) saves them into rekordbox's library.
+- **Syncs cues and waveforms to a CDJ-1000MK3's SD card**, and brings what you set on the player back.
 - **Plans discs** of 74 or 80 minutes. Drag tracks on, rename them, move them around.
-- **Burns audio CDs with CD-TEXT**, or as MP3 discs.
+- **Burns audio CDs with CD-TEXT**, or **MP3 discs** with folders, and can match the loudness of the tracks.
+- **Prints index labels** for the case.
 - **Keeps its own playlists.** Your discs are saved in Dubcrate.
 
 <table>
@@ -50,9 +52,10 @@ with CD-TEXT so track titles appear on the CDJ.
 
 ## What you need
 
-- **A Mac**, or **Linux** (an AppImage, new: not yet tried on a real desktop, and you install `cdrdao` with your package manager to burn). Windows is planned.
-- **A CD burner** that can write CD-R and blank
-  **CD-R** discs. CD-RW works, but is not recommended for old CD players.
+- **A Mac**, which is what Dubcrate has been used on. **Linux** is built as an AppImage but is new and not yet tried on a real desktop
+  (you install `cdrdao` with your package manager to burn). Windows is planned.
+- **A CD burner** that can write CD-R, and blank **CD-R** discs. (CD-RW is not recommended
+  for old CD players, and has not been tried.)
 - **[ffmpeg](https://ffmpeg.org/)**, which Dubcrate uses to read tracks and prepare
   them for the disc. The download includes it; nothing to install. (Running from source: `brew install ffmpeg`.)
 - **A player that reads audio CDs**.
@@ -98,9 +101,10 @@ The keyboard shortcuts and other controls are in *Help ▸ User Guide*.
 ## Good to know
 
 - **Your music and rekordbox library are never modified.** Dubcrate only reads them.
-- **Cue points, beat grids and analysis are not burned to the CD.** An audio CD can't
-  hold them and an old CDJ can't read them anyway. Dubcrate shows them so you can
-  plan, but the disc holds only the audio and the titles.
+- **Cue points, beat grids and analysis are not burned to the CD**, which can't hold them:
+  the disc holds only the audio and the titles. For the CDJ-1000MK3, Dubcrate can write your rekordbox cues, and the
+  player's waveform for each track, to the player's **SD card** instead (the **Sync** tab), so a disc loads with its
+  cues already set. That has been tried on one player and one card.
 - **Titles use CD-TEXT**, which handles Western European characters. Characters
   outside that set are simplified, or become a question mark, on the disc.
 - **Discs are gapless** by default, but this setting can be changed.
@@ -108,7 +112,13 @@ The keyboard shortcuts and other controls are in *Help ▸ User Guide*.
 
 ## What's coming
 
-Other DJ libraries (eg. Mixxx, Engine DJ), Windows and Linux support.
+Other DJ libraries (eg. Mixxx, Engine DJ), and Windows support. Linux is built but still needs trying on a real machine.
+
+## More
+
+- **[User Guide](src/dubcrate/ui/help/manual.md)**: also in the app under *Help ▸ User Guide*.
+- **[Changelog](CHANGELOG.md)**, **[building from source](BUILDING.md)** and **[notes for developers](CONTRIBUTING.md)**.
+- The pictures above use made-up music and a pretend SD card; nothing in them is anyone's library.
 
 ## License
 

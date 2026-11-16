@@ -44,15 +44,20 @@ anything is burned.
 
 ```sh
 dubcrate disc new "Warm Up night"             # 80 min and gapless; --minutes 74, --pregap 2
+dubcrate disc new "Car USB" --mp3             # an MP3 CD (--bitrate 128|192|256|320, the highest constant rate; default 320)
 dubcrate disc list
 dubcrate disc show 1                          # tracks, times, capacity
 dubcrate disc add 1 --node 40                 # a whole playlist, in order
 dubcrate disc add 1 --node 44 --fit           # only what still fits (--strict stops at the first misfit)
 dubcrate disc add 1 --track 1475 1473 --at 1  # specific tracks, at a position (1-based)
+dubcrate disc mkdir 5 "UK Garage" --in 2      # a folder on MP3 disc 5, inside folder 2 (omit --in for the disc's root)
+dubcrate disc add 5 --node 44 --dir 2         # ... and add to that folder (omit --dir for the root)
 dubcrate disc move 1 3 1                      # move track 3 to position 1
 dubcrate disc remove 1 2                      # remove track 2
+dubcrate disc text 1 3 --title "Name" --artist "Artist"   # what is written on the CD for track 3 (empty restores the track's own)
 dubcrate disc set 1 --name "New name" --minutes 74 --pregap 0
 dubcrate disc split --node 44 --name "Pop"    # as many discs as it takes, order kept
+dubcrate disc split --node 44 --name "Mix" --mp3 --bitrate 256   # ... as MP3 discs, by file size
 dubcrate disc delete 1                        # the tracks stay in the library
 ```
 
@@ -81,8 +86,10 @@ dubcrate burn 1 --yes                         # really burns; uses up the blank 
 `--levels match [--target LUFS]` matches the tracks' loudness, and `--levels peak` brings each track's highest peak to -0.3 dBTP (audio CDs; also on `export`).
 
 Options: `--backend discrecording|cdrdao` (default `discrecording` on a Mac, `cdrdao` elsewhere), `--speed N`
-(default 10, which is the slowest this project's drive offers), `--device`, and
-`--work DIR` to keep the rendered WAVs instead of using a temp folder.
+(default 10, which is the slowest this project's drive offers), `--device` (a drive's id: a BSD name such as `disk3` with DiscRecording,
+a device such as `/dev/sr0` with `cdrdao`; the window's drive menu picks the same thing), and
+`--work DIR` to keep the rendered WAVs instead of using a temp folder. The command line has no way to stop a burn
+once it is started (the window can cancel while the disc is being prepared, not while it is written).
 
 **A real burn uses up a disc.** Use a blank CD-R, not a CD-RW. `burn` refuses a disc
 that is over its size, empty, or has a missing or stale track. With `--yes` it also asks
@@ -100,6 +107,7 @@ dubcrate card backup /Volumes/DISK_IMG        # copy the card's few kilobytes as
 dubcrate card format                          # removable disks, and whether each could be a CDJ card (macOS)
 dubcrate card format disk4                    # dry run: checks it (plain SD, 2 GB or less) and says what would be erased
 dubcrate card format disk4 --yes              # ERASES it: asks you to type disk4; MBR + FAT16 + PIONEER/CDJ, left mounted
+dubcrate card format disk4 --yes --confirm disk4   # the same without being asked (for scripts: type the disk's name here instead)
 dubcrate card sync 3 4 --card /Volumes/DISK_IMG          # dry run: what would be written
 dubcrate card sync 3 4 --card /Volumes/DISK_IMG --yes    # back up, write, read back (cues AND waveforms)
 dubcrate card sync 3 4 --card /Volumes/DISK_IMG --no-waveforms --yes   # cues only
@@ -138,10 +146,14 @@ card you care about: keep an image of it (`spikes/cdj_card_snap.sh`) so it can b
 ```sh
 dubcrate rekordbox write-memory-cues            # dry run: each edited track's memory cues now and after
 dubcrate rekordbox write-memory-cues --yes      # rekordbox CLOSED: back up master.db, write, read back, restore on failure
+dubcrate rekordbox write-memory-cues --loops    # also the memory loops saved in Dubcrate (added) and those deleted in Dubcrate (soft deleted)
 dubcrate rekordbox write-memory-cues --db COPY/master.db --backup-dir DIR --keep-edits
 ```
 
 The memory cues edited in Dubcrate's player are put into rekordbox's `master.db` and nothing else is written
-(`dev_docs/rekordbox-cue-writes.md`, "Stage 3 as built"). It refuses while rekordbox runs or on a table layout it doesn't know,
+(`rekordbox-cue-writes.md`, "Stage 3 as built"). It refuses while rekordbox runs or on a table layout it doesn't know,
 copies the database's files to `rekordbox-backups` next to the library first, and puts them back if the read-back fails.
-Dubcrate's own edits for the written tracks are dropped afterwards unless `--keep-edits`. **Tried on synthetic databases only.**
+Dubcrate's own edits for the written tracks are dropped afterwards unless `--keep-edits`. `--loops` also writes memory loops
+(a loop is added or removed, never changed; hot cues and a hot cue's loop are never written). **The command was run by the owner on their
+live library (memory cues and adding a loop: both worked); removing a loop has been tried on synthetic databases only.** Use `--db` on a
+copy first.

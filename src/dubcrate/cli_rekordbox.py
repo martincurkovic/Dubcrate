@@ -3,8 +3,9 @@
 A dry run unless `--yes`, like `burn` and `card sync`. With `--yes` rekordbox must be closed; the
 database's files are copied aside first, the cues are written in one transaction, read back, and the
 copy is put back if anything is wrong (`rekordbox_write`). Only memory cues are written, and with `--loops`
-the memory loops saved in Dubcrate are added too (never removed or changed in rekordbox). **Tried on
-synthetic databases only; the memory cue part has been run by the owner on their library, the loop part not.**
+the memory loops saved in Dubcrate are added too, and the ones deleted in Dubcrate are soft deleted in rekordbox
+(loops are added or removed, never changed). **Tried on synthetic databases; the memory cue part, and adding a
+loop, have been run by the owner on their live library; removing a loop has not been tried live.**
 """
 
 import argparse
@@ -161,7 +162,7 @@ def add_parsers(sub: argparse._SubParsersAction) -> None:
     p.add_argument(
         "--loops",
         action="store_true",
-        help="also add the memory loops saved in Dubcrate (never removed or changed in rekordbox; not yet tried live)",
+        help="also add the memory loops saved in Dubcrate, and delete the ones deleted in Dubcrate (a loop is added or removed, never changed; removal not yet tried live)",
     )
     p.add_argument(
         "--keep-edits",

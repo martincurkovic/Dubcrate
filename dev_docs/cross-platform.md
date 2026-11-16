@@ -1,7 +1,7 @@
 # Cross-platform support: where we are and the plan
 
-Dubcrate supports **macOS only** today. This file is for whoever adds Linux or Windows: what
-is already portable, what is not, what was decided and why, and the order to do it in.
+Dubcrate has been **used on macOS only**. Linux is built (an AppImage, and a `cdrdao` burner) but has never been run on a real desktop or drive; Windows has groundwork
+only. This file is for whoever finishes Linux or adds Windows: what is already portable, what is not, what was decided and why, and the order to do it in.
 
 Notes are tagged as in [burning.md](burning.md): **[hardware]** measured on a real drive or
 player, **[tests]** covered by the automated tests, **[not tried]** written or researched but

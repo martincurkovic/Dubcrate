@@ -39,16 +39,21 @@ uv run ruff check . && uv run ruff format .
 ```
 src/dubcrate/
   cd.py render.py planning.py build.py   Red Book maths, audio rendering, disc packing, disc -> burnable
-  labels.py                              index labels for the case: layout and pagination (no Qt)
-  burn/                                  burn backends (discrecording, cdrdao)
-  library/                               SQLite store, folder and rekordbox importers, length measuring
+  mp3.py iso.py export.py loudness.py    MP3 discs and their ISO image, export as files, level matching
+  labels.py units.py                     index labels for the case: layout and pagination; sizes in mm / cm / in (no Qt)
+  burn/                                  burn backends (discrecording, cdrdao) behind one interface
+  library/                               SQLite store, folder and rekordbox importers, length / waveform / level measuring
   audio/                                 devices, decoding, the preview player
-  waveform.py analysis.py                3-band waveforms; rekordbox analysis files
-  cli.py cli_discs.py                    the `dubcrate` command-line tool
-  ui/                                    the PySide6 window
+  waveform.py analysis.py wave_model.py  waveforms (rekordbox's and the CDJ's), rekordbox analysis files
+  cdj_card.py card_*.py                  the CDJ-1000MK3's SD card: format, sync planning, import, formatting
+  rekordbox_write.py                     the one place rekordbox's database is written (memory cues and loops)
+  eject.py drive_toc.py burn_check.py    ejecting, reading a disc's table of contents, checking a burn
+  cli*.py                                the `dubcrate` command-line tool
+  ui/                                    the PySide6 windows, themes and the user guide (ui/help/)
+scripts/                                 builds, the guide's pictures, and the UI review gallery (ui_snapshots.py)
 tests/                                   pytest, run offscreen
-spikes/                                  throwaway hardware drivers
-dev_docs/                                command-line reference, burning and hardware notes, roadmap
+spikes/                                  throwaway hardware drivers and measurements
+dev_docs/                                hardware findings, formats, plans: start at dev_docs/README.md
 ```
 
 [AGENTS.md](AGENTS.md) has the module-by-module notes and the rules the code relies on.
@@ -71,13 +76,16 @@ dev_docs/                                command-line reference, burning and har
 
 ## Documentation
 
+Everything below `dev_docs/` is indexed in [dev_docs/README.md](dev_docs/README.md). The ones to know first:
+
 | | |
 | --- | --- |
+| [AGENTS.md](AGENTS.md) | the module-by-module notes and the hard rules (also for AI coding agents) |
 | [dev_docs/command-line.md](dev_docs/command-line.md) | the `dubcrate` command-line tool |
 | [dev_docs/burning.md](dev_docs/burning.md) | the burn spike, hardware findings, what is verified |
-| [dev_docs/rekordbox-analysis.md](dev_docs/rekordbox-analysis.md) | what we read from rekordbox, and what was measured |
-| [dev_docs/audio.md](dev_docs/audio.md) | miniaudio and the preview player |
-| [dev_docs/roadmap.md](dev_docs/roadmap.md) | what is next, decisions made, rough edges, and what to do before a public release |
+| [dev_docs/cross-platform.md](dev_docs/cross-platform.md) | Linux and Windows: what is portable and the plan |
+| [dev_docs/roadmap.md](dev_docs/roadmap.md) | what is next, decisions made and rough edges (the live to-do list is `TODO.md`) |
+| [BUILDING.md](BUILDING.md), [CHANGELOG.md](CHANGELOG.md) | building the app, and the release notes (a draft until the first release) |
 
 ## License
 

@@ -1,13 +1,18 @@
 # Roadmap
 
+What is next, what was decided and why, and what is unverified. The live list of things to do is [../TODO.md](../TODO.md) (open items on top,
+finished ones under *Completed*); this file keeps the reasons. Items are marked **Built** (with what has and hasn't been tried), and the ones that are
+done and have nothing left to say are in "Decisions so far".
+
 ## Next
 
 1. **Burn from the window.** *Built, not yet tried on hardware.* `ui/burn_dialog.py`
    shows the drive and what the inserted disc holds, asks to confirm a blank CD-R,
    takes a speed (default from Settings), can do a test-only burn, logs progress, and
    marks the disc as burned. It renders and burns on a worker thread, which needs a hardware check
-   (see [burning.md](burning.md)). Still to do: a drive picker (it uses the first
-   drive), and a way to cancel.
+   (see [burning.md](burning.md)). Built since: a **drive menu** (shown only with two or more drives, remembered by name; not tried with two real drives),
+   **Cancel while the disc is being prepared** (`CancelToken.commit()` is the point of no return; once writing starts there is no way to stop it, and the backends have no abort), and
+   **Print Labels…** when a burn has finished. Still to do: cancelling the write itself (it would ruin the disc: it needs a confirmation and a try on a drive), and cancelling Export.
 2. **Read a finished burn back.** With the burner attached, read the disc in the drive and
    check it against the disc it was burned from (the old idea of a burn record became
    "a disc just remembers when it was burned").
@@ -54,9 +59,9 @@
    PDF, `ui/label_preview.py` is the zoomable preview (draws only what shows, at the screen's real
    pixels), and `ui/label_dialog.py` is the window (Disc > Print Labels…, ⌘P). Still to do: a real
    print on A4 and Letter sticker paper (does the print panel keep the paper we asked for? how much
-   of the edge is unprintable?), check the built app bundles QtPrintSupport (`scripts/build_macos.sh`
-   and its smoke test), cm / inch units for the sizes (the owner's TODO), a way to print straight
-   after a burn, and the album or year on a label if wanted. Auto picks the fewest labels that keep
+   of the edge is unprintable?) and check the built app bundles QtPrintSupport (`scripts/build_macos.sh`
+   and its smoke test). Built since (2026-11-16): cm / inch units (`units.py`, Settings > Appearance), **Print Labels…**
+   after a burn, and an optional **year** column (the album was not wanted). Auto picks the fewest labels that keep
    the text at 6 pt or more (`AUTO_MIN_MM`); long titles are cut with "…", never wrapped.
 
 5. **Help menu.** *Done:* *Help > User Guide* opens `ui/help_dialog.py`, which renders
@@ -114,25 +119,24 @@
    Intel build (needs `nasm`, only the workflow does it), the build in CI, the `.dmg` opened on a clean
    Mac (Gatekeeper and quarantine on the nested programs), and the FFmpeg tarball's GPG signature (the
    hash was taken from the first download, not from a signed source).
-7. **Card sync** (the CDJ-1000MK3's SD card; **waveforms are written too since 2026-11-15**, see card-sync.md, "Waveform sync"). *The format is decoded; the reader/writer, the cue mapping and merge, `dubcrate card show | backup | toc | sync` and the
-   **Sync tab** (writing on, with eject) are built, and a CDJ-1000MK3 showed the cues of files they wrote (2026-11-14).
-   Left: waveform pre-writing (a test disc is made: [wave-test-disc.md](wave-test-disc.md)), and the tab itself on a real card.* A **Sync**
-   tab, pinned at the bottom of the tab strip, writes a Dubcrate audio disc's rekordbox cues to the card as
-   memory cues. Plan, decisions, hardware checklist and phases in [card-sync.md](card-sync.md); the format and
-   its gaps in [cdj1000mk3-card.md](cdj1000mk3-card.md). **The write test passed**
-   (Phase 0), the tab is built, and waveform pre-writing is next.
+7. **Card sync** (the CDJ-1000MK3's SD card). *Built, and the player accepted what it wrote.* The format is decoded; the reader/writer, the cue mapping and merge,
+   `dubcrate card show | backup | toc | sync | format | check-waveforms` and the **Sync tab** (writing on, with eject) are built, and a CDJ-1000MK3 showed the cues of the files they
+   wrote (2026-11-14) and drew and kept the waveform records written (2026-11-15). A **Sync** tab, pinned at the bottom of the tab strip, writes a Dubcrate audio disc's rekordbox cues and
+   the player's waveform for each track to the card, and **Import Cues…** brings back what you did on the player. Left: the Sync tab itself on a real card, a card formatted by Dubcrate shown
+   to a player, and Import Cues… with cues set on a real player. Plan, decisions, hardware checklist and phases in [card-sync.md](card-sync.md); the format and
+   its gaps in [cdj1000mk3-card.md](cdj1000mk3-card.md).
+8. **60 FPS waveform scrolling.** *Built 2026-11-16, measured offscreen only.* An image-based 3-band look (3.4 ms a frame instead of 16), a playhead that moves between audio blocks,
+   a 16 ms tick and Settings > Appearance > Waveform speed (Smooth 60 / Light 30). Still to do: judge it by eye and ear on a real Mac (and a 120 Hz display).
+   [waveform-60fps.md](waveform-60fps.md) has the measurements, what was tried, and how to resume.
+9. **The UI review gallery** (`scripts/ui_snapshots.py`, 2026-11-16): every window, dialog, message and menu rendered in three looks, with layout checks, an inventory of every text
+   and tooltip, and per-screen notes. Still to do: the owner's review pass (a `TODO.md` item).
 
 ## Later
 
-- Logging follow-ups (the log file itself is done: `logsetup.py`): (the Settings switch for verbose logging is done: Settings > Library, `logging/verbose`, `logsetup.set_verbose`), logging inside the library store and the CLI, and a dialog for an uncaught exception (it is only logged).
-
 - MP3 CDs: *built, never burned.* A disc is an audio CD or an MP3 CD (`disc.kind`, schema
-  v7). See Decisions, and [burning.md](burning.md) for the hardware check. Still to do: split
-  across MP3 discs from the window (the CLI's `disc split --mp3` does), moving a folder to
-  another place on the disc (folders can be made, renamed and deleted; `delete` moves things
-  up), a way to pick the kind
-  in the + button, burning an MP3 disc with the cdrdao backend, and whatever the first
-  real test shows about the CDJ.
+  v7). See Decisions, and [burning.md](burning.md) for the hardware check. The editor is built (2026-11-16): split a list across MP3 discs from the window,
+  make / rename / move / delete folders, and the + asks for the kind. Still to do: whatever the first real burn shows about the CDJ.
+  (Writing an MP3 disc with the `cdrdao` backend is built, from a `pycdlib` image, and not tried either.)
 - Rekordbox XML export as an import path with no SQLCipher dependency (a fallback if
   `pyrekordbox` ever lags behind a rekordbox update).
 - Windows and Linux burn backends behind the existing `Burner` interface: the plan, the
@@ -142,13 +146,13 @@
 
 ## Decisions so far
 
-- **Memory cues** (owner's choices 2026-11-15): editable in Dubcrate's player; kept in Dubcrate's own tables first, **saved into rekordbox's `master.db` at edit time if the user agreed** (asked once, remembered, a Settings > Library checkbox; rekordbox must be closed, otherwise the edit waits in Dubcrate), via the one sanctioned writer `rekordbox_write.py` (backup, one transaction through pyrekordbox, read-back, undo; the first write of a session keeps its backup, the newest 20 are kept). Only memory cues: hot cues and loops stay read-only. **Import Cues…** brings memory cues set on the CDJ back, additions only (a baseline for moves and deletions is not built). See `rekordbox-cue-writes.md` and `card-sync.md`.
-- **Decided 2026-11-16, not built yet** (owner's answers to design questions):
+- **Memory cues and loops** (owner's choices 2026-11-15 and 2026-11-16): editable in Dubcrate's player; kept in Dubcrate's own tables first, **saved into rekordbox's `master.db` at edit time if the user agreed** (asked once, remembered, a Settings > Library checkbox; rekordbox must be closed, otherwise the edit waits in Dubcrate), via the one sanctioned writer `rekordbox_write.py` (backup, one transaction through pyrekordbox, read-back, undo; the first write of a session keeps its backup, the newest 20 are kept). Memory cues and **memory loops** are written (a loop is added, or soft deleted when deleted in Dubcrate; never changed); hot cues and a hot cue's loops stay read-only. **Import Cues…** brings back what was done on the CDJ: new cues and loops, the player's hot cues as memory cues (unticked), and cues deleted or moved, against a baseline each sync records. See `rekordbox-cue-writes.md` and `card-sync.md`.
+- **Owner's answers to design questions, 2026-11-16 (all built since):**
   - **Import Cues: a baseline** (built 2026-11-16). Save the card's cues after each sync, so Import Cues can also offer cues *moved* and *deleted* on the player (each ticked in the review dialog, like additions).
   - **Player hot cues come back as memory cues** (built 2026-11-16) in Import Cues, listed but **unticked by default** (opt in). Writing hot cues to rekordbox stays out of scope. Memory **loops** set on the player come back too.
   - **Burn window drive picker:** a simple combo, **only shown when two or more drives are found**; the choice is remembered. One drive: nothing changes.
   - **Labels after a burn:** a **Print Labels… button in the "burn finished" message**, opening the label window with that disc ticked. Nothing automatic, no setting.
-  - **Saving loops** (decided 2026-11-16, **Dubcrate half built 2026-11-16**: `memory_loop` table, MEMORY with a loop on, shown, deletable, synced to the card, counted in the ten; the rekordbox write is not built and waits as below; the cue baseline is still to do and its rows should carry an optional end): pressing **MEMORY with a loop active saves a memory loop**, as rekordbox does (nothing else about a loop is saved: an auto loop is a gesture until MEMORY is pressed). **Dubcrate only at first**: stored in Dubcrate's own table (it needs an end column), shown in the player, synced to the card as memory loops. **Writing them to rekordbox waits** until the owner has made a few real memory loops in rekordbox and their `djmdCue` rows have been compared with a snapshot (`Out*`, `BeatLoopSize`, `ActiveLoop` are unexplained), the same table-first-then-writer order the memory cues took. Hot-cue loops are out of scope (hot cues aren't editable yet). Build after the cue baseline: both reshape the cue tuples (`(ms, label)` gains an end) and the card import, so the baseline's rows should carry an optional end from the start.
+  - **Saving loops** (built 2026-11-16): pressing **MEMORY with a loop active saves a memory loop**, as rekordbox does (nothing else about a loop is saved: an auto loop is a gesture until MEMORY is pressed). Stored in Dubcrate's own table (`memory_loop`, with an end), shown in the player, synced to the card as memory loops, counted in the ten. Writing them to rekordbox waited until the owner had made real memory loops in rekordbox and their `djmdCue` rows were compared (`rekordbox-cue-writes.md`, "Memory loops"); it is now on (`RekordboxEditor.WRITE_LOOPS`), and deleting a loop that rekordbox has is a soft delete (`memory_loop_removed`). Hot-cue loops are out of scope.
   - **Hot cues** (decided 2026-11-16): stay read-only for now. Memory cues and loops first; revisit hot-cue editing once loops are proven in rekordbox (Dubcrate-table-first, as the memory cues went).
   - **Next platform after the macOS release: Linux** (the groundwork is furthest along, and the owner has a Linux machine). Windows after that.
   - **MP3 disc editor, all three wanted (built 2026-11-16):** split a long list across MP3 discs (by size), move an MP3 folder to another place on its disc, and pick the disc kind (Audio / MP3) from the one + button.
@@ -181,12 +185,7 @@
 - Disc size and the gap between tracks are *Settings > Discs* defaults for **new**
   discs (80 min, gapless), not controls on the panel. What counts at burn time is the
   disc in the drive (`Burner.media_info`); the planned size is only a guide.
-- A planned disc stays editable after a burn. Each burn saves its own frozen snapshot
-  (`burn` / `burn_track`, copies of title, artist, length and path), so editing or
-  deleting the disc, or removing its source, never changes the record. *Duplicate*
-  makes a new editable disc from a snapshot and skips tracks no longer in the library.
-- Adding a track that is already on the disc, on another planned disc, or on a past
-  burn asks first (Add Anyway / Skip Duplicates / Cancel), listing where it is used (`Library.track_usage`,
+- Adding a track that is already on the disc, or on another disc (burned or not), asks first (Add Anyway / Skip Duplicates / Cancel), listing where it is used (`Library.track_usage`,
   `ui/overlaps.py`). Simulated burns don't count. Splitting into discs doesn't check yet.
 - Waveform looks (3-band, RGB, blue) are chosen in Settings or under View > Waveform. RGB
   and blue are derived from the 3-band data so every track has them (measured against
@@ -315,11 +314,10 @@
   two minutes with a warm cache, its `--smoke-test` passes (styles, font, guide, notices, DiscRecording and
   SQLCipher load, window builds) even with Finder's minimal `PATH`, the signature verifies and the DMG holds
   the app, the Applications shortcut, the background and the layout. NOT checked: opening it from Finder by
-  hand, the DMG window's look on a real display, the Intel build, the GitHub workflows (never run; the
-  repository is private), and whether DiscRecording can reach the drive from the bundled app (a hardware
+  hand, the DMG window's look on a real display, the Intel build, the GitHub workflows (never run), and whether DiscRecording can reach the drive from the bundled app (a hardware
   check). The first smoke run caught a real fault (`_cffi_backend` missing); a new dependency can do the same.
-- The update check against real GitHub: `updates.py` is tested against a fake. While the repository is private
-  GitHub answers 404, so *Check for Updates* reports a failure and the start-up check stays silent.
+- The update check against real GitHub: `updates.py` is tested against a fake. While GitHub
+  answers 404 for the release list (the repository private, or no release published), *Check for Updates* reports a failure and the start-up check stays silent.
 - The splash on a real display and from a built app: a true splash window doesn't take focus on macOS, so
   from source it is an ordinary frameless window (`activating`) and in a built app a real splash. Its own
   `background: transparent` stylesheet (so the theme's can't fill its corners) is a precaution: offscreen
@@ -362,25 +360,9 @@
 
 ## Before making the repository public
 
-- [x] Put the ruff settings in `pyproject.toml` (`[tool.ruff]`: line length 88, the rest is ruff
-      0.17's own defaults; there turned out to be no outside config, `ruff --isolated` gives the same rules).
-- [x] Packaging: Nuitka build script and a macOS DMG like the sibling apps
-      (`scripts/build_macos.sh`, [BUILDING.md](../BUILDING.md)). Still open: code signing
-      and notarisation, and whether the built app can use the drive (a hardware check).
-- [x] Supply ffmpeg: **bundled** (built, see item 6; not yet seen in a release build from CI) (LGPL builds of ffmpeg and ffprobe per architecture,
-      with the MP3 encoder, looked up before `PATH`), with a start-up check and a line in Settings >
-      Library. Plan and open questions: item 6 under "Next". `cdrdao` is not needed on macOS. Until
-      then the app finds Homebrew's.
-- [x] Continuous integration: `.github/workflows/test.yml` (lint and tests on macOS, every
-      push) and `build.yml` (tag: tests, builds, smoke tests, draft release). Unproven
-      until the first run on GitHub (the repository is private).
-- [ ] README: real download and install steps (screenshots are in), and a re-check that every
-      claim in it is something that has been tried.
-- [ ] Re-read the README's trademark wording and the "not affiliated" notice.
-- [x] A third-party notices file, shown from About and the Help menu
-      (`ui/help/THIRD_PARTY_NOTICES.md`). Worth a careful read by the owner before release:
-      it names each licence and project but does not reproduce the full licence texts.
-- [ ] Look through the git history for anything personal that shouldn't be public.
-- [ ] A changelog. (The version, from the git tag, is shown in *About* and on the splash,
-      and the update check reads GitHub's release notes.)
-- [ ] Decide whether `AGENTS.md` and `CLAUDE.md` stay in the public repo.
+The checklist lives in [../TODO.md](../TODO.md) ("Before making the repo public", and what is done under *Completed*), so it is kept in one place. What it covers:
+the README's claims against what has been tried and its trademark wording, reading the third-party notices, the changelog ([../CHANGELOG.md](../CHANGELOG.md) is a draft),
+code signing and notarisation, opening the built `.dmg` on a clean Mac, the first CI run of `build.yml`, and the update check against a real release. The audit
+and what was found in the git history are in [release-readiness.md](release-readiness.md). Done so far: the ruff settings, packaging (Nuitka and a DMG,
+[BUILDING.md](../BUILDING.md)), bundling ffmpeg (see item 6 under "Next"), the CI workflows (not yet run on GitHub), the third-party notices file, the history scan, and the decision to keep
+`AGENTS.md` and `CLAUDE.md` in the repository.

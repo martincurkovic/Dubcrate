@@ -460,15 +460,15 @@ You don't need the player to get a card ready. **Format a Card…** (right-click
 
 ## Settings
 
-**File > Settings…** (⌘,) has five tabs:
+**File > Settings…** (⌘,) has five tabs, **Audio**, **Discs**, **Burning**, **Library** and **Appearance**:
 
 ![The Settings window, on the Audio tab](screenshots/settings.png "Settings")
 
 ![The Settings window, on the Library tab](screenshots/settings-library.png "Settings > Library")
 
+- **Audio:** the **Output device** for previews and the **Buffer size**, and the **Beat jump** distance for the arrow keys.
 - **Discs:** how **new** discs are planned: **Plan new discs for** 80 minutes (700 MB) or 74 minutes (650 MB), the same size, as megabytes, for an MP3 CD, **Between tracks**, which is **Gapless** unless you choose 1, 2 or 3 seconds of silence (audio CDs only), and **MP3 CDs: highest rate**, the top constant bitrate for new MP3 discs (320 kbit/s unless you lower it).
 - **Burning:** the **Burn speed** a burn starts with (10x unless you change it). Old players read discs burned slowly more reliably, and 10x to 16x is a good range. Your drive may not offer every speed. You can still pick another speed for a single burn in the burn window. **Normalise the levels of tracks on audio CDs** chooses whether a burn starts with normalising on, and **Normalise to** what to bring the tracks to; see [Burning a disc](#burning-a-disc).
-- **Audio:** the **Output device** for previews and the **Buffer size**, and the **Beat jump** distance for the arrow keys.
 - **Library:** whether Dubcrate updates your rekordbox library each time it starts (on by default), whether memory cue and loop changes you make in the player are **saved into your rekordbox library** (see [Listening to tracks](#listening-to-tracks); asked the first time you edit one), and whether it checks for a newer version of Dubcrate when it starts (also on by default; see [Updates](#updates-and-what-dubcrate-sends)).
 - **Appearance:** the **Theme** (the same choice as **View > Theme**), the **Waveform style** (the same as **View > Waveform**), the **Waveform background**, the **Waveform speed** (**Smooth**, 60 frames a second, or **Light**, 30), the **Key notation**: **Camelot** (8A) or **Musical** (A min), and the **Units** sizes are shown in: **Millimetres**, **Centimetres** or **Inches**. Only what is shown changes; your library, rekordbox and the files keep what they have (sizes are stored in millimetres, so changing the unit loses nothing, and the label window follows at once).
 

@@ -3,9 +3,8 @@
 All notable changes to Dubcrate. The in-app update check reads the notes of each GitHub release, so
 the text of a release is this file's entry for that version (pasted into the release by hand).
 
-**This is a draft for the first release, written from the git history (2026-11-15): edit it to say what
-you want people to read.** Where a feature has been tried on real hardware it says so; where it has only
-been tested by the automated tests it says that too.
+**This is a draft for the first release, brought up to date on 2026-11-16: edit it to say what you want people to read.**
+Where a feature has been tried on real hardware it says so; where it has only been tested by the automated tests it says that too.
 
 ## [0.1.0] - not released yet
 
@@ -17,10 +16,24 @@ The first release: macOS (Apple Silicon and Intel) and, new, Linux (an AppImage)
   **folder of music**. Re-importing keeps your discs intact; a track that has left its source but is on a disc is kept and marked.
 - The **Explorer** browses folders and drives without importing, with **pinned folders** as tabs of their own.
 - **Discs are playlists** you keep in folders, with an exact capacity bar for 74 or 80 minute discs; **Fit All to Disc**,
-  **Split Shown Tracks Across Discs**, drag and drop, and a warning when a disc is over its size.
+  **Split Shown Tracks Across Discs** (audio or MP3), drag and drop, and a warning when a disc is over its size. The **+** in the Discs list asks
+  whether the new disc is an audio or an MP3 disc.
+- **MP3 discs have folders**: make, rename, delete, and **move** them (drag in the Discs list, or right-click > Move Folder to), within the CDJs' limits.
 - Track text for the disc (title and artist) can be edited for a disc without touching the library, rekordbox or the file.
-- **Memory cues can be edited in the player** (add, move, delete). The first time, Dubcrate asks whether to **save the changes into your rekordbox library** (remembered; Settings > Library changes it); if so each change is written into rekordbox's database when you make it (rekordbox closed, the first change of a session backed up, read back, undone on failure), and if not it stays in Dubcrate. `dubcrate rekordbox write-memory-cues` does the same from the command line. It is the one thing Dubcrate writes to rekordbox, and it has been tested on synthetic databases and run once on the author's own rekordbox 7.2 library, so keep your own backup and try it on one track first.
-- **Bring memory cues back from the card**: the Sync tab's **Import Cues…** lists the memory cues you set on the player that Dubcrate doesn't have, and the ones you tick become memory cues in Dubcrate (and rekordbox, if you allowed that). Only new cues are imported; moves and deletions on the player are not noticed. Not tried with cues set on a real player yet.
+- Sizes in the label window can be shown in **millimetres, centimetres or inches** (Settings > Appearance).
+
+### Memory cues and loops
+
+- **Memory cues and memory loops can be edited in the player**: MEMORY adds a cue (or, with a loop on, saves the loop), the list's ✕ and
+  right-click delete, a click on a loop in the list recalls it. They are kept in Dubcrate and go to the card when you sync.
+- The first time, Dubcrate asks whether to **save the changes into your rekordbox library** (remembered; Settings > Library changes it). If you agree, each
+  change is written into rekordbox's database when you make it (rekordbox closed, the first change of a session backed up, read back, undone on failure),
+  and a deletion is a soft delete as rekordbox's own are. If not, it stays in Dubcrate. `dubcrate rekordbox write-memory-cues [--loops]` does the same from the
+  command line. This is the one thing Dubcrate writes to rekordbox. *Memory cues and adding a loop were run on the author's own rekordbox 7.2 library and worked; the in-app path
+  and deleting a loop in rekordbox are tested only on synthetic databases, so keep your own backup and try it on one track first.*
+- **Bring changes back from the card**: the Sync tab's **Import Cues…** lists, per disc and track, what you did on the player: new memory cues and loops, the player's
+  hot cues (not ticked: you opt in), and cues you **deleted or moved** there (noticed from the sync after this feature, which records what it left on the card).
+  You tick what to import. *Not tried with cues set on a real player yet.*
 
 ### Burning
 
@@ -28,19 +41,26 @@ The first release: macOS (Apple Silicon and Intel) and, new, Linux (an AppImage)
   was the one tried: track times and CD-TEXT, accents included, were right on a CDJ-1000MK3).
 - **MP3 CDs**, with folders, constant bitrate, written as ISO 9660 + Joliet. *Tested by the automated tests; not yet tried on a real disc.*
 - **Level matching** for audio CDs: bring tracks to a loudness (or peak-normalise them), with presets. *Tested; not yet listened to on a CDJ.*
+- A **drive menu** appears in the burn window when there are two or more drives (remembered). *Tested with stand-ins; not tried with two real drives.*
+- **Cancel** while the disc is being prepared (before anything is written): it stops at once and the blank disc is still good. Once writing starts a disc can't be stopped, so the button goes.
+- **Print Labels…** appears when a burn has finished, with that disc ticked.
 - **Export** a disc as files for any other burning program (numbered WAVs and a table of contents), with no drive needed.
 - A burn **checks the disc in the drive** first and, on a Mac, reads the burned disc's table of contents afterwards to say whether it is the disc that was planned. *The second check has not yet run on a real burn from the window.*
 
 ### Preview
 
-- The player is laid out like rbxport's: controls down the left (previous / next, beat jump with a size menu, CUE and play), hot cue buttons A to H, memory cue buttons and loop controls under the waveform, zoom buttons over it, and **Memory / Hot Cue / Info** tabs on the right. Drag a track from a list onto the player to load it. The Info tab shows the track's **cover art** (from MP3, FLAC and M4A files; a placeholder when there is none). rekordbox's cues stay read-only. **CUE** (a temporary cue point, hold to preview), **automatic and manual loops** with RELOOP, and **quantise** work in the preview too, for finding your way round a track: they last until another track is loaded and are never saved. *Not yet used on a real rekordbox library.* **Memory cues can be added, moved and deleted in the player** (MEMORY, the list's ✕, right-click; Reset goes back): they are kept in Dubcrate, never written to rekordbox, and go to the card when you sync.
-- A **player** with waveforms (rekordbox's own for rekordbox tracks, with beat grid, phrases and cues), scratching by dragging,
-  beat jump with the arrow keys, play-through to the next track, and **four looks** (System, Light, Dark, Macintosh System 6).
+- The player is laid out like rbxport's: controls down the left (previous / next, beat jump with a size menu, CUE and play), hot cue buttons A to H, memory cue buttons and loop
+  controls under the waveform, zoom buttons over it, and **Memory / Hot Cue / Info** tabs on the right. The Info tab shows the track's **cover art** (from MP3, FLAC, M4A, Ogg and AIFF/WAV files; a
+  placeholder when there is none). Drag a track from a list onto the player to load it. **CUE**, **automatic and manual loops** with RELOOP, and **quantise** (remembered) work
+  too; a loop lasts until another track is loaded unless MEMORY saves it. A **bar and beat counter** shows beside the playhead.
+- The waveform scrolls at **60 frames a second** (Settings > Appearance > **Waveform speed** offers *Light*, 30, for slower computers), in rekordbox's own waveform for rekordbox tracks (with beat grid, phrases and
+  cues) and in three waveform looks (3-band, RGB and Blue), inside four themes (System, Light, Dark and Macintosh System 6). Scratching by dragging, beat jump with the arrow keys, play-through to the next track.
+  *Measured offscreen only: not yet judged by eye and ear on a real display.*
 
 ### Index labels
 
 - **Print labels** for the case: one or several discs on a sheet (A3 to A6, Letter, Legal), MP3 folders as headings,
-  optional BPM, key and duration columns, a zoomable preview, to a printer or a PDF.
+  optional BPM, key, **year** and duration columns, a zoomable preview, to a printer or a PDF.
 
 ### The CDJ-1000MK3's SD card (new, and the part that has had the least testing)
 
@@ -48,17 +68,19 @@ The first release: macOS (Apple Silicon and Intel) and, new, Linux (an AppImage)
   and anything already on the card are never touched, and the card's files are copied aside before anything is written. *Tried: a
   CDJ-1000MK3 (firmware 2.20) showed every cue written this way.*
 - **Sync also writes the player's waveform for each track**, so the player doesn't analyse a track when it loads. Dubcrate works the
-  waveform out itself (from the low notes the player draws), usually while burning. *Tried: the player accepted, drew and kept
-  waveforms written this way. The Sync tab's own waveform writing has not yet been tried on a card in a player.*
+  waveform out itself (from the low notes the player draws), in the background when you put a track on an audio disc and from the audio when you burn, and
+  Sync does any that are left. *Tried: the player accepted, drew and kept waveforms written this way. The Sync tab's own waveform writing has not yet been tried on a card in a player.*
 - **Format a Card** sets up a blank SD card from scratch (FAT16, the PIONEER folder), so a card can be prepared at home, on a Mac,
   Linux or Windows. *Not yet shown to a player, and the Linux and Windows ways have not been tried on a real card.* Only plain SD cards of 2 GB or less work in the player.
-- The Sync tab: the card on the left, a **browser of the picked disc's tracks** in the middle (cues and waveform state for each, and the picked track's waveform drawn at the bottom as the player's display draws it, with an **Analyse Waveforms** button to work them out without writing to a card), and the **discs to tick** on the right, so a disc can be looked through without leaving Sync. **Format a Card…** and **Eject** are in the card list's right-click menu.
+- The Sync tab: the card on the left, a **browser of the picked disc's tracks** in the middle (with the picked track's waveform drawn at the bottom as the player's display draws it),
+  and the **discs to tick** on the right, so a disc can be looked through without leaving Sync. **Format a Card…**, **Import Cues…** and **Eject** are in the card list's right-click menu.
 
 ### Under the hood
 
 - Imports, length measuring, waveform analysis and level measuring show their progress and can be **cancelled**; a folder track's waveform strip is remembered between sessions.
+- An unexpected error shows a **"Something went wrong" message** with a Show Log File button, as well as going to the log (Help > Show Log File); the command line logs to its own file.
 - A built-in **update check** (the only thing Dubcrate sends over the network: a request for GitHub's release list, once a day at
-  start-up unless you switch it off), a **log file** (Help > Show Log File), and a **command-line tool** (`dubcrate`).
+  start-up unless you switch it off) and a **command-line tool** (`dubcrate`).
 - ffmpeg and ffprobe are bundled (LGPL builds), so there is nothing to install.
 - GPL-3.0-or-later.
 
