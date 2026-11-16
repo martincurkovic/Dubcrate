@@ -18,6 +18,7 @@ from dubcrate.burn.base import (
     BurnOptions,
     DataDisc,
     Disc,
+    Drive,
     MediaInfo,
     Progress,
 )
@@ -132,6 +133,13 @@ class DiscRecordingBurner:
             if wanted in (dev.bsdName(), dev.displayName()):
                 return dev
         raise BurnError(f"no drive matching {wanted!r}")
+
+    def drives(self) -> list[Drive]:
+        """The optical drives DiscRecording sees: the id is the BSD name (`disk4`), the name the display name."""
+        return [
+            Drive(str(dev.bsdName()), str(dev.displayName() or dev.bsdName()))
+            for dev in list_devices()
+        ]
 
     def media_info(self, device: str | None) -> MediaInfo:
         """The disc in the drive, as DiscRecording reports it."""

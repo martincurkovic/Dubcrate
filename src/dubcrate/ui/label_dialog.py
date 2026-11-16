@@ -33,11 +33,12 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from dubcrate import labels, settings
+from dubcrate import labels, settings, units
 from dubcrate.library import Library
 from dubcrate.library.models import DiscSummary
 from dubcrate.ui import label_paint
 from dubcrate.ui.label_preview import FIT, ZOOM_STEPS, PagePreview
+from dubcrate.ui.length_spin import LengthSpin
 from dubcrate.ui.models import _disc_icon, _folder_icon
 
 logger = logging.getLogger(__name__)
@@ -121,14 +122,21 @@ class LabelDialog(QDialog):
         none_button.clicked.connect(lambda: self._tick_all(Qt.CheckState.Unchecked))
 
         o = self._options
+        self._unit = units.unit(
+            settings.get_units()
+        )  # (sizes are shown in it; they are held in millimetres)
         self.page_combo = QComboBox()
         for name, (w, h) in labels.PAGE_SIZES.items():
-            self.page_combo.addItem(f"{name} ({w:g} × {h:g} mm)", name)
+            self.page_combo.addItem(units.page_text(name, w, h, self._unit), name)
         self.page_combo.setCurrentIndex(max(self.page_combo.findData(o.page), 0))
         self.page_combo.setToolTip("The paper in the printer.")
         page_w, page_h = o.page_mm
-        self.width_spin = self._mm_spin(o.width_mm, labels.MIN_LABEL_MM, page_w)
-        self.height_spin = self._mm_spin(o.height_mm, labels.MIN_LABEL_MM, page_h)
+        self.width_spin = LengthSpin(
+            o.width_mm, labels.MIN_LABEL_MM, page_w, self._unit.key
+        )
+        self.height_spin = LengthSpin(
+            o.height_mm, labels.MIN_LABEL_MM, page_h, self._unit.key
+        )
         self.font_spin = QDoubleSpinBox()
         self.font_spin.setDecimals(1)
         self.font_spin.setSingleStep(0.5)
@@ -165,8 +173,8 @@ class LabelDialog(QDialog):
         self.copies_spin.setToolTip(
             "Print each disc's labels this many times: one set for each copy you burned."
         )
-        self.margin_spin = self._mm_spin(o.margin_mm, 0, 30)
-        self.gap_spin = self._mm_spin(o.gap_mm, 0, 20)
+        self.margin_spin = LengthSpin(o.margin_mm, 0, 30, self._unit.key)
+        self.gap_spin = LengthSpin(o.gap_mm, 0, 20, self._unit.key)
         self.bpm_check = QCheckBox("Show BPM")
         self.bpm_check.setChecked(o.show_bpm)
         self.bpm_check.setToolTip(
@@ -187,14 +195,14 @@ class LabelDialog(QDialog):
 
         form = QFormLayout()
         form.addRow("Paper", self.page_combo)
-        form.addRow("Label width (mm)", self.width_spin)
-        form.addRow("Label height (mm)", self.height_spin)
+        form.addRow("Label width", self.width_spin)
+        form.addRow("Label height", self.height_spin)
         form.addRow("Font size", self.font_spin)
         form.addRow("Spread each disc over", self.per_disc_spin)
         form.addRow("Columns (up to)", self.columns_combo)
         form.addRow("Copies of each", self.copies_spin)
-        form.addRow("Page margin (mm)", self.margin_spin)
-        form.addRow("Gap between labels (mm)", self.gap_spin)
+        form.addRow("Page margin", self.margin_spin)
+        form.addRow("Gap between labels", self.gap_spin)
         form.addRow(self.bpm_check)
         form.addRow(self.key_check)
         form.addRow(self.duration_check)
@@ -288,6 +296,7 @@ class LabelDialog(QDialog):
         self.duration_check.toggled.connect(self.refresh)
         self.outline_check.toggled.connect(self.refresh)
         self.disc_tree.itemChanged.connect(self._on_item_changed)
+        settings.changes.units.connect(self._units_changed)
         self.refresh()
 
     @staticmethod
@@ -300,14 +309,19 @@ class LabelDialog(QDialog):
         label.setMinimumHeight(QFontMetrics(label.font()).lineSpacing() * lines + 4)
         return label
 
-    @staticmethod
-    def _mm_spin(value: float, low: float, high: float) -> QDoubleSpinBox:
-        spin = QDoubleSpinBox()
-        spin.setRange(low, high)
-        spin.setDecimals(1)
-        spin.setSingleStep(1.0)
-        spin.setValue(value)
-        return spin
+    def _units_changed(self) -> None:
+        """Settings > Appearance > Units was changed while this window is open: show the sizes in it. What the
+        boxes hold (millimetres) does not change, only how it is written."""
+        self._unit = units.unit(settings.get_units())
+        for spin in (
+            self.width_spin,
+            self.height_spin,
+            self.margin_spin,
+            self.gap_spin,
+        ):
+            spin.set_unit(self._unit.key)
+        for i, (name, (w, h)) in enumerate(labels.PAGE_SIZES.items()):
+            self.page_combo.setItemText(i, units.page_text(name, w, h, self._unit))
 
     def _font_changed(self, value: float) -> None:
         """Sizes below the smallest are skipped: up from Auto goes to the smallest size, and down
@@ -322,8 +336,9 @@ class LabelDialog(QDialog):
     def _page_size_changed(self, *_args) -> None:
         """Labels can't be bigger than the paper: the width and height limits follow it."""
         page_w, page_h = labels.PAGE_SIZES[self.page_combo.currentData()]
-        self.width_spin.setMaximum(page_w)  # (a value above the new limit is lowered)
-        self.height_spin.setMaximum(page_h)
+        # (a value above the new limit is lowered)
+        self.width_spin.set_range_mm(labels.MIN_LABEL_MM, page_w)
+        self.height_spin.set_range_mm(labels.MIN_LABEL_MM, page_h)
         self.refresh()
 
     # -- the discs: the Discs list's folders, each disc with a tick box --------------------
@@ -482,13 +497,13 @@ class LabelDialog(QDialog):
         return labels.LabelOptions(
             page=self.page_combo.currentData(),
             font_pt=self.font_spin.value(),
-            width_mm=self.width_spin.value(),
-            height_mm=self.height_spin.value(),
+            width_mm=self.width_spin.mm,
+            height_mm=self.height_spin.mm,
             per_disc=self.per_disc_spin.value(),
             columns=self.columns_combo.currentData(),
             copies=self.copies_spin.value(),
-            margin_mm=self.margin_spin.value(),
-            gap_mm=self.gap_spin.value(),
+            margin_mm=self.margin_spin.mm,
+            gap_mm=self.gap_spin.mm,
             show_bpm=self.bpm_check.isChecked(),
             show_key=self.key_check.isChecked(),
             show_duration=self.duration_check.isChecked(),

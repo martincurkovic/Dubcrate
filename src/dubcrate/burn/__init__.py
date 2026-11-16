@@ -7,6 +7,7 @@ from dubcrate.burn.base import (
     DataDisc,
     Disc,
     DiscTrack,
+    Drive,
     MediaInfo,
 )
 
@@ -17,8 +18,10 @@ __all__ = [
     "DataDisc",
     "Disc",
     "DiscTrack",
+    "Drive",
     "MediaInfo",
     "backend_problem",
+    "choose_drive",
     "default_backend",
     "get_burner",
 ]
@@ -46,6 +49,22 @@ def backend_problem(name: str) -> str | None:
             return f"Dubcrate burns with cdrdao here, and it was not found. {cdrdao.install_hint()}, then restart Dubcrate."
         return None
     return f"Unknown burn backend {name!r}."
+
+
+def choose_drive(
+    drives: list[Drive], current: str | None = None, remembered: str | None = None
+) -> Drive | None:
+    """The drive to use: the one the user has picked in this window (`current`, an id) if it is still there, else
+    the one remembered from last time (by name), else the first. None when there are no drives."""
+    if not drives:
+        return None
+    for drive in drives:
+        if current is not None and drive.id == current:
+            return drive
+    for drive in drives:
+        if remembered is not None and drive.name == remembered:
+            return drive
+    return drives[0]
 
 
 def get_burner(name: str) -> Burner:

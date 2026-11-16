@@ -1,14 +1,17 @@
 """Command line front end for the Dubcrate library (until there's a GUI)."""
 
 import argparse
+import logging
 import sys
 from pathlib import Path
 
-from dubcrate import cli_card, cli_discs, cli_doctor, cli_rekordbox
+from dubcrate import cli_card, cli_discs, cli_doctor, cli_rekordbox, logsetup
 from dubcrate.cd import format_msf
 from dubcrate.library import ImportSummary, Library
 from dubcrate.library.folder import scan_folder
 from dubcrate.library.rekordbox import RekordboxError, read_master_db
+
+log = logging.getLogger(__name__)
 
 
 def _fit(text: str, width: int) -> str:
@@ -163,8 +166,20 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
-    with Library.open(args.library) as lib:
-        return cli_discs.run(lib, args)
+    # the command line logs to a file of its own (what it did, and the traceback of a bug), not to the console:
+    # it prints its own output, and the app may be running, so it must not share the app's log
+    logsetup.setup(name=logsetup.CLI_LOG_NAME, console=False)
+    try:
+        log.info(
+            "dubcrate %s", " ".join(sys.argv[1:] if argv is None else map(str, argv))
+        )
+        with Library.open(args.library) as lib:
+            return cli_discs.run(lib, args)
+    except Exception:
+        log.critical("the command failed", exc_info=True)
+        raise
+    finally:
+        logsetup.shutdown()
 
 
 if __name__ == "__main__":

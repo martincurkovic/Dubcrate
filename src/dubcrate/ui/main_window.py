@@ -803,6 +803,7 @@ class MainWindow(QMainWindow):
             self._lib, disc_id, self, burner_factory=self._burner_factory
         )
         self.burn_dialog.burned.connect(self._on_burned)
+        self.burn_dialog.labels_requested.connect(self.print_labels)
         self.burn_dialog.finished.connect(lambda _r: self.disc_view.reload())
         self.burn_dialog.open()
 

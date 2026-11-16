@@ -6,6 +6,7 @@ stable, tracks that vanished from the source are removed, and the browse tree
 is rebuilt.
 """
 
+import logging
 import os
 import sqlite3
 import unicodedata
@@ -38,6 +39,8 @@ from dubcrate.library.models import (
 )
 from dubcrate.library.paths import default_library_path
 from dubcrate.planning import fit_tracks, split_sequential
+
+log = logging.getLogger(__name__)
 from dubcrate.waveform import Waveform, pack_preview, unpack_preview
 
 
@@ -455,6 +458,8 @@ class Library:
             raise RuntimeError(
                 f"library schema v{version} is newer than this Dubcrate (v{SCHEMA_VERSION})"
             )
+        if version < SCHEMA_VERSION:
+            log.info("library schema v%d -> v%d", version, SCHEMA_VERSION)
         for target, script in enumerate(_MIGRATIONS, start=1):
             if version < target:
                 with self._conn:
@@ -499,6 +504,7 @@ class Library:
                 (source_id,),
             )
             self._conn.execute("DELETE FROM source WHERE id = ?", (source_id,))
+        log.info("removed source %s (%s disc(s) lost tracks)", source_id, on_discs)
 
     def replace_source(
         self,
@@ -555,6 +561,16 @@ class Library:
                 )
 
             node_count = self._replace_nodes(source_id, list(nodes), ids)
+        log.info(
+            "source %s %s (%s): %d added, %d updated, %d removed, %d kept on discs",
+            source_id,
+            name,
+            kind,
+            added,
+            updated,
+            len(dropped),
+            len(kept),
+        )
         return ImportSummary(
             source_id, added, updated, len(dropped), node_count, tuple(notes)
         )
@@ -1393,6 +1409,9 @@ class Library:
                 "DELETE FROM disc_dir WHERE id = ?", (dir_id,)
             )  # (its folders go too)
             self._touch_disc(disc_id)
+        log.info(
+            "deleted folder %s of MP3 disc %s (%d in it)", dir_id, disc_id, len(subtree)
+        )
 
     def move_to_dir(
         self, disc_id: int, positions: Iterable[int], dir_id: int | None
@@ -1442,9 +1461,10 @@ class Library:
         )
 
     def delete_disc(self, disc_id: int) -> None:
-        self._disc_row(disc_id)
+        name = self._disc_row(disc_id)["name"]
         with self._conn:
             self._conn.execute("DELETE FROM disc WHERE id = ?", (disc_id,))
+        log.info("deleted disc %s “%s”", disc_id, name)
 
     def disc_entries(self, disc_id: int) -> list[DiscEntry]:
         disc = self._disc_row(disc_id)
@@ -1757,7 +1777,7 @@ class Library:
     def delete_disc_folder(self, folder_id: int) -> None:
         """Delete a folder with everything in it: its discs and its folders, at any depth.
         The tracks on those discs stay in the library (a disc only lists tracks)."""
-        _folders, discs = self.disc_folder_subtree(folder_id)
+        folders, discs = self.disc_folder_subtree(folder_id)
         with self._conn:
             self._conn.executemany(
                 "DELETE FROM disc WHERE id = ?", [(d,) for d in discs]
@@ -1765,6 +1785,12 @@ class Library:
             self._conn.execute(
                 "DELETE FROM disc_folder WHERE id = ?", (folder_id,)
             )  # (its folders go too)
+        log.info(
+            "deleted disc folder %s with %d folder(s) and %d disc(s) in it",
+            folder_id,
+            len(folders),
+            len(discs),
+        )
 
     def move_disc(self, disc_id: int, folder_id: int | None) -> None:
         """Put a disc in a folder (or at the top level with None)."""

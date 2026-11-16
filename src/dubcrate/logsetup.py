@@ -23,6 +23,7 @@ from platformdirs import user_log_dir
 from dubcrate.ui.version import app_version
 
 LOG_NAME = "dubcrate.log"
+CLI_LOG_NAME = "dubcrate-cli.log"  # the command line's own file: the app may be running, and two processes must not rotate one
 CRASH_NAME = "crash.log"
 MAX_BYTES = 1_000_000
 BACKUPS = 3
@@ -33,6 +34,7 @@ _logger = logging.getLogger("dubcrate")
 _handler: logging.Handler | None = None
 _console: logging.Handler | None = None
 _crash_file = None
+_uncaught_listener = None  # called with (kind, value) after an uncaught exception is logged (the app shows a message)
 
 
 def log_dir() -> Path:
@@ -47,23 +49,29 @@ def log_path() -> Path:
     return log_dir() / LOG_NAME
 
 
-def setup(verbose: bool = False, directory: Path | None = None) -> Path | None:
-    """Start logging to the file, and to the console too (a terminal run shows it as it happens).
-    Returns the log file, or None if it can't be written: the app carries on without a file
-    rather than failing to start."""
+def setup(
+    verbose: bool = False,
+    directory: Path | None = None,
+    name: str = LOG_NAME,
+    console: bool = True,
+) -> Path | None:
+    """Start logging to the file `name` (and to the console too unless `console` is off: a terminal run of the
+    app shows it as it happens, the command line prints its own output). Returns the log file, or None if it
+    can't be written: the app carries on without a file rather than failing to start."""
     global _handler, _console
     shutdown()
     level = logging.DEBUG if verbose else logging.INFO
     _logger.setLevel(logging.DEBUG)
-    _console = logging.StreamHandler()  # stderr
-    _console.setFormatter(logging.Formatter(CONSOLE_FORMAT))
-    _console.setLevel(level)
-    _logger.addHandler(_console)
+    if console:
+        _console = logging.StreamHandler()  # stderr
+        _console.setFormatter(logging.Formatter(CONSOLE_FORMAT))
+        _console.setLevel(level)
+        _logger.addHandler(_console)
     folder = Path(directory) if directory is not None else log_dir()
     try:
         folder.mkdir(parents=True, exist_ok=True)
         handler = logging.handlers.RotatingFileHandler(
-            folder / LOG_NAME, maxBytes=MAX_BYTES, backupCount=BACKUPS, encoding="utf-8"
+            folder / name, maxBytes=MAX_BYTES, backupCount=BACKUPS, encoding="utf-8"
         )
     except OSError:
         _logger.warning(
@@ -74,7 +82,7 @@ def setup(verbose: bool = False, directory: Path | None = None) -> Path | None:
     handler.setLevel(level)
     _logger.addHandler(handler)
     _handler = handler
-    return folder / LOG_NAME
+    return folder / name
 
 
 def shutdown() -> None:
@@ -122,13 +130,35 @@ def log_startup() -> None:
     tools.log_tools()
 
 
+def set_uncaught_listener(listener) -> None:
+    """Have `listener(kind, value)` called after each uncaught exception has been logged (the app turns it into
+    a message). It may be called on any thread and must not raise: if it does, that is logged and ignored.
+    None stops it."""
+    global _uncaught_listener
+    _uncaught_listener = listener
+
+
+def _tell_listener(kind, value) -> None:
+    """Tell the listener about an exception, unless it is one that just ends the program (Ctrl+C, an exit)."""
+    listener = _uncaught_listener
+    if listener is None or (
+        isinstance(kind, type) and issubclass(kind, (KeyboardInterrupt, SystemExit))
+    ):
+        return
+    try:
+        listener(kind, value)
+    except Exception:
+        _logger.warning("the uncaught-exception listener failed", exc_info=True)
+
+
 def install_exception_hooks() -> None:
     """Write uncaught exceptions (on any thread, and from Qt slots) to the log with their
-    traceback, then carry on as normal."""
+    traceback, tell the listener (`set_uncaught_listener`), then carry on as normal."""
     previous = sys.excepthook
 
     def hook(kind, value, trace):
         _logger.critical("uncaught exception", exc_info=(kind, value, trace))
+        _tell_listener(kind, value)
         previous(kind, value, trace)
 
     sys.excepthook = hook
@@ -140,6 +170,7 @@ def install_exception_hooks() -> None:
             getattr(args.thread, "name", "?"),
             exc_info=(args.exc_type, args.exc_value, args.exc_traceback),
         )
+        _tell_listener(args.exc_type, args.exc_value)
         previous_thread(args)
 
     threading.excepthook = thread_hook

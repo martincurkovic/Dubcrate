@@ -16,6 +16,7 @@ from dubcrate.burn.base import (
     BurnOptions,
     DataDisc,
     Disc,
+    Drive,
     MediaInfo,
     Progress,
 )
@@ -228,6 +229,13 @@ class CdrdaoBurner:
                 " to be in the drive's group (`cdrom` or `optical`); `cdrdao scanbus` shows what it sees."
             )
         return found[0][0]
+
+    def drives(self) -> list[Drive]:
+        """The drives `cdrdao scanbus` lists: the id is the device (`/dev/sr0`), the name what it says about it."""
+        return [
+            Drive(device, f"{description} ({device})")
+            for device, description in scan_devices()
+        ]
 
     def media_info(self, device: str | None) -> MediaInfo:
         """The drive's name and whether the disc in it is blank and how much it holds, from

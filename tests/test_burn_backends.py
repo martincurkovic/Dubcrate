@@ -109,3 +109,70 @@ def test_the_burner_says_whether_to_eject_or_leave_the_disc_in_the_drive(
         object(), BurnOptions(eject=eject), {}, [], lambda _t: None
     )
     assert seen["action"] == expected
+
+
+# -- the drives a burner sees, and which one is used ---------------------------------------------------
+
+
+def test_the_first_drive_is_used_until_one_is_picked_or_remembered():
+    from dubcrate.burn import Drive, choose_drive
+
+    one, two = Drive("disk3", "LITE-ON eSAU108"), Drive("disk4", "ASUS SDRW-08D2S")
+    assert (
+        choose_drive([], "disk3", "LITE-ON eSAU108") is None
+    )  # (no drives: nothing to choose)
+    assert choose_drive([one, two]) is one
+    assert (
+        choose_drive([one, two], remembered="ASUS SDRW-08D2S") is two
+    )  # (by name: the id can change)
+    assert (
+        choose_drive([one, two], current="disk3", remembered="ASUS SDRW-08D2S") is one
+    )  # (this window's pick wins)
+    assert (
+        choose_drive([one, two], current="disk9", remembered="nothing like it") is one
+    )  # (both gone: the first)
+    assert choose_drive([one], remembered="ASUS SDRW-08D2S") is one
+
+
+def test_cdrdao_lists_the_drives_its_scan_finds(monkeypatch):
+    monkeypatch.setattr(
+        cdrdao,
+        "scan_devices",
+        lambda: [
+            ("/dev/sr0", "HL-DT-ST BD-RE  WH16NS40"),
+            ("/dev/sr1", "LITE-ON eSAU108"),
+        ],
+    )
+    drives = cdrdao.CdrdaoBurner().drives()
+    assert [(d.id, d.name) for d in drives] == [
+        ("/dev/sr0", "HL-DT-ST BD-RE  WH16NS40 (/dev/sr0)"),
+        ("/dev/sr1", "LITE-ON eSAU108 (/dev/sr1)"),
+    ]
+    monkeypatch.setattr(cdrdao, "scan_devices", list)
+    assert cdrdao.CdrdaoBurner().drives() == []
+
+
+@pytest.mark.skipif(sys.platform != "darwin", reason="DiscRecording is macOS only")
+def test_discrecording_lists_its_drives_by_bsd_name_and_display_name(monkeypatch):
+    from dubcrate.burn import discrecording
+
+    class Device:
+        def __init__(self, bsd, name):
+            self._bsd, self._name = bsd, name
+
+        def bsdName(self):
+            return self._bsd
+
+        def displayName(self):
+            return self._name
+
+    monkeypatch.setattr(
+        discrecording,
+        "list_devices",
+        lambda: [Device("disk3", "LITE-ON eSAU108"), Device("disk4", None)],
+    )
+    drives = discrecording.DiscRecordingBurner().drives()
+    assert [(d.id, d.name) for d in drives] == [
+        ("disk3", "LITE-ON eSAU108"),
+        ("disk4", "disk4"),  # (no display name: the BSD name is all there is)
+    ]

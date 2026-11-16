@@ -66,6 +66,15 @@ class BurnOptions:
 
 
 @dataclass(frozen=True)
+class Drive:
+    """An optical drive a burner can see: `id` is what `BurnOptions.device` and `media_info` take, `name` what the
+    user is shown (and what is remembered: an id such as `disk4` can change between runs, a name rarely does)."""
+
+    id: str
+    name: str
+
+
+@dataclass(frozen=True)
 class MediaInfo:
     """What a burner can tell about the disc in the drive. None means unknown."""
 
@@ -88,3 +97,7 @@ class Burner(Protocol):
     ) -> None: ...
 
     def media_info(self, device: str | None) -> MediaInfo: ...
+
+    def drives(self) -> list[Drive]:
+        """The optical drives the backend can see, in its own order (the first is what `device=None` means)."""
+        ...

@@ -55,6 +55,33 @@ over from that app's own findings).
   (painting the zoomed waveform from a cached image) is only worth doing if 128 still crackles on
   a real Mac: below that, only a callback that doesn't need the GIL would do, and `miniaudio`
   can't give one with our scratching.
+- **60 FPS waveform scrolling: investigation [measured 2026-11-16, offscreen, `spikes/waveform_fps.py`; NOT tried on a real
+  display or heard by ear].** rbxport and rekordbox scroll at 60 FPS; Dubcrate's zoomed waveform does about 33.
+  - **Why 33:** the playhead is re-emitted by a `QTimer` every `_TICK_MS = 30` ms (`audio/player.py`), and each emit repaints the
+    zoomed view (`PlayerStrip.set_position` -> `DetailView.update`). The overview costs next to nothing per tick.
+  - **What a frame costs** (8 s window, 886 x 112 logical at 2x, 6-minute track with grid, cues and phrases): **3-band look
+    (the default) 16.0 ms**, RGB look 3.3 ms, Blue look 6.0 ms. 60 FPS is 16.7 ms a frame, so **the default look has no budget
+    left at all**: the GUI thread would be busy 96% of the time (53% today at 33 FPS), frames would run late and the window would
+    feel slow.
+  - **Where the 16 ms go:** three anti-aliased `drawPolygon` fills, **11 ms (70%)**, each one C++ call of about 3.5 ms; Python
+    building the point lists, 3 ms. Those calls hold the GIL for their whole length, which is longer than a 128-frame audio buffer
+    (2.9 ms) lasts and over half a 256-frame one: the same cause as the crackles above, still there at a smaller size. (This is
+    also what the "paint the zoomed waveform from a cached image" idea in `TODO.md` was after.)
+  - **A cheaper 3-band look exists** (prototype in the spike, not in the app): build the image with numpy, which pixel is which
+    band found by one palette lookup, as the RGB look already does. **2.2 ms with hard edges, 5.3 ms with the top and bottom edges
+    smoothed** (drawn at twice the rows and averaged). At 60 FPS that is 13 to 32% of one core, against 96% for the polygons, and
+    numpy releases the GIL during its big array operations (not measured here). The look changes slightly (edges are one device
+    pixel steps, not polygon slopes): an A/B picture is needed before it replaces the polygons, and the System 6 look (black and
+    white) needs the same palette.
+  - **Smoothness is not only the frame rate:** the position is the audio thread's frame at its last callback, so it moves in
+    buffer-sized steps (5.8 ms at 256 frames, 23 ms at 1024). At 60 FPS with a big buffer some frames would repeat a position
+    and the scroll would judder. The position should be extrapolated from the callback's time (`time.monotonic()`), capped at one
+    buffer.
+  - **Verdict:** possible, and worth doing, **in this order**: (1) the cheaper 3-band renderer (it also takes the GUI from 53% to
+    about 17% of a core at today's 33 FPS, and removes the long GIL holds); (2) the tick from 30 ms to about 16 ms (a precise
+    timer) with the extrapolated position; (3) measure the audio callbacks with `spikes/audio_jitter.py` at 128 and 256 frames
+    with the window playing at 60 FPS before shipping; (4) look at it on a real display (a 120 Hz Mac too). The RGB and Blue looks
+    could go to 60 FPS with only step 2. **Not measured:** a real display (vsync, 120 Hz), audio jitter at 60 FPS, battery.
 - **Testing:** `render_block(state, frames)` is a pure function over `PlaybackState`;
   the player takes a `device_factory`, so tests drive a fake device and pull blocks
   by hand. `tests/conftest.py` makes every test use a fake device by default.

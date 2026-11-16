@@ -27,9 +27,9 @@
 - [x] SD card sync metadata tab
   - [ ] Try the Sync tab itself on a real card (the command line is proven on hardware; the tab shares its write)
   - [x] Waveform pre-writing (needs the amplitude scale)
-    - [ ] Try Sync's "Write waveforms" on a Dubcrate-burned disc and the real card (the CDJ should load every track with its waveform drawn, none analysed)
+    - [ ] Try Sync's waveforms (always written now: the "Write waveforms" box is gone) on a Dubcrate-burned disc and the real card (the CDJ should load every track with its waveform drawn, none analysed)
 - [ ] Try `dubcrate card format` (or Sync > Format a Card…, built) on a spare 2 GB card (dev_docs/card-sync.md, "Formatting a card": does the player accept it, and cues synced straight onto it?)
-- [ ] Clean up long text labels in settings and add cm/in units (maybe in print dialog too)
+- [x] Clean up long text labels in settings and add cm/in units (maybe in print dialog too) (2026-11-16: Settings > Appearance > Units, used by the label window and its paper list; the long Settings paragraphs are shorter. The checkbox titles were kept as the guide and tests quote them.)
   - [x] Check on real paper (and say if the vertical line spacing should shrink too)
   - [x] Make print dialog close when print (and resulting system print dialog is pressed)
 
@@ -47,6 +47,8 @@
 - [ ] Check the new Peak to full scale preset on the CDJ for clipping at -0.3 dBTP ([roadmap.md](dev_docs/roadmap.md)).
 - [x] Listen to previews at 256 and 128 frame buffers after the audio fixes and decide the default buffer size ([audio.md](dev_docs/audio.md)).
 - [ ] If 128 frames still crackles, paint the zoomed waveform from a cached image so the GUI holds the GIL for less time ([audio.md](dev_docs/audio.md)).
+- [x] Investigate 60 FPS waveform scrolling (2026-11-16, `spikes/waveform_fps.py`, [audio.md](dev_docs/audio.md) "60 FPS waveform scrolling"): possible, worth doing; the 3-band look takes 16 ms a frame (the whole 60 FPS budget) because of three polygon fills, so it needs a cheaper renderer first (a numpy image: 2 to 5 ms).
+- [ ] Build 60 FPS scrolling, in this order: a cheaper 3-band look (A/B picture against the polygons, System 6 too), the position tick from 30 ms to about 16 ms with the position extrapolated between audio callbacks, then measure the audio callbacks with `spikes/audio_jitter.py` at 128 and 256 frames and look at it on a real display.
 - [ ] Try the things only simulated so far by hand: the Explorer (permission prompts, slow or unplugged drives), pinned tab dragging, drag-to-change spin boxes, trackpad pinch in the label preview and mouse drag and drop ([roadmap.md](dev_docs/roadmap.md)).
 - [ ] Look at the app on a real display in all four looks, including the splash and the label window in System 6 ([roadmap.md](dev_docs/roadmap.md)).
 - [ ] Check the rekordbox bits no sample covered: rekordbox 6 libraries, cue points and the "mid" and "low" mood phrase names ([rekordbox-analysis.md](dev_docs/rekordbox-analysis.md)).
@@ -70,18 +72,22 @@
 
 ### Features and app polish
 
-- [ ] Add a drive picker (it uses the first drive) and a way to cancel to the burn window ([roadmap.md](dev_docs/roadmap.md)).
+- [x] Sync tab tidy-up (2026-11-16): no help text under an empty card list, no Status / Cues / Waveform columns or Details button, waveforms always written (no tick box), the disc list's tick boxes on the left of each name and a select-all box in its heading.
+- [x] A badge in the status bar's bottom right corner: yellow "Library read-only" or orange "Library writable" (only with a rekordbox library imported); the status bar is a shade of its own with a rule on top (`ui/status_bar.py`).
+- [x] Add a drive picker to the burn window (2026-11-16: a menu shown only with two or more drives, remembered by name; `Burner.drives()`; tested with fakes). ([roadmap.md](dev_docs/roadmap.md))
+- [ ] Try the drive picker with two real drives (the check after a burn is skipped for any but the first), and add a way to cancel a burn (the backends have no abort yet: DiscRecording's `DRBurn` can be aborted, `cdrdao` can be terminated).
 - [ ] Read a finished burn back and check it against the disc it was burned from ([roadmap.md](dev_docs/roadmap.md)).
 - [ ] Let the window split a long list across MP3 discs, move an MP3 folder to another place on its disc, and pick the disc kind from the + button ([roadmap.md](dev_docs/roadmap.md)).
-- [ ] Add a way to print labels straight after a burn, and the album or year on a label if wanted ([roadmap.md](dev_docs/roadmap.md)).
+- [x] Add a way to print labels straight after a burn (2026-11-16: a **Print Labels…** button in the burn window once a real burn has finished; it closes the window and opens the labels with the disc ticked). ([roadmap.md](dev_docs/roadmap.md))
+- [ ] The album or year on a label, if wanted (not built).
 - [ ] Give each app library its own Library tab once a second library exists ([roadmap.md](dev_docs/roadmap.md)).
 - [x] Remember what the Explorer read across sessions (keyed by path, size and modified time) so each folder isn't probed again on its first visit ([roadmap.md](dev_docs/roadmap.md)).
-- [ ] Recognise the same song when it is a copy, or when the rekordbox library points at another drive's path ([roadmap.md](dev_docs/roadmap.md)).
+- [x] Recognise the same song when it is a copy, or when the rekordbox library points at another drive's path ([roadmap.md](dev_docs/roadmap.md)). (Decided 2026-11-16: **match on path only**, as it already does through `store.path_key`; never on name or content, so a copy or another drive's path is a different file. Nothing more to build.)
 - [x] Cache computed waveforms in SQLite so folder tracks keep their Preview strip across sessions ([roadmap.md](dev_docs/roadmap.md)).
 - [x] Make imports and loudness measuring cancellable and show per-file progress ([roadmap.md](dev_docs/roadmap.md)).
 - [ ] Try `tinytag` as a faster folder scan, since `ffprobe` per file manages about 120 files a second ([roadmap.md](dev_docs/roadmap.md)).
 - [x] Port AKAISDS's `wheel_guard` so scrolling over a spin box can't change it ([roadmap.md](dev_docs/roadmap.md)).
-- [ ] Finish the logging follow-ups: a Settings switch for verbose logging, logging in the store and the CLI, and a dialog for an uncaught exception ([roadmap.md](dev_docs/roadmap.md)).
+- [x] Finish the logging follow-ups: a Settings switch for verbose logging, logging in the store and the CLI, and a dialog for an uncaught exception ([roadmap.md](dev_docs/roadmap.md)). (2026-11-16: the switch was done earlier; the store logs its imports, upgrades and deletions; the command line logs to `dubcrate-cli.log`; an unexpected error shows a "Something went wrong" message with a Show Log File button, `ui/crash_notice.py`.)
 - [ ] Add rekordbox XML export as an import path with no SQLCipher dependency ([roadmap.md](dev_docs/roadmap.md)).
 - [ ] Read rekordbox's `PWV3` and `PWV5` directly for exact waveform matches on rekordbox tracks ([rekordbox-analysis.md](dev_docs/rekordbox-analysis.md)).
 - [x] Verify the CDJ card format notes (chunk layout and checksum) against a real card file ([cdj1000mk3-card.md](dev_docs/cdj1000mk3-card.md)).
@@ -91,8 +97,15 @@
 ### Player (rbxport-style)
 
 - [x] Phase 2 of the player: **CUE** (a temporary cue point), the **auto and manual loops** (AU / MA, IN, OUT, RELOOP, the loop size) and **Q** (quantise) work in the preview engine, session-only, never saved to rekordbox (`deck.py`, `audio/player.py`, `ui/preview.py`).
-- [ ] Listen to the loops on a real track: the wrap has no crossfade (a hard cut at the loop's end), so a loop not on a zero crossing may click; add a few milliseconds of fade if it does (`audio/player.py: _take`).
+- [x] Listen to the loops on a real track: the wrap has no crossfade (a hard cut at the loop's end), so a loop not on a zero crossing may click; add a few milliseconds of fade if it does (`audio/player.py: _take`). (2026-11-16: the owner heard them, "the audio works fine"; no fade added.)
 - [ ] Try the new player by hand: dragging a track onto it, the hot cue and memory buttons on a real rekordbox track, the zoom buttons, and how it looks on a small screen.
+- [x] Bar and beat counter beside the zoomed waveform's playhead (`13.3 Bars`: `barcount.py`, `DetailView._paint_bar_counter`).
+- [x] Loop mark (a small orange circular arrow) after a loop's time in the Memory tab, as rbxport does; every memory loop has a ✕ (`player_side.py`).
+- [x] Click a loop row in the Memory tab to jump to its start with that loop on (`PreviewController.recall_loop`, `Deck.recall_loop`).
+- [x] Auto loop sizes down to 1/64 of a beat (minimum loop 2 ms), and halving a loop with the playhead in the half that goes keeps the playhead in the loop, in time (`Deck`, `PreviewController._keep_in_loop`).
+- [x] Quantise (Q) is on the first time and remembered after that (`settings.get_quantise`).
+- [x] Removed the "Edited here" note and the Reset button from the Memory tab (Reset is in its right-click menu) and the "Memory cues saved to rekordbox" message.
+- [x] Fixed the lag after pressing MEMORY on a playing track: the refresh asked for the rekordbox twin of every visible row by rebuilding a path map of the whole library each time (215 ms to 4 ms; `Library._rekordbox_rows_by_file`). The backup was not the cause (5 ms).
 - [x] Read cover art from Ogg / Opus (base64 `METADATA_BLOCK_PICTURE`) and the `ID3` chunk of AIFF and WAV files, which the Info tab does not show yet (`artwork.py`).
 
 ### Cues: Dubcrate, rekordbox and the card
@@ -108,7 +121,7 @@
 - [x] Right-click a card in the Sync tab's list: **Import Cues from “NAME”…** beside Sync and Eject (the button in the discs panel is the only way now).
 - [x] Write the edits that are waiting in Dubcrate (made while rekordbox was open, or before editing was allowed) in one go from the app: File > Save Waiting Memory Cue Edits to rekordbox (not tried live).
 - [x] Save memory loops in Dubcrate: MEMORY with a loop on (`memory_loop` table; shown in the player, on the card as memory loops, counted in the ten; not written to rekordbox).
-- [ ] Try memory loops by hand: set a loop, press MEMORY, check the Memory tab row and ✕, sync to the card and see the loop on the player.
+- [ ] Try memory loops by hand: set a loop, press MEMORY, check the Memory tab row and ✕, sync to the card and see the loop on the player. (The Memory tab row, the loop mark and recalling a loop are confirmed by the owner, 2026-11-16: "loops behave exactly as expected"; syncing one to the player is not.)
 - [x] Make three memory loops in rekordbox and read their rows (2026-11-16: DANGER DANGER (Extended); `dev_docs/rekordbox-cue-writes.md`, "Memory loops").
 - [x] Write memory loops into rekordbox (`rekordbox_write.py`, add-only, tested on synthetic databases): `dubcrate rekordbox write-memory-cues --loops`. In the app too (`RekordboxEditor.WRITE_LOOPS`, on since 2026-11-16).
 - [x] Tried `dubcrate rekordbox write-memory-cues --loops` on a copy and then on the real library (2026-11-16: the loop on "SOS" was in rekordbox and behaved), and switched `RekordboxEditor.WRITE_LOOPS` on.

@@ -48,8 +48,10 @@ from dubcrate.burn import (
     BurnError,
     BurnOptions,
     DataDisc,
+    Drive,
     MediaInfo,
     backend_problem,
+    choose_drive,
     default_backend,
     get_burner,
 )
@@ -125,6 +127,9 @@ class BurnDialog(QDialog):
     burned = Signal(
         int
     )  # the id of the disc that was burned (it is only marked as such)
+    labels_requested = Signal(
+        int
+    )  # "Print Labels…" after a real burn: the disc's id (this window has closed itself)
     _log = Signal(str)  # a line from the worker thread, delivered on this one
 
     def __init__(
@@ -146,6 +151,10 @@ class BurnDialog(QDialog):
         self._burner: Burner | None = None
         self._media: MediaInfo | None = None
         self._media_error = ""
+        self._drives: list[Drive] = []  # what the burner saw at the last check
+        self._device: str | None = (
+            None  # the drive chosen (its id); None until the first check
+        )
         self._busy = False
         self._finished = False  # a real burn is done: this disc is no longer blank
         self.setWindowTitle("Burn Disc")
@@ -198,7 +207,15 @@ class BurnDialog(QDialog):
         self.check_button = QPushButton("Check Drive")
         self.check_button.setAutoDefault(False)
         self.check_button.clicked.connect(self.check_drive)
+        # the drive to burn on: only shown when the burner sees two or more (one drive: nothing to choose)
+        self.drive_combo = QComboBox()
+        self.drive_combo.setToolTip(
+            "Which drive to burn on (remembered). The disc checked and burned is the one in this drive."
+        )
+        self.drive_combo.activated.connect(self._drive_picked)
+        self.drive_combo.hide()
         drive_row = QHBoxLayout()
+        drive_row.addWidget(self.drive_combo)
         drive_row.addWidget(self.drive_label, 1)
         drive_row.addWidget(self.check_button)
 
@@ -269,6 +286,13 @@ class BurnDialog(QDialog):
             " to burn with any other program"
         )
         self.export_button.clicked.connect(self.start_export)
+        self.labels_button = QPushButton("Print Labels…")
+        self.labels_button.setAutoDefault(False)
+        self.labels_button.setToolTip(
+            "Close this window and open the label printing window with this disc ticked"
+        )
+        self.labels_button.clicked.connect(self._print_labels)
+        self.labels_button.hide()  # (only after a real burn has finished)
         self.close_button = QPushButton("Close")
         self.close_button.setAutoDefault(False)
         self.close_button.clicked.connect(self.reject)
@@ -281,6 +305,7 @@ class BurnDialog(QDialog):
         self.cancel_levels_button.hide()
         buttons = QHBoxLayout()
         buttons.addWidget(self.export_button)
+        buttons.addWidget(self.labels_button)
         buttons.addStretch(1)
         buttons.addWidget(self.cancel_levels_button)
         buttons.addWidget(self.close_button)
@@ -354,8 +379,11 @@ class BurnDialog(QDialog):
             not working and not self._finished and self.levels_check.isChecked()
         )
         self.close_button.setEnabled(not working)
+        self.drive_combo.setEnabled(not working and not self._finished)
         self.cancel_levels_button.setVisible(self._measuring)
         self.export_button.setEnabled(self._plan is not None and not working)
+        self.labels_button.setVisible(self._finished)
+        self.labels_button.setEnabled(not working)
         if self._backend_problem:
             text, level = (
                 (
@@ -508,9 +536,19 @@ class BurnDialog(QDialog):
         self._media_error = ""
         self._busy = True
         self._update()
+        picked, remembered = self._device, settings.get_burn_drive()
 
-        def done(media: MediaInfo) -> None:
+        def work() -> tuple[list[Drive], Drive | None, MediaInfo]:
+            drives = burner.drives()
+            drive = choose_drive(
+                drives, picked, remembered
+            )  # (none: media_info says why there is no drive)
+            return drives, drive, burner.media_info(drive.id if drive else None)
+
+        def done(found: tuple[list[Drive], Drive | None, MediaInfo]) -> None:
+            drives, drive, media = found
             self._busy = False
+            self._set_drives(drives, drive)
             self._media = media
             self._update()
 
@@ -519,7 +557,37 @@ class BurnDialog(QDialog):
             self._media_error = text
             self._update()
 
-        run_async(_expected_failures(lambda: burner.media_info(None)), done, failed)
+        run_async(_expected_failures(work), done, failed)
+
+    def _set_drives(self, drives: list[Drive], chosen: Drive | None) -> None:
+        """Show what the burner saw: the combo only when there is a choice to make."""
+        self._drives = drives
+        self._device = chosen.id if chosen else None
+        self.drive_combo.blockSignals(True)
+        self.drive_combo.clear()
+        for drive in drives:
+            self.drive_combo.addItem(drive.name, drive.id)
+        if chosen is not None:
+            self.drive_combo.setCurrentIndex(
+                max(0, self.drive_combo.findData(chosen.id))
+            )
+        self.drive_combo.blockSignals(False)
+        self.drive_combo.setVisible(len(drives) >= 2)
+
+    def _drive_picked(self, index: int) -> None:
+        """Another drive chosen: remember it by name and look at the disc in it."""
+        if not 0 <= index < len(self._drives):
+            return
+        drive = self._drives[index]
+        self._device = drive.id
+        settings.set_burn_drive(drive.name)
+        logger.info("burn drive: %s (%s)", drive.name, drive.id)
+        self.check_drive()
+
+    def _is_first_drive(self) -> bool:
+        """Whether the drive to burn on is the first one: the system's disc tools (`drive_toc`, `eject`) read
+        and open that one, so the check after a burn is only made for it."""
+        return not self._drives or self._device == self._drives[0].id
 
     # -- burning ----------------------------------------------------------
 
@@ -533,12 +601,14 @@ class BurnDialog(QDialog):
         simulate = self.simulate_check.isChecked()
         # an audio burn keeps the disc in the drive so its table of contents can be checked against the
         # plan (burn_check), and ejects it itself afterwards
-        check = not simulate and plan.kind != "mp3" and can_read_toc()
+        wants_check = not simulate and plan.kind != "mp3" and can_read_toc()
+        check = wants_check and self._is_first_drive()
         options = BurnOptions(
             speed=speed,
             simulate=simulate,
             pregap_sectors=plan.pregap_sectors,
             eject=not check,
+            device=self._device,
         )
         self.log.clear()
         self._append(
@@ -547,6 +617,11 @@ class BurnDialog(QDialog):
         )
         if plan.levels_note:
             self._append(plan.levels_note)
+        if wants_check and not check:
+            self._append(
+                "The disc is not checked after the burn here: only the first drive can be, and it is ejected as"
+                " usual."
+            )
         logger.info(
             "%s of disc %s “%s” at %sx",
             "test burn" if simulate else "burn",
@@ -621,6 +696,13 @@ class BurnDialog(QDialog):
         self.status_label.setText("Burn finished. The disc is marked as burned.")
         self._update()
         self.burned.emit(self._disc_id)
+
+    def _print_labels(self) -> None:
+        """Print Labels… after a burn: close this window (so the label window isn't opened over a modal one) and ask
+        the main window to open the labels with this disc ticked."""
+        disc_id = self._disc_id
+        self.accept()
+        self.labels_requested.emit(disc_id)
 
     def _burn_failed(self, text: str) -> None:
         self._after_attempt()

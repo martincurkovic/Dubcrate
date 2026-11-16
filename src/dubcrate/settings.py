@@ -2,7 +2,7 @@
 
 from PySide6.QtCore import QByteArray, QObject, QSettings, Signal
 
-from dubcrate import keys, labels, loudness, mp3
+from dubcrate import keys, labels, loudness, mp3, units
 
 THEME_SYSTEM = "system"
 THEME_LIGHT = "light"
@@ -16,6 +16,7 @@ class _Changes(QObject):
     first-edit question, changes them while the main window is up)."""
 
     rekordbox_editing = Signal()
+    units = Signal()  # millimetres, centimetres or inches: what sizes are shown in
 
 
 changes = _Changes()
@@ -319,6 +320,30 @@ def beat_jump_label(beats: int) -> str:
 
 
 DEFAULT_BEAT_JUMP = 4  # one bar
+
+
+def get_units() -> str:
+    """The unit sizes are shown in (`units.UNITS` keys): millimetres until the user chooses. Stored sizes are
+    always millimetres whatever this says."""
+    return units.unit(_qs().value("ui/units", units.DEFAULT.key)).key
+
+
+def set_units(key: str) -> None:
+    _qs().setValue("ui/units", units.unit(key).key)
+    changes.units.emit()
+
+
+def get_burn_drive() -> str | None:
+    """The name of the drive last used in the burn window (shown when there are two or more drives), if any."""
+    value = _qs().value("burn/drive")
+    return str(value) if value else None
+
+
+def set_burn_drive(name: str | None) -> None:
+    if name:
+        _qs().setValue("burn/drive", name)
+    else:
+        _qs().remove("burn/drive")
 
 
 def get_quantise() -> bool:

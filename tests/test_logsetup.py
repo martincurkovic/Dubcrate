@@ -143,3 +143,67 @@ def test_the_verbose_log_switch_is_in_the_settings_window_and_remembered(
         assert settings.get_verbose_logging() is False and not logsetup.is_verbose()
     finally:
         logsetup.shutdown()
+
+
+def test_the_command_line_logs_to_a_file_of_its_own_and_not_the_console(
+    tmp_path, capsys
+):
+    from dubcrate import cli
+
+    app_log = logsetup.log_dir() / logsetup.LOG_NAME
+    before = (
+        app_log.stat().st_size if app_log.exists() else 0
+    )  # (the log folder is shared by the whole run)
+    assert cli.main(["--library", str(tmp_path / "lib.db"), "sources"]) == 0
+    cli_log = logsetup.log_dir() / logsetup.CLI_LOG_NAME
+    assert cli_log.is_file()
+    text = cli_log.read_text(encoding="utf-8")
+    assert "dubcrate --library" in text and "sources" in text
+    assert (
+        app_log.stat().st_size if app_log.exists() else 0
+    ) == before  # (the app's log is not touched)
+    assert (
+        "INFO" not in capsys.readouterr().err
+    )  # (nothing on the console but the command's own output)
+
+
+def test_a_command_that_fails_is_logged_with_its_traceback(tmp_path, monkeypatch):
+    from dubcrate import cli, cli_discs
+
+    def boom(lib, args):
+        raise RuntimeError("the command broke")
+
+    monkeypatch.setattr(cli_discs, "run", boom)
+    with pytest.raises(RuntimeError):
+        cli.main(["--library", str(tmp_path / "lib.db"), "sources"])
+    text = (logsetup.log_dir() / logsetup.CLI_LOG_NAME).read_text(encoding="utf-8")
+    assert (
+        "CRITICAL" in text
+        and "the command failed" in text
+        and "the command broke" in text
+    )
+
+
+def test_setup_can_name_the_file_and_leave_the_console_out(tmp_path):
+    path = logsetup.setup(directory=tmp_path, name="other.log", console=False)
+    try:
+        logging.getLogger("dubcrate.test").info("to the file only")
+    finally:
+        logsetup.shutdown()
+    assert path == tmp_path / "other.log"
+    assert "to the file only" in path.read_text(encoding="utf-8")
+
+
+def test_the_library_logs_what_it_imports_and_what_it_deletes(caplog):
+    from dubcrate.library import Library, TrackRecord
+
+    records = [TrackRecord(ext_id="a", path="/m/a.mp3", title="A", duration=1.0)]
+    caplog.set_level(logging.INFO, logger="dubcrate.library.store")
+    with Library.open(":memory:") as lib:
+        lib.replace_source("folder", "/m", "Music", records)
+        disc = lib.create_disc("Friday")
+        lib.delete_disc(disc)
+    text = caplog.text
+    assert "library schema v0 -> v" in text
+    assert "Music (folder): 1 added, 0 updated, 0 removed" in text
+    assert "deleted disc" in text and "Friday" in text

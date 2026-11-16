@@ -152,7 +152,7 @@
   - **Hot cues** (decided 2026-11-16): stay read-only for now. Memory cues and loops first; revisit hot-cue editing once loops are proven in rekordbox (Dubcrate-table-first, as the memory cues went).
   - **Next platform after the macOS release: Linux** (the groundwork is furthest along, and the owner has a Linux machine). Windows after that.
   - **MP3 disc editor, all three wanted:** split a long list across MP3 discs (by size), move an MP3 folder to another place on its disc, and pick the disc kind (Audio / MP3) from the one + button.
-  - **Units:** one global setting (Settings > Appearance: millimetres, centimetres, inches) used by the label window and anywhere else a size is shown; stored values stay in millimetres. Tidy the long Settings labels at the same time.
+  - **Units** (built 2026-11-16): one global setting (Settings > Appearance: millimetres, centimetres, inches) used by the label window and anywhere else a size is shown; stored values stay in millimetres. The long Settings paragraphs were shortened at the same time.
 - **Card sync** (owner's choices 2026-11-13): every rekordbox cue (memory, hot A to H, loops) becomes a **CDJ memory
   cue** (memory loop for a loop); the card's three hot cue slots are never written or touched (a disc has only three,
   and they are the owner's). **Merge, never replace**: cues already on the card stay, near-duplicates (same track,

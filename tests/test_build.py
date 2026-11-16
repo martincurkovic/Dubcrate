@@ -189,6 +189,9 @@ class FakeBurner:
         self.media = media or MediaInfo()
         self.burned = []
 
+    def drives(self):
+        return []
+
     def media_info(self, device):
         return self.media
 

@@ -37,14 +37,20 @@ def make_flac(path, seconds, **tags):
 class FakeBurner:
     """Records what it was asked to burn. Never touches a drive."""
 
-    def __init__(self, media=ROOMY, fail=None):
+    def __init__(self, media=ROOMY, fail=None, drives=()):
         self.media = media
         self.fail = fail
         self.burned = []  # (disc, options)
         self.media_calls = 0
+        self.devices_asked = []  # the `device` each media_info was asked about
+        self._drives = list(drives)
+
+    def drives(self):
+        return list(self._drives)
 
     def media_info(self, device):
         self.media_calls += 1
+        self.devices_asked.append(device)
         return self.media
 
     def burn(self, disc, options, progress):
@@ -241,6 +247,182 @@ def test_a_burn_renders_burns_stores_lengths_and_marks_the_disc_burned(
     text = dialog.log.toPlainText()
     assert "rendering 1/2: Alpha" in text and "fake burner: done" in text
     assert "marked as burned" in text
+
+
+def test_print_labels_appears_only_after_a_real_burn_and_asks_for_that_disc(
+    disc_id, make_dialog, wait_for
+):
+    dialog, _burner = make_dialog()
+    assert not dialog.labels_button.isVisibleTo(dialog)  # (nothing burned yet)
+    asked = []
+    dialog.labels_requested.connect(asked.append)
+    burn(dialog, wait_for)
+    assert dialog.labels_button.isVisibleTo(dialog) and dialog.labels_button.isEnabled()
+    dialog.labels_button.click()
+    assert asked == [disc_id]
+    assert (
+        not dialog.isVisible()
+    )  # (the burn window closed itself: no label window over a modal one)
+
+
+def test_a_test_burn_does_not_offer_labels(make_dialog, wait_for):
+    dialog, _burner = make_dialog()
+    dialog.simulate_check.setChecked(True)
+    burn(dialog, wait_for)
+    assert not dialog.labels_button.isVisibleTo(dialog)
+
+
+def test_print_labels_after_a_burn_opens_the_label_window_with_that_disc_ticked(
+    window, disc_id, wait_for
+):
+    window.disc_view.burn_button.click()
+    dialog = window.burn_dialog
+    assert wait_for(lambda: not dialog._busy)
+    burn(dialog, wait_for)
+    dialog.labels_button.click()
+    labels = window.label_dialog
+    assert labels.isVisible()
+    assert [d.id for d in labels.ticked_discs()] == [disc_id]
+    labels.close()
+
+
+# -- more than one drive ---------------------------------------------------------------------------------------
+
+from dubcrate.burn import Drive
+
+TWO = (Drive("disk3", "LITE-ON eSAU108"), Drive("disk4", "ASUS SDRW-08D2S"))
+
+
+def test_one_drive_or_none_shows_no_drive_choice(qapp, lib, disc_id, wait_for):
+    for drives in ((), (Drive("disk3", "LITE-ON eSAU108"),)):
+        burner = FakeBurner(drives=drives)
+        dialog = BurnDialog(lib, disc_id, burner_factory=lambda b=burner: b)
+        assert wait_for(lambda d=dialog: not d._busy)
+        assert not dialog.drive_combo.isVisibleTo(dialog)
+        assert burner.devices_asked == [drives[0].id if drives else None]
+        dialog.close()
+
+
+def test_two_drives_show_a_choice_that_starts_on_the_first(
+    qapp, lib, disc_id, wait_for
+):
+    burner = FakeBurner(drives=TWO)
+    dialog = BurnDialog(lib, disc_id, burner_factory=lambda: burner)
+    assert wait_for(lambda: not dialog._busy)
+    assert dialog.drive_combo.isVisibleTo(dialog)
+    assert [dialog.drive_combo.itemText(i) for i in range(2)] == [
+        "LITE-ON eSAU108",
+        "ASUS SDRW-08D2S",
+    ]
+    assert dialog.drive_combo.currentData() == "disk3" and burner.devices_asked == [
+        "disk3"
+    ]
+    dialog.close()
+
+
+def test_picking_the_other_drive_looks_at_that_drive_and_remembers_it(
+    qapp, lib, disc_id, wait_for
+):
+    from dubcrate import settings
+
+    burner = FakeBurner(drives=TWO)
+    dialog = BurnDialog(lib, disc_id, burner_factory=lambda: burner)
+    assert wait_for(lambda: not dialog._busy)
+    dialog.drive_combo.setCurrentIndex(1)
+    dialog.drive_combo.activated.emit(1)
+    assert wait_for(lambda: len(burner.devices_asked) == 2 and not dialog._busy)
+    assert burner.devices_asked == ["disk3", "disk4"]
+    assert settings.get_burn_drive() == "ASUS SDRW-08D2S"
+    assert dialog.drive_combo.currentData() == "disk4"
+    dialog.close()
+
+
+def test_the_drive_used_last_time_is_chosen_again_by_name(qapp, lib, disc_id, wait_for):
+    from dubcrate import settings
+
+    settings.set_burn_drive("ASUS SDRW-08D2S")
+    burner = FakeBurner(drives=TWO)
+    dialog = BurnDialog(lib, disc_id, burner_factory=lambda: burner)
+    assert wait_for(lambda: not dialog._busy)
+    assert dialog.drive_combo.currentData() == "disk4" and burner.devices_asked == [
+        "disk4"
+    ]
+    dialog.close()
+
+
+def test_a_remembered_drive_that_is_unplugged_falls_back_to_the_first(
+    qapp, lib, disc_id, wait_for
+):
+    from dubcrate import settings
+
+    settings.set_burn_drive("A drive that has gone")
+    burner = FakeBurner(drives=TWO)
+    dialog = BurnDialog(lib, disc_id, burner_factory=lambda: burner)
+    assert wait_for(lambda: not dialog._busy)
+    assert dialog.drive_combo.currentData() == "disk3" and burner.devices_asked == [
+        "disk3"
+    ]
+    dialog.close()
+
+
+def test_the_burn_is_made_on_the_chosen_drive(
+    qapp, lib, disc_id, wait_for, monkeypatch
+):
+    monkeypatch.setattr("dubcrate.ui.burn_dialog.can_read_toc", lambda: False)
+    burner = FakeBurner(drives=TWO)
+    dialog = BurnDialog(lib, disc_id, burner_factory=lambda: burner)
+    assert wait_for(lambda: not dialog._busy)
+    dialog.drive_combo.setCurrentIndex(1)
+    dialog.drive_combo.activated.emit(1)
+    assert wait_for(lambda: len(burner.devices_asked) == 2 and not dialog._busy)
+    burn(dialog, wait_for)
+    [(_disc, options)] = burner.burned
+    assert options.device == "disk4"
+
+
+def test_a_burn_on_the_first_drive_is_checked_afterwards_and_on_another_it_is_not(
+    qapp, lib, disc_id, wait_for, monkeypatch
+):
+    checks = []
+    monkeypatch.setattr("dubcrate.ui.burn_dialog.can_read_toc", lambda: True)
+    monkeypatch.setattr(
+        "dubcrate.ui.burn_dialog.check_burn",
+        lambda sectors, gap, say: checks.append(sectors),
+    )
+    for pick, checked in ((0, True), (1, False)):
+        burner = FakeBurner(drives=TWO)
+        dialog = BurnDialog(lib, disc_id, burner_factory=lambda b=burner: b)
+        assert wait_for(lambda d=dialog: not d._busy)
+        dialog.drive_combo.setCurrentIndex(pick)
+        dialog.drive_combo.activated.emit(pick)
+        assert wait_for(
+            lambda d=dialog, b=burner: len(b.devices_asked) == 2 and not d._busy
+        )
+        before = len(checks)
+        burn(dialog, wait_for)
+        assert (len(checks) - before == 1) is checked
+        [(_disc, options)] = burner.burned
+        assert options.eject is (
+            not checked
+        )  # (the burner ejects it itself when Dubcrate does not check it)
+        assert ("not checked after the burn" in dialog.log.toPlainText()) is (
+            not checked
+        )
+        dialog.close()
+
+
+def test_the_drive_choice_is_locked_while_working_and_after_a_burn(
+    qapp, lib, disc_id, wait_for
+):
+    burner = FakeBurner(drives=TWO)
+    dialog = BurnDialog(lib, disc_id, burner_factory=lambda: burner)
+    assert wait_for(lambda: not dialog._busy)
+    assert dialog.drive_combo.isEnabled()
+    burn(dialog, wait_for)
+    assert (
+        not dialog.drive_combo.isEnabled()
+    )  # (this disc is done: no other drive to pick for it)
+    dialog.close()
 
 
 def test_a_burned_disc_is_still_an_ordinary_editable_playlist(

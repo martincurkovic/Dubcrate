@@ -13,7 +13,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from dubcrate import keys, logsetup, loudness, mp3, settings, tools
+from dubcrate import keys, logsetup, loudness, mp3, settings, tools, units
 from dubcrate.audio import devices
 from dubcrate.audio.devices import BUFFER_SIZES, buffer_msec
 
@@ -50,7 +50,7 @@ class SettingsDialog(QDialog):
         page = QWidget()
         form = QFormLayout(page)
         note = QLabel(
-            "Where track previews play, and how much audio is buffered. Changes apply straight away."
+            "Where previews play and how much audio is buffered. Changes apply at once."
         )
         note.setWordWrap(True)
         note.setObjectName("mutedLabel")
@@ -85,7 +85,7 @@ class SettingsDialog(QDialog):
         form.addRow("Buffer size:", self.buffer_combo)
 
         hint = QLabel(
-            "Smaller buffers respond faster but can crackle; if a preview crackles, choose a larger one."
+            "A smaller buffer responds faster but can crackle: if a preview does, choose a larger one."
         )
         hint.setWordWrap(True)
         hint.setObjectName("mutedLabel")
@@ -101,9 +101,7 @@ class SettingsDialog(QDialog):
             lambda _i: settings.set_beat_jump(self.beat_jump_combo.currentData())
         )
         form.addRow("Beat jump:", self.beat_jump_combo)
-        jump_hint = QLabel(
-            "How far the left and right arrow keys jump when a track is selected in the list."
-        )
+        jump_hint = QLabel("How far the left and right arrow keys jump.")
         jump_hint.setWordWrap(True)
         jump_hint.setObjectName("mutedLabel")
         form.addRow(jump_hint)
@@ -121,8 +119,7 @@ class SettingsDialog(QDialog):
         page = QWidget()
         form = QFormLayout(page)
         note = QLabel(
-            "How new discs are planned. Existing discs keep the size and gaps they were"
-            " made with. When you burn, the disc in the drive is what counts."
+            "How new discs are planned. Existing discs keep their own size and gaps."
         )
         note.setWordWrap(True)
         form.addRow(note)
@@ -153,9 +150,7 @@ class SettingsDialog(QDialog):
         )
         form.addRow("Between tracks:", self.gap_combo)
 
-        hint = QLabel(
-            "Gapless puts no silence between tracks, so the most music fits on a disc."
-        )
+        hint = QLabel("Gapless fits the most music on a disc.")
         hint.setWordWrap(True)
         hint.setObjectName("mutedLabel")
         form.addRow(hint)
@@ -171,9 +166,8 @@ class SettingsDialog(QDialog):
         )
         form.addRow("MP3 CDs: highest rate:", self.mp3_combo)
         mp3_hint = QLabel(
-            "For new MP3 discs. Files are always constant bitrate (variable-bitrate files load"
-            " slowly on a CDJ), at this rate, or lower for a lossy track that is below it."
-            " MP3 files go on the disc as they are, never re-encoded."
+            "For new MP3 discs. Files are always constant bitrate, at this rate or lower for a lossy"
+            " track below it. MP3 files are never re-encoded."
         )
         mp3_hint.setWordWrap(True)
         mp3_hint.setObjectName("mutedLabel")
@@ -186,7 +180,7 @@ class SettingsDialog(QDialog):
         page = QWidget()
         form = QFormLayout(page)
         note = QLabel(
-            "What a burn starts with. You can change the speed for a single burn in the burn window."
+            "What a burn starts with. The burn window can change it for one burn."
         )
         note.setWordWrap(True)
         form.addRow(note)
@@ -203,7 +197,7 @@ class SettingsDialog(QDialog):
         form.addRow("Burn speed:", self.speed_combo)
 
         hint = QLabel(
-            "Old players read discs burned slowly more reliably (10x to 16x is a good range)."
+            "Old players read slow burns more reliably (10x to 16x is a good range)."
             " Your drive may not offer every speed."
         )
         hint.setWordWrap(True)
@@ -227,13 +221,10 @@ class SettingsDialog(QDialog):
         )
         form.addRow("Normalise to:", self.levels_combo)
         levels_hint = QLabel(
-            "Each track on an audio CD gets one fixed volume change: no compression or limiting, so the"
-            " music keeps its dynamics. The loudness choices bring the tracks to about the same level, but"
-            " never turn one up past the point where its peaks would clip (those are lifted less, and the"
-            " burn window says so). Peak to full scale makes each track as loud as it can safely be"
-            " instead, so levels still differ from track to track. The first burn takes a moment longer"
-            " while the tracks are measured. MP3 discs are left as they are. You can change this for a"
-            " single burn in the burn window."
+            "Each track gets one fixed volume change, with no compression or limiting. The loudness choices"
+            " bring tracks to about the same level without clipping their peaks; Peak to full scale makes"
+            " each as loud as it safely can be. The first burn is slower while tracks are measured. MP3"
+            " discs are left alone. The burn window can change this for one burn."
         )
         levels_hint.setWordWrap(True)
         levels_hint.setObjectName("mutedLabel")
@@ -256,9 +247,8 @@ class SettingsDialog(QDialog):
         self.auto_import_check.toggled.connect(settings.set_auto_import)
         form.addRow(self.auto_import_check)
         hint = QLabel(
-            "Reads a temporary copy of your rekordbox library, so importing never changes it,"
-            " and brings in new tracks and changes. It only updates a library you have already"
-            " imported. Folders are not re-scanned (use File > Re-import Selected Source)."
+            "Reads a temporary copy of your rekordbox library (importing never changes it) for new"
+            " tracks and changes. Folders are not re-scanned."
         )
         hint.setWordWrap(True)
         hint.setObjectName("mutedLabel")
@@ -270,11 +260,10 @@ class SettingsDialog(QDialog):
         self.rekordbox_edit_check.toggled.connect(settings.set_rekordbox_editing)
         form.addRow(self.rekordbox_edit_check)
         edit_hint = QLabel(
-            "When you add, move or delete a memory cue in the player, or save a loop with MEMORY, Dubcrate writes it into rekordbox's"
-            " library (only memory cues and memory loops, nothing else). rekordbox must be closed at that moment, or the change"
-            " waits in Dubcrate. The first change of each session copies rekordbox's database files to"
-            " rekordbox-backups next to Dubcrate's library, and a write that doesn't check out is undone."
-            " Unticked, changes stay in Dubcrate only."
+            "Memory cue and loop changes you make in the player are written into rekordbox's library, and"
+            " nothing else is. rekordbox must be closed, or the change waits in Dubcrate. The database files"
+            " are copied aside first, and a write that doesn't check out is undone. Unticked, changes stay in"
+            " Dubcrate."
         )
         edit_hint.setWordWrap(True)
         edit_hint.setObjectName("mutedLabel")
@@ -286,9 +275,8 @@ class SettingsDialog(QDialog):
         self.auto_update_check.toggled.connect(settings.set_auto_update_check)
         form.addRow(self.auto_update_check)
         update_hint = QLabel(
-            "Asks github.com whether a newer release exists, at most once a day. That is the only"
-            " time Dubcrate uses the network, and nothing is downloaded or installed."
-            " You can always check from Help > Check for Updates."
+            "Asks github.com at most once a day: the only time Dubcrate uses the network, and nothing is"
+            " downloaded. Help > Check for Updates checks any time."
         )
         update_hint.setWordWrap(True)
         update_hint.setObjectName("mutedLabel")
@@ -302,8 +290,8 @@ class SettingsDialog(QDialog):
             self.tool_labels[name] = label
             form.addRow(label)
         tools_hint = QLabel(
-            "ffmpeg reads and converts your music and ffprobe reads its tags and lengths."
-            " Dubcrate uses the copy it comes with, else one on your PATH."
+            "ffmpeg converts your music and ffprobe reads its tags and lengths. Dubcrate uses its own copy,"
+            " else one on your PATH."
             + (
                 f" A missing one can be installed with “{tools.install_command()}”."
                 if tools.missing_tools()
@@ -320,8 +308,8 @@ class SettingsDialog(QDialog):
         self.verbose_check.toggled.connect(self._set_verbose)
         form.addRow(self.verbose_check)
         verbose_hint = QLabel(
-            "For when something goes wrong: the log (Help > Show Log File) then says what Dubcrate was doing"
-            " step by step. It lists file paths, never your audio, and takes effect at once."
+            "The log (Help > Show Log File) then lists what Dubcrate did, step by step: file paths, never"
+            " audio. Takes effect at once."
         )
         verbose_hint.setWordWrap(True)
         verbose_hint.setObjectName("mutedLabel")
@@ -364,6 +352,21 @@ class SettingsDialog(QDialog):
         )
         form.addRow("Key notation:", self.key_combo)
 
+        self.units_combo = QComboBox()
+        for u in units.UNITS:
+            self.units_combo.addItem(u.name, u.key)
+        self.units_combo.setCurrentIndex(
+            max(0, self.units_combo.findData(settings.get_units()))
+        )
+        self.units_combo.setToolTip(
+            "What sizes are shown in, such as the label window's. Sizes are stored in millimetres, so changing this"
+            " loses nothing."
+        )
+        self.units_combo.activated.connect(
+            lambda _i: settings.set_units(self.units_combo.currentData())
+        )
+        form.addRow("Units:", self.units_combo)
+
         self.wave_style_combo = QComboBox()
         for label, value in wave_style.WAVE_STYLE_LABELS:
             self.wave_style_combo.addItem(label, value)
@@ -389,9 +392,8 @@ class SettingsDialog(QDialog):
         form.addRow("Waveform background:", self.wave_background_combo)
 
         hint = QLabel(
-            "3-Band is rekordbox's default look (lows blue, mids amber, highs white). RGB colours"
-            " each moment by what is in it, and Blue is rekordbox's classic blue waveform."
-            " The Macintosh System 6 theme always draws the 3-band look in black and white."
+            "3-Band is rekordbox's look (lows blue, mids amber, highs white), RGB colours each moment by"
+            " its content, and Blue is the classic blue. System 6 always draws 3-Band in black and white."
         )
         hint.setWordWrap(True)
         hint.setObjectName("mutedLabel")

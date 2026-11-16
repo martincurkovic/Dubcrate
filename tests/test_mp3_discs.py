@@ -557,6 +557,9 @@ class FakeBurner:
         self.media = media
         self.audio, self.data = [], []
 
+    def drives(self):
+        return []
+
     def media_info(self, device):
         return self.media
 

@@ -12,7 +12,7 @@ from PySide6.QtWidgets import QApplication
 from dubcrate import logsetup, settings, tools
 from dubcrate.library import Library
 
-from . import dialog_log, spinbox_drag, theme, wheel_guard
+from . import crash_notice, dialog_log, spinbox_drag, theme, wheel_guard
 from .main_window import MainWindow
 from .splash import StartupSplash
 from .startup import maybe_refresh
@@ -149,6 +149,9 @@ def _run(args: argparse.Namespace, qt_args: list[str]) -> int:
         window = MainWindow(lib, persist=True, update_check=True)
         window.show()
         splash.finish()
+        crash_notice.install(
+            window
+        )  # an unexpected error now says so, as well as going to the log
         log.info(
             "garbage collector: %d start-up objects frozen", freeze_garbage_collector()
         )
@@ -156,7 +159,10 @@ def _run(args: argparse.Namespace, qt_args: list[str]) -> int:
             window.statusBar().showMessage(imported.message(), 15000)
         if missing:
             MissingToolsDialog(missing, window).exec()
-        return app.exec()
+        try:
+            return app.exec()
+        finally:
+            crash_notice.uninstall()
 
 
 if __name__ == "__main__":
