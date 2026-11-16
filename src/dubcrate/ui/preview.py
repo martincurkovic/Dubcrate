@@ -108,6 +108,7 @@ class PreviewController(QObject):
         strip.play_toggled.connect(self.toggle)
         strip.beat_jump_requested.connect(self.beat_jump)
         strip.jump_requested.connect(self.jump_to)
+        strip.loop_requested.connect(self.recall_loop)
         strip.cue_pressed.connect(self.cue_pressed)
         strip.cue_released.connect(self.cue_released)
         strip.quantise_toggled.connect(self.set_quantise)
@@ -160,6 +161,18 @@ class PreviewController(QObject):
         if self.player.scratching or not self.player.loaded:
             return
         self.player.seek(max(0.0, min(seconds, self.player.duration)))
+
+    def recall_loop(self, start: float, end: float) -> None:
+        """A loop row was clicked: go to the loop's start with that loop on (playing or paused stays as it was)."""
+        if not self._usable():
+            return
+        found = self.deck.recall_loop(start, end)
+        if found is None:
+            self.message.emit("That loop doesn't fit this track")
+            return
+        self.player.set_loop(*found)
+        self.player.seek(found[0])
+        self._show_session()
 
     # -- CUE, loops and quantise: the deck decides, the player does it -----------------------------
 

@@ -195,3 +195,26 @@ def test_the_sizes_and_their_labels():
         "16",
         "32",
     ]
+
+
+def test_a_saved_loop_is_turned_on_from_its_two_edges_without_snapping(deck):
+    deck.quantise = True  # (the edges are where they were saved: not moved to a beat)
+    assert deck.recall_loop(10.13, 12.77) == (10.13, 12.77)
+    assert deck.loop == (10.13, 12.77) and deck.loop_active
+    assert [(c.kind, c.time, c.end) for c in deck.markers()] == [("loop", 10.13, 12.77)]
+
+
+def test_a_loop_that_is_too_short_or_past_the_end_or_before_the_start_is_not_turned_on(
+    deck,
+):
+    assert deck.recall_loop(5.0, 5.0) is None
+    assert deck.recall_loop(5.0, 130.0) is None  # (the track is 120 s)
+    assert deck.recall_loop(-1.0, 4.0) is None
+    assert deck.loop is None and not deck.loop_active
+
+
+def test_recalling_a_loop_replaces_the_one_that_was_on(deck):
+    deck.mark_in(5.0)
+    deck.mark_out(7.0)
+    assert deck.recall_loop(20.0, 24.0) == (20.0, 24.0)
+    assert deck.loop == (20.0, 24.0) and deck.loop_active

@@ -75,6 +75,9 @@ class PlayerStrip(QWidget):
     jump_requested = Signal(
         float
     )  # a hot cue, a memory cue or a list row: go to this time
+    loop_requested = Signal(
+        float, float
+    )  # a loop row: go to its start with that loop on (start and end, seconds)
     track_dropped = Signal(int)  # a track id dragged from a track list onto the player
     cue_pressed = (
         Signal()
@@ -383,6 +386,7 @@ class PlayerStrip(QWidget):
         self.side = SidePanel()
         self.side.setFixedWidth(SIDE_WIDTH)
         self.side.jump_requested.connect(self.jump_requested)
+        self.side.loop_requested.connect(self.loop_requested)
         self.side.memory_delete_requested.connect(self.memory_row_delete_requested)
         self.side.memory_move_requested.connect(self.memory_move_requested)
         self.side.memory_reset_requested.connect(self.memory_reset_requested)

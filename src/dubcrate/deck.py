@@ -149,6 +149,18 @@ class Deck:
         self.loop_in, self.loop_out, self.loop_active = start, end, True
         return start, end
 
+    def recall_loop(self, start: float, end: float) -> tuple[float, float] | None:
+        """Turn on a loop given its two edges, as a saved memory loop is (no snapping: they are where they were
+        saved). None if it is too short or runs past the end of the track."""
+        if (
+            start < 0
+            or end - start < MIN_LOOP
+            or (self.duration and end > self.duration)
+        ):
+            return None
+        self.loop_in, self.loop_out, self.loop_active = start, end, True
+        return start, end
+
     def resize_auto(self, beats: float) -> tuple[float, float] | None:
         """A new size for the auto loop: if one is on it is redrawn from the same start (None if that no
         longer fits the track, and the loop stays as it was); either way later auto loops use it."""

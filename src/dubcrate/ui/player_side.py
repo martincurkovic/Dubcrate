@@ -2,7 +2,7 @@
 
 Three pages behind three tab buttons, as rbxport has them, **read-only**: the cues are rekordbox's and
 Dubcrate never writes them. Clicking a memory or hot cue asks the player to jump there
-(`jump_requested`). The Info page shows the track's embedded **artwork** (a painted note on a square when it has
+(`jump_requested`); a loop's row asks for the loop instead (`loop_requested`: go to its start with that loop on). The Info page shows the track's embedded **artwork** (a painted note on a square when it has
 none), the rating and comment rekordbox gave it and what the file is (type, size, sample rate, bitrate), in a
 bordered frame like the other two pages.
 
@@ -58,6 +58,7 @@ DELETABLE_ROLE = (
 )  # a memory cue or a loop saved here: one that can be deleted here
 MOVABLE_ROLE = Qt.ItemDataRole.UserRole + 42  # a plain memory cue (a loop has no move)
 LOOP_ROLE = Qt.ItemDataRole.UserRole + 43  # a loop: a small loop mark follows its time
+END_ROLE = Qt.ItemDataRole.UserRole + 44  # a loop's end, seconds
 LOOP_COLOR = "#f0922b"  # the orange rbxport marks a loop with
 
 
@@ -242,6 +243,9 @@ class SidePanel(QWidget):
     """MEMORY | HOT CUE | INFO."""
 
     jump_requested = Signal(float)  # seconds
+    loop_requested = Signal(
+        float, float
+    )  # a loop row: its start and end, seconds (go there with the loop on)
     memory_delete_requested = Signal(float)  # a memory cue's time: delete it
     memory_move_requested = Signal(
         float
@@ -367,6 +371,8 @@ class SidePanel(QWidget):
             item.setData(
                 0, LOOP_ROLE, is_loop
             )  # (a loop shows a loop mark after its time, as in rbxport)
+            if is_loop:
+                item.setData(0, END_ROLE, cue.end)
             item.setTextAlignment(1, Qt.AlignmentFlag.AlignCenter)
             if is_loop:
                 item.setToolTip(
@@ -398,6 +404,12 @@ class SidePanel(QWidget):
         if column == 1 and item.treeWidget() is self.memory:  # the ✕
             if item.data(0, DELETABLE_ROLE):
                 self.memory_delete_requested.emit(float(seconds))
+            return
+        end = item.data(0, END_ROLE)
+        if (
+            end is not None and item.treeWidget() is self.memory
+        ):  # a loop: go there and loop it
+            self.loop_requested.emit(float(seconds), float(end))
             return
         self.jump_requested.emit(float(seconds))
 

@@ -771,3 +771,58 @@ def test_reset_forgets_deleted_loops_too(rig, monkeypatch):
     reset(rig)
     assert rig.lib.memory_loops_removed(rig.c.track.path) == [] and memory_times(rig) == [10.0]  # fmt: skip
     assert not rig.strip.side.edited
+
+
+# -- clicking a loop row: go there with the loop on --------------------------------------------------
+
+
+def test_clicking_a_loop_row_goes_to_its_start_with_that_loop_on(rig, monkeypatch):
+    rekordbox_loops(rig, monkeypatch, (10.13, 12.77))
+    side = rig.strip.side
+    at(rig, 3.0)
+    side.memory.itemClicked.emit(side.memory.topLevelItem(0), 0)
+    assert rig.c.deck.loop == (10.13, 12.77) and rig.c.deck.loop_active
+    assert rig.player.looping and rig.player.position == pytest.approx(10.13, abs=0.05)
+    assert rig.strip.loop_size.isChecked()  # (the loop button lights, as for any loop)
+    assert marker_kinds(rig) == [("loop", 10.13)]
+
+
+def test_a_loop_row_click_keeps_playing_or_paused_as_it_was(rig, monkeypatch):
+    rekordbox_loops(rig, monkeypatch, (10.0, 12.0))
+    side = rig.strip.side
+    at(rig, 3.0, playing=True)
+    side.memory.itemClicked.emit(side.memory.topLevelItem(0), 0)
+    assert rig.player.playing and rig.player.looping
+    at(rig, 3.0)  # paused
+    side.memory.itemClicked.emit(side.memory.topLevelItem(0), 0)
+    assert not rig.player.playing and rig.player.looping
+
+
+def test_a_loop_row_replaces_the_loop_that_was_on(rig, monkeypatch):  # fmt: skip
+    rekordbox_loops(rig, monkeypatch, (10.0, 12.0))
+    rig.c.deck.mark_in(20.0)
+    rig.c.deck.mark_out(22.0)
+    side = rig.strip.side
+    side.memory.itemClicked.emit(side.memory.topLevelItem(0), 0)
+    assert rig.c.deck.loop == (10.0, 12.0)
+
+
+def test_a_loop_that_does_not_fit_the_track_says_so_and_changes_nothing(rig, monkeypatch):  # fmt: skip
+    rekordbox_loops(rig, monkeypatch, (28.0, 40.0))  # the track is 30 s
+    side = rig.strip.side
+    side.memory.itemClicked.emit(side.memory.topLevelItem(0), 0)
+    assert rig.messages[-1] == "That loop doesn't fit this track"
+    assert not rig.c.deck.loop_active and not rig.player.looping
+
+
+def test_a_saved_loop_can_be_recalled_after_leaving_it(rig):
+    loop_on(rig, 4.0)
+    rig.strip.memory_button.click()  # (saved: it is a row now)
+    start, end = rig.c.deck.loop
+    rig.strip.loop_size.click()  # (leave the loop)
+    assert not rig.player.looping
+    at(rig, 20.0)
+    side = rig.strip.side
+    side.memory.itemClicked.emit(side.memory.topLevelItem(0), 0)
+    assert rig.player.looping and rig.c.deck.loop == (start, end)
+    assert rig.player.position == pytest.approx(start, abs=0.05)

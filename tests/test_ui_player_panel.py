@@ -136,6 +136,32 @@ def test_the_side_panel_lists_memory_cues_loops_and_hot_cues(strip):
     assert heard == [31.5, 77.933]
 
 
+def test_a_loop_row_asks_for_the_loop_and_a_cue_row_only_for_the_time(strip):
+    strip.show_cues(CUES)
+    side = strip.side
+    heard_loops, heard_jumps = [], jumps(strip)
+    strip.loop_requested.connect(lambda a, b: heard_loops.append((a, b)))
+    loop_row = side.memory.topLevelItem(2)  # the loop at 1:00 to 1:04
+    side.memory.itemClicked.emit(loop_row, 0)
+    assert (
+        heard_loops == [(60.0, 64.0)] and heard_jumps == []
+    )  # (the loop, not just a jump)
+    side.memory.itemClicked.emit(side.memory.topLevelItem(1), 0)  # a memory cue
+    assert heard_loops == [(60.0, 64.0)] and heard_jumps == [31.5]
+    side.hot.itemClicked.emit(side.hot.topLevelItem(0), 0)  # a hot cue
+    assert heard_loops == [(60.0, 64.0)] and heard_jumps == [31.5, 77.933]
+
+
+def test_the_x_of_a_loop_row_deletes_it_and_does_not_start_it(strip):
+    strip.show_cues(CUES)
+    side = strip.side
+    loops, deleted = [], []
+    strip.loop_requested.connect(lambda a, b: loops.append((a, b)))
+    strip.memory_row_delete_requested.connect(deleted.append)
+    side.memory.itemClicked.emit(side.memory.topLevelItem(2), 1)  # its ✕
+    assert deleted == [60.0] and loops == []
+
+
 def test_the_tabs_show_memory_hot_cues_and_info_and_start_on_memory(strip):
     side = strip.side
     assert [b.text() for b in side.tabs] == ["MEMORY", "HOT CUE", "INFO"]
