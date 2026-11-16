@@ -249,11 +249,17 @@ def test_write_waiting_asks_again_when_editing_was_turned_off(lib, monkeypatch, 
     assert wait_for(lambda: lib.memory_cue_sets() == {})
 
 
-# -- loops saved in Dubcrate (`WRITE_LOOPS`: off until the command line has been tried live) --------------------
+# -- loops saved in Dubcrate (`WRITE_LOOPS`: on, since the command line was tried live; a switch) --------------------
 
 
-def test_loops_are_not_sent_to_rekordbox_while_the_switch_is_off(lib, qapp):
-    assert RekordboxEditor.WRITE_LOOPS is False  # (the shipped default)
+def test_loops_are_sent_to_rekordbox_by_default(qapp):
+    assert RekordboxEditor.WRITE_LOOPS is True
+
+
+def test_loops_are_not_sent_to_rekordbox_while_the_switch_is_off(
+    lib, qapp, monkeypatch
+):
+    monkeypatch.setattr(RekordboxEditor, "WRITE_LOOPS", False)
     settings.set_rekordbox_editing(True)
     editor, _, _ = make(lib)
     lib.set_memory_loops(IN_RB.path, [(1000, 3000, "")])
@@ -343,6 +349,7 @@ def test_waiting_loops_count_and_are_written_with_the_waiting_edits(
 
 
 def test_the_first_edit_question_names_loops_only_when_they_are_written(monkeypatch):
+    monkeypatch.setattr(RekordboxEditor, "WRITE_LOOPS", False)
     heading, explanation = editor_module.enable_editing_text()
     assert heading == "Save memory cue changes into your rekordbox library?"
     assert "loops" not in heading + explanation

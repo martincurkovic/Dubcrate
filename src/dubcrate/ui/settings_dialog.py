@@ -264,14 +264,14 @@ class SettingsDialog(QDialog):
         hint.setObjectName("mutedLabel")
         form.addRow(hint)
         self.rekordbox_edit_check = QCheckBox(
-            "Save memory cue changes into my rekordbox library"
+            "Save memory cue and loop changes into my rekordbox library"
         )
         self.rekordbox_edit_check.setChecked(bool(settings.get_rekordbox_editing()))
         self.rekordbox_edit_check.toggled.connect(settings.set_rekordbox_editing)
         form.addRow(self.rekordbox_edit_check)
         edit_hint = QLabel(
-            "When you add, move or delete a memory cue in the player, Dubcrate writes it into rekordbox's"
-            " library (only memory cues, nothing else). rekordbox must be closed at that moment, or the change"
+            "When you add, move or delete a memory cue in the player, or save a loop with MEMORY, Dubcrate writes it into rekordbox's"
+            " library (only memory cues and memory loops, nothing else; a loop is only ever added). rekordbox must be closed at that moment, or the change"
             " waits in Dubcrate. The first change of each session copies rekordbox's database files to"
             " rekordbox-backups next to Dubcrate's library, and a write that doesn't check out is undone."
             " Unticked, changes stay in Dubcrate only."

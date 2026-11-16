@@ -28,14 +28,14 @@ class AppStatusBar(QStatusBar):
         self.read_only_badge = QLabel("Library read-only")
         self.read_only_badge.setObjectName("readOnlyBadge")
         self.read_only_badge.setToolTip(
-            "Dubcrate never changes your rekordbox library. Memory cue changes stay in Dubcrate "
+            "Dubcrate never changes your rekordbox library. Memory cue and loop changes stay in Dubcrate "
             "(Settings > Library lets them be saved into rekordbox)."
         )
         self.writable_badge = QLabel("Library writable")
         self.writable_badge.setObjectName("writableBadge")
         self.writable_badge.setToolTip(
-            "Memory cue changes you make are saved into your rekordbox library. Nothing else in it is "
-            "changed. (Settings > Library switches this off.)"
+            "Memory cue changes you make, and loops you save, are saved into your rekordbox library. "
+            "Nothing else in it is changed. (Settings > Library switches this off.)"
         )
         self.read_only_badge.hide()
         self.writable_badge.hide()

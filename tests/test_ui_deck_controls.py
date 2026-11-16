@@ -547,7 +547,10 @@ def test_a_loop_counts_towards_the_ten_memory_places(rig):
     assert len(saved_loops(rig)) == 1 and "10 memory cues and loops" in rig.messages[-1]
 
 
-def test_saving_a_loop_never_asks_about_or_queues_a_rekordbox_write(rig, monkeypatch):
+def test_with_loop_writing_off_a_saved_loop_never_asks_about_or_queues_a_write(rig, monkeypatch):  # fmt: skip
+    from dubcrate.ui.rekordbox_editor import RekordboxEditor
+
+    monkeypatch.setattr(RekordboxEditor, "WRITE_LOOPS", False)
     calls = []
     monkeypatch.setattr(rig.c.editor, "allow", lambda track: calls.append("allow"))
     monkeypatch.setattr(rig.c.editor, "saved", lambda track: calls.append("saved"))

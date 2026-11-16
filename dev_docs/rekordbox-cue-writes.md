@@ -159,11 +159,12 @@ not count as a memory loop, a loop that ends before it starts is skipped, and no
 backup, `CueUpdated` bump (once a track), read-back (`PRAGMA integrity_check`, the row counts, each track's loops as expected, no other track changed)
 and restore as for the memory cues. `tests/test_rekordbox_write.py` has the shape, the add-only rules, the read-back restore and the CLI.
 
-**Switched off, in two steps (the owner asked for loops to be tested before they are written):**
+**Switched on in two steps (the owner asked for loops to be tested before they are written): the command line first, then the app.**
 - The command line: `dubcrate rekordbox write-memory-cues --loops` (a dry run unless `--yes`, and nothing about loops without `--loops`).
-- The app: `RekordboxEditor.WRITE_LOOPS = False`. With it on, MEMORY with a loop on asks the first-edit question (which then says "memory cues and
-  loops"), saves the loop in Dubcrate and queues it like a memory cue edit (`editor.saved`); the Dubcrate copy is dropped once rekordbox has been
-  re-read and has the loop. With it off a saved loop stays in Dubcrate only and the status bar says so.
+- The app: `RekordboxEditor.WRITE_LOOPS`, **True since 2026-11-16**, after the live test below worked. MEMORY with a loop on asks the first-edit question
+  (which then says "memory cues and loops"), saves the loop in Dubcrate and queues it like a memory cue edit (`editor.saved`); the Dubcrate copy is
+  dropped once rekordbox has been re-read and has the loop. With it False a saved loop stays in Dubcrate only and the status bar says so. This path is
+  tested with a stand-in writer; **not tried live in the app**.
 
 **Known limit (decided with the owner, 2026-11-16: loops are added beside rekordbox's):** once a loop has landed in rekordbox it is rekordbox's, and
 Dubcrate cannot delete it (a rekordbox loop has no ✕). Deleting a loop saved in Dubcrate that has not been written yet is fine. If this is wanted,
@@ -176,4 +177,4 @@ the memory cues' way (Dubcrate keeps the whole list, an edited list replaces rek
    with `uv run python spikes/rekordbox_loop_rows.py --db SCRATCH/master.db --title TRACK`: the new row should look like the table above.
 3. On the real library, after your own backup (Dubcrate makes one too): the same command without `--db`, then open rekordbox: the loop is in the track's
    memory list, it loops, survives a restart and goes onto a USB export.
-4. If it all works: set `RekordboxEditor.WRITE_LOOPS = True`.
+4. **Done 2026-11-16: the owner ran steps 1 to 3 (a loop on "SOS" by "1111"): it was in rekordbox and behaved as expected. `WRITE_LOOPS` is on.**

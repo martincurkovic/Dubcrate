@@ -68,10 +68,10 @@ def ask_enable_editing() -> bool:
 
 
 class RekordboxEditor(QObject):
-    # Loops saved in Dubcrate go into rekordbox too (`rekordbox_write`: only ever added). **Off** until the command
-    # line (`dubcrate rekordbox write-memory-cues --loops`) has been tried on the owner's library, as the memory
-    # cues were: then this is the one switch. The question says "and loops" when it is on.
-    WRITE_LOOPS = False
+    # Loops saved in Dubcrate go into rekordbox too (`rekordbox_write`: only ever added). **On since 2026-11-16**, after
+    # the owner ran `dubcrate rekordbox write-memory-cues --loops` on their library and the loop was in rekordbox and
+    # behaved. This is the one switch if it ever has to go off again (a loop then stays in Dubcrate only).
+    WRITE_LOOPS = True
 
     message = Signal(str)  # for the status bar
     settled = Signal()  # an edit was handed over to rekordbox: what is drawn from the cues can be asked again

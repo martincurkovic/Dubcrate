@@ -109,8 +109,9 @@
 - [x] Save memory loops in Dubcrate: MEMORY with a loop on (`memory_loop` table; shown in the player, on the card as memory loops, counted in the ten; not written to rekordbox).
 - [ ] Try memory loops by hand: set a loop, press MEMORY, check the Memory tab row and ✕, sync to the card and see the loop on the player.
 - [x] Make three memory loops in rekordbox and read their rows (2026-11-16: DANGER DANGER (Extended); `dev_docs/rekordbox-cue-writes.md`, "Memory loops").
-- [x] Write memory loops into rekordbox (`rekordbox_write.py`, add-only, tested on synthetic databases): `dubcrate rekordbox write-memory-cues --loops`. **Switched off in the app** (`RekordboxEditor.WRITE_LOOPS`).
-- [ ] Try `dubcrate rekordbox write-memory-cues --loops` on a COPY of master.db (dry run, then `--yes`, then `spikes/rekordbox_loop_rows.py --db COPY`), then on the real library; open rekordbox and check the loop. Then set `RekordboxEditor.WRITE_LOOPS = True` (checklist in `dev_docs/rekordbox-cue-writes.md`).
+- [x] Write memory loops into rekordbox (`rekordbox_write.py`, add-only, tested on synthetic databases): `dubcrate rekordbox write-memory-cues --loops`. In the app too (`RekordboxEditor.WRITE_LOOPS`, on since 2026-11-16).
+- [x] Tried `dubcrate rekordbox write-memory-cues --loops` on a copy and then on the real library (2026-11-16: the loop on "SOS" was in rekordbox and behaved), and switched `RekordboxEditor.WRITE_LOOPS` on.
+- [ ] Try the in-app loop path by hand with rekordbox closed (save a loop with MEMORY on a rekordbox track, open rekordbox: it is in the memory list), and with it open (the loop should wait, with a status message).
 - [ ] Hot cues and loops: edit hot cues in the player and write them to rekordbox (`dev_docs/rekordbox-cue-writes.md` has the `Kind` numbers; only memory cues are written so far).
 
 ### Linux and Windows
