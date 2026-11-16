@@ -86,7 +86,7 @@
 - [ ] Read rekordbox's `PWV3` and `PWV5` directly for exact waveform matches on rekordbox tracks ([rekordbox-analysis.md](dev_docs/rekordbox-analysis.md)).
 - [x] Verify the CDJ card format notes (chunk layout and checksum) against a real card file ([cdj1000mk3-card.md](dev_docs/cdj1000mk3-card.md)).
 - [x] Delete `spikes/burn_spike.py` once nothing needs it, since the window and CLI now do what it does ([roadmap.md](dev_docs/roadmap.md)).
-- [ ] Refresh dev notes that have gone stale, such as `command-line.md` saying burning is CLI-only ([command-line.md](dev_docs/command-line.md)).
+- [x] Refresh dev notes that have gone stale, such as `command-line.md` saying burning is CLI-only ([command-line.md](dev_docs/command-line.md)).
 
 ### Player (rbxport-style)
 
@@ -104,7 +104,7 @@
 - [ ] Try that in-app path by hand with rekordbox closed (edit a cue in the player, accept the question, open rekordbox), and with it open (the edit should wait, with a status message).
 - [x] Import memory cues set on the CDJ back from the card (additions only: Sync tab > Import Cues…, `card_import.py`).
 - [ ] Try Import Cues… with cues really set on the player; then decide whether moves and deletions on the player should be noticed (needs a baseline saved at sync time: the card's cues after each sync) and whether the player's hot cues should come back as memory cues (`dev_docs/card-sync.md`, "Importing cues from the card").
-- [ ] Right-click a card in the Sync tab's list: **Import Cues from “NAME”…** beside Sync and Eject (the button in the discs panel is the only way now).
+- [x] Right-click a card in the Sync tab's list: **Import Cues from “NAME”…** beside Sync and Eject (the button in the discs panel is the only way now).
 - [ ] Write the edits that are waiting in Dubcrate (made while rekordbox was open, or before editing was allowed) in one go from the app: only the command line does it now (`dubcrate rekordbox write-memory-cues`).
 - [ ] Hot cues and loops: edit them in the player and write them to rekordbox (`dev_docs/rekordbox-cue-writes.md` has the `Kind` numbers; only memory cues are written so far).
 
@@ -120,7 +120,7 @@
 - [ ] Try Format a Card on a spare 2 GB card on Linux and on Windows (built, tested against stand-in commands only: `card_format_linux.py`, `card_format_windows.py`; the Linux layout was checked with the real `sfdisk` and `mkfs.fat` on an image file).
 - [ ] Detect "permission denied" on the drive and say how to get access (the `cdrom` or `optical` group, or a udev rule) ([cross-platform.md](dev_docs/cross-platform.md)).
 - [ ] Decide between `cdrdao` and `xorriso -as cdrecord` for writing MP3 discs by trying both on a real drive ([linux-test-plan.md](dev_docs/linux-test-plan.md)).
-- [ ] Tell Linux users in the guide that the rekordbox importer has no default path there (folders only, or pick a copied `master.db`) ([cross-platform.md](dev_docs/cross-platform.md)).
+- [x] Tell Linux users in the guide that the rekordbox importer has no default path there (folders only, or pick a copied `master.db`) ([cross-platform.md](dev_docs/cross-platform.md)).
 - [ ] Check the Explorer's real drive lists on Linux and Windows, which are only tested with fake folders ([cross-platform.md](dev_docs/cross-platform.md)).
 - [ ] Find a trustworthy `cdrdao.exe` (build it with MSYS2 or Cygwin in CI) and find out whether it needs administrator rights ([cross-platform.md](dev_docs/cross-platform.md)).
 - [ ] Use IMAPI2 for MP3 discs on Windows, which needs no extra program but a COM dependency (`comtypes` or `pywin32`) and a notices entry ([cross-platform.md](dev_docs/cross-platform.md)).

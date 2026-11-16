@@ -1404,3 +1404,11 @@ def test_the_browser_strip_marks_the_picked_tracks_memory_cues_where_they_fall(w
     )  # (every cue is a memory cue)
     view.browser.table.setCurrentItem(view.browser.table.topLevelItem(1))
     assert view.browser.strip.marks == []  # (track 2 has none)
+
+
+def test_right_click_import_picks_the_card_and_offers_its_new_cues(writing, monkeypatch):  # fmt: skip
+    look_again(writing, "cue")
+    called = []
+    monkeypatch.setattr(writing.view, "import_from_card", lambda: called.append(1))
+    writing.view.import_from(writing.card)  # (the card is already the one shown)
+    assert called == [1]

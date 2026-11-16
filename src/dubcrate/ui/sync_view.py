@@ -263,6 +263,9 @@ class CardPanel(QWidget):
     sync_requested = Signal(
         object
     )  # right-click > Sync to this card: the card's folder (a Path)
+    import_requested = Signal(
+        object
+    )  # right-click > Import Cues: the card's folder (a Path)
     message = Signal(str)  # for the status bar
 
     def __init__(
@@ -440,6 +443,12 @@ class CardPanel(QWidget):
                 "Write the ticked discs' cues and waveforms to this card (it asks first)"
             )
             sync.triggered.connect(lambda: self._sync_to(path))
+            grab = menu.addAction(f"Import Cues from “{name}”…")
+            grab.setEnabled(idle)
+            grab.setToolTip(
+                "Bring the memory cues set on the player back into Dubcrate (you choose which)"
+            )
+            grab.triggered.connect(lambda: self._import_from(path))
             if row is not None and row.by_hand:
                 menu.addAction("Take This Folder Off the List").triggered.connect(
                     lambda: self._remove(path)
@@ -458,16 +467,24 @@ class CardPanel(QWidget):
         fmt.triggered.connect(self.format_card)
         return menu
 
-    def _sync_to(self, path: Path) -> None:
-        """Right-click > Sync: show `path` as the picked card (quietly: the Sync view is told below, once)
-        and ask for a sync to it."""
+    def _pick_quietly(self, path: Path) -> None:
+        """Show `path` as the picked card without telling the Sync view (the caller's signal does, once)."""
         self.cards.blockSignals(True)
         for row in range(self.cards.count()):
             if self.cards.item(row).data(Qt.ItemDataRole.UserRole) == str(path):
                 self.cards.setCurrentRow(row)
         self.cards.blockSignals(False)
         self._restyle_rows()
+
+    def _sync_to(self, path: Path) -> None:
+        """Right-click > Sync: show `path` as the picked card and ask for a sync to it."""
+        self._pick_quietly(path)
         self.sync_requested.emit(path)
+
+    def _import_from(self, path: Path) -> None:
+        """Right-click > Import Cues: show `path` as the picked card and ask for its new cues."""
+        self._pick_quietly(path)
+        self.import_requested.emit(path)
 
     def _on_context_menu(self, where) -> None:
         item = self.cards.itemAt(where)
@@ -619,6 +636,7 @@ class SyncView(QWidget):
         self._sync_when_ready = (
             False  # sync as soon as the discs have been looked at against a new card
         )
+        self._import_when_ready = False  # likewise, to import the card's new cues
 
         # The right-hand side of the window while the Sync tab is on (the window puts `disc_panel` there, in place
         # of the Discs list): the discs, each with a tick to say what to sync, and what to do with the ticked ones.
@@ -793,6 +811,11 @@ class SyncView(QWidget):
         ):  # (a right-click > Sync to a card that was not the one shown)
             self._sync_when_ready = False
             self._request_sync()
+        if (
+            self._import_when_ready
+        ):  # (a right-click > Import Cues from a card that was not the one shown)
+            self._import_when_ready = False
+            self.import_from_card()
 
     def _tracks_to_measure(self, surveys: Sequence[DiscSurvey]) -> list[Track]:
         """The tracks of discs that can't be synced for want of a length, that can be probed."""
@@ -1124,6 +1147,15 @@ class SyncView(QWidget):
             self.set_card(card)
             return
         self._request_sync()
+
+    def import_from(self, card: Path) -> None:
+        """The card's right-click > Import Cues: make `card` the one shown (looking at the discs against
+        it first, if it is not already), then offer its new memory cues as the button does."""
+        if card != self._card_path:
+            self._import_when_ready = True
+            self.set_card(card)
+            return
+        self.import_from_card()
 
     def _request_sync(self) -> None:
         if not self.ticked_ids():

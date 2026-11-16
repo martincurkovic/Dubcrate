@@ -78,7 +78,7 @@ Dubcrate comes with **ffmpeg** and **ffprobe**, which it uses to read tracks and
 
 **Your music is never changed, and importing never changes your rekordbox library.** Dubcrate reads a temporary copy of the rekordbox database and only reads your audio files. (The one thing it can write to rekordbox, if you allow it, is the memory cues you edit in the player: see *Memory cues* below.) It keeps its own library of imported track information and your discs.
 
-If Dubcrate can't find your rekordbox library, choose **Choose File…** when it asks and pick `master.db`, normally in `~/Library/Pioneer/rekordbox/`. Version 7 is the version Dubcrate has been tried with.
+If Dubcrate can't find your rekordbox library, choose **Choose File…** when it asks and pick `master.db`, normally in `~/Library/Pioneer/rekordbox/`. Version 7 is the version Dubcrate has been tried with. (rekordbox doesn't run on Linux, so there Dubcrate has no default place to look: import a folder of music, or pick a `master.db` you copied over.)
 
 Re-importing keeps your discs intact. A track that has vanished from its source but is on a disc is kept and marked, so a disc never silently loses a track.
 
@@ -397,7 +397,7 @@ The CDJ-1000MK3 keeps the cue points you set on the player on its **SD card**, o
 
 ![The Sync tab with a track picked: its waveform at the bottom, as the CDJ draws it](screenshots/sync-waveforms.png "The waveform a sync will write")
 
-1. **The card** (left). Put the player's SD card into your Mac: it appears in the list by itself a moment later (and goes when you take it out), found by the **PIONEER** folder on it. Each card shows its name, size and how many discs the player has put on it, with an **eject** button on the right that ejects it (right-click a card to **Sync** the ticked discs to it, to eject it, or to **Format a Card…**). Click **Refresh** if a card doesn't show up. For a copy of a card's folder, or a disk image of one, use **Choose Folder…**: it is listed with a **×** that takes it off the list again (the folder itself isn't touched).
+1. **The card** (left). Put the player's SD card into your Mac: it appears in the list by itself a moment later (and goes when you take it out), found by the **PIONEER** folder on it. Each card shows its name, size and how many discs the player has put on it, with an **eject** button on the right that ejects it (right-click a card to **Sync** the ticked discs to it, **Import Cues** from it, eject it, or **Format a Card…**). Click **Refresh** if a card doesn't show up. For a copy of a card's folder, or a disk image of one, use **Choose Folder…**: it is listed with a **×** that takes it off the list again (the folder itself isn't touched).
 2. **Discs to sync** (right). While the Sync tab is on, the list on the right is your **audio** discs, in the folders you filed them in, each with a **tick box** at the end: tick the ones to sync (a folder ticks the discs inside it; **Clear selection** unticks all; the box above searches). Clicking a disc here only shows it in the middle: it never takes you out of the Sync tab. Each disc has a **Status**:
    - **Not on the card: 12 cues and 14 waveforms to add**: the player has never seen this disc, or has no file for it yet.
    - **12 cues to add** (or **3 waveforms to add**): the disc is on the card, and these are not.

@@ -263,6 +263,7 @@ class MainWindow(QMainWindow):
         self.sync_view = SyncView(self._lib, can_eject=self.card_panel.is_volume)
         self.card_panel.card_changed.connect(self.sync_view.set_card)
         self.card_panel.sync_requested.connect(self.sync_view.sync_to)
+        self.card_panel.import_requested.connect(self.sync_view.import_from)
         self.sync_view.card_ejected.connect(self.card_panel.refresh)  # (it has gone)
         self.sync_view.busy_changed.connect(self.card_panel.set_busy)
         self.card_panel.message.connect(
