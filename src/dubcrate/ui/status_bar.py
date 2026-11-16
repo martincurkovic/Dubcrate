@@ -1,6 +1,7 @@
 """The window's status bar: "Dubcrate v0.1.0" at the left, an "Update available" button beside it
-when there is one, a badge saying whether the rekordbox library is read-only, then the messages (what was added, imported,
-burned) after them.
+when there is one, then the messages (what was added, imported, burned). In the **bottom right corner** is a badge
+saying whether the rekordbox library is read-only or writable; the window's busy bar and Cancel button sit to its
+left, so nothing shares the corner with it.
 
 A plain QStatusBar hides its left-hand widgets while a message shows, so the version would
 vanish every time a message appeared. This one keeps its own label for messages instead, and
@@ -39,6 +40,20 @@ class AppStatusBar(QStatusBar):
         )
         self.read_only_badge.hide()
         self.writable_badge.hide()
+        # the badge lives in the bottom right corner, as the last permanent widget: whatever else the window puts
+        # there (its busy bar and Cancel button, `addPermanentWidget` below) goes to its left
+        self.badge_box = QWidget()
+        self.badge_box.setObjectName("statusBadges")
+        badges = QHBoxLayout(self.badge_box)
+        badges.setContentsMargins(0, 0, 8, 0)
+        badges.setSpacing(6)
+        badges.addWidget(self.read_only_badge, 0, Qt.AlignmentFlag.AlignVCenter)
+        badges.addWidget(self.writable_badge, 0, Qt.AlignmentFlag.AlignVCenter)
+        self.badge_box.hide()
+        super().addPermanentWidget(self.badge_box)
+        # `insertPermanentWidget`'s index counts every widget, the one normal widget (the row of version, update
+        # button and message, added below) included: so the next permanent widget goes at 1, then 2, ...
+        self._widgets = 2  # the row, and the badge
         self.update_button = QPushButton("Update available")
         self.update_button.setObjectName("updateButton")
         self.update_button.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -51,12 +66,11 @@ class AppStatusBar(QStatusBar):
         )
 
         row = QWidget()
+        row.setObjectName("statusRow")
         layout = QHBoxLayout(row)
         layout.setContentsMargins(10, 0, 8, 0)
         layout.setSpacing(8)
         layout.addWidget(self.version_label, 0, Qt.AlignmentFlag.AlignVCenter)
-        layout.addWidget(self.read_only_badge, 0, Qt.AlignmentFlag.AlignVCenter)
-        layout.addWidget(self.writable_badge, 0, Qt.AlignmentFlag.AlignVCenter)
         layout.addWidget(self.update_button, 0, Qt.AlignmentFlag.AlignVCenter)
         layout.addSpacing(6)
         layout.addWidget(self.message_label, 1, Qt.AlignmentFlag.AlignVCenter)
@@ -85,6 +99,11 @@ class AppStatusBar(QStatusBar):
     def currentMessage(self) -> str:
         return self.message_label.text()
 
+    def addPermanentWidget(self, widget: QWidget, stretch: int = 0) -> None:
+        """A permanent widget goes at the right, but left of the library badge, which keeps the corner."""
+        self.insertPermanentWidget(self._widgets - 1, widget, stretch)
+        self._widgets += 1
+
     # -- the rekordbox library badge -------------------------------------------------------
 
     def set_library_badge(self, writable: bool | None) -> None:
@@ -92,6 +111,7 @@ class AppStatusBar(QStatusBar):
         that memory cue changes are saved into it."""
         self.read_only_badge.setVisible(writable is False)
         self.writable_badge.setVisible(writable is True)
+        self.badge_box.setVisible(writable is not None)
 
     # -- the update button ----------------------------------------------------------------
 

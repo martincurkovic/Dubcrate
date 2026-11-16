@@ -8,8 +8,9 @@ track is loaded. The preview player (`ui/preview.py`) does what a `Deck` says to
   point (with quantise on, anywhere that snaps to its beat), holding it plays from there (let go: back and
   stop); while stopped elsewhere, it sets the cue point to the playhead, and with quantise on the playhead
   moves onto that beat. The cue point starts at the beginning of the track.
-- **Auto loop** (`auto_loop`): a loop of a chosen number of beats from the playhead; the size keys halve or
-  double a loop that is on (`resize_auto`). It needs a tempo: the beat grid, else the BPM.
+- **Auto loop** (`auto_loop`): a loop of a chosen number of beats (1/64 to 32) from the playhead; the size keys
+  halve or double a loop that is on (`resize_auto`: the same start). It needs a tempo: the beat grid, else the BPM.
+  `PreviewController._keep_in_loop` moves a playhead that a shorter loop left behind into the loop.
 - **Manual loop**: IN (`mark_in`), OUT (`mark_out`, which starts the loop) and RELOOP (`reloop`, which leaves
   a loop that is on, or goes back into the last one).
 - **Quantise** (`quantise`): the cue point, loop IN / OUT and an auto loop's start snap to the nearest beat
@@ -20,15 +21,28 @@ import numpy as np
 
 from dubcrate.analysis import Cue
 
-AUTO_SIZES = (0.5, 1, 2, 4, 8, 16, 32)  # beats an auto loop can be
+AUTO_SIZES = (
+    1 / 64,
+    1 / 32,
+    1 / 16,
+    1 / 8,
+    1 / 4,
+    0.5,
+    1,
+    2,
+    4,
+    8,
+    16,
+    32,
+)  # beats an auto loop can be
 DEFAULT_AUTO = 4.0
-MIN_LOOP = 0.01  # seconds: a loop shorter than this is not one
+MIN_LOOP = 0.002  # seconds: a loop shorter than this is not one (1/64 of a beat at 230 bpm is 4 ms)
 SAME_PLACE = 0.02  # seconds: the playhead is "on" the cue point within this
 
 
 def size_label(beats: float) -> str:
-    """An auto loop's size as its button says it: `1/2`, `1`, `4`, `32`."""
-    return "1/2" if beats == 0.5 else f"{beats:g}"
+    """An auto loop's size as its button says it: `1/64`, `1/2`, `1`, `4`, `32`."""
+    return f"1/{round(1 / beats)}" if beats < 1 else f"{beats:g}"
 
 
 class Deck:

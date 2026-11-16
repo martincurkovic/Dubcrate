@@ -184,9 +184,14 @@ def test_markers_show_the_cue_point_the_loop_and_a_loop_that_is_off(deck):
     assert all(c.slot is None for c in deck.markers())  # (never taken for a hot cue)
 
 
-def test_the_sizes_and_their_labels():
-    assert AUTO_SIZES == (0.5, 1, 2, 4, 8, 16, 32)
+def test_the_sizes_run_from_a_64th_of_a_beat_to_32_beats_and_have_labels():
+    assert AUTO_SIZES == (1 / 64, 1 / 32, 1 / 16, 1 / 8, 1 / 4, 0.5, 1, 2, 4, 8, 16, 32)
     assert [size_label(b) for b in AUTO_SIZES] == [
+        "1/64",
+        "1/32",
+        "1/16",
+        "1/8",
+        "1/4",
         "1/2",
         "1",
         "2",
@@ -195,6 +200,16 @@ def test_the_sizes_and_their_labels():
         "16",
         "32",
     ]
+
+
+def test_a_64th_of_a_beat_is_a_loop_even_at_a_fast_tempo(deck):
+    deck.auto_beats = 1 / 64
+    found = deck.auto_loop(10.0)  # the grid here is 120 bpm: 1/64 beat is 7.8 ms
+    assert found is not None and found[1] - found[0] == pytest.approx(BEAT / 64)
+    fast = Deck()
+    fast.load(120.0, np.arange(1.0, 119.0, 0.25), 240.0)  # 240 bpm: 1/64 beat is 3.9 ms
+    fast.auto_beats = 1 / 64
+    assert fast.auto_loop(10.0) is not None
 
 
 def test_a_saved_loop_is_turned_on_from_its_two_edges_without_snapping(deck):

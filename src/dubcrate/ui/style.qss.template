@@ -352,9 +352,18 @@ QSlider::handle:horizontal:disabled {
     border: 1px solid ${border_disabled};
 }
 /* ---------- Status bar ---------- */
+/* The bar has its own shade and a rule on top of it, so it reads as a band apart from the app. Everything laid on it
+   is transparent so that shade is one piece: the plain QWidgets on it (the message row, the badge box) and its labels
+   would otherwise paint the window colour over it, and the gap Qt leaves between two items then showed the bar's own,
+   darker colour as a thin line beside the library badge. (The badges themselves and the buttons keep their own colours.) */
 QStatusBar {
     background-color: ${bg_statusbar};
     color: ${text_statusbar};
+    border-top: 1px solid ${border};
+}
+
+QWidget#statusRow, QWidget#statusBadges, QStatusBar QLabel {
+    background-color: transparent;
 }
 
 /* Fusion's default QStatusBar::item is a sunken PANEL frame around each

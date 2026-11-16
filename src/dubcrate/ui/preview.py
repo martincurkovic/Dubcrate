@@ -240,6 +240,13 @@ class PreviewController(QObject):
                 self.player.set_loop(*found)
         self._show_session()
 
+    def _keep_in_loop(self, start: float, end: float) -> None:
+        """A loop was made shorter with the playhead in the part that went: the playhead would play on out of it, so
+        it moves into the loop, at the same place in the loop's length (modulo it), so it stays in time."""
+        position = self.player.position
+        if end > start and not (start <= position < end):
+            self.player.seek(start + (position - start) % (end - start))
+
     def loop_size(self, beats: float) -> None:
         """The size arrows: a new size, redrawing a loop that is on."""
         if not self._usable():
@@ -248,6 +255,7 @@ class PreviewController(QObject):
         found = self.deck.resize_auto(beats)
         if found is not None:
             self.player.set_loop(*found)
+            self._keep_in_loop(*found)
         elif was_on:
             self.message.emit("A loop that size would run past the end of the track")
         self._show_session()

@@ -182,9 +182,15 @@ def test_the_size_arrows_change_the_size_and_redraw_a_loop_that_is_on(rig):
     for _ in range(5):
         rig.strip.loop_size_back.click()
     assert rig.strip.loop_size.text() == "1"
+    labels = []
+    for _ in range(6):
+        rig.strip.loop_size_back.click()
+        labels.append(rig.strip.loop_size.text())
+    assert labels == ["1/2", "1/4", "1/8", "1/16", "1/32", "1/64"]
     rig.strip.loop_size_back.click()
-    assert rig.strip.loop_size.text() == "1/2"
-    rig.strip.loop_size_back.click()
+    assert rig.strip.loop_size.text() == "1/64"  # (the smallest)
+    for _ in range(5):
+        rig.strip.loop_size_forward.click()
     assert rig.strip.loop_size.text() == "1/2"
     at(rig, 4.0)
     rig.strip.loop_size.click()  # 1/2 beat
@@ -826,3 +832,55 @@ def test_a_saved_loop_can_be_recalled_after_leaving_it(rig):
     side.memory.itemClicked.emit(side.memory.topLevelItem(0), 0)
     assert rig.player.looping and rig.c.deck.loop == (start, end)
     assert rig.player.position == pytest.approx(start, abs=0.05)
+
+
+# -- shortening a loop with the playhead in the part that goes ----------------------------------------
+
+
+def test_halving_a_loop_with_the_playhead_in_its_second_half_keeps_it_in_the_loop(rig):
+    start, end = loop_on(rig, 4.0)  # 4 beats of 0.5 s: 4.0 to 6.0
+    assert (start, end) == (4.0, pytest.approx(6.0))
+    rig.player.seek(5.5)  # in the second half
+    rig.strip.loop_size_back.click()  # 2 beats: 4.0 to 5.0
+    assert rig.c.deck.loop == (4.0, pytest.approx(5.0))
+    assert 4.0 <= rig.player.position < 5.0  # (it did not play on out of the loop)
+    assert rig.player.position == pytest.approx(
+        4.5, abs=0.05
+    )  # (the same place in the beat: 1.5 s into 1 s)
+
+
+def test_halving_with_the_playhead_in_the_first_half_does_not_move_it(rig):
+    loop_on(rig, 4.0)
+    rig.player.seek(4.3)
+    rig.strip.loop_size_back.click()
+    assert rig.player.position == pytest.approx(4.3, abs=0.05)
+
+
+def test_halving_twice_keeps_it_in_each_loop_and_keeps_playing(rig):
+    loop_on(rig, 4.0)
+    rig.player.seek(5.9)
+    rig.player.play()
+    for expected_end in (5.0, 4.5):
+        rig.strip.loop_size_back.click()
+        assert rig.c.deck.loop[1] == pytest.approx(expected_end)
+        assert 4.0 <= rig.player.position < expected_end
+    assert rig.player.playing and rig.player.looping
+
+
+def test_making_a_loop_longer_leaves_the_playhead_where_it_is(rig):
+    loop_on(rig, 4.0)
+    rig.player.seek(5.5)
+    rig.strip.loop_size_forward.click()  # 8 beats: 4.0 to 8.0
+    assert rig.c.deck.loop[1] == pytest.approx(8.0)
+    assert rig.player.position == pytest.approx(5.5, abs=0.05)
+
+
+def test_a_64th_of_a_beat_loop_is_set_and_plays(rig):
+    for _ in range(8):  # 4, 2, 1, 1/2, 1/4, 1/8, 1/16, 1/32, 1/64: eight steps down
+        rig.strip.loop_size_back.click()
+    assert rig.strip.loop_size.text() == "1/64"
+    at(rig, 4.0)
+    rig.strip.loop_size.click()
+    start, end = rig.c.deck.loop
+    assert end - start == pytest.approx(0.5 / 64) and rig.c.deck.loop_active
+    assert rig.player.looping and rig.messages == []
