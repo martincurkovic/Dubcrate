@@ -13,6 +13,7 @@ from PySide6.QtGui import QColor, QFont, QPainter, QPen, QPixmap, QPolygonF
 from PySide6.QtWidgets import QSizePolicy, QWidget
 
 from dubcrate.analysis import Cue, Phrase
+from dubcrate.barcount import bars_text
 from dubcrate.waveform import BAND_HIGH, BAND_LOW, BAND_MID, STYLE_BANDS, Waveform
 
 from . import theme
@@ -401,6 +402,30 @@ class DetailView(QWidget):
         self._paint_beats(p, w, h, centre, per_second)
         self._paint_cues(p, w, h, centre, per_second)
         p.fillRect(QRectF(centre - 1, 0, 2, h), color("wave_playhead"))
+        self._paint_bar_counter(p, centre)
+
+    def bar_text(self) -> str | None:
+        """The bar and beat under the playhead (`13.3 Bars`); None for a track with no beat grid."""
+        return bars_text(self._beat_times, self._beat_numbers, self._position)
+
+    def _paint_bar_counter(self, p: QPainter, centre: float) -> None:
+        """The bar and beat count at the top, just left of the playhead, as rbxport shows it."""
+        text = self.bar_text()
+        if text is None:
+            return
+        font = QFont(p.font())
+        font.setPixelSize(11)
+        font.setBold(True)
+        p.setFont(font)
+        box = p.fontMetrics().horizontalAdvance(text) + 10
+        rect = QRectF(centre - 5 - box, 2, box, 16)
+        backing = color("wave_bg")
+        backing.setAlpha(255 if is_mono() else 200)  # (so it reads over the waveform)
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(backing)
+        p.drawRoundedRect(rect, 3, 3)
+        p.setPen(color("wave_text"))
+        p.drawText(rect, Qt.AlignmentFlag.AlignCenter, text)
 
     def _paint_zero_line(self, p: QPainter, width: int, middle: float) -> None:
         """A faint line along the waveform's centre (silence), under the waveform, so the gaps before,
