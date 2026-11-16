@@ -11,6 +11,7 @@ import wave
 from dataclasses import dataclass
 from pathlib import Path
 
+from dubcrate.cancel import Cancelled, CancelToken
 from dubcrate.cd import (
     BYTES_PER_SAMPLE_FRAME,
     CHANNELS,
@@ -22,6 +23,7 @@ from dubcrate.mp3 import LOSSY_CODECS, cbr_target, is_mp3, scan_mp3
 from dubcrate.tools import find_tool, missing_message
 
 _CHUNK = 1 << 20
+_CANCEL_POLL_SECONDS = 0.1  # how often a running ffmpeg looks at the Cancel button
 
 
 class RenderError(RuntimeError):
@@ -128,13 +130,16 @@ def probe(path: Path) -> SourceInfo:
     )
 
 
-def render_track(src: Path, dst: Path, gain_db: float = 0.0) -> int:
+def render_track(
+    src: Path, dst: Path, gain_db: float = 0.0, cancel: CancelToken | None = None
+) -> int:
     """Render `src` to `dst` as CD-ready WAV; returns the length in sectors.
 
     The output is padded with digital silence to a whole sector so that track
     boundaries on the disc fall exactly where the TOC says they do. `gain_db` is a plain volume
     change (level matching, see `loudness.py`), applied in floating point before the conversion to
-    16 bits, so it costs no precision and does not change the length.
+    16 bits, so it costs no precision and does not change the length. If `cancel` is set while it works,
+    ffmpeg is stopped, the half-made file is removed and `Cancelled` is raised.
     """
     chain = f"aresample=osr={SAMPLE_RATE}:osf=s16:dither_method=triangular_hp"
     if gain_db:
@@ -156,6 +161,9 @@ def render_track(src: Path, dst: Path, gain_db: float = 0.0) -> int:
         out.setsampwidth(2)
         out.setframerate(SAMPLE_RATE)
         while chunk := proc.stdout.read(_CHUNK):
+            if cancel is not None and cancel.cancelled:
+                proc.kill()
+                break
             chunk = carry + chunk
             usable = len(chunk) - len(chunk) % BYTES_PER_SAMPLE_FRAME
             carry = chunk[usable:]
@@ -165,6 +173,11 @@ def render_track(src: Path, dst: Path, gain_db: float = 0.0) -> int:
         if pad:
             out.writeframes(bytes(pad * BYTES_PER_SAMPLE_FRAME))
             frames += pad
+    if cancel is not None and cancel.cancelled:
+        proc.kill()
+        proc.wait()
+        dst.unlink(missing_ok=True)
+        raise Cancelled
     stderr = proc.stderr.read().decode(errors="replace").strip()
     if proc.wait() != 0 or frames == 0:
         dst.unlink(missing_ok=True)
@@ -181,6 +194,7 @@ def render_mp3(
     album: str = "",
     number: int | None = None,
     max_bitrate: int = 320,
+    cancel: CancelToken | None = None,
 ) -> int:
     """Write `src` to `dst` as an MP3 for an MP3 CD; returns the file's size in bytes.
 
@@ -190,7 +204,8 @@ def render_mp3(
     or under `max_bitrate` is copied without re-encoding (a second lossy pass would only lose
     quality); a variable-bitrate one is encoded to constant. Tags are written fresh from the
     disc's own text (title and artist as edited for this disc) and cover art is left off.
-    `src` is only read.
+    `src` is only read. If `cancel` is set while it works, ffmpeg is stopped, the half-made file is
+    removed and `Cancelled` is raised.
     """
     cmd = [
         _require("ffmpeg"), "-nostdin", "-v", "error", "-y", "-i", str(src),
@@ -209,13 +224,14 @@ def render_mp3(
         cmd += ["-c:a", "libmp3lame", "-b:a", f"{rate}k", "-ar", "44100", "-ac", "2"]
     cmd += ["-id3v2_version", "3", "-write_id3v1", "1", "-f", "mp3", str(dst)]
     dst.parent.mkdir(parents=True, exist_ok=True)
-    proc = subprocess.run(
-        cmd, check=False, capture_output=True, encoding="utf-8", errors="replace"
-    )
-    if proc.returncode != 0 or not dst.exists() or dst.stat().st_size == 0:
+    returncode, stderr = _run_ffmpeg(cmd, cancel)
+    if cancel is not None and cancel.cancelled:
+        dst.unlink(missing_ok=True)
+        raise Cancelled
+    if returncode != 0 or not dst.exists() or dst.stat().st_size == 0:
         dst.unlink(missing_ok=True)
         raise RenderError(
-            f"ffmpeg failed for {src}: {proc.stderr.strip() or 'nothing was written'}"
+            f"ffmpeg failed for {src}: {stderr.strip() or 'nothing was written'}"
         )
     result = scan_mp3(dst)
     if (
@@ -224,6 +240,32 @@ def render_mp3(
         dst.unlink(missing_ok=True)
         raise RenderError(f"{src.name}: the MP3 made from it is not constant bitrate")
     return dst.stat().st_size
+
+
+def _run_ffmpeg(cmd: list[str], cancel: CancelToken | None) -> tuple[int, str]:
+    """Run ffmpeg to the end and return (exit status, its error output); with a `cancel` that is set meanwhile,
+    kill it and return at once (the caller looks at the token)."""
+    if cancel is None:
+        proc = subprocess.run(
+            cmd, check=False, capture_output=True, encoding="utf-8", errors="replace"
+        )
+        return proc.returncode, proc.stderr
+    with subprocess.Popen(
+        cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        encoding="utf-8",
+        errors="replace",
+    ) as proc:
+        while True:
+            try:
+                _out, err = proc.communicate(timeout=_CANCEL_POLL_SECONDS)
+                return proc.returncode, err or ""
+            except subprocess.TimeoutExpired:
+                if cancel.cancelled:
+                    proc.kill()
+                    proc.communicate()
+                    return -1, ""
 
 
 def _mp3_plan(src: Path, max_bitrate: int) -> int | None:

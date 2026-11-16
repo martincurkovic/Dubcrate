@@ -131,6 +131,7 @@ class BurnDialog(QDialog):
         int
     )  # "Print Labels…" after a real burn: the disc's id (this window has closed itself)
     _log = Signal(str)  # a line from the worker thread, delivered on this one
+    _writing = Signal()  # the worker is past the point where a burn can be stopped
 
     def __init__(
         self,
@@ -156,6 +157,9 @@ class BurnDialog(QDialog):
             None  # the drive chosen (its id); None until the first check
         )
         self._busy = False
+        self._burn_cancel: CancelToken | None = (
+            None  # set while a burn is being prepared, for Cancel
+        )
         self._finished = False  # a real burn is done: this disc is no longer blank
         self.setWindowTitle("Burn Disc")
         self.setMinimumWidth(520)
@@ -303,11 +307,21 @@ class BurnDialog(QDialog):
         )
         self.cancel_levels_button.clicked.connect(self._cancel_levels)
         self.cancel_levels_button.hide()
+        self.cancel_burn_button = QPushButton("Cancel")
+        self.cancel_burn_button.setAutoDefault(False)
+        self.cancel_burn_button.setToolTip(
+            "Stop preparing the disc. Nothing has been written to the disc yet, so it stays blank. "
+            "Once writing starts it can't be stopped."
+        )
+        self.cancel_burn_button.clicked.connect(self._cancel_burn)
+        self.cancel_burn_button.hide()
+        self._writing.connect(self._writing_started)
         buttons = QHBoxLayout()
         buttons.addWidget(self.export_button)
         buttons.addWidget(self.labels_button)
         buttons.addStretch(1)
         buttons.addWidget(self.cancel_levels_button)
+        buttons.addWidget(self.cancel_burn_button)
         buttons.addWidget(self.close_button)
         buttons.addWidget(self.burn_button)
 
@@ -381,6 +395,7 @@ class BurnDialog(QDialog):
         self.close_button.setEnabled(not working)
         self.drive_combo.setEnabled(not working and not self._finished)
         self.cancel_levels_button.setVisible(self._measuring)
+        self.cancel_burn_button.setVisible(self._burn_cancel is not None)
         self.export_button.setEnabled(self._plan is not None and not working)
         self.labels_button.setVisible(self._finished)
         self.labels_button.setEnabled(not working)
@@ -632,6 +647,9 @@ class BurnDialog(QDialog):
         self.status_label.setText("")
         self.progress.setRange(0, 0)  # busy
         self.progress.setVisible(True)
+        cancel = self._burn_cancel = (
+            CancelToken()
+        )  # (so Cancel shows while the disc is prepared)
         self._busy = True
         self._update()
         emit = self._log.emit  # thread-safe: queued to this thread
@@ -643,11 +661,14 @@ class BurnDialog(QDialog):
         @_expected_failures
         def work():
             with TemporaryDirectory(prefix="dubcrate-burn-") as tmp:
-                rendered = render_plan(plan, Path(tmp), say)
+                rendered = render_plan(plan, Path(tmp), say, cancel)
                 if media is not None:  # the rendered lengths are the exact ones
                     problems = media_problems(rendered.used_sectors, media, plan.kind)
                     if problems:
                         raise TaskError("; ".join(problems))
+                # the point of no return: a Cancel from here on does nothing (writing can't be stopped)
+                cancel.commit()
+                self._writing.emit()
                 if isinstance(rendered.disc, DataDisc):
                     burner.burn_data(rendered.disc, options, say)
                 else:
@@ -664,9 +685,35 @@ class BurnDialog(QDialog):
             work,
             lambda found: self._burn_done(found[0], simulate, found[1]),
             self._burn_failed,
+            on_cancel=lambda _partial: self._burn_cancelled(),
         )
 
+    def _cancel_burn(self) -> None:
+        """The Cancel button: stop preparing the disc (before the writing starts)."""
+        if self._burn_cancel is not None and self._burn_cancel.cancel():
+            self.cancel_burn_button.setEnabled(False)
+            self._append("Cancelling…")
+
+    def _writing_started(self) -> None:
+        """Writing has begun: it can't be stopped, so the Cancel button goes."""
+        self._burn_cancel = None
+        self._update()
+
+    def _burn_cancelled(self) -> None:
+        self._burn_cancel = None
+        self._after_attempt()
+        self.cancel_burn_button.setEnabled(True)
+        self._append("Cancelled. Nothing was written to the disc.")
+        self._set_level(
+            self.status_label,
+            "The burn was cancelled before anything was written. The disc is still blank.",
+            "normal",
+        )
+        logger.info("burn of disc %s cancelled before writing", self._disc_id)
+        self._update()
+
     def _after_attempt(self) -> None:
+        self._burn_cancel = None
         self._busy = False
         self.progress.setVisible(False)
         self.confirm_check.setChecked(False)  # ask again before the next one

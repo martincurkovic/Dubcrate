@@ -57,7 +57,8 @@ Open items by area; finished work is under **Completed** at the bottom (same hea
 
 ### Features and app polish
 
-- [ ] Try the drive picker with two real drives (the check after a burn is skipped for any but the first), and add a way to cancel a burn (the backends have no abort yet: DiscRecording's `DRBurn` can be aborted, `cdrdao` can be terminated).
+- [ ] Try the drive picker with two real drives (the check after a burn is skipped for any but the first).
+- [ ] Cancel the writing of a burn itself (not built: the backends have no abort; DiscRecording's `DRBurn.abort()` exists and `cdrdao` can be terminated, but a stopped write ruins the disc, so it needs a confirmation and a try on a drive). Also let Export… be cancelled.
 - [ ] Read a finished burn back and check it against the disc it was burned from ([roadmap.md](dev_docs/roadmap.md)).
 - [ ] Try dragging an MP3 folder in the Discs list by hand (the feel, and dropping on a collapsed disc).
 - [ ] Give each app library its own Library tab once a second library exists ([roadmap.md](dev_docs/roadmap.md)).
@@ -126,6 +127,7 @@ Open items by area; finished work is under **Completed** at the bottom (same hea
 - [x] Year on labels (2026-11-16): **Show year** in the label window, off by default, between key and time; from rekordbox or the file's tags. (The album was asked for and skipped: not wanted.)
 - [x] Guard Windows' reserved names in MP3 folder names and the disc's staging folder (`mp3.dir_name`, `mp3.volume_name`).
 - [x] Detect "permission denied" on the drive on Linux and say how to get access, naming the drive's group (`cdrdao.access_problem`, 2026-11-16).
+- [x] Cancel a burn while the disc is being prepared (2026-11-16: a Cancel button in the burn window that stops the rendering at once and removes what it made; it goes once writing starts). Tested with fakes and real ffmpeg.
 - [x] Sync tab tidy-up (2026-11-16): no help text under an empty card list, no Status / Cues / Waveform columns or Details button, waveforms always written (no tick box), the disc list's tick boxes on the left of each name and a select-all box in its heading.
 - [x] A badge in the status bar's bottom right corner: yellow "Library read-only" or orange "Library writable" (only with a rekordbox library imported); the status bar is a shade of its own with a rule on top (`ui/status_bar.py`).
 - [x] Add a drive picker to the burn window (2026-11-16: a menu shown only with two or more drives, remembered by name; `Burner.drives()`; tested with fakes). ([roadmap.md](dev_docs/roadmap.md))

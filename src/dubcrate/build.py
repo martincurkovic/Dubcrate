@@ -12,6 +12,7 @@ import numpy as np
 from dubcrate import mp3, wave_model
 from dubcrate.burn.base import DataDisc, DiscTrack, MediaInfo
 from dubcrate.burn.base import Disc as BurnDisc
+from dubcrate.cancel import CancelToken
 from dubcrate.cd import MAX_TRACKS, disc_used_sectors, format_msf
 from dubcrate.library.lengths import measure_tracks
 from dubcrate.library.levels import ensure_loudness
@@ -233,26 +234,32 @@ def apply_levels(
 
 
 def render_plan(
-    plan: BurnPlan, workdir: Path, progress: Progress | None = None
+    plan: BurnPlan,
+    workdir: Path,
+    progress: Progress | None = None,
+    cancel: CancelToken | None = None,
 ) -> Rendered:
     """Render a plan to CD-ready WAVs. Safe on a worker thread: no library access.
 
     Rendered lengths are authoritative, so the disc is checked against its
-    capacity once more here.
+    capacity once more here. If `cancel` is set, the track being made is stopped and removed and
+    `Cancelled` is raised: nothing is written anywhere but `workdir`, which the caller owns.
     """
     say = progress or (lambda _msg: None)
     if plan.kind == "mp3":
-        return _render_mp3_plan(plan, workdir, say)
+        return _render_mp3_plan(plan, workdir, say, cancel)
     burn_disc = BurnDisc(title=plan.name, performer=plan.performer)
     workdir.mkdir(parents=True, exist_ok=True)
     lengths: dict[int, int] = {}
     waveforms: dict[int, list[int]] = {}
     for number, t in enumerate(plan.tracks, start=1):
+        if cancel is not None:
+            cancel.check()
         gain = f" ({t.gain_db:+.1f} dB)" if t.gain_db else ""
         say(f"rendering {number}/{len(plan.tracks)}: {t.title}{gain}")
         wav = workdir / f"{number:02d}.wav"
         try:
-            sectors = render_track(Path(t.path), wav, t.gain_db)
+            sectors = render_track(Path(t.path), wav, t.gain_db, cancel)
         except ToolMissingError as exc:
             raise BuildError(str(exc)) from exc
         except RenderError as exc:
@@ -319,7 +326,9 @@ def path_too_long_message(path: Path) -> str:
     )
 
 
-def _render_mp3_plan(plan: BurnPlan, workdir: Path, say: Progress) -> Rendered:
+def _render_mp3_plan(
+    plan: BurnPlan, workdir: Path, say: Progress, cancel: CancelToken | None = None
+) -> Rendered:
     """Stage an MP3 disc: a folder named for the disc, holding its own folders, and in each
     folder one MP3 per track numbered from 1 (so a player that sorts by name keeps the order)."""
     folder = workdir / mp3.volume_name(plan.name)
@@ -341,6 +350,8 @@ def _render_mp3_plan(plan: BurnPlan, workdir: Path, say: Progress) -> Rendered:
         )  # (empty folders are kept: they are part of the plan)
     used = mp3.FOLDER_OVERHEAD_SECTORS * len(plan.dirs)
     for done, (t, dst) in enumerate(zip(plan.tracks, destinations), start=1):
+        if cancel is not None:
+            cancel.check()
         say(f"preparing {done}/{len(plan.tracks)}: {t.title}")
         try:
             size = render_mp3(
@@ -351,6 +362,7 @@ def _render_mp3_plan(plan: BurnPlan, workdir: Path, say: Progress) -> Rendered:
                 album=plan.name,
                 number=number,
                 max_bitrate=plan.mp3_bitrate or mp3.DEFAULT_BITRATE,
+                cancel=cancel,
             )
         except ToolMissingError as exc:
             raise BuildError(str(exc)) from exc

@@ -424,3 +424,87 @@ def test_cli_export_writes_files_to_burn_elsewhere(tmp_path, capsys):
     assert run_cli(tmp_path, "export", "2", str(out)) == 2
     assert run_cli(tmp_path, "export", "1", str(tmp_path / "missing")) == 1
     assert "is not a folder" in capsys.readouterr().err
+
+
+# -- cancelling while the disc is prepared ----------------------------------------------------------------
+
+
+def test_a_cancel_before_the_first_track_renders_nothing(lib, tmp_path):
+    from dubcrate.build import plan_burn, render_plan
+    from dubcrate.cancel import Cancelled, CancelToken
+
+    disc_id = lib.create_disc("Night")
+    lib.add_to_disc(disc_id, all_ids(lib))
+    token = CancelToken()
+    token.cancel()
+    work = tmp_path / "work"
+    with pytest.raises(Cancelled):
+        render_plan(plan_burn(lib, disc_id), work, cancel=token)
+    assert not list(work.glob("*.wav"))
+
+
+def test_a_cancel_between_tracks_stops_there_and_leaves_no_half_made_file(
+    lib, tmp_path
+):
+    from dubcrate.build import plan_burn, render_plan
+    from dubcrate.cancel import Cancelled, CancelToken
+
+    disc_id = lib.create_disc("Night")
+    lib.add_to_disc(disc_id, all_ids(lib))
+    token = CancelToken()
+
+    def say(text):
+        if text.startswith(
+            "rendering 2/"
+        ):  # (the user presses Cancel as the second begins)
+            token.cancel()
+
+    work = tmp_path / "work"
+    with pytest.raises(Cancelled):
+        render_plan(plan_burn(lib, disc_id), work, say, token)
+    assert sorted(p.name for p in work.glob("*.wav")) == [
+        "01.wav"
+    ]  # (one whole track, no stub of the second)
+
+
+def test_a_track_being_rendered_is_stopped_and_removed(tmp_path):
+    from dubcrate import render
+    from dubcrate.cancel import Cancelled, CancelToken
+
+    src = make_flac(tmp_path / "long.flac", 30.0)
+    token = CancelToken()
+    token.cancel()
+    dst = tmp_path / "out.wav"
+    with pytest.raises(Cancelled):
+        render.render_track(src, dst, cancel=token)
+    assert not dst.exists()
+
+
+def test_an_mp3_being_made_is_stopped_and_removed(tmp_path):
+    from dubcrate import render
+    from dubcrate.cancel import Cancelled, CancelToken
+
+    src = make_flac(tmp_path / "long.flac", 30.0)
+    token = CancelToken()
+    token.cancel()
+    dst = tmp_path / "out.mp3"
+    with pytest.raises(Cancelled):
+        render.render_mp3(src, dst, title="t", artist="a", cancel=token)
+    assert not dst.exists()
+
+
+def test_a_cancel_kills_a_running_ffmpeg_at_once_rather_than_waiting_for_it():
+    import sys
+    import threading
+    import time
+
+    from dubcrate import render
+    from dubcrate.cancel import CancelToken
+
+    token = CancelToken()
+    threading.Timer(0.3, token.cancel).start()
+    started = time.monotonic()
+    status, _err = render._run_ffmpeg([sys.executable, "-c", "import time; time.sleep(60)"], token)  # fmt: skip
+    assert (
+        time.monotonic() - started < 10 and status != 0
+    )  # (not the minute it would have slept)

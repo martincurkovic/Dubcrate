@@ -30,9 +30,26 @@ class CancelToken:
 
     def __init__(self) -> None:
         self._event = threading.Event()
+        self._lock = threading.Lock()
+        self._committed = False
 
-    def cancel(self) -> None:
-        self._event.set()
+    def cancel(self) -> bool:
+        """Ask the job to stop. False if it is too late (the job has `commit`ted: it can no longer be
+        stopped), True if the job will stop."""
+        with self._lock:
+            if self._committed:
+                return False
+            self._event.set()
+            return True
+
+    def commit(self) -> None:
+        """The job is about to do something that can't be undone or stopped (writing a disc): from here
+        `cancel` does nothing. Raises `Cancelled` instead if the user already asked to stop, so a Cancel
+        pressed at the last moment is never ignored half way."""
+        with self._lock:
+            if self._event.is_set():
+                raise Cancelled()
+            self._committed = True
 
     @property
     def cancelled(self) -> bool:

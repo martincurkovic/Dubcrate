@@ -226,3 +226,48 @@ def test_a_task_from_another_thread_can_be_cancelled_from_the_gui_side(qapp, wai
     assert started.wait(5)
     token.cancel()
     assert wait_for(lambda: bool(got)) and got == ["stopped"]
+
+
+# -- the point of no return ---------------------------------------------------------------------------------
+
+
+def test_cancel_says_whether_it_took_and_after_commit_it_never_does():
+    token = CancelToken()
+    assert token.cancel() is True and token.cancelled
+    late = CancelToken()
+    late.commit()  # (about to write: no way back)
+    assert late.cancel() is False and not late.cancelled
+    late.check()  # (nothing to stop any more)
+
+
+def test_committing_after_a_cancel_raises_so_a_last_moment_cancel_is_never_lost():
+    token = CancelToken()
+    token.cancel()
+    with pytest.raises(Cancelled):
+        token.commit()
+    assert token.cancel() is True  # (still just cancelled)
+
+
+def _race_once() -> tuple[bool, bool]:
+    """Commit on one thread and cancel on this one at the same moment: (the cancel took, the commit held)."""
+    token = CancelToken()
+    outcome = {}
+
+    def commit():
+        try:
+            token.commit()
+            outcome["commit"] = True
+        except Cancelled:
+            outcome["commit"] = False
+
+    thread = threading.Thread(target=commit)
+    thread.start()
+    took = token.cancel()
+    thread.join()
+    return took, outcome["commit"]
+
+
+def test_commit_and_cancel_racing_end_one_way_or_the_other_never_both():
+    for _ in range(200):
+        took, committed = _race_once()
+        assert took != committed  # (cancelled xor committed)

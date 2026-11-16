@@ -943,3 +943,97 @@ def test_measuring_the_levels_can_be_cancelled_what_was_measured_is_kept_and_the
     assert "was cancelled" in dialog.problems_label.text() and "untick Normalise" in dialog.problems_label.text()  # fmt: skip
     choose_levels(dialog, None)  # the way out
     assert dialog.burn_button.isEnabled() and dialog.problems_label.text() == ""
+
+
+# -- cancelling while the disc is being prepared ------------------------------------------------------------
+
+
+def _slow_render(started, finish=None):
+    """A stand-in for `render_plan` that takes its time and stops when the token says so."""
+    import time
+
+    def render(plan, workdir, say, cancel):
+        started.set()
+        while not cancel.cancelled and not (finish and finish.is_set()):
+            time.sleep(0.01)
+        cancel.check()  # (raises Cancelled if it was cancelled)
+        from dubcrate.build import Rendered
+        from dubcrate.burn.base import Disc
+
+        return Rendered(Disc(title="t", performer="p"), 0, {})
+
+    return render
+
+
+def test_cancel_stops_the_preparing_and_nothing_is_written(make_dialog, lib, disc_id, wait_for, monkeypatch):  # fmt: skip
+    import threading
+
+    started = threading.Event()
+    monkeypatch.setattr("dubcrate.ui.burn_dialog.render_plan", _slow_render(started))
+    dialog, burner = make_dialog()
+    assert not dialog.cancel_burn_button.isVisibleTo(dialog)  # (nothing to cancel yet)
+    dialog.confirm_check.setChecked(True)
+    dialog.burn_button.click()
+    assert wait_for(started.is_set)
+    assert dialog.cancel_burn_button.isVisibleTo(dialog) and dialog.cancel_burn_button.isEnabled()  # fmt: skip
+    dialog.cancel_burn_button.click()
+    assert not dialog.cancel_burn_button.isEnabled()  # (asked once)
+    assert wait_for(lambda: not dialog._busy)
+    assert burner.burned == []
+    assert "Cancelled. Nothing was written" in dialog.log.toPlainText()
+    assert "cancelled before anything was written" in dialog.status_label.text()
+    assert lib.disc(disc_id).last_burned_at is None  # (it was never burned)
+    assert not dialog.cancel_burn_button.isVisibleTo(dialog) and not dialog.confirm_check.isChecked()  # fmt: skip
+    assert not dialog.labels_button.isVisibleTo(
+        dialog
+    )  # (no "print labels": nothing was burned)
+
+
+def test_a_cancelled_burn_can_be_started_again(make_dialog, wait_for, monkeypatch):
+    import threading
+
+    from dubcrate import build
+
+    started, real = threading.Event(), build.render_plan
+    slow = _slow_render(started)
+    calls = []
+
+    def first_slow_then_real(plan, workdir, say, cancel):
+        calls.append(1)
+        return slow(plan, workdir, say, cancel) if len(calls) == 1 else real(plan, workdir, say, cancel)  # fmt: skip
+
+    monkeypatch.setattr("dubcrate.ui.burn_dialog.render_plan", first_slow_then_real)
+    monkeypatch.setattr("dubcrate.ui.burn_dialog.can_read_toc", lambda: False)
+    dialog, burner = make_dialog()
+    dialog.confirm_check.setChecked(True)
+    dialog.burn_button.click()
+    assert wait_for(started.is_set)
+    dialog.cancel_burn_button.click()
+    assert wait_for(lambda: not dialog._busy)
+    assert burner.burned == []
+    burn(dialog, wait_for)  # (the disc is not marked, the box can be ticked again)
+    assert len(burner.burned) == 1
+
+
+def test_once_writing_starts_cancel_is_gone_and_does_nothing(make_dialog, wait_for, monkeypatch):  # fmt: skip
+    import threading
+
+    release = threading.Event()
+    started = threading.Event()
+    monkeypatch.setattr("dubcrate.ui.burn_dialog.render_plan", _slow_render(started, finish=started))  # fmt: skip
+
+    class Holding(FakeBurner):
+        def burn(self, disc, options, progress):
+            release.wait(10)  # (the writing: it can't be stopped)
+            super().burn(disc, options, progress)
+
+    dialog, burner = make_dialog(Holding())
+    dialog.confirm_check.setChecked(True)
+    dialog.burn_button.click()
+    assert wait_for(lambda: not dialog.cancel_burn_button.isVisibleTo(dialog) and dialog._busy)  # fmt: skip
+    assert dialog._burn_cancel is None
+    dialog._cancel_burn()  # (a late press, as if the button were still there)
+    release.set()
+    assert wait_for(lambda: not dialog._busy)
+    assert len(burner.burned) == 1  # (it was written, as asked)
+    assert "Cancelled" not in dialog.log.toPlainText()
