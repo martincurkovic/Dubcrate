@@ -227,6 +227,23 @@ def test_a_loop_saved_in_dubcrate_and_deleted_on_the_player_is_deleted(controlle
     result = controller.import_memory([ImportChoice(t, remove_loops=[(20000, 24000)])])
     assert result.removed == 1
     assert lib.memory_loops(t.path) == [(30000, 34000, "")]
+    assert lib.memory_loops_removed(t.path) == []  # (rekordbox never had it)
+
+
+def test_a_loop_rekordbox_has_and_the_player_deleted_is_hidden_and_noted_for_rekordbox(controller, monkeypatch):  # fmt: skip
+    from dubcrate.analysis import Cue
+
+    lib, t = controller._lib, controller.the_track
+    cues = [Cue("loop", 20.0, end=24.0), Cue("loop", 50.0, end=52.0, slot=4)]
+    monkeypatch.setattr(
+        controller.cues, "_rekordbox_cues", lambda track, announce: cues
+    )
+    result = controller.import_memory([ImportChoice(t, remove_loops=[(20000, 24000), (50000, 52000)])])  # fmt: skip
+    assert (
+        result.removed == 1
+    )  # (the hot cue's loop is not a memory loop: never deleted)
+    assert lib.memory_loops_removed(t.path) == [(20000, 24000)]
+    assert controller.saved_calls == [t]
 
 
 def test_a_move_is_a_deletion_and_an_addition(controller):

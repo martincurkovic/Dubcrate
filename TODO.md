@@ -113,6 +113,8 @@
 - [x] Write memory loops into rekordbox (`rekordbox_write.py`, add-only, tested on synthetic databases): `dubcrate rekordbox write-memory-cues --loops`. In the app too (`RekordboxEditor.WRITE_LOOPS`, on since 2026-11-16).
 - [x] Tried `dubcrate rekordbox write-memory-cues --loops` on a copy and then on the real library (2026-11-16: the loop on "SOS" was in rekordbox and behaved), and switched `RekordboxEditor.WRITE_LOOPS` on.
 - [ ] Try the in-app loop path by hand with rekordbox closed (save a loop with MEMORY on a rekordbox track, open rekordbox: it is in the memory list), and with it open (the loop should wait, with a status message).
+- [x] Memory loops can be deleted in Dubcrate even once rekordbox has them (a removal list, `memory_loop_removed`; soft delete in rekordbox, like a memory cue). Tested on synthetic databases only.
+- [ ] Try deleting a loop that rekordbox has, from the app (✕ on its row in the Memory tab, rekordbox closed, then open rekordbox: the loop is gone) and from the command line on a copy first (`dubcrate rekordbox write-memory-cues --loops --db COPY`; `spikes/rekordbox_loop_rows.py --db COPY` then shows no loop, since it lists live rows).
 - [ ] Hot cues and loops: edit hot cues in the player and write them to rekordbox (`dev_docs/rekordbox-cue-writes.md` has the `Kind` numbers; only memory cues are written so far).
 
 ### Linux and Windows

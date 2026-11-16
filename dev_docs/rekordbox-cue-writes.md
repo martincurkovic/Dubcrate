@@ -152,9 +152,11 @@ Until that day the owner's library had no memory loop at all (4,313 live cue row
 
 ### The writer for loops (built 2026-11-16, tested on synthetic databases only)
 
-`rekordbox_write.py`: `plan_write(..., loops=)` / `apply_write(..., loops=)` take `{path_key: [(start ms, end ms, label)]}`. **Loops are only ever
-added**: a loop rekordbox has within `SAME_LOOP_MS` (50 ms) at both ends is not added again, a soft-deleted loop and a hot cue's loop (`Kind` != 0) do
-not count as a memory loop, a loop that ends before it starts is skipped, and no row rekordbox has is changed or removed for a loop. A new row copies
+`rekordbox_write.py`: `plan_write(..., loops=, remove_loops=)` / `apply_write(..., loops=, remove_loops=)` take `loops` as `{path_key: [(start ms, end ms, label)]}`
+to **add** and `remove_loops` as `{path_key: [(start ms, end ms)]}` to **delete**. **A loop is added or deleted, never changed**: a loop rekordbox has within
+`SAME_LOOP_MS` (50 ms) at both ends is not added again, a soft-deleted loop and a hot cue's loop (`Kind` != 0) do not count as a memory loop (so a deletion never
+matches them), a loop that ends before it starts is skipped, and a deletion **soft deletes** every memory-loop row at those ends (`rb_local_deleted = 1`, `updated_at`,
+as for a memory cue: the row stays). A new row copies
 `Color` / `ColorTableIndex` / `ActiveLoop` from the newest memory cue and the rest from `LOOP_SHAPE` (the table above). It is the same one transaction,
 backup, `CueUpdated` bump (once a track), read-back (`PRAGMA integrity_check`, the row counts, each track's loops as expected, no other track changed)
 and restore as for the memory cues. `tests/test_rekordbox_write.py` has the shape, the add-only rules, the read-back restore and the CLI.
@@ -166,9 +168,16 @@ and restore as for the memory cues. `tests/test_rekordbox_write.py` has the shap
   dropped once rekordbox has been re-read and has the loop. With it False a saved loop stays in Dubcrate only and the status bar says so. This path is
   tested with a stand-in writer; **not tried live in the app**.
 
-**Known limit (decided with the owner, 2026-11-16: loops are added beside rekordbox's):** once a loop has landed in rekordbox it is rekordbox's, and
-Dubcrate cannot delete it (a rekordbox loop has no ✕). Deleting a loop saved in Dubcrate that has not been written yet is fine. If this is wanted,
-the memory cues' way (Dubcrate keeps the whole list, an edited list replaces rekordbox's) would need a `memory_loop_set` like `memory_cue_set`.
+**Deleting a loop (built 2026-11-16, at the owner's request: "loops deletable after they reach rekordbox"; tested on synthetic databases only, not live):** loops
+are kept as *changes laid over rekordbox's*, not a replacement list. `Library.memory_loops` = loops to add; **`Library.memory_loops_removed`** (schema v16,
+`memory_loop_removed`: (start, end) per file) = loops deleted in Dubcrate. `cue_edits.with_edits` hides a rekordbox loop that a removal names (both ends within
+`SAME_LOOP_MS`) and adds the saved ones. `PreviewController._delete_loop(loop)`: a loop saved in Dubcrate that rekordbox lacks (`Cue.local`) is dropped from
+`memory_loop` and nothing else; a loop rekordbox has gets a removal (and any saved duplicate is dropped), then `RekordboxEditor` writes it (`remove_loops=`) if
+`WRITE_LOOPS` and allowed, else the status bar says "Loop deleted in Dubcrate (not in rekordbox)". After a write and a re-read the removal is dropped; Reset drops
+both. **Every memory loop has a ✕** (rekordbox's included); a hot cue's loop is not a memory loop and has none. Import Cues' "deleted on the player" rows delete a
+loop the same way. The command line's `--loops` writes saved and deleted loops. A removal that rekordbox can't take yet (rekordbox open) waits in Dubcrate like any
+edit, the loop staying hidden. **A loop re-made in rekordbox at the same place before the removal is written would be hidden / deleted by it**: the cost of not keeping a
+whole replacement list (it needs rekordbox to be closed for the write anyway).
 
 **The live test (the owner runs it, on a copy first):**
 1. Close rekordbox (the command checks for it, even for a copy). Copy `~/Library/Pioneer/rekordbox/master.db` (and its `-wal` / `-shm` if present) to a

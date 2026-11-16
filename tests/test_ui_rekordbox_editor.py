@@ -42,14 +42,26 @@ class FakeWrite:
     def __init__(self, fail: str | None = None):
         self.calls: list[tuple[dict, bool]] = []
         self.loop_calls: list[dict] = []  # the loops of each call
+        self.removal_calls: list[dict] = []  # the loops to delete, of each call
         self.fail = fail
 
-    def __call__(self, db, edits, backup_dir, *, keep_backup=True, loops=None, **_):
+    def __call__(
+        self,
+        db,
+        edits,
+        backup_dir,
+        *,
+        keep_backup=True,
+        loops=None,
+        remove_loops=None,
+        **_,
+    ):
         self.calls.append(({k: list(v) for k, v in edits.items()}, keep_backup))
         self.loop_calls.append({k: list(v) for k, v in (loops or {}).items()})
+        self.removal_calls.append({k: list(v) for k, v in (remove_loops or {}).items()})
         if self.fail:
             raise rw.WriteError(self.fail)
-        keys = list(dict.fromkeys([*edits, *(loops or {})]))
+        keys = list(dict.fromkeys([*edits, *(loops or {}), *(remove_loops or {})]))
         plan = rw.WritePlan(changes=[SimpleNamespace(key=k) for k in keys])
         return rw.WriteOutcome(plan, Path("/bk") if keep_backup else None, written=keys)
 
@@ -346,6 +358,57 @@ def test_waiting_loops_count_and_are_written_with_the_waiting_edits(
     assert len(editor._write.calls) == 1
     assert set(editor._write.loop_calls[0]) == {path_key("/m/c.mp3")}
     assert wait_for(lambda: seen.messages[-1].startswith("Saved the memory cues of 2"))
+
+
+def test_a_loop_deleted_in_dubcrate_is_sent_to_rekordbox_then_forgotten(lib, wait_for, monkeypatch):  # fmt: skip
+    monkeypatch.setattr(RekordboxEditor, "WRITE_LOOPS", True)
+    settings.set_rekordbox_editing(True)
+    editor, cache, seen = make(lib)
+    lib.set_memory_loops_removed(IN_RB.path, [(1000, 3000)])
+    assert editor.waiting() == 1
+    editor.saved(IN_RB)
+    assert wait_for(lambda: seen.settled == 1)
+    assert editor._write.removal_calls == [{path_key(IN_RB.path): [(1000, 3000)]}]
+    assert lib.memory_loops_removed(IN_RB.path) == []  # rekordbox has it gone
+    assert seen.messages == [] and cache.refreshed == 1
+
+
+def test_deleted_loops_stay_in_dubcrate_while_the_switch_is_off(lib, qapp, monkeypatch):
+    monkeypatch.setattr(RekordboxEditor, "WRITE_LOOPS", False)
+    settings.set_rekordbox_editing(True)
+    editor, _, _ = make(lib)
+    lib.set_memory_loops_removed(IN_RB.path, [(1000, 3000)])
+    editor.saved(IN_RB)
+    qapp.processEvents()
+    assert editor._write.calls == [] and editor.waiting() == 0
+    assert lib.memory_loops_removed(IN_RB.path) == [(1000, 3000)]
+
+
+def test_a_failed_write_keeps_the_deleted_loop_waiting(lib, wait_for, monkeypatch):
+    monkeypatch.setattr(RekordboxEditor, "WRITE_LOOPS", True)
+    settings.set_rekordbox_editing(True)
+    editor, _, seen = make(lib, FakeWrite(fail="rekordbox is running: close it first"))
+    lib.set_memory_loops_removed(IN_RB.path, [(1000, 3000)])
+    editor.saved(IN_RB)
+    assert wait_for(lambda: bool(seen.messages))
+    assert lib.memory_loops_removed(IN_RB.path) == [(1000, 3000)] and seen.settled == 0
+
+
+def test_cues_loops_and_deleted_loops_go_in_one_write(lib, wait_for, monkeypatch):
+    monkeypatch.setattr(RekordboxEditor, "WRITE_LOOPS", True)
+    settings.set_rekordbox_editing(True)
+    editor, _, seen = make(lib)
+    lib.set_memory_cues(IN_RB.path, [(500, "")])
+    lib.set_memory_loops(IN_RB.path, [(5000, 7000, "")])
+    lib.set_memory_loops_removed(IN_RB.path, [(1000, 3000)])
+    editor.saved(IN_RB)
+    assert wait_for(lambda: seen.settled == 1)
+    assert len(editor._write.calls) == 1
+    key = path_key(IN_RB.path)
+    assert editor._write.loop_calls[0] == {key: [(5000, 7000, "")]}
+    assert editor._write.removal_calls[0] == {key: [(1000, 3000)]}
+    assert lib.memory_cues(IN_RB.path) is None and lib.memory_loops(IN_RB.path) == []
+    assert lib.memory_loops_removed(IN_RB.path) == []
 
 
 def test_the_first_edit_question_names_loops_only_when_they_are_written(monkeypatch):

@@ -89,7 +89,7 @@ class CardImportDialog(QDialog):
             "These are the changes on the card that Dubcrate doesn't have: cues and loops set on the player,"
             " and cues deleted or moved there since the last sync. Tick the ones to bring in. New ones become"
             " memory cues and loops in Dubcrate, and in rekordbox if you have allowed that (Settings > Library);"
-            " a deletion deletes that memory cue. The player's hot cues are listed but not ticked."
+            " a deletion deletes that memory cue or loop. The player's hot cues are listed but not ticked."
         )
         self.intro.setWordWrap(True)
         layout.addWidget(self.intro)
@@ -164,8 +164,8 @@ class CardImportDialog(QDialog):
         kept = sum(d.kept for d in findings)
         if kept:
             lines.append(
-                f"{_plural(kept, 'cue')} deleted on the player can't be deleted here (hot cues, and loops that are"
-                " in rekordbox): left as they are."
+                f"{_plural(kept, 'cue')} deleted on the player can't be deleted here (hot cues, and loops saved in a"
+                " hot cue): left as they are."
             )
         without = [d.path or d.name for d in findings if not d.has_baseline]
         if without:

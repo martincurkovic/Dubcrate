@@ -2,10 +2,11 @@
 
 **The one place Dubcrate writes to a rekordbox library**, and only memory cues and memory loops: the owner
 allowed exactly this (`AGENTS.md`, "Hard rules"). Hot cues (and the loops saved in a hot cue), tracks, playlists
-and everything else are never touched. **Loops are only ever added**: a saved loop becomes a `Kind` 0 row with
-an out point (the shape rekordbox 7.2.19 itself wrote for three loops the owner made, read 2026-11-16: no
-frame numbers, `BeatLoopSize` 0 as for a loop set by hand), and no row rekordbox has is changed or removed
-for it (`plan_write(loops=)`, `apply_write(loops=)`).
+and everything else are never touched. **Loops are added and deleted, never changed**: a saved loop becomes a
+`Kind` 0 row with an out point (the shape rekordbox 7.2.19 itself wrote for three loops the owner made, read
+2026-11-16: no frame numbers, `BeatLoopSize` 0 as for a loop set by hand), and a loop deleted in Dubcrate is its
+row **soft deleted** (`rb_local_deleted = 1`, as for a memory cue). A hot cue's loop is not a memory loop and is
+never matched (`plan_write(loops=, remove_loops=)`, `apply_write(loops=, remove_loops=)`).
 The order is the safety, as in `card_apply`:
 
 1. **Planning reads a snapshot copy** (`plan_write`: what would change, nothing written). rekordbox must not
@@ -104,10 +105,17 @@ class TrackChange:
     new_loops: list[tuple[int, int, str]] = field(
         default_factory=list
     )  # the ones to add
+    removed_loops: list[tuple[int, int, str]] = field(
+        default_factory=list
+    )  # the ones to soft delete (rows rekordbox has)
 
     @property
     def changed(self) -> bool:
-        return self.before != self.after or bool(self.new_loops)
+        return (
+            self.before != self.after
+            or bool(self.new_loops)
+            or bool(self.removed_loops)
+        )
 
     @property
     def added(self) -> int:
@@ -142,6 +150,7 @@ class WriteOutcome:
     cues_moved: int = 0  # changed in place
     cues_removed: int = 0
     loops_added: int = 0
+    loops_removed: int = 0
 
     @property
     def done_keys(self) -> list[str]:
@@ -272,17 +281,34 @@ def _new_loops(
     return adding
 
 
+def _loops_to_remove(
+    removal: Sequence[tuple[int, int]], have: Sequence[tuple[int, int, str]]
+) -> list[tuple[int, int, str]]:
+    """The loops rekordbox has that a deletion names: both ends within `SAME_LOOP_MS` of a (start, end) in `removal`.
+    Every such row goes (a loop listed twice is one loop to the user)."""
+    return [
+        h
+        for h in have
+        if any(
+            abs(h[0] - start) < SAME_LOOP_MS and abs(h[1] - end) < SAME_LOOP_MS
+            for start, end in removal
+        )
+    ]
+
+
 def _resolve(
     db: Any,
     edits: Mapping[str, Sequence[tuple[int, str]]],
     loops: Mapping[str, Sequence[tuple[int, int, str]]] | None = None,
+    remove_loops: Mapping[str, Sequence[tuple[int, int]]] | None = None,
 ) -> tuple[WritePlan, dict[str, tuple[Any, list[Any]]]]:
-    """Match each edit (and each track's loops to add) to its rekordbox track. Returns the plan and, per changed
-    key, (content row, cue rows)."""
+    """Match each edit (and each track's loops to add or delete) to its rekordbox track. Returns the plan and, per
+    changed key, (content row, cue rows)."""
     from pyrekordbox.masterdb import models
 
     loops = loops or {}
-    keys = set(edits) | set(loops)
+    remove_loops = remove_loops or {}
+    keys = set(edits) | set(loops) | set(remove_loops)
     by_key: dict[str, list[Any]] = {}
     for content in db.session.query(models.DjmdContent).all():
         if content.rb_local_deleted or not content.FolderPath:
@@ -315,8 +341,10 @@ def _resolve(
             else before
         )
         before_loops = _listed_loops(_loop_rows(db, str(content.ID)))
-        adding = _new_loops(loops.get(key, ()), before_loops)
-        if before == after and not adding:
+        removing = _loops_to_remove(remove_loops.get(key, ()), before_loops)
+        staying = [h for h in before_loops if h not in removing]
+        adding = _new_loops(loops.get(key, ()), staying)
+        if before == after and not adding and not removing:
             plan.unchanged.append(key)
             continue
         plan.changes.append(
@@ -328,8 +356,9 @@ def _resolve(
                 before,
                 after,
                 before_loops,
-                sorted([*before_loops, *adding]),
+                sorted([*staying, *adding]),
                 adding,
+                removing,
             )
         )
         targets[key] = (content, cues)
@@ -341,10 +370,11 @@ def plan_write(
     edits: Mapping[str, Sequence[tuple[int, str]]],
     *,
     loops: Mapping[str, Sequence[tuple[int, int, str]]] | None = None,
+    remove_loops: Mapping[str, Sequence[tuple[int, int]]] | None = None,
     unlock: bool = True,
 ) -> WritePlan:
-    """What a write of `edits` (memory cues by `path_key`) and `loops` (memory loops to add, by `path_key`) would
-    change, from a snapshot copy; writes nothing."""
+    """What a write of `edits` (memory cues by `path_key`), `loops` (memory loops to add, by `path_key`) and
+    `remove_loops` ((start ms, end ms) of memory loops to delete) would change, from a snapshot copy; writes nothing."""
     if not master_db.is_file():
         raise WriteError(f"no rekordbox master.db found at {master_db}")
     with tempfile.TemporaryDirectory(prefix="dubcrate-rbw-") as tmp:
@@ -352,7 +382,7 @@ def plan_write(
         db = _open(copy, unlock)
         try:
             check_schema(db)
-            return _resolve(db, edits, loops)[0]
+            return _resolve(db, edits, loops, remove_loops)[0]
         except WriteError:
             raise
         except Exception as exc:
@@ -387,14 +417,14 @@ def _set_time(row: Any, ms: int) -> None:
 
 def _write_changes(
     db: Any, targets: Mapping[str, tuple[Any, list[Any]]], plan: WritePlan
-) -> tuple[int, int, int, int]:
+) -> tuple[int, int, int, int, int]:
     """Make the changes in the open session (nothing is committed here). Returns (cues added, moved, removed,
-    loops added)."""
+    loops added, loops removed)."""
     from pyrekordbox.masterdb import models
 
     now = _now()
     shape = _template(db)
-    added = moved = removed = loops_added = 0
+    added = moved = removed = loops_added = loops_removed = 0
     for change in plan.changes:
         content, cues = targets[change.key]
         # Same time: keep the row (a label change updates its comment).
@@ -463,10 +493,28 @@ def _write_changes(
                 )
             )
             loops_added += 1
+        if change.removed_loops:
+            rows = _loop_rows(db, str(content.ID))
+            for start, end, label in change.removed_loops:
+                row = next(
+                    (
+                        r
+                        for r in rows
+                        if not r.rb_local_deleted
+                        and int(r.InMsec or 0) == start
+                        and int(r.OutMsec or 0) == end
+                        and str(r.Comment or "") == label
+                    ),
+                    None,
+                )
+                if row is not None:  # soft delete, as rekordbox does
+                    row.rb_local_deleted = 1
+                    row.updated_at = now
+                    loops_removed += 1
         count = int(str(content.CueUpdated or "0").strip() or 0)
         content.CueUpdated = str(count + 1)
         content.updated_at = now
-    return added, moved, removed, loops_added
+    return added, moved, removed, loops_added, loops_removed
 
 
 def _others(db: Any, skip: set[str]) -> dict[str, list[tuple[int, int, str, int]]]:
@@ -568,6 +616,7 @@ def apply_write(
     backup_dir: Path,
     *,
     loops: Mapping[str, Sequence[tuple[int, int, str]]] | None = None,
+    remove_loops: Mapping[str, Sequence[tuple[int, int]]] | None = None,
     unlock: bool = True,
     running: Callable[[], bool] = rekordbox_running,
     keep_backup: bool = True,
@@ -581,7 +630,9 @@ def apply_write(
     cue), and a kept one prunes the oldest beyond `KEEP_BACKUPS`."""
     if running():
         raise WriteError("rekordbox is running: close it first, then try again")
-    plan = plan_write(master_db, edits, loops=loops, unlock=unlock)
+    plan = plan_write(
+        master_db, edits, loops=loops, remove_loops=remove_loops, unlock=unlock
+    )
     if plan.empty:
         return WriteOutcome(plan, None)
     backup = _new_backup_dir(backup_dir)
@@ -598,12 +649,14 @@ def apply_write(
         try:
             check_schema(db)
             plan, targets = _resolve(
-                db, edits, loops
+                db, edits, loops, remove_loops
             )  # again, in the session that writes
             touched = {c.content_id for c in plan.changes}
             before_others = _others(db, touched)
             rows_before = _counts_in(db)
-            added, moved, removed, loops_added = _write_changes(db, targets, plan)
+            added, moved, removed, loops_added, loops_removed = _write_changes(
+                db, targets, plan
+            )
             db.commit(autoinc=True)
         except BaseException:
             try:
@@ -636,12 +689,13 @@ def apply_write(
     else:
         shutil.rmtree(backup, ignore_errors=True)
     log.info(
-        "rekordbox write: %d track(s), +%d ~%d -%d cue(s), +%d loop(s)",
+        "rekordbox write: %d track(s), +%d ~%d -%d cue(s), +%d -%d loop(s)",
         len(plan.changes),
         added,
         moved,
         removed,
         loops_added,
+        loops_removed,
     )
     return WriteOutcome(
         plan,
@@ -651,6 +705,7 @@ def apply_write(
         cues_moved=moved,
         cues_removed=removed,
         loops_added=loops_added,
+        loops_removed=loops_removed,
     )
 
 

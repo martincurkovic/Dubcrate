@@ -52,36 +52,44 @@ def describe(change: TrackChange) -> list[str]:
             f"    memory cues now:    {_cues(change.before)}",
             f"    memory cues after:  {_cues(change.after)}",
         ]
+    if change.new_loops or change.removed_loops:
+        lines.append(f"    loops now:    {_loops(change.before_loops)}")
     if change.new_loops:
-        lines += [
-            f"    loops now:    {_loops(change.before_loops)}",
-            f"    adds:         {_loops(change.new_loops)}",
-        ]
+        lines.append(f"    adds:         {_loops(change.new_loops)}")
+    if change.removed_loops:
+        lines.append(f"    deletes:      {_loops(change.removed_loops)}")
     return lines
 
 
 def cmd_write_memory_cues(lib: Library, args: argparse.Namespace) -> int:
     edits = lib.memory_cue_sets()
     loops = lib.memory_loop_sets() if args.loops else {}
-    if not edits and not loops:
+    removals = lib.memory_loop_removal_sets() if args.loops else {}
+    if not edits and not loops and not removals:
         print(
             "No memory cues have been edited in Dubcrate"
-            + (" and no loops saved" if args.loops else "")
+            + (" and no loops saved or deleted" if args.loops else "")
             + ": nothing to write."
         )
-        if not args.loops and lib.memory_loop_sets():
-            print("(Loops saved in Dubcrate are only written with --loops.)")
+        if not args.loops and (
+            lib.memory_loop_sets() or lib.memory_loop_removal_sets()
+        ):
+            print("(Loops saved or deleted in Dubcrate are only written with --loops.)")
         return 0
     try:
         db = Path(args.db).expanduser() if args.db else default_database()
-        plan = plan_write(db, edits, loops=loops)
+        plan = plan_write(db, edits, loops=loops, remove_loops=removals)
     except WriteError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
     print(f"rekordbox library: {db}")
     print(
         f"{len(edits)} track(s) with edited memory cues"
-        + (f", {len(loops)} with saved loops" if args.loops else "")
+        + (
+            f", {len(loops)} with saved loops, {len(removals)} with deleted loops"
+            if args.loops
+            else ""
+        )
         + ":"
     )
     for change in plan.changes:
@@ -96,6 +104,7 @@ def cmd_write_memory_cues(lib: Library, args: argparse.Namespace) -> int:
                 lib.clear_memory_cue_key(key)
                 if args.loops:
                     lib.clear_memory_loop_key(key)
+                    lib.clear_memory_loop_removal_key(key)
             print("Dropped the edits that rekordbox already has.")
         return 0
     if not args.yes:
@@ -109,14 +118,18 @@ def cmd_write_memory_cues(lib: Library, args: argparse.Namespace) -> int:
         Path(args.backup_dir).expanduser() if args.backup_dir else default_backup_dir()
     )
     try:
-        outcome = apply_write(db, edits, backup_dir, loops=loops)
+        outcome = apply_write(db, edits, backup_dir, loops=loops, remove_loops=removals)
     except WriteError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
     print(
         f"\nWrote {len(outcome.written)} track(s): {outcome.cues_added} cue(s) added, "
         f"{outcome.cues_moved} changed, {outcome.cues_removed} removed"
-        + (f", {outcome.loops_added} loop(s) added." if args.loops else ".")
+        + (
+            f", {outcome.loops_added} loop(s) added, {outcome.loops_removed} deleted."
+            if args.loops
+            else "."
+        )
     )
     print(f"The database's files were copied to {outcome.backup} first.")
     if not args.keep_edits:
@@ -124,6 +137,7 @@ def cmd_write_memory_cues(lib: Library, args: argparse.Namespace) -> int:
             lib.clear_memory_cue_key(key)
             if args.loops:
                 lib.clear_memory_loop_key(key)
+                lib.clear_memory_loop_removal_key(key)
         print(
             "Dubcrate's edits for these tracks are dropped: rekordbox's cues are used again."
         )

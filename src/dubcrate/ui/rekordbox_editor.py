@@ -70,7 +70,8 @@ def ask_enable_editing() -> bool:
 class RekordboxEditor(QObject):
     # Loops saved in Dubcrate go into rekordbox too (`rekordbox_write`: only ever added). **On since 2026-11-16**, after
     # the owner ran `dubcrate rekordbox write-memory-cues --loops` on their library and the loop was in rekordbox and
-    # behaved. This is the one switch if it ever has to go off again (a loop then stays in Dubcrate only).
+    # behaved. This is the one switch if it ever has to go off again (a loop then stays in Dubcrate only). It covers
+    # loops deleted in Dubcrate too: they are soft deleted in rekordbox, as a memory cue is (**not tried live**).
     WRITE_LOOPS = True
 
     message = Signal(str)  # for the status bar
@@ -95,8 +96,12 @@ class RekordboxEditor(QObject):
         ] = {}  # path_key -> its database, edits not yet in rekordbox
         self._sent: dict[
             str,
-            tuple[list[tuple[int, str]] | None, list[tuple[int, int, str]] | None],
-        ] = {}  # (memory cues, loops) in the write that just finished
+            tuple[
+                list[tuple[int, str]] | None,
+                list[tuple[int, int, str]] | None,
+                list[tuple[int, int]] | None,
+            ],
+        ] = {}  # (memory cues, loops added, loops deleted) in the write that just finished
         self._sent_db: Path | None = None
         self._busy = False
         self._backed_up = False  # this session's backup exists
@@ -136,9 +141,20 @@ class RekordboxEditor(QObject):
         """The loops saved in Dubcrate that are to go into rekordbox (none while `WRITE_LOOPS` is off)."""
         return self._lib.memory_loop_sets() if self.WRITE_LOOPS else {}
 
+    def _removal_sets(self) -> dict[str, list[tuple[int, int]]]:
+        """The loops deleted in Dubcrate that rekordbox is to lose (none while `WRITE_LOOPS` is off)."""
+        return self._lib.memory_loop_removal_sets() if self.WRITE_LOOPS else {}
+
+    def _waiting_keys(self) -> set[str]:
+        return (
+            set(self._lib.memory_cue_sets())
+            | set(self._loop_sets())
+            | set(self._removal_sets())
+        )
+
     def waiting(self) -> int:
         """How many files have memory cues (or loops) edited in Dubcrate (not all need be in rekordbox)."""
-        return len(set(self._lib.memory_cue_sets()) | set(self._loop_sets()))
+        return len(self._waiting_keys())
 
     def write_waiting(self) -> bool:
         """Send every edit that is waiting in Dubcrate to rekordbox: the ones made while rekordbox was open,
@@ -148,7 +164,7 @@ class RekordboxEditor(QObject):
         if database is None:
             self.message.emit("No rekordbox library has been imported")
             return False
-        waiting = set(self._lib.memory_cue_sets()) | set(self._loop_sets())
+        waiting = self._waiting_keys()
         if not waiting:
             self.message.emit("No memory cues are waiting in Dubcrate")
             return False
@@ -186,12 +202,14 @@ class RekordboxEditor(QObject):
         batch = [k for k, d in self._pending.items() if d == database]
         have = self._lib.memory_cue_sets()
         loop_have = self._loop_sets()
+        gone_have = self._removal_sets()
         edits = {k: have[k] for k in batch if k in have}
         loops = {k: loop_have[k] for k in batch if k in loop_have}
+        removals = {k: gone_have[k] for k in batch if k in gone_have}
         for k in batch:
-            if k not in edits and k not in loops:  # reset since: nothing to write
-                del self._pending[k]
-        if not edits and not loops:
+            if k not in edits and k not in loops and k not in removals:
+                del self._pending[k]  # (reset since: nothing to write)
+        if not edits and not loops and not removals:
             return self._start()
         keep = not self._backed_up
         self._busy = True
@@ -199,14 +217,21 @@ class RekordboxEditor(QObject):
 
         def job() -> rw.WriteOutcome:
             try:
-                return write(database, edits, backup_dir, keep_backup=keep, loops=loops)
+                return write(
+                    database,
+                    edits,
+                    backup_dir,
+                    keep_backup=keep,
+                    loops=loops,
+                    remove_loops=removals,
+                )
             except rw.WriteError as exc:
                 raise TaskError(str(exc)) from exc
 
         run_async(
             job,
-            lambda outcome: self._done(database, edits, loops, outcome, keep),
-            lambda text: self._failed([*edits, *loops], text),
+            lambda outcome: self._done(database, edits, loops, removals, outcome, keep),
+            lambda text: self._failed([*edits, *loops, *removals], text),
         )
 
     def _done(
@@ -214,6 +239,7 @@ class RekordboxEditor(QObject):
         database: Path,
         edits: Mapping[str, Sequence[tuple[int, str]]],
         loops: Mapping[str, Sequence[tuple[int, int, str]]],
+        removals: Mapping[str, Sequence[tuple[int, int]]],
         outcome: rw.WriteOutcome,
         kept: bool,
     ) -> None:
@@ -230,8 +256,9 @@ class RekordboxEditor(QObject):
             k: (
                 list(edits[k]) if k in edits else None,
                 list(loops[k]) if k in loops else None,
+                list(removals[k]) if k in removals else None,
             )
-            for k in {*edits, *loops}
+            for k in {*edits, *loops, *removals}
             if k in done
         }
         self._sent_db = database
@@ -260,12 +287,16 @@ class RekordboxEditor(QObject):
         sent, self._sent = self._sent, {}
         have = self._lib.memory_cue_sets()
         loop_have = self._lib.memory_loop_sets()
-        for key, (cues, loops) in sent.items():
+        gone_have = self._lib.memory_loop_removal_sets()
+        for key, (cues, loops, removals) in sent.items():
             if cues is not None and have.get(key) == cues:  # not edited again meanwhile
                 self._lib.clear_memory_cue_key(key)
                 self._pending.pop(key, None)
             if loops is not None and loop_have.get(key) == loops:
                 self._lib.clear_memory_loop_key(key)
+                self._pending.pop(key, None)
+            if removals is not None and gone_have.get(key) == removals:
+                self._lib.clear_memory_loop_removal_key(key)
                 self._pending.pop(key, None)
         self.settled.emit()
         self._start()

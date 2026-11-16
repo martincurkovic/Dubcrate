@@ -432,7 +432,7 @@ def test_reset_goes_back_to_rekordboxs_and_forgets_the_edits(rig):
     assert not rig.strip.side.edited
 
 
-def test_the_menu_of_a_loop_or_an_empty_spot_has_no_edit_items_and_reset_only_when_edited(
+def test_a_loop_has_a_delete_but_no_move_and_an_empty_spot_offers_reset_only_when_edited(
     rig,
 ):
     from dubcrate.analysis import Cue
@@ -440,12 +440,9 @@ def test_the_menu_of_a_loop_or_an_empty_spot_has_no_edit_items_and_reset_only_wh
     side = rig.strip.side
     side.set_cues((Cue("loop", 60.0, end=64.0), Cue("memory", 5.0)))
     loop, plain = side.memory.topLevelItem(1), side.memory.topLevelItem(0)
-    assert plain.text(1) == "✕" and loop.text(1) == ""
-    assert side.memory_menu(
-        loop
-    ).isEmpty()  # (a memory loop is rekordbox's: not editable here)
+    assert plain.text(1) == "✕" and loop.text(1) == "✕"  # (rekordbox's loops too)
+    assert [a.text() for a in side.memory_menu(loop).actions() if a.text()] == ["Delete"]  # fmt: skip
     assert not side.memory_menu(None).actions()
-    side._clicked(loop, 1)  # (no ✕ on a loop: nothing)
     side.set_edited(True)
     assert [a.text() for a in side.memory_menu(None).actions()] == [
         "Reset to rekordbox's"
@@ -673,3 +670,104 @@ def test_the_last_quantise_choice_is_remembered_for_the_next_start(qapp):
     strip, controller = make_controller(qapp)
     assert strip.quantise_button.isChecked() and controller.deck.quantise
     controller.shutdown()
+
+
+# -- deleting a memory loop that rekordbox has -------------------------------------------------------
+
+
+def rekordbox_loops(rig, monkeypatch, *loops):
+    """rekordbox's own cues for the loaded track: memory loops (start, end) and a hot cue's loop."""
+    from dubcrate.analysis import Cue
+
+    cues = [Cue("loop", s, end=e) for s, e in loops] + [
+        Cue("loop", 25.0, end=26.0, slot=4)
+    ]
+    monkeypatch.setattr(rig.c.cues, "_rekordbox_cues", lambda track, announce: cues)
+    rig.c._show_cues()
+
+
+def test_deleting_a_loop_rekordbox_has_hides_it_and_notes_it_for_deletion_there(rig, monkeypatch):  # fmt: skip
+    from dubcrate.ui.rekordbox_editor import RekordboxEditor
+
+    monkeypatch.setattr(RekordboxEditor, "WRITE_LOOPS", True)
+    saved = []
+    monkeypatch.setattr(rig.c.editor, "allow", lambda track: True)
+    monkeypatch.setattr(rig.c.editor, "saved", lambda track: saved.append(track))
+    rekordbox_loops(rig, monkeypatch, (20.0, 22.0), (10.0, 12.0))
+    side = rig.strip.side
+    assert [side.memory.topLevelItem(i).text(1) for i in range(2)] == ["✕", "✕"]
+    side._clicked(side.memory.topLevelItem(0), 1)  # the first row: the loop at 10 s
+    assert rig.lib.memory_loops_removed(rig.c.track.path) == [(10000, 12000)]
+    assert memory_times(rig) == [20.0]  # (hidden from the list at once)
+    assert saved == [rig.c.track] and rig.messages == []
+    assert side.edited  # (so the list's right-click menu offers Reset)
+    assert [(c.kind, c.slot) for c in rig.strip._cues if c.kind == "loop"] == [
+        ("loop", None),
+        ("loop", 4),  # (the hot cue's loop is not touched)
+    ]
+
+
+def test_with_loop_writing_off_a_deleted_rekordbox_loop_says_it_stays_in_dubcrate(rig, monkeypatch):  # fmt: skip
+    from dubcrate.ui.rekordbox_editor import RekordboxEditor
+
+    monkeypatch.setattr(RekordboxEditor, "WRITE_LOOPS", False)
+    rekordbox_loops(rig, monkeypatch, (10.0, 12.0))
+    side = rig.strip.side
+    side._clicked(side.memory.topLevelItem(0), 1)
+    assert rig.lib.memory_loops_removed(rig.c.track.path) == [(10000, 12000)]
+    assert rig.messages[-1] == "Loop deleted in Dubcrate (not in rekordbox)"
+
+
+def test_deleting_a_loop_saved_here_that_rekordbox_lacks_only_drops_it(rig, monkeypatch):  # fmt: skip
+    from dubcrate.ui.rekordbox_editor import RekordboxEditor
+
+    monkeypatch.setattr(RekordboxEditor, "WRITE_LOOPS", True)
+    saved = []
+    monkeypatch.setattr(rig.c.editor, "saved", lambda track: saved.append(track))
+    loop_on(rig)
+    rig.strip.memory_button.click()
+    assert saved_loops(rig)
+    side = rig.strip.side
+    side._clicked(side.memory.topLevelItem(0), 1)
+    assert saved_loops(rig) == [] and rig.lib.memory_loops_removed(rig.c.track.path) == []  # fmt: skip
+    assert saved == []  # (rekordbox never had it: nothing to write)
+
+
+def test_a_loop_written_to_rekordbox_but_still_saved_here_is_deleted_in_both(rig, monkeypatch):  # fmt: skip
+    from dubcrate.ui.rekordbox_editor import RekordboxEditor
+
+    monkeypatch.setattr(RekordboxEditor, "WRITE_LOOPS", True)
+    monkeypatch.setattr(rig.c.editor, "allow", lambda track: True)
+    monkeypatch.setattr(rig.c.editor, "saved", lambda track: None)
+    rekordbox_loops(rig, monkeypatch, (10.0, 12.0))
+    rig.lib.set_memory_loops(
+        rig.c.track.path, [(10010, 11990, "")]
+    )  # (not yet dropped)
+    rig.c._show_cues()
+    assert memory_times(rig) == [10.0]  # (shown once)
+    side = rig.strip.side
+    side._clicked(side.memory.topLevelItem(0), 1)
+    assert rig.lib.memory_loops(rig.c.track.path) == []
+    assert rig.lib.memory_loops_removed(rig.c.track.path) == [(10000, 12000)]
+
+
+def test_the_x_by_memory_deletes_a_rekordbox_loop_the_playhead_is_in(rig, monkeypatch):  # fmt: skip
+    from dubcrate.ui.rekordbox_editor import RekordboxEditor
+
+    monkeypatch.setattr(RekordboxEditor, "WRITE_LOOPS", True)
+    monkeypatch.setattr(rig.c.editor, "allow", lambda track: True)
+    monkeypatch.setattr(rig.c.editor, "saved", lambda track: None)
+    rekordbox_loops(rig, monkeypatch, (10.0, 14.0))
+    at(rig, 12.0)
+    rig.strip.memory_delete_button.click()
+    assert rig.lib.memory_loops_removed(rig.c.track.path) == [(10000, 14000)]
+
+
+def test_reset_forgets_deleted_loops_too(rig, monkeypatch):
+    rekordbox_loops(rig, monkeypatch, (10.0, 12.0))
+    side = rig.strip.side
+    side._clicked(side.memory.topLevelItem(0), 1)
+    assert rig.lib.memory_loops_removed(rig.c.track.path)
+    reset(rig)
+    assert rig.lib.memory_loops_removed(rig.c.track.path) == [] and memory_times(rig) == [10.0]  # fmt: skip
+    assert not rig.strip.side.edited

@@ -292,7 +292,7 @@ laid over, `cue_edits.with_edits`) and with the **baseline**. It returns typed `
 | `loop` | a loop on the card with no known loop (or baseline loop) within 2 frames at both ends (a hot cue's loop counts as known: sync writes it as a memory loop) | yes |
 | `hot` | one of the player's three hot cues (a `HC11` slot), as a memory cue, if neither Dubcrate nor a card memory cue is there | **no** (opt in) |
 | `remove` | in the baseline, gone from the card, and Dubcrate has a **plain memory cue** there | yes |
-| `remove_loop` | in the baseline, gone from the card, and Dubcrate has a loop **saved in Dubcrate** (`Cue.local`: not in rekordbox yet) there | yes |
+| `remove_loop` | in the baseline, gone from the card, and Dubcrate has a **memory loop** there (rekordbox's or saved in Dubcrate; a hot cue's loop is not one) | yes |
 | `move` / `move_loop` | a track with as many `remove`s as `add`s (or `remove_loop`s as `loop`s): paired in time order and shown as moves; **only a display**, a move is both | yes |
 
 **The baseline** (schema v15, `card_baseline` / `card_baseline_disc`, keyed by the disc's ID key = its TOC; `Library.card_baseline` / `set_card_baseline`): what a sync
@@ -301,9 +301,8 @@ left on the card for the disc = the wanted cues less the overflow (`card_apply.b
 additions can be found. It does two jobs: a baseline cue that is gone from the card was **deleted on the player**; and a card cue that is in the baseline but
 that Dubcrate doesn't have any more was **deleted or moved in Dubcrate** after the sync, so it is **not offered back as new** (before the baseline it was).
 
-- **What can't be deleted:** a baseline cue gone from the card that is a hot cue of rekordbox's, a loop start, or one of rekordbox's loops (`Cue.local` False) is only
-  counted (`CardCues.kept`, said in the review): hot cues and rekordbox's own loops are never changed, and **a loop that has been written into rekordbox
-  becomes rekordbox's and can't be deleted from Dubcrate** (the known limit in `rekordbox-cue-writes.md`).
+- **What can't be deleted:** a baseline cue gone from the card that is a hot cue of rekordbox's, a loop start, or the loop of a hot cue (it has a slot) is only counted
+  (`CardCues.kept`, said in the review): hot cues are never changed. A memory loop **can** be deleted, rekordbox's included (`rekordbox-cue-writes.md`, "Deleting a loop").
 - **One baseline per disc, not per card:** the cards have no ID of their own (a formatted card is always `DISK_IMG`). Syncing a disc to another card replaces its baseline.
   A cue Dubcrate wanted that was already on the card is in the baseline too. After an import the baseline is not touched: a cue imported from the player is not in it
   until the next sync, so deleting *that* cue on the player is not noticed until then (it would be, as a plain deletion, after a sync).

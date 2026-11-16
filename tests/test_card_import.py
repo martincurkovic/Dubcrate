@@ -168,8 +168,8 @@ def test_a_cue_deleted_on_the_player_is_offered_for_deletion_when_dubcrate_can_d
     assert kinds(result, 1) == [(REMOVE, 5000)] and result.kept == 0
 
 
-def test_a_hot_cue_or_a_loop_start_deleted_on_the_player_is_kept_and_counted():
-    known = {1: [Cue("hot", 5.0, slot=1), Cue("loop", 40.0, end=44.0)]}
+def test_a_hot_cue_or_a_hot_cues_loop_deleted_on_the_player_is_kept_and_counted():
+    known = {1: [Cue("hot", 5.0, slot=1), Cue("loop", 40.0, end=44.0, slot=2)]}
     card = file_with()
     baseline = [(1, at(1, 5.0), 0), (1, at(1, 40.0), at(1, 44.0))]
     result = found(card, known, baseline)
@@ -194,8 +194,14 @@ def test_a_loop_saved_in_dubcrate_and_deleted_on_the_player_can_be_deleted():
     assert (row.kind, row.ms, row.end_ms) == (REMOVE_LOOP, 40000, 44000)
 
 
-def test_a_loop_in_rekordbox_deleted_on_the_player_is_kept():
+def test_a_memory_loop_in_rekordbox_deleted_on_the_player_can_be_deleted():
     known = {1: [Cue("loop", 40.0, end=44.0)]}  # not `local`: rekordbox has it
+    [row] = found(file_with(), known, [(1, at(1, 40.0), at(1, 44.0))]).by_track[1]
+    assert (row.kind, row.ms, row.end_ms) == (REMOVE_LOOP, 40000, 44000)
+
+
+def test_a_hot_cues_loop_deleted_on_the_player_is_kept_and_counted():
+    known = {1: [Cue("loop", 40.0, end=44.0, slot=4)]}  # a hot cue saved as a loop
     result = found(file_with(), known, [(1, at(1, 40.0), at(1, 44.0))])
     assert result.by_track == {} and result.kept == 1
 

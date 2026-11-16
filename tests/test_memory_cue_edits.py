@@ -13,6 +13,7 @@ from dubcrate.library.cue_edits import (
     memory_list,
     with_edits,
 )
+from dubcrate.library.store import path_key
 
 
 @pytest.fixture
@@ -190,3 +191,48 @@ def test_the_rekordbox_writer_is_never_handed_a_saved_loop(lib):
     assert lib.memory_cue_sets() == {}
     lib.set_memory_cues(track.path, [(5000, "")])
     assert list(lib.memory_cue_sets().values()) == [[(5000, "")]]
+
+
+# -- memory loops deleted in Dubcrate -----------------------------------------------------------
+
+
+def test_a_loop_deleted_in_dubcrate_is_left_out_of_the_cues_within_a_few_milliseconds(
+    lib,
+):
+    track = one_track(lib)
+    lib.set_memory_loops_removed(
+        track.path, [(60_010, 63_990)]
+    )  # rekordbox's loop at 60 to 64 s
+    layered = with_edits(lib, track, RK)
+    assert [c.kind for c in layered].count("loop") == 0
+    assert [c.slot for c in layered if c.kind == "hot"] == [
+        2,
+        1,
+    ]  # (hot cues untouched)
+    assert (
+        lib.memory_cues(track.path) is None
+    )  # (deleting a loop is not a memory cue edit)
+
+
+def test_a_deletion_names_one_loop_only_and_never_a_hot_cues_loop(lib):
+    track = one_track(lib)
+    cues = [*RK, Cue("loop", 100.0, end=104.0), Cue("loop", 60.0, end=64.0, slot=4)]
+    lib.set_memory_loops_removed(track.path, [(100_000, 104_000), (60_000, 64_000)])
+    layered = with_edits(lib, track, cues)
+    # the loop at 100 s and the memory loop at 60 s are gone; the hot cue's loop at 60 s is not a memory loop
+    assert [(c.kind, c.slot, c.time) for c in layered if c.kind == "loop"] == [("loop", 4, 60.0)]  # fmt: skip
+
+
+def test_a_loop_saved_here_and_one_deleted_here_work_together(lib):
+    track = one_track(lib)
+    lib.set_memory_loops(track.path, [(10_000, 14_000, "mine")])
+    lib.set_memory_loops_removed(track.path, [(60_000, 64_000)])
+    loops = [(c.time, c.end, c.local) for c in with_edits(lib, track, RK) if c.kind == "loop"]  # fmt: skip
+    assert loops == [(10.0, 14.0, True)]
+
+
+def test_the_edits_a_loop_deleted_in_dubcrate_does_not_touch_the_cue_writer(lib):
+    track = one_track(lib)
+    lib.set_memory_loops_removed(track.path, [(60_000, 64_000)])
+    assert lib.memory_cue_sets() == {} and lib.memory_loop_sets() == {}
+    assert lib.memory_loop_removal_sets() == {path_key(track.path): [(60_000, 64_000)]}

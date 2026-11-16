@@ -379,9 +379,7 @@ def test_a_loop_rekordbox_already_has_is_not_added_again_even_a_few_ms_off(
     assert loops_of(library, "1") == [(12000, 16000, "")]
 
 
-def test_loops_are_never_removed_or_changed_and_other_rows_are_untouched(
-    library, tmp_path
-):
+def test_adding_a_loop_changes_no_other_row(library, tmp_path):
     before = raw(library, "SELECT * FROM djmdCue WHERE ID != '30' ORDER BY ID")
     write(library, {}, tmp_path, loops={path_key(A): [(20000, 24000, "")]})
     after = raw(library, "SELECT * FROM djmdCue WHERE ID IN ('10','11','12','13','14','20') ORDER BY ID")  # fmt: skip
@@ -459,6 +457,103 @@ def test_a_failed_commit_leaves_no_loop_behind(library, tmp_path, monkeypatch):
     with pytest.raises(rw.WriteError, match="put back"):
         write(library, {}, tmp_path, loops={path_key(A): [(20000, 24000, "")]})
     assert loops_of(library, "1") == [(12000, 16000, "")]
+
+
+# -- memory loops deleted in Dubcrate: the row is soft deleted, as a memory cue's is ---------------------
+
+
+def test_plan_reports_a_loop_to_delete_and_changes_nothing(library):
+    before = library.read_bytes()
+    plan = rw.plan_write(library, {}, remove_loops={path_key(A): [(12000, 16000)]}, unlock=False)  # fmt: skip
+    [change] = plan.changes
+    assert change.removed_loops == [(12000, 16000, "")] and change.new_loops == []
+    assert change.after_loops == []
+    assert library.read_bytes() == before
+
+
+def test_a_loop_is_deleted_by_a_soft_delete_and_nothing_else_changes(library, tmp_path):
+    key = path_key(A)
+    out = write(library, {}, tmp_path, remove_loops={key: [(12000, 16000)]})
+    assert (out.written, out.loops_removed, out.loops_added) == ([key], 1, 0)
+    assert raw(library, "SELECT rb_local_deleted, InMsec, OutMsec FROM djmdCue WHERE ID = '13'") == [(1, 12000, 16000)]  # fmt: skip
+    assert raw(library, "SELECT COUNT(*) FROM djmdCue") == [
+        (6,)
+    ]  # (the row is still there)
+    assert loops_of(library, "1") == []
+    assert live(library, "1") == [
+        (1000, "intro"),
+        (5000, ""),
+    ]  # the memory cues are as they were
+    assert raw(library, "SELECT InMsec, Kind, rb_local_deleted FROM djmdCue WHERE ID = '12'") == [(9000, 1, 0)]  # fmt: skip
+    assert raw(library, "SELECT CueUpdated FROM djmdContent WHERE ID = '1'") == [("4",)]
+    assert raw(library, "SELECT CueUpdated FROM djmdContent WHERE ID = '2'") == [("3",)]
+    usn = raw(library, "SELECT rb_local_usn FROM djmdCue WHERE ID = '13'")[0][0]
+    assert usn is not None and usn > 100  # (pyrekordbox counted the change)
+
+
+def test_a_deletion_matches_within_a_few_milliseconds_and_takes_every_row_there(library, tmp_path):  # fmt: skip
+    engine = create_engine(f"sqlite:///{library}")
+    with Session(engine) as s:
+        s.add(
+            cue("40", "1", 12010, kind=0, out=15995)
+        )  # a second row for the same loop
+        s.commit()
+    engine.dispose()
+    out = write(library, {}, tmp_path, remove_loops={path_key(A): [(12005, 16000)]})
+    assert out.loops_removed == 2 and loops_of(library, "1") == []
+
+
+def test_a_deletion_of_a_loop_rekordbox_does_not_have_is_nothing_to_write(library, tmp_path):  # fmt: skip
+    key = path_key(A)
+    plan = rw.plan_write(library, {}, remove_loops={key: [(30000, 34000)]}, unlock=False)  # fmt: skip
+    assert plan.empty and plan.unchanged == [key]
+    out = write(library, {}, tmp_path, remove_loops={key: [(30000, 34000)]})
+    assert out.backup is None and out.done_keys == [key]
+
+
+def test_a_hot_cues_loop_and_a_deleted_loop_are_never_taken_for_a_memory_loop(library, tmp_path):  # fmt: skip
+    engine = create_engine(f"sqlite:///{library}")
+    with Session(engine) as s:
+        s.add(cue("41", "1", 40000, kind=2, out=44000))  # hot cue B saved as a loop
+        s.commit()
+    engine.dispose()
+    out = write(library, {}, tmp_path, remove_loops={path_key(A): [(40000, 44000)]})
+    assert out.backup is None  # nothing matched: a hot cue's loop is not a memory loop
+    assert raw(library, "SELECT rb_local_deleted FROM djmdCue WHERE ID = '41'") == [
+        (0,)
+    ]
+
+
+def test_a_loop_can_be_added_and_another_deleted_in_one_write(library, tmp_path):
+    key = path_key(A)
+    out = write(library, {}, tmp_path, loops={key: [(20000, 24000, "new")]}, remove_loops={key: [(12000, 16000)]})  # fmt: skip
+    assert (out.loops_added, out.loops_removed) == (1, 1)
+    assert loops_of(library, "1") == [(20000, 24000, "new")]
+    assert raw(library, "SELECT CueUpdated FROM djmdContent WHERE ID = '1'") == [
+        ("4",)
+    ]  # (once)
+
+
+def test_deleting_and_adding_the_same_loop_leaves_the_one_added(library, tmp_path):
+    key = path_key(A)
+    write(library, {}, tmp_path, loops={key: [(12000, 16000, "again")]}, remove_loops={key: [(12000, 16000)]})  # fmt: skip
+    assert loops_of(library, "1") == [(12000, 16000, "again")]
+
+
+def test_a_bad_read_back_of_a_deletion_restores_the_backup(library, tmp_path, monkeypatch):  # fmt: skip
+    original = rw._write_changes
+
+    def wrong(db, targets, plan):
+        counts = original(db, targets, plan)
+        for row in db.session.query(models.DjmdCue).filter_by(ID="13"):
+            row.rb_local_deleted = 0  # the deletion did not hold
+        return counts
+
+    monkeypatch.setattr(rw, "_write_changes", wrong)
+    with pytest.raises(rw.WriteError, match="loops read back"):
+        write(library, {}, tmp_path, remove_loops={path_key(A): [(12000, 16000)]})
+    assert loops_of(library, "1") == [(12000, 16000, "")]
+    assert raw(library, "SELECT int_1 FROM agentRegistry") == [(100,)]
 
 
 def test_commit_is_called_only_by_the_writer():
@@ -574,3 +669,51 @@ def test_cli_writes_loops_only_with_the_loops_option(
     assert "1 loop(s) added" in capsys.readouterr().out
     assert loops_of(library, "1") == [(12000, 16000, ""), (20000, 24000, "chorus")]
     assert lib.memory_loop_sets() == {}  # (dropped: rekordbox has it now)
+
+
+def test_the_library_lists_and_clears_deleted_loops(tmp_path):
+    from dubcrate.library import Library
+
+    lib = Library.open(tmp_path / "lib.db")
+    lib.set_memory_loops_removed(A, [(9000, 12000), (1000, 3000), (1000, 3000), (5, 5)])
+    assert lib.memory_loops_removed(A) == [(1000, 3000), (9000, 12000)]  # once each, in time order, no empty ones  # fmt: skip
+    lib.set_memory_loops_removed(B, [(500, 900)])
+    assert lib.memory_loop_removal_sets() == {
+        path_key(A): [(1000, 3000), (9000, 12000)],
+        path_key(B): [(500, 900)],
+    }
+    lib.clear_memory_loop_removal_key(path_key(A))
+    assert lib.memory_loop_removal_sets() == {path_key(B): [(500, 900)]}
+    lib.clear_memory_loops(B)  # (Reset forgets them too)
+    assert lib.memory_loop_removal_sets() == {}
+
+
+def test_cli_deletes_loops_only_with_the_loops_option(library, tmp_path, monkeypatch, capsys):  # fmt: skip
+    import argparse
+
+    from dubcrate import cli_rekordbox
+    from dubcrate.library import Library
+
+    real_open = rw._open
+    monkeypatch.setattr(rw, "_open", lambda path, unlock: real_open(path, False))
+    monkeypatch.setattr(cli_rekordbox, "default_backup_dir", lambda: tmp_path / "bk")
+    lib = Library.open(tmp_path / "lib.db")
+    lib.set_memory_loops_removed(A, [(12000, 16000)])
+    args = argparse.Namespace(db=str(library), backup_dir=None, keep_edits=False, yes=True, loops=False)  # fmt: skip
+
+    assert cli_rekordbox.cmd_write_memory_cues(lib, args) == 0  # (no --loops: nothing)
+    out = capsys.readouterr().out
+    assert "nothing to write" in out and "--loops" in out
+    assert loops_of(library, "1") == [(12000, 16000, "")]
+
+    args.loops, args.yes = True, False
+    assert cli_rekordbox.cmd_write_memory_cues(lib, args) == 0  # (a dry run shows it)
+    out = capsys.readouterr().out
+    assert "Dry run" in out and "deletes:" in out and "0:12.000 to 0:16.000" in out
+    assert loops_of(library, "1") == [(12000, 16000, "")] and lib.memory_loop_removal_sets()  # fmt: skip
+
+    args.yes = True
+    assert cli_rekordbox.cmd_write_memory_cues(lib, args) == 0
+    assert "1 deleted" in capsys.readouterr().out
+    assert loops_of(library, "1") == []
+    assert lib.memory_loop_removal_sets() == {}  # (dropped: rekordbox has it gone)

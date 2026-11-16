@@ -341,10 +341,23 @@ CREATE TABLE card_baseline (
 CREATE INDEX card_baseline_key ON card_baseline (disc_key)
 """
 
+# Memory loops deleted in Dubcrate that rekordbox may still have: (start ms, end ms) per file, the loop to hide from the
+# track's cues and to soft delete in rekordbox (`rekordbox_write`, like a memory cue). A loop saved in Dubcrate that
+# rekordbox does not have yet is just removed from `memory_loop`: nothing is recorded here for it.
+_SCHEMA_V16 = """
+CREATE TABLE memory_loop_removed (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    path_key TEXT NOT NULL,
+    start_ms INTEGER NOT NULL,
+    end_ms INTEGER NOT NULL
+);
+CREATE INDEX memory_loop_removed_path ON memory_loop_removed (path_key)
+"""
+
 _MIGRATIONS = (
     _SCHEMA_V1, _SCHEMA_V2, _SCHEMA_V3, _SCHEMA_V4, _SCHEMA_V5, _migrate_to_v6,
     _SCHEMA_V7, _SCHEMA_V8, _SCHEMA_V9, _SCHEMA_V10, _SCHEMA_V11, _SCHEMA_V12,
-    _SCHEMA_V13, _SCHEMA_V14, _SCHEMA_V15,
+    _SCHEMA_V13, _SCHEMA_V14, _SCHEMA_V15, _SCHEMA_V16,
 )  # fmt: skip
 
 MAX_CACHED_PREVIEWS = 20_000  # about 40 MB; past it the oldest are forgotten
@@ -1030,8 +1043,50 @@ class Library:
             )
 
     def clear_memory_loops(self, path: str) -> None:
-        """Forget the file's saved memory loops."""
+        """Forget the file's saved memory loops, and the deletions waiting for rekordbox (Reset)."""
         self.set_memory_loops(path, [])
+        self.set_memory_loops_removed(path, [])
+
+    def memory_loops_removed(self, path: str) -> list[tuple[int, int]]:
+        """The memory loops deleted in Dubcrate for the file, as (start ms, end ms), that rekordbox may still have."""
+        rows = self._conn.execute(
+            "SELECT start_ms, end_ms FROM memory_loop_removed WHERE path_key = ? ORDER BY start_ms, id",
+            (path_key(path),),
+        ).fetchall()
+        return [(r["start_ms"], r["end_ms"]) for r in rows]
+
+    def set_memory_loops_removed(
+        self, path: str, loops: Iterable[tuple[int, int]]
+    ) -> None:
+        """Make these (start ms, end ms) the file's deleted memory loops: each once, in time order."""
+        key = path_key(path)
+        unique = sorted({(max(0, int(s)), int(e)) for s, e in loops if int(e) > int(s)})
+        with self._conn:
+            self._conn.execute(
+                "DELETE FROM memory_loop_removed WHERE path_key = ?", (key,)
+            )
+            self._conn.executemany(
+                "INSERT INTO memory_loop_removed (path_key, start_ms, end_ms) VALUES (?, ?, ?)",
+                [(key, s, e) for s, e in unique],
+            )
+
+    def memory_loop_removal_sets(self) -> dict[str, list[tuple[int, int]]]:
+        """Every file with deleted memory loops waiting for rekordbox, by its `path_key`: (start ms, end ms)."""
+        found: dict[str, list[tuple[int, int]]] = {}
+        for row in self._conn.execute(
+            "SELECT path_key, start_ms, end_ms FROM memory_loop_removed ORDER BY start_ms, id"
+        ):
+            found.setdefault(row["path_key"], []).append(
+                (row["start_ms"], row["end_ms"])
+            )
+        return found
+
+    def clear_memory_loop_removal_key(self, key: str) -> None:
+        """Forget the deleted memory loops of a file known by its `path_key` (rekordbox has them gone now)."""
+        with self._conn:
+            self._conn.execute(
+                "DELETE FROM memory_loop_removed WHERE path_key = ?", (key,)
+            )
 
     def clear_memory_loop_key(self, key: str) -> None:
         """`clear_memory_loops` for a file known by its `path_key`."""

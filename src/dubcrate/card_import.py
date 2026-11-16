@@ -11,8 +11,9 @@ cues the last sync left on the card (`Library.card_baseline`, saved from the syn
   moved *in Dubcrate* after the sync: it is not offered back.
 - **Hot cues set on the player** (`hot`): the three slots as memory cues, **not ticked by default**.
 - **Cues deleted on the player** (`remove`, `remove_loop`): in the baseline, gone from the card, and one Dubcrate
-  can delete: a plain memory cue, or a loop saved in Dubcrate that rekordbox doesn't have yet. A baseline cue that
-  is a hot cue or one of rekordbox's loops is only counted in `kept` (rekordbox's are never changed that way).
+  can delete: a plain memory cue, or a memory loop (rekordbox's or saved in Dubcrate: `PreviewController` deletes it
+  in Dubcrate and notes it for rekordbox). A baseline cue that is a hot cue, or the loop of a hot cue, is only
+  counted in `kept` (hot cues are never changed that way).
 - **Cues moved on the player** (`move`, `move_loop`): when a track has as many deletions as new cues (or loops),
   they are paired in time order and shown as moves. This is only how they are shown: a move is a deletion and an
   addition, and each is applied the same way.
@@ -258,10 +259,11 @@ def changes_on_card(
                 ),
                 None,
             )
-            if match is None or not match.local:
-                if match is not None:
-                    found.kept += 1
-                continue  # (Dubcrate has no such loop now, or it is rekordbox's: nothing to delete)
+            if match is None:
+                continue  # (Dubcrate has no such loop now: nothing to delete)
+            if match.slot is not None:
+                found.kept += 1  # (a hot cue's loop: rekordbox's, never changed)
+                continue
             ident = (track, round(match.time * 1000), round(match.end * 1000))
             if ident in removed_seen:
                 continue

@@ -3,9 +3,11 @@
 rekordbox's cues are read and never written. A memory cue the user adds, moves or deletes in the player is kept in
 Dubcrate's own library instead (`Library.memory_cues` / `set_memory_cues`, keyed by the file) and, for any track
 that has such edits, **replaces its memory cues**: `with_edits` is the one place that does it, for the player and
-for what Sync writes to the card. Hot cues are always rekordbox's. **Memory loops saved in Dubcrate** (MEMORY with a
-loop on: `Library.memory_loops`) are *added* to a track's cues and never replace rekordbox's loops; they are kept in
-their own table and are not written to rekordbox. See `dev_docs/rekordbox-cue-writes.md`.
+for what Sync writes to the card. Hot cues are always rekordbox's. **Memory loops** are changes laid over rekordbox's
+loops, not a replacement list: a loop saved in Dubcrate (MEMORY with a loop on: `Library.memory_loops`) is *added*, and a
+loop deleted in Dubcrate (`Library.memory_loops_removed`, (start, end) within `SAME_LOOP_MS`) is *hidden*; both wait in
+Dubcrate's tables until `rekordbox_write` has made rekordbox agree. A hot cue's loop (it has a slot) is never touched.
+See `dev_docs/rekordbox-cue-writes.md`.
 """
 
 from collections.abc import Sequence
@@ -18,7 +20,7 @@ MAX_MEMORY_CUES = 10  # the CDJ-1000MK3 shows ten memory cues a track (loops are
 
 
 def is_memory(cue: Cue) -> bool:
-    """A plain memory cue: not a hot cue and not a loop (a memory loop is rekordbox's and is left alone)."""
+    """A plain memory cue: not a hot cue and not a loop (a memory loop has its own edits: see `with_edits`)."""
     return cue.kind == "memory" and cue.slot is None
 
 
@@ -39,12 +41,19 @@ def memory_count(cues: Sequence[Cue]) -> int:
 
 
 def with_edits(lib: Library, track: Track, cues: Sequence[Cue]) -> list[Cue]:
-    """`cues` (a track's, from rekordbox) with its memory cues replaced by the edited ones, if it has any edits."""
+    """`cues` (a track's, from rekordbox) with its memory cues replaced by the edited ones, if it has any edits, and
+    its memory loops changed: the loops deleted in Dubcrate left out, the ones saved in Dubcrate added."""
     edited = lib.memory_cues(track.path)
     loops = lib.memory_loops(track.path)
-    if edited is None and not loops:
+    removed = lib.memory_loops_removed(track.path)
+    if edited is None and not loops and not removed:
         return list(cues)
     kept = list(cues) if edited is None else [c for c in cues if not is_memory(c)]
+    kept = [
+        c
+        for c in kept
+        if not any(_is_same_loop(c, start, end) for start, end in removed)
+    ]
     mine = [Cue("memory", ms / 1000.0, label=label) for ms, label in edited or ()]
     saved = [
         Cue("loop", start / 1000.0, end=end / 1000.0, label=label, local=True)

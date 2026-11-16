@@ -8,8 +8,8 @@ bordered frame like the other two pages.
 
 The Memory page is also where **memory cues are edited** (the rekordbox library itself is never written): a row's ✕
 deletes it, right-click moves it to the playhead, and the right-click menu of an edited track offers **Reset**, which goes back to
-rekordbox's. A **memory loop saved in Dubcrate** (MEMORY with a loop on) is listed with its ✕ too (no move); hot
-cues and rekordbox's own loops are only shown.
+rekordbox's. A **memory loop** (MEMORY with a loop on saves one; rekordbox's own are listed too) has its ✕ as well (no
+move: save it again where you want it); hot cues are only shown.
 """
 
 import math
@@ -356,8 +356,10 @@ class SidePanel(QWidget):
         for cue in sorted((c for c in cues if c.slot is None), key=lambda c: c.time):
             text = cue_clock(cue.time)
             plain = cue.kind == "memory"
-            deletable = plain or cue.local
             is_loop = cue.kind == "loop" and bool(cue.end)
+            deletable = (
+                plain or is_loop
+            )  # (any memory loop: rekordbox's too, see PreviewController._delete_loop)
             item = QTreeWidgetItem([text, "✕" if deletable else ""])
             item.setData(0, TIME_ROLE, cue.time)
             item.setData(0, DELETABLE_ROLE, deletable)
@@ -401,7 +403,7 @@ class SidePanel(QWidget):
 
     def memory_menu(self, item: QTreeWidgetItem | None) -> QMenu:
         """The right-click menu of the Memory list: move to the playhead (a plain memory cue only) and delete (a
-        memory cue or a loop saved here), and Reset when the track's memory cues or loops are edited."""
+        memory cue or a memory loop), and Reset when the track's memory cues or loops are edited."""
         menu = QMenu(self)
         seconds = item.data(0, TIME_ROLE) if item is not None else None
         if seconds is not None and item.data(0, DELETABLE_ROLE):
