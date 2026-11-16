@@ -9,7 +9,9 @@ from dubcrate.labels import LabelOptions
 from dubcrate.library.models import DiscDir, DiscEntry, Track
 
 
-def entry(i, title=None, artist="Artist", bpm=None, key="", duration=0.0, **kw):
+def entry(
+    i, title=None, artist="Artist", bpm=None, key="", duration=0.0, year=None, **kw
+):
     track = Track(
         id=i,
         source_id=1,
@@ -20,6 +22,7 @@ def entry(i, title=None, artist="Artist", bpm=None, key="", duration=0.0, **kw):
         bpm=bpm,
         key=key,
         duration=duration,
+        year=year,
     )
     return DiscEntry(position=i, track=track, **kw)
 
@@ -459,6 +462,35 @@ def test_each_label_of_a_disc_has_the_same_size_text_with_folders_too():
     folders = dirs((1, None, "A"), (2, None, "B"))
     made = labels.build_labels("N", es, LabelOptions(), dirs=folders)
     assert len({l.font_mm for l in made}) == 1
+
+
+# -- year -----------------------------------------------------------------------------
+
+
+def test_a_year_is_four_digits_and_nothing_for_a_missing_or_nonsense_tag():
+    assert labels.year_text(1999) == "1999"
+    assert labels.year_text(None) == "" and labels.year_text(0) == ""
+    assert labels.year_text(99) == "" and labels.year_text(20240) == ""  # (not a year)
+
+
+def test_year_is_off_until_asked_for_and_a_track_without_one_shows_none():
+    es = [entry(0, year=1998), entry(1), entry(2, year=0)]
+    [plain] = labels.build_labels("N", es, LabelOptions())
+    assert {r.year for r in plain.rows} == {""} and plain.side_columns == ()
+    [dated] = labels.build_labels("N", es, LabelOptions(show_year=True))
+    assert [r.year for r in dated.rows] == ["1998", "", ""]
+    assert dated.side_columns == (("Year", "year"),)
+
+
+def test_the_year_column_sits_between_the_key_and_the_time():
+    es = [entry(0, bpm=120, key="8A", duration=100, year=2001)]
+    [label] = labels.build_labels("N", es, LabelOptions(show_year=True, show_duration=True))  # fmt: skip
+    assert [attr for _head, attr in label.side_columns] == ["bpm", "key", "year", "length"]  # fmt: skip
+
+
+def test_a_year_comes_from_the_library_track():
+    [label] = labels.build_labels("N", [entry(0, year=1987)], LabelOptions(show_year=True))  # fmt: skip
+    assert label.rows[0].year == "1987"
 
 
 # -- duration -------------------------------------------------------------------------

@@ -60,15 +60,10 @@ Open items by area; finished work is under **Completed** at the bottom (same hea
 - [ ] Try the drive picker with two real drives (the check after a burn is skipped for any but the first), and add a way to cancel a burn (the backends have no abort yet: DiscRecording's `DRBurn` can be aborted, `cdrdao` can be terminated).
 - [ ] Read a finished burn back and check it against the disc it was burned from ([roadmap.md](dev_docs/roadmap.md)).
 - [ ] Try dragging an MP3 folder in the Discs list by hand (the feel, and dropping on a collapsed disc).
-- [ ] The album or year on a label, if wanted (not built).
 - [ ] Give each app library its own Library tab once a second library exists ([roadmap.md](dev_docs/roadmap.md)).
 - [ ] Try `tinytag` as a faster folder scan, since `ffprobe` per file manages about 120 files a second ([roadmap.md](dev_docs/roadmap.md)).
 - [ ] Add rekordbox XML export as an import path with no SQLCipher dependency ([roadmap.md](dev_docs/roadmap.md)).
 - [ ] Read rekordbox's `PWV3` and `PWV5` directly for exact waveform matches on rekordbox tracks ([rekordbox-analysis.md](dev_docs/rekordbox-analysis.md)).
-
-### Player (rbxport-style)
-
-- [ ] Try the new player by hand: dragging a track onto it, the hot cue and memory buttons on a real rekordbox track, the zoom buttons, and how it looks on a small screen.
 
 ### Cues: Dubcrate, rekordbox and the card
 
@@ -85,10 +80,10 @@ Open items by area; finished work is under **Completed** at the bottom (same hea
 - [ ] Build for Windows: a build script, a `build.yml` job and an installer (`jv-studio`'s `build_windows.ps1` and Inno Setup are the model), and an LGPL ffmpeg for it ([cross-platform.md](dev_docs/cross-platform.md), Phase 5).
 - [ ] Try eject (card and disc) and the disc's TOC reader on a real Linux and a real Windows machine (`eject.py`, `drive_toc.py`; tested against stand-in commands only) ([cross-platform.md](dev_docs/cross-platform.md)).
 - [ ] Burn an MP3 disc from a `pycdlib` image (`dubcrate export`'s `disc.iso`, in Brasero or Finder, or `cdrdao` on Linux) and play it in a CDJ and a car player; try a disc 8 folders deep ([cross-platform.md](dev_docs/cross-platform.md)).
-- [ ] Guard Windows' reserved names (`CON`, `NUL`, `COM1`...) in MP3 folder names, and try a long path on Windows ([cross-platform.md](dev_docs/cross-platform.md), Phase 6 step 5).
+- [ ] Try a long path on Windows (the reserved names are guarded in folder names and in the disc's staging folder, 2026-11-16; the 259-character limit is refused up front, `build.path_too_long`: whether a longer path would really fail there is unchecked) ([cross-platform.md](dev_docs/cross-platform.md), Phase 6 step 5).
 - [ ] Notice an SD card being plugged in on Windows, which has no folder to watch ([cross-platform.md](dev_docs/cross-platform.md), Phase 6 step 6).
 - [ ] Try Format a Card on a spare 2 GB card on Linux and on Windows (built, tested against stand-in commands only: `card_format_linux.py`, `card_format_windows.py`; the Linux layout was checked with the real `sfdisk` and `mkfs.fat` on an image file).
-- [ ] Detect "permission denied" on the drive and say how to get access (the `cdrom` or `optical` group, or a udev rule) ([cross-platform.md](dev_docs/cross-platform.md)).
+- [ ] Try the Linux drive permission message on a real machine (take yourself out of the drive's group, then add yourself back without logging out): `cdrdao.access_problem` names the group and the `usermod` line, or says to log out and in; tested with stand-ins only ([cross-platform.md](dev_docs/cross-platform.md)).
 - [ ] Decide between `cdrdao` and `xorriso -as cdrecord` for writing MP3 discs by trying both on a real drive ([linux-test-plan.md](dev_docs/linux-test-plan.md)).
 - [ ] Check the Explorer's real drive lists on Linux and Windows, which are only tested with fake folders ([cross-platform.md](dev_docs/cross-platform.md)).
 - [ ] Find a trustworthy `cdrdao.exe` (build it with MSYS2 or Cygwin in CI) and find out whether it needs administrator rights ([cross-platform.md](dev_docs/cross-platform.md)).
@@ -128,6 +123,9 @@ Open items by area; finished work is under **Completed** at the bottom (same hea
 
 ### Features and app polish
 
+- [x] Year on labels (2026-11-16): **Show year** in the label window, off by default, between key and time; from rekordbox or the file's tags. (The album was asked for and skipped: not wanted.)
+- [x] Guard Windows' reserved names in MP3 folder names and the disc's staging folder (`mp3.dir_name`, `mp3.volume_name`).
+- [x] Detect "permission denied" on the drive on Linux and say how to get access, naming the drive's group (`cdrdao.access_problem`, 2026-11-16).
 - [x] Sync tab tidy-up (2026-11-16): no help text under an empty card list, no Status / Cues / Waveform columns or Details button, waveforms always written (no tick box), the disc list's tick boxes on the left of each name and a select-all box in its heading.
 - [x] A badge in the status bar's bottom right corner: yellow "Library read-only" or orange "Library writable" (only with a rekordbox library imported); the status bar is a shade of its own with a rule on top (`ui/status_bar.py`).
 - [x] Add a drive picker to the burn window (2026-11-16: a menu shown only with two or more drives, remembered by name; `Burner.drives()`; tested with fakes). ([roadmap.md](dev_docs/roadmap.md))

@@ -81,7 +81,8 @@ With a blank CD-R in the drive, **Burn… > Test only** (or `dubcrate burn N --y
 - [ ] The log shows progress about every 10 percent, not one line per update.
 - [ ] Ends with "Test burn finished", the disc is not marked as burned.
 - [ ] Wrong cases give plain messages: no disc in the drive; a disc that is not blank; permission denied
-      (take yourself out of the group); a speed the drive lacks.
+      (take yourself out of the group: the message should name the drive's group and the `usermod` line, and after you
+      add yourself again but before logging out, say to log out and in); a speed the drive lacks.
 - [ ] After a simulation cdrdao may want the disc reloaded before the real write (its README says so).
 
 ## 5. A real audio burn, played on a CDJ

@@ -206,11 +206,16 @@ _WINDOWS_RESERVED = frozenset(
 )
 
 
+def _is_windows_reserved(name: str) -> bool:
+    """Whether Windows refuses to make a file or folder called `name` (with or without an extension)."""
+    return name.split(".", 1)[0].rstrip().upper() in _WINDOWS_RESERVED
+
+
 def dir_name(name: str) -> str:
     """A folder's name as it is written on the disc: what a file system allows, Joliet's length.
     A name Windows reserves (`CON`, `NUL`, `COM1`, ...) gets an underscore, as it can't be made there."""
     clean = _clean(name)[:MAX_NAME_CHARS].strip(" .") or "Folder"
-    if clean.split(".", 1)[0].rstrip().upper() in _WINDOWS_RESERVED:
+    if _is_windows_reserved(clean):
         clean = f"{clean}_"
     return clean
 
@@ -236,5 +241,10 @@ def format_span(sectors: int, kind: str = "audio") -> str:
 
 
 def volume_name(title: str) -> str:
-    """The disc's name as a volume label (Joliet keeps 16 characters)."""
-    return _clean(title)[:16].strip() or "MP3 DISC"
+    """The disc's name as a volume label (Joliet keeps 16 characters). It is also the name of the folder the
+    disc is staged in, so it is a name Windows can make: no trailing dot or space, and a reserved name
+    (`CON`, `NUL`, ...) gets an underscore (inside the 16)."""
+    clean = _clean(title)[:16].strip(" .") or "MP3 DISC"
+    if _is_windows_reserved(clean):
+        clean = f"{clean[:15]}_"
+    return clean

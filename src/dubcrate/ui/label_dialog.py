@@ -185,6 +185,11 @@ class LabelDialog(QDialog):
         self.key_check.setToolTip(
             "The musical key from rekordbox, written in the notation chosen in Settings: a track without one shows nothing."
         )
+        self.year_check = QCheckBox("Show year")
+        self.year_check.setChecked(o.show_year)
+        self.year_check.setToolTip(
+            "The year each track was released, from rekordbox or the file's tags: a track without one shows nothing."
+        )
         self.duration_check = QCheckBox("Show duration")
         self.duration_check.setChecked(o.show_duration)
         self.duration_check.setToolTip(
@@ -205,6 +210,7 @@ class LabelDialog(QDialog):
         form.addRow("Gap between labels", self.gap_spin)
         form.addRow(self.bpm_check)
         form.addRow(self.key_check)
+        form.addRow(self.year_check)
         form.addRow(self.duration_check)
         form.addRow(self.outline_check)
 
@@ -293,6 +299,7 @@ class LabelDialog(QDialog):
         self.page_combo.currentIndexChanged.connect(self._page_size_changed)
         self.bpm_check.toggled.connect(self.refresh)
         self.key_check.toggled.connect(self.refresh)
+        self.year_check.toggled.connect(self.refresh)
         self.duration_check.toggled.connect(self.refresh)
         self.outline_check.toggled.connect(self.refresh)
         self.disc_tree.itemChanged.connect(self._on_item_changed)
@@ -506,6 +513,7 @@ class LabelDialog(QDialog):
             gap_mm=self.gap_spin.mm,
             show_bpm=self.bpm_check.isChecked(),
             show_key=self.key_check.isChecked(),
+            show_year=self.year_check.isChecked(),
             show_duration=self.duration_check.isChecked(),
             outline=self.outline_check.isChecked(),
         ).clamped()

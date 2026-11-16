@@ -224,3 +224,116 @@ def test_no_drive_found_says_what_to_check(fake, tmp_path):
     )  # scanbus finds nothing
     with pytest.raises(BurnError, match="found no drives.*cdrom"):
         CdrdaoBurner().burn(disc(tmp_path), BurnOptions(), print)
+
+
+# -- permission to open the drive (Linux) -------------------------------------------------------------------
+
+
+@pytest.fixture
+def linux_drive(monkeypatch):
+    """A pretend Linux: /dev/sr0 owned by group 24 (`cdrom`), and a user who is (or is not) allowed to open it.
+    Stands in for `os` and `grp` as `cdrdao.access_problem` sees them; no real device is touched."""
+    import os as real_os
+    import types
+
+    from dubcrate.burn import cdrdao
+
+    state = types.SimpleNamespace(allowed=False, groups=[1000], members=[], exists=True)
+
+    class FakeOs:
+        R_OK, W_OK = real_os.R_OK, real_os.W_OK
+
+        def __getattr__(self, name):
+            return getattr(real_os, name)
+
+        @staticmethod
+        def stat(path):
+            if not state.exists:
+                raise FileNotFoundError(path)
+            return types.SimpleNamespace(st_gid=24)
+
+        @staticmethod
+        def access(path, mode):
+            return state.allowed
+
+        @staticmethod
+        def getgroups():
+            return state.groups
+
+    group = types.SimpleNamespace(
+        getgrgid=lambda gid: types.SimpleNamespace(
+            gr_name="cdrom", gr_mem=state.members
+        )
+    )
+    monkeypatch.setitem(sys.modules, "grp", group)
+    monkeypatch.setattr("getpass.getuser", lambda: "dj")
+    monkeypatch.setattr(cdrdao, "os", FakeOs())
+    monkeypatch.setattr(cdrdao.sys, "platform", "linux")
+    return state
+
+
+def test_a_drive_the_user_may_open_has_no_problem(linux_drive):
+    from dubcrate.burn.cdrdao import access_problem
+
+    linux_drive.allowed = True
+    assert access_problem("/dev/sr0") is None
+
+
+def test_a_drive_owned_by_a_group_the_user_is_not_in_says_which_and_how(linux_drive):
+    from dubcrate.burn.cdrdao import access_problem
+
+    text = access_problem("/dev/sr0")
+    assert "“cdrom” group" in text and "you aren't in it" in text
+    assert "sudo usermod -aG cdrom $USER" in text and "log out and in" in text and "udev" in text  # fmt: skip
+
+
+def test_a_user_added_to_the_group_but_not_logged_in_again_is_told_to_log_out(
+    linux_drive,
+):
+    from dubcrate.burn.cdrdao import access_problem
+
+    linux_drive.members = [
+        "dj"
+    ]  # (listed in /etc/group, but this session's groups lack it)
+    text = access_problem("/dev/sr0")
+    assert "this session started before" in text and "usermod" not in text
+
+
+def test_a_drive_that_is_not_there_is_left_to_cdrdaos_own_message(linux_drive):
+    from dubcrate.burn.cdrdao import access_problem
+
+    linux_drive.exists = False
+    assert access_problem("/dev/sr9") is None
+
+
+@pytest.mark.parametrize("platform", ["darwin", "win32"])
+def test_only_linux_checks_the_drive_group(linux_drive, monkeypatch, platform):
+    from dubcrate.burn import cdrdao
+
+    monkeypatch.setattr(cdrdao.sys, "platform", platform)
+    assert cdrdao.access_problem("/dev/sr0") is None
+
+
+def test_the_burner_refuses_before_running_cdrdao_when_it_may_not_open_the_drive(linux_drive, monkeypatch):  # fmt: skip
+    from dubcrate.burn import cdrdao
+
+    monkeypatch.setattr(cdrdao, "find_cdrdao", lambda: "/usr/bin/cdrdao")
+    ran = []
+    monkeypatch.setattr(cdrdao.subprocess, "run", lambda *a, **k: ran.append(a))
+    burner = CdrdaoBurner()
+    with pytest.raises(BurnError, match="“cdrom” group"):
+        burner.media_info("/dev/sr0")
+    with pytest.raises(BurnError, match="“cdrom” group"):
+        burner.burn(
+            Disc(title="t", performer="p"), BurnOptions(device="/dev/sr0"), print
+        )
+    assert ran == []  # (cdrdao was never started)
+
+
+def test_a_permission_denied_from_cdrdao_names_the_group_when_it_can(linux_drive):
+    text = explain_failure("ERROR: Unable to open SCSI device /dev/sr0: Permission denied.", "/dev/sr0", 1)  # fmt: skip
+    assert "“cdrom” group" in text
+    linux_drive.allowed = (
+        True  # (the file is fine now: only the general advice is left)
+    )
+    assert "usermod -aG GROUP" in explain_failure("Permission denied", "/dev/sr0", 1)

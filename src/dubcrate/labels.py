@@ -67,6 +67,7 @@ class LabelOptions:
     gap_mm: float = 2.0  # between labels, to cut along
     show_bpm: bool = True
     show_key: bool = True
+    show_year: bool = False  # the year of release, when the track has one
     show_duration: bool = False  # the track's length, M:SS
     outline: bool = True  # a thin line round each label, to cut along
 
@@ -107,6 +108,7 @@ class LabelRow:
     artist: str
     bpm: str = ""  # whole beats per minute, "" when unknown
     key: str = ""  # in the notation chosen in Settings, "" when unknown
+    year: str = ""  # the year of release, "" when unknown
     length: str = ""  # the track's own length as M:SS, "" when unknown
 
 
@@ -119,7 +121,7 @@ class FolderRow:
 
 Item = LabelRow | FolderRow
 
-SIDE_COLUMNS = (("BPM", "bpm"), ("Key", "key"), ("Time", "length"))
+SIDE_COLUMNS = (("BPM", "bpm"), ("Key", "key"), ("Year", "year"), ("Time", "length"))
 
 
 @dataclass(frozen=True)
@@ -182,6 +184,11 @@ def clock_text(seconds: float | None) -> str:
     return f"{whole // 60}:{whole % 60:02d}"
 
 
+def year_text(year: int | None) -> str:
+    """A year of release as four digits, "" when there is none (or it is not a year: a tag can say 0)."""
+    return str(year) if year and 1000 <= year <= 9999 else ""
+
+
 def bpm_text(bpm: float | None) -> str:
     """The BPM rounded to a whole number, "" when there is none."""
     return str(round(bpm)) if bpm and bpm > 0 else ""
@@ -238,6 +245,7 @@ def _blocks(
                 artist=entry.artist,
                 bpm=bpm_text(entry.track.bpm) if options.show_bpm else "",
                 key=keys.display(entry.track.key, notation) if options.show_key else "",
+                year=year_text(entry.track.year) if options.show_year else "",
                 length=clock_text(entry.track.duration)
                 if options.show_duration
                 else "",

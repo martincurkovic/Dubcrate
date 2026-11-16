@@ -238,6 +238,29 @@ def test_sizes_read_like_the_box_and_the_volume_name_fits_joliet():
     assert mp3.volume_name("///") == "MP3 DISC"
 
 
+@pytest.mark.parametrize(
+    ("title", "label"),
+    [
+        ("CON", "CON_"),
+        ("nul", "nul_"),
+        ("Com3.txt", "Com3.txt_"),
+        ("Friday Night Set.", "Friday Night Set"),
+        ("Set  ", "Set"),
+        ("COM10", "COM10"),
+        ("Console Mix", "Console Mix"),
+        ("...", "MP3 DISC"),
+    ],
+)
+def test_the_volume_name_is_a_name_windows_can_make_as_a_folder(title, label):
+    assert mp3.volume_name(title) == label
+    assert len(mp3.volume_name(title)) <= 16
+
+
+def test_a_reserved_name_stays_within_sixteen_characters_with_its_underscore():
+    # (the cut to 16 can leave a reserved name, and its underscore must fit too)
+    assert len(mp3.volume_name("COM1" + "." + "x" * 30)) <= 16
+
+
 # -- the library --------------------------------------------------------------
 
 

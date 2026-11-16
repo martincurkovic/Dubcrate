@@ -26,6 +26,7 @@ def lib():
                 duration=200,
                 bpm=120 + i,
                 key="8A",
+                year=2000 + i,
             )
             for i in range(12)
         ]
@@ -945,6 +946,22 @@ def test_duration_is_its_own_box_off_to_begin_with_and_remembered(qapp, lib, dis
     dialog.accept()
     assert settings.get_label_options().show_duration is True
     assert LabelDialog(lib).duration_check.isChecked()
+
+
+def test_year_is_its_own_box_off_to_begin_with_and_remembered(qapp, lib, discs):
+    dialog = LabelDialog(lib)
+    assert not dialog.year_check.isChecked()
+    tick(dialog, discs[0])
+
+    def years():
+        return {r.year for page in dialog._pages for p in page for r in p.label.rows}
+
+    assert years() == {""}
+    dialog.year_check.setChecked(True)
+    assert years() <= {str(2000 + i) for i in range(12)} and "" not in years()
+    dialog.accept()
+    assert settings.get_label_options().show_year is True
+    assert LabelDialog(lib).year_check.isChecked()
 
 
 def test_all_three_side_columns_print_in_one_and_in_several_columns(

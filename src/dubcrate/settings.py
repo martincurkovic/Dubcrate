@@ -274,6 +274,7 @@ def get_label_options() -> labels.LabelOptions:
         gap_mm=number("gap_mm", default.gap_mm),
         show_bpm=_as_bool(qs.value("labels/show_bpm", both), default.show_bpm),
         show_key=_as_bool(qs.value("labels/show_key", both), default.show_key),
+        show_year=_as_bool(qs.value("labels/show_year"), default.show_year),
         show_duration=_as_bool(qs.value("labels/show_duration"), default.show_duration),
         outline=_as_bool(qs.value("labels/outline"), default.outline),
     ).clamped()

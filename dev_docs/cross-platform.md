@@ -203,8 +203,11 @@ injectable runner, an expected-error exception with plain words, tests against s
 - [ ] Hardware checks, in the style of `burning.md`: drive detection, a simulated audio burn, a
   real audio burn on a CDJ-1000MK3 (gapless boundaries, CD-TEXT), an MP3 disc. Tag results
   **[hardware DATE]**.
-- [ ] Device permissions: the user must be allowed to open the drive (often the `cdrom` or
-  `optical` group, or a udev rule). Detect "permission denied" and say so.
+- [x] Device permissions: the user must be allowed to open the drive (often the `cdrom` or
+  `optical` group, or a udev rule). Detected and said (2026-11-16): `cdrdao.access_problem(device)` checks the device's
+  group and the user's before anything runs (`CdrdaoBurner._device`), says which group and the `usermod` line, or
+  "log out and in" when the user is already listed in the group; `explain_failure` uses it for a `Permission denied`.
+  Tested with stand-ins for `os` and `grp`; **[not tried]** on a real Linux machine.
 - [ ] Packaging: an AppImage or Flatpak (Flatpak needs device access granted), or a plain
   `pipx`/`uv tool` install with ffmpeg and cdrdao from the package manager. Decide with the
   first Linux user.

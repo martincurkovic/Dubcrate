@@ -147,6 +147,42 @@ def parse_disk_info(text: str) -> MediaInfo:
     return MediaInfo(drive=drive, present=True, blank=blank, free_sectors=free)
 
 
+def access_problem(device: str) -> str | None:
+    """Why this user can't open the drive at `device` (Linux only: None anywhere else, for a device that isn't
+    there, and for one that can be used), in words that name the group and say whether the fix is a log out.
+
+    The drive belongs to a group (`cdrom` or `optical`, depending on the distribution) that can read and write
+    it. A user added to the group only gets it at the next login, so a user already listed in the group but not
+    holding it is told to log out and in, not to run the command again. NOT checked on a real Linux machine."""
+    if not sys.platform.startswith("linux"):
+        return None
+    try:
+        status = os.stat(device)
+    except OSError:
+        return None  # (not there: cdrdao's own message says so)
+    if os.access(device, os.R_OK | os.W_OK):
+        return None
+    try:
+        import getpass
+        import grp
+
+        group = grp.getgrgid(status.st_gid)
+        name, members = group.gr_name, group.gr_mem
+        user = getpass.getuser()
+    except (ImportError, KeyError, OSError):
+        name, members, user = str(status.st_gid), [], ""
+    if status.st_gid not in os.getgroups() and user in members:
+        return (
+            f"You are in the “{name}” group, which owns the drive {device}, but this session started before you were"
+            " added to it. Log out and in again (or restart the computer), then try again."
+        )
+    return (
+        f"Dubcrate isn't allowed to use the drive {device}: it belongs to the “{name}” group and you aren't in it."
+        f" Add yourself with `sudo usermod -aG {name} $USER`, then log out and in again. (Or give the drive to"
+        " your user with a udev rule.)"
+    )
+
+
 def explain_failure(
     output: str, device: str | None = None, status: int | None = None
 ) -> str:
@@ -156,6 +192,8 @@ def explain_failure(
     where = f" {device}" if device else ""
     low = output.lower()
     if "permission denied" in low:
+        if device and (specific := access_problem(device)):
+            return specific
         return (
             f"Dubcrate isn't allowed to use the drive{where}. On Linux, the drive belongs to a group"
             f" (see `ls -l{where or ' /dev/sr0'}`, often `cdrom` or `optical`): add yourself to it with"
@@ -220,6 +258,13 @@ class CdrdaoBurner:
         return exe
 
     def _device(self, device: str | None) -> str:
+        """The drive to use (the one named, else the first found), checked for permission to open it."""
+        chosen = self._pick_device(device)
+        if problem := access_problem(chosen):
+            raise BurnError(problem)
+        return chosen
+
+    def _pick_device(self, device: str | None) -> str:
         if device is not None:
             return device
         found = scan_devices()
