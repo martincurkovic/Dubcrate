@@ -105,7 +105,7 @@
 - [x] Import memory cues set on the CDJ back from the card (additions only: Sync tab > Import Cues…, `card_import.py`).
 - [ ] Try Import Cues… with cues really set on the player; then decide whether moves and deletions on the player should be noticed (needs a baseline saved at sync time: the card's cues after each sync) and whether the player's hot cues should come back as memory cues (`dev_docs/card-sync.md`, "Importing cues from the card").
 - [x] Right-click a card in the Sync tab's list: **Import Cues from “NAME”…** beside Sync and Eject (the button in the discs panel is the only way now).
-- [ ] Write the edits that are waiting in Dubcrate (made while rekordbox was open, or before editing was allowed) in one go from the app: only the command line does it now (`dubcrate rekordbox write-memory-cues`).
+- [x] Write the edits that are waiting in Dubcrate (made while rekordbox was open, or before editing was allowed) in one go from the app: File > Save Waiting Memory Cue Edits to rekordbox (not tried live).
 - [ ] Hot cues and loops: edit them in the player and write them to rekordbox (`dev_docs/rekordbox-cue-writes.md` has the `Kind` numbers; only memory cues are written so far).
 
 ### Linux and Windows

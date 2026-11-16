@@ -156,6 +156,98 @@ def test_an_edit_made_while_writing_is_written_too(lib, wait_for):
     assert lib.memory_cues(IN_RB.path) is None
 
 
+def waiting_editor(lib, write=None):
+    editor, cache, seen = make(lib, write)
+    editor.database = lambda: DB  # (the one imported rekordbox library)
+    return editor, cache, seen
+
+
+def test_waiting_edits_are_written_in_one_go_and_the_result_is_said(lib, wait_for):
+    settings.set_rekordbox_editing(True)
+    editor, _, seen = waiting_editor(lib)
+    lib.set_memory_cues("/m/a.mp3", [(1000, "")])
+    lib.set_memory_cues("/m/c.mp3", [(2000, "x")])
+    assert editor.waiting() == 2
+    assert editor.write_waiting() is True
+    assert wait_for(lambda: lib.memory_cue_sets() == {})
+    assert len(editor._write.calls) == 1 and len(editor._write.calls[0][0]) == 2
+    assert wait_for(lambda: seen.messages[-1].startswith("Saved the memory cues of 2"))
+    assert seen.messages[0] == "Saving waiting memory cues to rekordbox…"
+
+
+def test_waiting_edits_of_files_not_in_rekordbox_stay_and_are_counted(lib, wait_for):
+    settings.set_rekordbox_editing(True)
+
+    def write(db, edits, backup_dir, *, keep_backup=True, **_):
+        keys = list(edits)
+        plan = rw.WritePlan(
+            changes=[SimpleNamespace(key=keys[0])],
+            skipped=[(k, "not in rekordbox") for k in keys[1:]],
+        )
+        return rw.WriteOutcome(plan, None, written=keys[:1])
+
+    editor, _, seen = waiting_editor(lib, write)
+    lib.set_memory_cues("/m/a.mp3", [(1000, "")])
+    lib.set_memory_cues("/m/b.mp3", [(2000, "")])
+    editor.write_waiting()
+    assert wait_for(
+        lambda: seen.messages[-1].endswith("(1 not in rekordbox stay in Dubcrate)")
+    )
+    assert seen.messages[-1].startswith("Saved the memory cues of 1 track ")
+    assert len(lib.memory_cue_sets()) == 1
+
+
+def test_waiting_edits_that_rekordbox_already_has_say_so(lib, wait_for):
+    settings.set_rekordbox_editing(True)
+
+    def write(db, edits, backup_dir, *, keep_backup=True, **_):
+        return rw.WriteOutcome(rw.WritePlan(unchanged=list(edits)), None)
+
+    editor, _, seen = waiting_editor(lib, write)
+    lib.set_memory_cues("/m/a.mp3", [(1000, "")])
+    editor.write_waiting()
+    assert wait_for(lambda: seen.messages[-1] == "rekordbox already has these memory cues")  # fmt: skip
+    assert lib.memory_cue_sets() == {}
+
+
+def test_waiting_edits_that_fail_keep_their_failure_message(lib, wait_for):
+    settings.set_rekordbox_editing(True)
+    editor, _, seen = waiting_editor(lib, FakeWrite(fail="rekordbox is running: close it first"))  # fmt: skip
+    lib.set_memory_cues("/m/a.mp3", [(1000, "")])
+    editor.write_waiting()
+    assert wait_for(lambda: len(seen.messages) == 2)
+    assert "Kept in Dubcrate only" in seen.messages[-1] and "running" in seen.messages[-1]  # fmt: skip
+    assert len(lib.memory_cue_sets()) == 1
+
+
+def test_write_waiting_with_nothing_waiting_or_no_library_writes_nothing(lib, qapp):
+    settings.set_rekordbox_editing(True)
+    editor, _, seen = make(lib)  # (no rekordbox library imported)
+    lib.set_memory_cues("/m/a.mp3", [(1000, "")])
+    assert editor.write_waiting() is False
+    assert seen.messages == ["No rekordbox library has been imported"]
+    editor.database = lambda: DB
+    lib.clear_memory_cue_key(path_key("/m/a.mp3"))
+    assert editor.write_waiting() is False
+    assert seen.messages[-1] == "No memory cues are waiting in Dubcrate"
+    assert editor._write.calls == []
+
+
+def test_write_waiting_asks_again_when_editing_was_turned_off(lib, monkeypatch, qapp, wait_for):  # fmt: skip
+    asked = []
+    monkeypatch.setattr(editor_module, "ask_enable_editing", lambda: asked.append(1) or False)  # fmt: skip
+    settings.set_rekordbox_editing(False)
+    editor, _, _ = waiting_editor(lib)
+    lib.set_memory_cues("/m/a.mp3", [(1000, "")])
+    assert editor.write_waiting() is False
+    assert asked == [1] and settings.get_rekordbox_editing() is False
+    assert editor._write.calls == []
+    monkeypatch.setattr(editor_module, "ask_enable_editing", lambda: True)
+    assert editor.write_waiting() is True
+    assert settings.get_rekordbox_editing() is True
+    assert wait_for(lambda: lib.memory_cue_sets() == {})
+
+
 def test_the_setting_is_a_checkbox_in_the_settings_window(qapp):
     from dubcrate.ui.settings_dialog import SettingsDialog
 

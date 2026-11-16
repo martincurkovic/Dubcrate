@@ -7,7 +7,8 @@ writes the track's memory cues into `master.db` on a worker (`rekordbox_write.ap
 closed, the database is copied aside first (once a session: `keep_backup`), written in one transaction, read
 back, and put back if wrong). When rekordbox has been re-read and has the cues, Dubcrate's copy of the edit is
 dropped, so the track shows rekordbox's own cues again. If the write can't be done (rekordbox is open, say),
-the edit simply stays in Dubcrate with a message, and the track's next edit tries again.
+the edit simply stays in Dubcrate with a message, and the track's next edit tries again, or
+`write_waiting` (File > Save Waiting Memory Cue Edits to rekordbox) sends everything that is waiting in one go.
 **Tried on synthetic databases, and the command line on the owner's library; this live path is not tried.**
 """
 
@@ -81,6 +82,11 @@ class RekordboxEditor(QObject):
         self._sent_db: Path | None = None
         self._busy = False
         self._backed_up = False  # this session's backup exists
+        self._manual = False  # a `write_waiting` is running: say how it ended
+        self._manual_done = 0  # ... tracks written (not those it already had)
+        self._manual_left = (
+            0  # ... tracks that aren't in rekordbox and stay in Dubcrate
+        )
         cues.changed.connect(self._on_cues_changed)
 
     def allow(self, track: Track) -> bool:
@@ -101,9 +107,59 @@ class RekordboxEditor(QObject):
         self._pending[path_key(track.path)] = database
         self._start()
 
-    def _start(self) -> None:
-        if self._busy or not self._pending:
+    def database(self) -> Path | None:
+        """The rekordbox library the waiting edits go to: the first imported one (with several, the edits of
+        tracks that are not in it stay in Dubcrate)."""
+        return next(
+            (Path(s.path) for s in self._lib.sources() if s.kind == "rekordbox"), None
+        )
+
+    def waiting(self) -> int:
+        """How many files have memory cues edited in Dubcrate (not all need be in rekordbox)."""
+        return len(self._lib.memory_cue_sets())
+
+    def write_waiting(self) -> bool:
+        """Send every edit that is waiting in Dubcrate to rekordbox: the ones made while rekordbox was open,
+        before editing was allowed, or that failed. Asks the first-edit question if it was never answered, and
+        a "no" is asked again here: this is the user asking for it. False: nothing was started."""
+        database = self.database()
+        if database is None:
+            self.message.emit("No rekordbox library has been imported")
+            return False
+        waiting = self._lib.memory_cue_sets()
+        if not waiting:
+            self.message.emit("No memory cues are waiting in Dubcrate")
+            return False
+        if not settings.get_rekordbox_editing():
+            if not ask_enable_editing():
+                return False
+            settings.set_rekordbox_editing(True)
+        for key in waiting:
+            self._pending[key] = database
+        self._manual, self._manual_done, self._manual_left = True, 0, 0
+        self.message.emit("Saving waiting memory cues to rekordbox…")
+        self._start()
+        return True
+
+    def _finish_manual(self) -> None:
+        if not self._manual:
             return
+        self._manual = False
+        left = f"{self._manual_left} not in rekordbox stay in Dubcrate"
+        if self._manual_done:
+            n = self._manual_done
+            said = f"Saved the memory cues of {n} track{'s' if n != 1 else ''} to rekordbox"
+            self.message.emit(said + (f" ({left})" if self._manual_left else ""))
+        elif self._manual_left:
+            self.message.emit(f"Nothing to save: {left}")
+        else:
+            self.message.emit("rekordbox already has these memory cues")
+
+    def _start(self) -> None:
+        if self._busy:
+            return
+        if not self._pending:
+            return self._finish_manual()
         database = next(iter(self._pending.values()))
         batch = [k for k, d in self._pending.items() if d == database]
         have = self._lib.memory_cue_sets()
@@ -141,8 +197,10 @@ class RekordboxEditor(QObject):
             self._backed_up = True
         for key, why in outcome.plan.skipped:
             self._pending.pop(key, None)  # not in rekordbox: stays an edit in Dubcrate
+            self._manual_left += 1
             log.info("rekordbox edit of %s stays in Dubcrate: %s", key, why)
         done = set(outcome.done_keys)
+        self._manual_done += len(outcome.written)
         self._sent = {k: list(edits[k]) for k in edits if k in done}
         self._sent_db = database
         if not self._sent:
@@ -155,6 +213,7 @@ class RekordboxEditor(QObject):
         self, edits: Mapping[str, Sequence[tuple[int, str]]], text: str
     ) -> None:
         self._busy = False
+        self._manual = False  # (its own message is this one)
         for key in edits:
             self._pending.pop(key, None)
         log.warning("memory cues not saved to rekordbox: %s", text)

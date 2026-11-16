@@ -98,7 +98,7 @@ good) is also the **Settings > Library** checkbox. Declined = the old behaviour:
   re-reads the database (`RekordboxCueCache.refresh`, checked with `is_current` so a read begun before the write is not trusted) and only then are
   Dubcrate's rows for the track dropped (if the track was not edited again meanwhile): no flicker, and the track shows rekordbox's own cues.
 - **rekordbox open:** `apply_write` refuses, the edit stays in Dubcrate (the status bar says "Kept in Dubcrate only ... close it first") and the
-  next edit of that track writes the whole list. Edits on other tracks that were left waiting are not flushed by this (the command line does that).
+  next edit of that track writes the whole list. Edits on other tracks that were left waiting are not flushed by this: **File > Save Waiting Memory Cue Edits to rekordbox** does (`RekordboxEditor.write_waiting`: queues every `memory_cue_sets()` key against the first imported rekordbox source, asks the first-edit question again if the answer was no, runs through the same `_start` worker, and says how it ended; keys not in that database come back as `skipped` and stay in Dubcrate; **with two rekordbox sources only the first is tried**; built and tested with the stand-in writer, not tried live), and so does the command line.
 - **Backups:** `apply_write(..., keep_backup=False)` deletes its copy after a good read-back. The first write of a session keeps its copy (the state
   before anything this session), the later ones don't; `prune_backups` keeps the newest 20 `master-*` folders.
 - A track that isn't in rekordbox (an Explorer or folder file) is never asked about and never written; its edits are Dubcrate's, as before.

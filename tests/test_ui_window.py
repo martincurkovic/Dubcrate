@@ -1271,3 +1271,26 @@ def test_cancelling_the_rekordbox_read_stops_it_too(
     assert win.statusBar().currentMessage() == "Import cancelled: nothing was changed."
     assert [s.name for s in lib.sources()] == before and win.shown == []
     assert Cancelled  # (what the stand-in raised)
+
+
+def test_file_menu_offers_to_save_the_memory_cues_waiting_for_rekordbox(window):
+    win, lib = window
+    editor = win.preview.editor
+    win._update_file_menu()
+    assert (
+        not win.act_save_waiting.isEnabled()
+    )  # (no rekordbox library, nothing waiting)
+    lib.set_memory_cues("/m/a.mp3", [(1000, "")])
+    win._update_file_menu()
+    assert not win.act_save_waiting.isEnabled()  # (still no rekordbox library)
+    lib.replace_source("rekordbox", "/rb/master.db", "rekordbox", [], [])
+    win._update_file_menu()
+    assert win.act_save_waiting.isEnabled()
+    assert win.act_save_waiting.text() == "Save 1 Waiting Memory Cue Edit to rekordbox"
+    lib.set_memory_cues("/m/b.mp3", [(1000, "")])
+    win._update_file_menu()
+    assert win.act_save_waiting.text() == "Save 2 Waiting Memory Cue Edits to rekordbox"
+    called = []
+    editor.write_waiting = lambda: called.append(1)
+    win.act_save_waiting.trigger()
+    assert called == [1]

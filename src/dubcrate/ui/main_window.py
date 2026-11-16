@@ -551,6 +551,11 @@ class MainWindow(QMainWindow):
             "&Remove Selected Source…", self.remove_selected_source
         )
         file_menu.addSeparator()
+        self.act_save_waiting = file_menu.addAction(
+            "Save Waiting Memory Cue Edits to rekordbox", self.save_waiting_cues
+        )
+        file_menu.aboutToShow.connect(self._update_file_menu)
+        file_menu.addSeparator()
         settings_action = file_menu.addAction(
             "&Settings…", self.open_settings, QKeySequence("Ctrl+,")
         )
@@ -1407,6 +1412,21 @@ class MainWindow(QMainWindow):
             sources = self._lib.sources()
             return sources[0].id if len(sources) == 1 else None
         return None
+
+    def _update_file_menu(self) -> None:
+        """The menu is about to show: say how many edited tracks are waiting in Dubcrate for rekordbox."""
+        editor = self.preview.editor
+        waiting = editor.waiting() if editor.database() is not None else 0
+        self.act_save_waiting.setEnabled(waiting > 0)
+        self.act_save_waiting.setText(
+            f"Save {waiting} Waiting Memory Cue Edit{'s' if waiting != 1 else ''} to rekordbox"
+            if waiting
+            else "Save Waiting Memory Cue Edits to rekordbox"
+        )
+
+    def save_waiting_cues(self) -> None:
+        """File > Save Waiting Memory Cues: write the memory cues edited in Dubcrate into rekordbox now."""
+        self.preview.editor.write_waiting()
 
     def _update_source_actions(self) -> None:
         has_source = self.selected_source_id() is not None
