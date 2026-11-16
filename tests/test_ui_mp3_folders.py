@@ -116,13 +116,109 @@ def test_an_mp3_disc_shows_its_folders_under_it_and_an_audio_disc_does_not(mp3):
     )  # the disc counts them all
 
 
-def test_a_folder_in_the_tree_is_renamed_and_dropped_on_but_not_dragged(mp3):
+def test_a_folder_in_the_tree_is_renamed_dropped_on_and_dragged(mp3):
     win, _lib, disc, house, _ = mp3
     model = win.disc_tree.model()
     flags = model.flags(index(win, ("disc_dir", disc, house)))
     assert flags & Qt.ItemFlag.ItemIsEditable and flags & Qt.ItemFlag.ItemIsDropEnabled
-    assert not flags & Qt.ItemFlag.ItemIsDragEnabled
+    assert flags & Qt.ItemFlag.ItemIsDragEnabled
     assert not model.flags(index(win, ("disc_dir", disc, house)).siblingAtColumn(1)) & Qt.ItemFlag.ItemIsEditable  # fmt: skip
+
+
+# -- moving a folder -----------------------------------------------------------
+
+
+def dir_parents(lib, disc):
+    return {d.name: d.parent_id for d in lib.disc_dirs(disc)}
+
+
+def drag_folders(win, disc, dir_ids):
+    from dubcrate.ui.models import DISC_ITEM_MIME
+
+    return mime(DISC_ITEM_MIME, [["disc_dir", disc, d] for d in dir_ids])
+
+
+def test_dragging_a_folder_onto_another_moves_it_and_onto_the_disc_moves_it_to_the_root(
+    mp3,
+):
+    win, lib, disc, house, _deep = mp3
+    other = lib.create_disc_dir(disc, "Dub")
+    win.refresh_discs()
+    model = win.disc_tree.model()
+    data = drag_folders(win, disc, [other])
+    target = index(win, ("disc_dir", disc, house))
+    assert model.canDropMimeData(data, Qt.DropAction.MoveAction, -1, 0, target)
+    assert model.dropMimeData(data, Qt.DropAction.MoveAction, -1, 0, target)
+    assert dir_parents(lib, disc)["Dub"] == house
+    # the tree is rebuilt: back to the root by dropping it on the disc
+    model = win.disc_tree.model()
+    data = drag_folders(win, disc, [other])
+    assert model.dropMimeData(data, Qt.DropAction.MoveAction, -1, 0, index(win, ("disc", disc)))  # fmt: skip
+    assert dir_parents(lib, disc)["Dub"] is None
+
+
+def test_a_dragged_folder_is_refused_where_it_cannot_go(mp3):
+    win, lib, disc, house, _deep = mp3
+    other_disc = lib.create_disc("Other", kind="mp3")
+    audio = lib.create_disc("Plain")
+    folder = lib.create_disc_folder("Crate")
+    win.refresh_discs()
+    model = win.disc_tree.model()
+    data = drag_folders(win, disc, [house])
+    no = Qt.DropAction.MoveAction
+    assert not model.canDropMimeData(
+        data, no, -1, 0, index(win, ("disc_dir", disc, house))
+    )  # fmt: skip  (onto itself)
+    assert not model.canDropMimeData(
+        data, no, -1, 0, index(win, ("disc", other_disc))
+    )  # fmt: skip  (another disc)
+    assert not model.canDropMimeData(data, no, -1, 0, index(win, ("disc", audio)))  # fmt: skip
+    assert not model.canDropMimeData(data, no, -1, 0, index(win, ("disc_folder", folder)))  # fmt: skip
+    assert not model.canDropMimeData(data, no, -1, 0, QModelIndex())  # (empty space)
+    mixed = mime("application/x-dubcrate-disc-item", [["disc_dir", disc, house], ["disc", audio]])  # fmt: skip
+    assert not model.canDropMimeData(mixed, no, -1, 0, index(win, ("disc", disc)))
+
+
+def test_a_drop_that_breaks_a_rule_says_why_and_changes_nothing(mp3):
+    win, lib, disc, house, deep = mp3
+    # a folder called Deep is already in the root, so the one in House cannot move there
+    lib.create_disc_dir(disc, "Deep")
+    win.refresh_discs()
+    model = win.disc_tree.model()
+    data = drag_folders(win, disc, [deep])
+    assert model.dropMimeData(data, Qt.DropAction.MoveAction, -1, 0, index(win, ("disc", disc)))  # fmt: skip
+    assert [kind for kind, *_ in win.shown] == ["warning"]
+    assert "already a folder" in win.shown[0][2]
+    assert {d.id: d.parent_id for d in lib.disc_dirs(disc)}[
+        deep
+    ] == house  # (it stayed)
+
+
+def test_the_right_click_menu_of_a_folder_offers_where_it_can_move(mp3):
+    win, lib, disc, house, deep = mp3
+    dub = lib.create_disc_dir(disc, "Dub")
+    win.refresh_discs()
+    menu = win.disc_tree_menu(index(win, ("disc_dir", disc, deep)))
+    [move] = [a for a in menu.actions() if a.text() == "Move Folder to"]
+    assert move.isEnabled()
+    assert [a.text() for a in move.menu().actions()] == ["(The disc's root)", "Dub"]  # (not House: it is already there)  # fmt: skip
+    dub_action = next(a for a in move.menu().actions() if a.text() == "Dub")
+    dub_action.trigger()
+    assert dir_parents(lib, disc)["Deep"] == dub
+    # House holds nothing it could go into except Dub, and it can't go into its own Deep
+    menu = win.disc_tree_menu(index(win, ("disc_dir", disc, house)))
+    [move] = [a for a in menu.actions() if a.text() == "Move Folder to"]
+    assert [a.text() for a in move.menu().actions()] == ["Dub", "Dub / Deep"]
+
+
+def test_a_folder_with_nowhere_to_go_has_a_greyed_move_menu(window):
+    win, lib = window
+    disc = lib.create_disc("Set", kind="mp3")
+    only = lib.create_disc_dir(disc, "Only")
+    win.refresh_discs()
+    menu = win.disc_tree_menu(index(win, ("disc_dir", disc, only)))
+    [move] = [a for a in menu.actions() if a.text() == "Move Folder to"]
+    assert not move.isEnabled()
 
 
 # -- opening one --------------------------------------------------------------
@@ -313,7 +409,9 @@ def test_the_plus_on_a_folder_makes_a_folder_beside_it_at_the_same_level(mp3):
     ]
     win._on_plus_clicked(
         ("disc", disc)
-    )  # on the disc itself it still makes a disc beside it
+    )  # on the disc itself it asks which kind of disc
+    assert len(lib.discs()) == 1
+    next(a for a in win._plus_menu.actions() if a.text() == "New Audio Disc").trigger()
     assert len(lib.discs()) == 2
 
 
@@ -437,7 +535,7 @@ def test_names_in_the_path_cannot_inject_markup(mp3):
 def test_a_folders_menu_and_what_it_does(mp3, monkeypatch):
     win, lib, disc, _house, deep = mp3
     menu = win.disc_tree_menu(index(win, ("disc_dir", disc, deep)))
-    assert [a.text() for a in menu.actions() if a.text()] == ["Open", "New Folder Inside", "Rename", "Delete Folder from Disc…"]  # fmt: skip
+    assert [a.text() for a in menu.actions() if a.text()] == ["Open", "New Folder Inside", "Rename", "Move Folder to", "Delete Folder from Disc…"]  # fmt: skip
     menu.actions()[0].trigger()
     assert win.disc_view.current_dir_id() == deep
     ask(monkeypatch, YES)

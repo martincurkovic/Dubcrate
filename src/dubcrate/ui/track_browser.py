@@ -11,10 +11,8 @@ and any warnings. `SyncView` feeds it (`show_disc` / `show_message`) and connect
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QAbstractItemView,
-    QHBoxLayout,
     QHeaderView,
     QLabel,
-    QPushButton,
     QSizePolicy,
     QTreeWidget,
     QTreeWidgetItem,
@@ -103,15 +101,7 @@ class TrackBrowser(QWidget):
         # the waveform of the picked track, at the bottom (its name is the highlighted row above it)
         self.analyse_note = unsized(QLabel())
         self.analyse_note.setObjectName("mutedLabel")
-        self.analyse_button = QPushButton("Analyse Waveforms")
-        self.analyse_button.setToolTip(
-            "Work out the waveform of each track of this disc that has none yet, from the music "
-            "files, and keep it. Writes nothing to the card; a sync (or a burn) would do the same."
-        )
-        wave_head = QHBoxLayout()
-        wave_head.addWidget(self.analyse_note, 1)
-        wave_head.addWidget(self.analyse_button)
-        layout.addLayout(wave_head)
+        layout.addWidget(self.analyse_note)
         self.strip = CdjWaveStrip(None, NONE)
         layout.addWidget(self.strip)
         self.wave_note = unsized(QLabel())

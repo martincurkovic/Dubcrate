@@ -90,9 +90,9 @@ class DiscTree(QTreeView):
                 text = (
                     "New folder beside this one"
                     if kind == "disc_dir"
-                    else "New disc beside this one"
+                    else "New disc beside this one (audio or MP3)"
                     if kind == "disc"
-                    else "New disc in this folder"
+                    else "New disc in this folder (audio or MP3)"
                 )
             elif self.folder_visible(index) and self.folder_rect(index).contains(
                 position

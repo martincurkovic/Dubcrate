@@ -411,6 +411,9 @@ def _burn(ctx):
     from dubcrate.burn import MediaInfo
 
     class StandInBurner:  # (never writes: see the module note)
+        def drives(self):
+            return []  # (one drive at most: no drive menu in the picture)
+
         def media_info(self, device):
             return MediaInfo(
                 drive="USB CD Writer", present=True, blank=True, free_sectors=359_849

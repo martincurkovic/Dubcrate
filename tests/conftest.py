@@ -45,6 +45,15 @@ def _fresh_settings(qapp):
     yield
 
 
+@pytest.fixture(autouse=True)
+def _no_background_waveforms(monkeypatch):
+    """Putting a track on an audio disc analyses its waveform on a worker; a test that adds files
+    does not want a decode running behind it (a test of that patches it back in)."""
+    monkeypatch.setattr(
+        "dubcrate.ui.disc_view.measure_waveforms", lambda todo, *a, **k: ({}, [])
+    )
+
+
 @pytest.fixture
 def wait_for(qapp):
     """Spin the event loop until `predicate()` is true (worker results arrive through it)."""

@@ -524,6 +524,7 @@ def test_the_plus_creates_in_place_too(window, monkeypatch):
     point, index = plus_point(win, ("disc_folder", folder))
     win.disc_tree.setCurrentIndex(index)
     click_at(win, point)
+    choose(win)
     [disc] = lib.discs()
     assert disc.folder_id == folder
     assert editor_of(win, ("disc", disc.id)) is not None  # inside the (opened) folder
@@ -920,6 +921,14 @@ def test_the_disc_pane_remembers_the_last_open_disc_next_time(window):
 # -- the + button on the picked row, and the "too long" cue ---------------------------
 
 
+def choose(win, text="New Audio Disc"):
+    """The + opened a menu asking which kind of disc: pick `text` from it."""
+    menu = win._plus_menu
+    assert menu is not None and menu.isVisible()
+    next(a for a in menu.actions() if a.text() == text).trigger()
+    menu.close()
+
+
 def plus_point(win, selection):
     """Where the + sits on a row, in the tree viewport's coordinates."""
     index = find_selection(win.disc_tree.model(), selection)
@@ -941,6 +950,7 @@ def test_a_folders_plus_makes_a_disc_inside_it(window, monkeypatch):
     point, index = plus_point(win, ("disc_folder", folder))
     win.disc_tree.setCurrentIndex(index)
     click_at(win, point)
+    choose(win)
     [disc] = lib.discs()
     assert disc.folder_id == folder
     assert win.disc_view.current_disc_id() == disc.id  # and it is open, ready to fill
@@ -961,6 +971,7 @@ def test_a_discs_plus_makes_another_disc_beside_it(window, monkeypatch):
         point, index = plus_point(win, ("disc", beside))
         win.disc_tree.setCurrentIndex(index)
         click_at(win, point)
+        choose(win)
         [new] = [d for d in lib.discs() if d.id not in known]
         assert new.folder_id == where
         known.add(new.id)
@@ -1148,5 +1159,36 @@ def test_the_plus_button_is_still_not_a_click_on_the_row(window):
         Qt.MouseButton.LeftButton,
         pos=win.disc_tree.plus_rect(index).center(),
     )
+    choose(win)
     # the + made a new disc and opened that one; it was not a click on the row it sits on
     assert len(lib.discs()) == 2 and win.disc_view.current_disc_id() != disc
+
+
+def test_the_plus_asks_for_the_kind_of_disc_and_makes_nothing_until_one_is_chosen(window, monkeypatch):  # fmt: skip
+    win, lib = window
+    no_dialog(monkeypatch)
+    win.show()
+    folder = lib.create_disc_folder("Gigs")
+    win.refresh_discs()
+    point, index = plus_point(win, ("disc_folder", folder))
+    win.disc_tree.setCurrentIndex(index)
+    click_at(win, point)
+    assert [a.text() for a in win._plus_menu.actions()] == ["New Audio Disc", "New MP3 Disc"]  # fmt: skip
+    assert lib.discs() == []  # (asking is not making)
+    win._plus_menu.close()
+    assert lib.discs() == []
+
+
+def test_the_plus_menu_can_make_an_mp3_disc_beside_the_row(window, monkeypatch):
+    win, lib = window
+    no_dialog(monkeypatch)
+    win.show()
+    folder = lib.create_disc_folder("Gigs")
+    win.refresh_discs()
+    point, index = plus_point(win, ("disc_folder", folder))
+    win.disc_tree.setCurrentIndex(index)
+    click_at(win, point)
+    choose(win, "New MP3 Disc")
+    [disc] = lib.discs()
+    assert (disc.kind, disc.folder_id) == ("mp3", folder)
+    assert editor_of(win, ("disc", disc.id)) is not None  # (its name is up for editing)

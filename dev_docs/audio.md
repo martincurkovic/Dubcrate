@@ -56,7 +56,7 @@ over from that app's own findings).
   a real Mac: below that, only a callback that doesn't need the GIL would do, and `miniaudio`
   can't give one with our scratching.
 - **60 FPS waveform scrolling: investigation [measured 2026-11-16, offscreen, `spikes/waveform_fps.py`; NOT tried on a real
-  display or heard by ear].** rbxport and rekordbox scroll at 60 FPS; Dubcrate's zoomed waveform does about 33.
+  display or heard by ear].** **The full write-up, with the plan, is `dev_docs/waveform-60fps.md`.** rbxport and rekordbox scroll at 60 FPS; Dubcrate's zoomed waveform does about 33.
   - **Why 33:** the playhead is re-emitted by a `QTimer` every `_TICK_MS = 30` ms (`audio/player.py`), and each emit repaints the
     zoomed view (`PlayerStrip.set_position` -> `DetailView.update`). The overview costs next to nothing per tick.
   - **What a frame costs** (8 s window, 886 x 112 logical at 2x, 6-minute track with grid, cues and phrases): **3-band look

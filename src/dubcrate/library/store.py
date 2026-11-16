@@ -1380,6 +1380,35 @@ class Library:
             )
             self._touch_disc(disc_id)
 
+    def move_disc_dir(self, disc_id: int, dir_id: int, parent_id: int | None) -> None:
+        """Move a folder of an MP3 disc, with everything in it, to be inside folder `parent_id`
+        (None: the root). Not into itself or a folder inside it, not where a folder of the same
+        name already is, and not so deep that the player's limit of levels is passed."""
+        row = self._dir_row(disc_id, dir_id)
+        if parent_id is not None:
+            self._dir_row(disc_id, parent_id)
+        if row["parent_id"] == parent_id:
+            return  # already there
+        subtree = self.disc_dir_subtree(disc_id, dir_id)
+        if parent_id in subtree:
+            raise DiscError("a folder can't go inside itself")
+        dirs = self.disc_dirs(disc_id)
+        parents = {d.id: d.parent_id for d in dirs}
+        height = max(self._dir_depth(parents, d) for d in subtree) - self._dir_depth(
+            parents, dir_id
+        )  # (the levels below the folder itself)
+        if self._dir_depth(parents, parent_id) + 2 + height > mp3.MAX_DEPTH:
+            raise DiscError(
+                f"folders can go at most {mp3.MAX_DEPTH} levels deep, counting the root"
+            )
+        self._check_dir_name(disc_id, parent_id, row["name"], exclude=dir_id)
+        with self._conn:
+            self._conn.execute(
+                "UPDATE disc_dir SET parent_id = ? WHERE id = ?", (parent_id, dir_id)
+            )
+            self._touch_disc(disc_id)
+        log.info("moved folder %s of MP3 disc %s into %s", dir_id, disc_id, parent_id)
+
     def disc_dir_subtree(self, disc_id: int, dir_id: int) -> set[int]:
         """A folder of an MP3 disc and every folder inside it, as ids."""
         self._dir_row(disc_id, dir_id)

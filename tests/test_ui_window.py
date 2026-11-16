@@ -361,6 +361,35 @@ def test_split_cuts_the_shown_tracks_across_discs(window, monkeypatch):
     assert "Created 3 discs" in win.statusBar().currentMessage()
 
 
+def test_split_across_mp3_discs_makes_mp3_discs_by_size_without_measuring(window, monkeypatch):  # fmt: skip
+    from dubcrate.library.models import Track
+
+    win, lib = window
+    monkeypatch.setattr(
+        Track, "sectors_on", lambda self, kind, bitrate=None: 150_000
+    )  # fmt: skip  (two per disc)
+    asked = []
+    monkeypatch.setattr(
+        QInputDialog,
+        "getText",
+        staticmethod(lambda p, title, *a, **k: asked.append(title) or ("Mix", True)),
+    )
+    monkeypatch.setattr(
+        "dubcrate.ui.disc_view.probe_lengths",
+        lambda *a, **k: pytest.fail("an MP3 split measures nothing"),
+    )
+    win.act_split_mp3.trigger()
+    assert asked == ["Split Across MP3 Discs"]
+    assert [(d.name, d.kind) for d in lib.discs()] == [
+        ("Mix 1", "mp3"),
+        ("Mix 2", "mp3"),
+        ("Mix 3", "mp3"),
+    ]
+    assert all(d.track_count == 2 for d in lib.discs())
+    assert "Created 3 MP3 discs" in win.statusBar().currentMessage()
+    assert win.disc_view.title.text() == "Mix 1"
+
+
 def test_the_last_disc_used_is_reselected_next_time(window):
     win, lib = window
     first, second = lib.create_disc("One"), lib.create_disc("Two")

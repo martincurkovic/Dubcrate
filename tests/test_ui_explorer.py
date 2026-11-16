@@ -671,6 +671,57 @@ def test_explorer_tracks_go_on_a_disc_and_survive_the_next_start(
     assert [e.track.title for e in lib.disc_entries(disc.id)] == ["b"]
 
 
+def test_a_track_put_on_an_audio_disc_has_its_waveform_analysed_in_the_background(
+    window, wait_for, monkeypatch
+):
+    win, lib, music = window
+    monkeypatch.setattr(
+        "dubcrate.ui.disc_view.probe_lengths", lambda todo, report=None: ({}, [])
+    )
+    seen = []
+
+    def fake(todo, report=None, cancel=None):
+        seen.append([t.title for t in todo])
+        return {t.id: [3] * 100 for t in todo}, []
+
+    monkeypatch.setattr("dubcrate.ui.disc_view.measure_waveforms", fake)
+    win.source_tabs.set_current("explorer")
+    open_folder(win, wait_for, music / "dub", ["a", "b", "c"])
+    selection = win.track_table.selectionModel()
+    selection.clearSelection()
+    selection.select(win.track_table.model().index(1, 0), ROWS)
+    win.add_selected_to_disc()
+    assert wait_for(lambda: seen and not win.disc_view._waving)
+    assert seen == [["b"]]
+    [disc] = lib.discs()
+    [entry] = lib.disc_entries(disc.id)
+    assert (
+        lib.tracks_by_ids([entry.track.id])[0].waveform == bytes([3] * 100)
+        or list(lib.tracks_by_ids([entry.track.id])[0].waveform) == [3] * 100
+    )
+
+
+def test_a_track_put_on_an_mp3_disc_is_not_analysed(window, wait_for, monkeypatch):
+    win, lib, music = window
+    monkeypatch.setattr(
+        "dubcrate.ui.disc_view.probe_lengths", lambda todo, report=None: ({}, [])
+    )
+    seen = []
+    monkeypatch.setattr(
+        "dubcrate.ui.disc_view.measure_waveforms",
+        lambda todo, *a, **k: seen.append(todo) or ({}, []),
+    )
+    win.new_disc(kind="mp3")
+    win.source_tabs.set_current("explorer")
+    open_folder(win, wait_for, music / "dub", ["a", "b", "c"])
+    selection = win.track_table.selectionModel()
+    selection.clearSelection()
+    selection.select(win.track_table.model().index(0, 0), ROWS)
+    win.add_selected_to_disc()
+    assert wait_for(lambda: lib.discs() and lib.discs()[0].track_count == 1)
+    assert seen == []
+
+
 def test_removing_a_source_in_the_library_does_not_disturb_the_explorers_list(
     window, wait_for
 ):

@@ -28,6 +28,7 @@
   - [ ] Try the Sync tab itself on a real card (the command line is proven on hardware; the tab shares its write)
   - [x] Waveform pre-writing (needs the amplitude scale)
     - [ ] Try Sync's waveforms (always written now: the "Write waveforms" box is gone) on a Dubcrate-burned disc and the real card (the CDJ should load every track with its waveform drawn, none analysed)
+    - [x] Analyse a track's waveform when it is put on an audio disc (2026-11-16: in the background, so the Sync tab's Analyse Waveforms button is gone; a burn and a sync still fill in what is left)
 - [ ] Try `dubcrate card format` (or Sync > Format a Card…, built) on a spare 2 GB card (dev_docs/card-sync.md, "Formatting a card": does the player accept it, and cues synced straight onto it?)
 - [x] Clean up long text labels in settings and add cm/in units (maybe in print dialog too) (2026-11-16: Settings > Appearance > Units, used by the label window and its paper list; the long Settings paragraphs are shorter. The checkbox titles were kept as the guide and tests quote them.)
   - [x] Check on real paper (and say if the vertical line spacing should shrink too)
@@ -47,7 +48,7 @@
 - [ ] Check the new Peak to full scale preset on the CDJ for clipping at -0.3 dBTP ([roadmap.md](dev_docs/roadmap.md)).
 - [x] Listen to previews at 256 and 128 frame buffers after the audio fixes and decide the default buffer size ([audio.md](dev_docs/audio.md)).
 - [ ] If 128 frames still crackles, paint the zoomed waveform from a cached image so the GUI holds the GIL for less time ([audio.md](dev_docs/audio.md)).
-- [x] Investigate 60 FPS waveform scrolling (2026-11-16, `spikes/waveform_fps.py`, [audio.md](dev_docs/audio.md) "60 FPS waveform scrolling"): possible, worth doing; the 3-band look takes 16 ms a frame (the whole 60 FPS budget) because of three polygon fills, so it needs a cheaper renderer first (a numpy image: 2 to 5 ms).
+- [x] Investigate 60 FPS waveform scrolling (2026-11-16, `spikes/waveform_fps.py`, everything in [waveform-60fps.md](dev_docs/waveform-60fps.md), short version in [audio.md](dev_docs/audio.md)): possible, worth doing; the 3-band look takes 16 ms a frame (the whole 60 FPS budget) because of three polygon fills, so it needs a cheaper renderer first (a numpy image: 2 to 5 ms).
 - [ ] Build 60 FPS scrolling, in this order: a cheaper 3-band look (A/B picture against the polygons, System 6 too), the position tick from 30 ms to about 16 ms with the position extrapolated between audio callbacks, then measure the audio callbacks with `spikes/audio_jitter.py` at 128 and 256 frames and look at it on a real display.
 - [ ] Try the things only simulated so far by hand: the Explorer (permission prompts, slow or unplugged drives), pinned tab dragging, drag-to-change spin boxes, trackpad pinch in the label preview and mouse drag and drop ([roadmap.md](dev_docs/roadmap.md)).
 - [ ] Look at the app on a real display in all four looks, including the splash and the label window in System 6 ([roadmap.md](dev_docs/roadmap.md)).
@@ -77,7 +78,8 @@
 - [x] Add a drive picker to the burn window (2026-11-16: a menu shown only with two or more drives, remembered by name; `Burner.drives()`; tested with fakes). ([roadmap.md](dev_docs/roadmap.md))
 - [ ] Try the drive picker with two real drives (the check after a burn is skipped for any but the first), and add a way to cancel a burn (the backends have no abort yet: DiscRecording's `DRBurn` can be aborted, `cdrdao` can be terminated).
 - [ ] Read a finished burn back and check it against the disc it was burned from ([roadmap.md](dev_docs/roadmap.md)).
-- [ ] Let the window split a long list across MP3 discs, move an MP3 folder to another place on its disc, and pick the disc kind from the + button ([roadmap.md](dev_docs/roadmap.md)).
+- [x] MP3 disc editor (2026-11-16): split the shown tracks across MP3 discs (Disc menu), move an MP3 folder (drag in the Discs list, or right-click > Move Folder to), and the + asks for an audio or MP3 disc ([roadmap.md](dev_docs/roadmap.md)).
+- [ ] Try dragging an MP3 folder in the Discs list by hand (the feel, and dropping on a collapsed disc).
 - [x] Add a way to print labels straight after a burn (2026-11-16: a **Print Labels…** button in the burn window once a real burn has finished; it closes the window and opens the labels with the disc ticked). ([roadmap.md](dev_docs/roadmap.md))
 - [ ] The album or year on a label, if wanted (not built).
 - [ ] Give each app library its own Library tab once a second library exists ([roadmap.md](dev_docs/roadmap.md)).

@@ -29,6 +29,7 @@ from dubcrate.library import Library
 from dubcrate.library.lengths import needs_measuring, probe_lengths
 from dubcrate.library.models import DiscKind
 from dubcrate.library.store import LibraryError
+from dubcrate.library.waves import measure_waveforms, needs_waveform, store_waveforms
 from dubcrate.mp3 import format_span
 
 from . import theme
@@ -107,6 +108,10 @@ class DiscView(QWidget):
         super().__init__(parent)
         self._lib = lib
         self._measuring = False
+        self._wave_queue: list[
+            int
+        ] = []  # tracks waiting for their waveform to be worked out
+        self._waving = False  # a worker is analysing waveforms
         self._disc_id: int | None = None
         self._dir_id: int | None = (
             None  # the folder of an MP3 disc being shown; None: the root
@@ -469,6 +474,40 @@ class DiscView(QWidget):
             self._warn("Can't move that", str(exc))
         self.discs_changed.emit()
 
+    def move_dirs(
+        self, disc_id: int, dir_ids: list[int], parent_id: int | None
+    ) -> None:
+        """Move folders of an MP3 disc, with what is in them, into folder `parent_id` (None: the root)."""
+        try:
+            for dir_id in dir_ids:
+                self._lib.move_disc_dir(disc_id, dir_id, parent_id)
+        except LibraryError as exc:
+            self._warn("Can't move that folder", str(exc))
+        self.reload()
+        self.discs_changed.emit()
+
+    def move_dir_menu(self, disc_id: int, dir_id: int) -> QMenu:
+        """The "Move Folder to" submenu: the disc's root and each folder the folder can go into
+        (not itself or one inside it, and not where it already is)."""
+        menu = QMenu("Move Folder to", self)
+        dirs = self._lib.disc_dirs(disc_id)
+        here = next(d for d in dirs if d.id == dir_id).parent_id
+        inside = self._lib.disc_dir_subtree(disc_id, dir_id)
+        if here is not None:
+            menu.addAction(
+                "(The disc's root)", lambda: self.move_dirs(disc_id, [dir_id], None)
+            )
+        for d in sorted(
+            (d for d in dirs if d.id not in inside and d.id != here),
+            key=lambda d: self._dir_path(disc_id, d.id).casefold(),
+        ):
+            menu.addAction(
+                self._dir_path(disc_id, d.id),
+                lambda _c=False, i=d.id: self.move_dirs(disc_id, [dir_id], i),
+            )
+        menu.setEnabled(not menu.isEmpty())
+        return menu
+
     # -- tracks on the disc -----------------------------------------------
 
     def remove_selected(self) -> None:
@@ -621,9 +660,41 @@ class DiscView(QWidget):
             if created:
                 text += " (a new disc)"
             self.message.emit(text)
+            if self._lib.disc(target).kind == "audio":
+                self._analyse_waveforms(list(result.added))
             self._offer_mp3(target)
 
         self._measured(track_ids, add)
+
+    def _analyse_waveforms(self, track_ids: list[int]) -> None:
+        """Work out the CDJ waveform of tracks just put on an audio disc, quietly, on a worker, so a later
+        sync has nothing left to analyse. One batch at a time (the rest wait); a failure only leaves the
+        track for the sync, which does it first. Keeps nothing to the card."""
+        self._wave_queue.extend(i for i in track_ids if i not in self._wave_queue)
+        if self._waving:
+            return
+        todo = [
+            t for t in self._lib.tracks_by_ids(self._wave_queue) if needs_waveform(t)
+        ]
+        self._wave_queue = []
+        if not todo:
+            return
+        self._waving = True
+
+        def finish(found) -> None:
+            store_waveforms(self._lib, found)
+            self._waving = False
+            if self._wave_queue:
+                self._analyse_waveforms([])
+
+        def failed(_text: str) -> None:
+            self._waving = False  # (left for the sync)
+
+        run_async(
+            lambda: measure_waveforms(todo),
+            lambda result: finish(result[0]),
+            failed,
+        )
 
     def _offer_mp3(self, disc_id: int) -> None:
         """An audio CD that has just gone over what a CD holds: offer to make it an MP3 CD.
@@ -781,8 +852,9 @@ class DiscView(QWidget):
         remove.setEnabled(selected)
         return menu
 
-    def split(self, track_ids: list[int], name: str) -> None:
-        """Cut `track_ids` (in order) across as many discs as it takes."""
+    def split(self, track_ids: list[int], name: str, kind: DiscKind = "audio") -> None:
+        """Cut `track_ids` (in order) across as many discs of `kind` as it takes. MP3 discs go by file
+        size at the bitrate chosen in Settings, so nothing needs measuring first."""
         if not track_ids:
             return
 
@@ -792,15 +864,21 @@ class DiscView(QWidget):
                 name,
                 capacity_sectors=settings.get_disc_minutes() * 60 * SECTORS_PER_SECOND,
                 pregap_sectors=settings.get_pregap_seconds() * SECTORS_PER_SECOND,
+                kind=kind,
+                mp3_bitrate=settings.get_mp3_bitrate() if kind == "mp3" else None,
             )
             if result.disc_ids:
                 self.set_disc(result.disc_ids[0])
             self.discs_changed.emit()
             if result.disc_ids:
                 self.opened.emit(result.disc_ids[0])
-            text = f"Created {len(result.disc_ids)} disc{'s' if len(result.disc_ids) != 1 else ''}"
+            what = "MP3 disc" if kind == "mp3" else "disc"
+            text = f"Created {len(result.disc_ids)} {what}{'s' if len(result.disc_ids) != 1 else ''}"
             if result.too_long:
                 text += f"; skipped {len(result.too_long)} track{'s' if len(result.too_long) != 1 else ''} longer than a disc"
             self.message.emit(text)
 
-        self._measured(track_ids, go)
+        if kind == "mp3":
+            go()
+        else:
+            self._measured(track_ids, go)

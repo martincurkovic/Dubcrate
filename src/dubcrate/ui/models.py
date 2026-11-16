@@ -568,6 +568,9 @@ class DiscTreeModel(QStandardItemModel):
     rows_dropped = Signal(
         int, object, list
     )  # (disc id, folder id or None, rows of the open disc)
+    dirs_moved = Signal(
+        int, list, object
+    )  # (disc id, folder ids of that disc dragged, the folder they went into or None: the root)
     items_moved = Signal(
         list, object
     )  # ([("disc", id) | ("disc_folder", id)], folder id or None)
@@ -591,10 +594,8 @@ class DiscTreeModel(QStandardItemModel):
                 base |= Qt.ItemFlag.ItemIsEditable  # the name, edited in place
         elif (
             kind == "disc_dir"
-        ):  # a folder on an MP3 disc: tracks go into it, it stays put
-            base = (
-                base | Qt.ItemFlag.ItemIsDropEnabled
-            ) & ~Qt.ItemFlag.ItemIsDragEnabled
+        ):  # a folder on an MP3 disc: tracks and folders go into it, and it can be moved
+            base |= Qt.ItemFlag.ItemIsDropEnabled | Qt.ItemFlag.ItemIsDragEnabled
             if index.column() == 0:
                 base |= Qt.ItemFlag.ItemIsEditable
         return base
@@ -640,6 +641,17 @@ class DiscTreeModel(QStandardItemModel):
                 "disc_dir",
             )  # tracks of the open disc, moved to a folder
         if data.hasFormat(DISC_ITEM_MIME):
+            items = _dragged_items(data)
+            if any(i[0] == "disc_dir" for i in items):
+                # folders of an MP3 disc: only folders of one disc, into that disc or a folder on it
+                target = (
+                    parent.siblingAtColumn(0).data(SELECTION_ROLE) if kind else None
+                )
+                return (
+                    kind in ("disc", "disc_dir")
+                    and all(i[0] == "disc_dir" and i[1] == target[1] for i in items)
+                    and not (kind == "disc_dir" and target[2] in {i[2] for i in items})
+                )
             # into a folder, or (dropped on empty space) to the top level; never into a disc
             return kind == "disc_folder" or not parent.isValid()
         return False
@@ -663,9 +675,14 @@ class DiscTreeModel(QStandardItemModel):
                 target[1], target[2] if target[0] == "disc_dir" else None, rows
             )
             return True
-        items = [
-            tuple(i) for i in json.loads(bytes(data.data(DISC_ITEM_MIME)).decode())
-        ]
+        items = _dragged_items(data)
+        if any(i[0] == "disc_dir" for i in items):
+            self.dirs_moved.emit(
+                target[1],
+                [i[2] for i in items],
+                target[2] if target[0] == "disc_dir" else None,
+            )
+            return True
         folder = (
             parent.siblingAtColumn(0).data(SELECTION_ROLE)[1]
             if parent.isValid()
@@ -676,6 +693,11 @@ class DiscTreeModel(QStandardItemModel):
 
     def removeRows(self, row, count, parent=QModelIndex()) -> bool:  # noqa: B008
         return False  # a Move drag asks for this afterwards; rows only change via the library
+
+
+def _dragged_items(data) -> list[tuple]:
+    """What a drag in the disc tree carries: ("disc" | "disc_folder", id) or ("disc_dir", disc id, folder id)."""
+    return [tuple(i) for i in json.loads(bytes(data.data(DISC_ITEM_MIME)).decode())]
 
 
 def _disc_tooltip(disc) -> str:

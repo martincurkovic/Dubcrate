@@ -6,7 +6,13 @@ import os
 from pathlib import Path
 
 from PySide6.QtCore import QEvent, QModelIndex, Qt, QTimer, QUrl, Signal
-from PySide6.QtGui import QAction, QActionGroup, QDesktopServices, QKeySequence
+from PySide6.QtGui import (
+    QAction,
+    QActionGroup,
+    QCursor,
+    QDesktopServices,
+    QKeySequence,
+)
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QApplication,
@@ -151,6 +157,7 @@ class MainWindow(QMainWindow):
         self._library_selection: tuple = ("all",)
         self._explorer_path: str | None = None
         self._pins: list[str] = []  # the pinned folders, one tab each (`pin:` + path)
+        self._plus_menu: QMenu | None = None  # the + button's menu while it is up
         self._pin_trees: dict[str, ExplorerTree] = {}  # by tab key
         # the folder or disc that is current in the disc tree
         self._disc_pick: tuple | None = None
@@ -627,6 +634,13 @@ class MainWindow(QMainWindow):
             "&Split Shown Tracks Across Discs…",
             self.split_shown,
             QKeySequence("Ctrl+Shift+D"),
+        )
+        self.act_split_mp3 = disc_menu.addAction(
+            "Split Shown Tracks Across &MP3 Discs…",
+            lambda: self.split_shown(kind="mp3"),
+        )
+        self.act_split_mp3.setToolTip(
+            "Cut the shown tracks across as many MP3 CDs as it takes, by file size."
         )
 
         view_menu = menus.addMenu("&View")
@@ -1156,6 +1170,7 @@ class MainWindow(QMainWindow):
         model.tracks_dropped_in_dir.connect(self._on_tracks_dropped_in_dir)
         model.rows_dropped.connect(self._on_rows_dropped)
         model.items_moved.connect(self.disc_view.move_items)
+        model.dirs_moved.connect(self.disc_view.move_dirs)
         model.renamed.connect(self._on_tree_renamed)
         self.disc_tree.setModel(model)
         header = self.disc_tree.header()
@@ -1269,8 +1284,19 @@ class MainWindow(QMainWindow):
                 d.parent_id for d in self._lib.disc_dirs(pick[1]) if d.id == pick[2]
             )
             self.new_disc_dir(pick[1], beside)
-        else:
-            self.new_disc(self._folder_of(pick))
+        else:  # a disc or folder: a disc beside it, and which kind is asked in a small menu
+            self.new_disc_kind_menu(pick).popup(QCursor.pos())
+
+    def new_disc_kind_menu(self, pick: tuple) -> QMenu:
+        """What the + on a disc or folder offers: an audio CD or an MP3 CD, made beside the picked row."""
+        folder = self._folder_of(pick)
+        menu = QMenu(self)
+        menu.addAction("New Audio Disc", lambda: self.new_disc(folder))
+        menu.addAction("New MP3 Disc", lambda: self.new_disc(folder, kind="mp3"))
+        self._plus_menu = (
+            menu  # (kept: a popup that is only referenced from here would be collected)
+        )
+        return menu
 
     def _on_new_folder_clicked(self, pick: tuple) -> None:
         """The folder button: a folder inside the disc (its root) or inside the folder picked."""
@@ -1378,6 +1404,7 @@ class MainWindow(QMainWindow):
                 "New Folder Inside", lambda: self.new_disc_dir(disc_id, dir_id)
             )
             menu.addAction("Rename", lambda: self.edit_in_tree(selection))
+            menu.addMenu(self.disc_view.move_dir_menu(disc_id, dir_id))
             menu.addSeparator()
             menu.addAction(
                 "Delete Folder from Disc…",
@@ -1911,19 +1938,19 @@ class MainWindow(QMainWindow):
     def fit_all_to_disc(self) -> None:
         self.disc_view.add_tracks([t.id for t in self.track_model.tracks()], fit=True)
 
-    def split_shown(self) -> None:
+    def split_shown(self, *_checked, kind: DiscKind = "audio") -> None:
         tracks = self.track_model.tracks()
         if not tracks:
             self.statusBar().showMessage("There are no tracks shown to split.", 6000)
             return
         name, ok = QInputDialog.getText(
             self,
-            "Split Across Discs",
+            "Split Across MP3 Discs" if kind == "mp3" else "Split Across Discs",
             "Name for the new discs:",
             text=self.tracks_title.text(),
         )
         if ok and name.strip():
-            self.disc_view.split([t.id for t in tracks], name.strip())
+            self.disc_view.split([t.id for t in tracks], name.strip(), kind)
 
     def _sync_disc_markers(self) -> None:
         """Mark the tracks on the open disc (●) and on any other disc (○), and say which disc

@@ -341,3 +341,68 @@ def test_folders_become_directories_with_their_own_numbering(tmp_path):
         data.sectors
         >= 3 * mp3.FOLDER_OVERHEAD_SECTORS + mp3.FILESYSTEM_OVERHEAD_SECTORS
     )
+
+
+# -- moving a folder ----------------------------------------------------------
+
+
+def dir_parents(lib, disc):
+    return {d.name: d.parent_id for d in lib.disc_dirs(disc)}
+
+
+def test_a_folder_moves_into_another_with_what_is_in_it(lib, disc):
+    house = lib.create_disc_dir(disc, "House")
+    deep = lib.create_disc_dir(disc, "Deep", parent_id=house)
+    dub = lib.create_disc_dir(disc, "Dub")
+    lib.add_to_disc(disc, ids(lib)[:2], dir_id=deep)
+    lib.move_disc_dir(disc, house, dub)
+    assert dir_parents(lib, disc) == {"House": dub, "Deep": house, "Dub": None}
+    assert titles(lib, disc, deep) == ["Song 0", "Song 1"]  # (the tracks went along)
+    lib.move_disc_dir(disc, house, None)  # and back up to the root
+    assert dir_parents(lib, disc)["House"] is None
+
+
+def test_a_folder_cannot_go_inside_itself_or_what_is_inside_it(lib, disc):
+    house = lib.create_disc_dir(disc, "House")
+    deep = lib.create_disc_dir(disc, "Deep", parent_id=house)
+    with pytest.raises(DiscError, match="inside itself"):
+        lib.move_disc_dir(disc, house, house)
+    with pytest.raises(DiscError, match="inside itself"):
+        lib.move_disc_dir(disc, house, deep)
+    assert dir_parents(lib, disc) == {"House": None, "Deep": house}
+
+
+def test_a_move_cannot_land_beside_a_folder_of_the_same_name(lib, disc):
+    a = lib.create_disc_dir(disc, "A")
+    lib.create_disc_dir(disc, "Mix", parent_id=a)
+    mix = lib.create_disc_dir(
+        disc, "mix"
+    )  # (case does not tell names apart on the disc)
+    with pytest.raises(DiscError, match="already a folder"):
+        lib.move_disc_dir(disc, mix, a)
+
+
+def test_a_move_keeps_the_levels_limit_for_the_whole_subtree(lib, disc):
+    chain = [lib.create_disc_dir(disc, "L1")]
+    for n in range(2, mp3.MAX_DEPTH):  # the deepest folder allowed
+        chain.append(lib.create_disc_dir(disc, f"L{n}", parent_id=chain[-1]))
+    loose = lib.create_disc_dir(disc, "Loose")
+    lib.create_disc_dir(disc, "Child", parent_id=loose)  # a folder with a folder in it
+    with pytest.raises(DiscError, match="levels deep"):
+        lib.move_disc_dir(
+            disc, loose, chain[-2]
+        )  # (the child would be one level too deep)
+    lib.move_disc_dir(disc, loose, chain[-3])  # (one level up, it fits)
+    assert dir_parents(lib, disc)["Loose"] == chain[-3]
+
+
+def test_moving_a_folder_where_it_is_does_nothing_and_a_foreign_folder_is_refused(
+    lib, disc
+):
+    a = lib.create_disc_dir(disc, "A")
+    lib.move_disc_dir(disc, a, None)
+    other = lib.create_disc("O", kind="mp3")
+    with pytest.raises(DiscError):
+        lib.move_disc_dir(other, a, None)  # (a folder of another disc)
+    with pytest.raises(DiscError):
+        lib.move_disc_dir(disc, a, 9999)

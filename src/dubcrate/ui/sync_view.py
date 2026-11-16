@@ -816,8 +816,6 @@ class SyncView(QWidget):
             self.browser
         )  # (its rows and message, as the tests and callers look)
         self.analyse_note = self.browser.analyse_note
-        self.analyse_button = self.browser.analyse_button
-        self.analyse_button.clicked.connect(self.analyse_waveforms)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(self.browser)
@@ -1117,7 +1115,7 @@ class SyncView(QWidget):
                 wave_rows(survey, entries, True),
                 warnings=[*survey.input.warnings, *(plan.notes if plan else [])],
             )
-        self._update_analyse(self._measuring or self._writing or self._analysing)
+        self._update_analyse()
 
     def _update_buttons(self) -> None:
         writable = [s for s in self._surveys.values() if s.writable]
@@ -1135,7 +1133,7 @@ class SyncView(QWidget):
         busy = self._measuring or self._writing or self._analysing
         self.cancel_button.setVisible(self._measuring or self._analysing)
         self.measure_button.setEnabled(bool(self._unmeasured) and not busy)
-        self._update_analyse(busy)
+        self._update_analyse()
         card = self._card_path.name if self._card_path else ""
         if self._card is None:
             self.footer_title.setText("No card")
@@ -1202,18 +1200,18 @@ class SyncView(QWidget):
             return []
         return list(survey.input.to_analyse)
 
-    def _update_analyse(self, busy: bool) -> None:
-        """The Waveforms tab's header: how many tracks are waiting, and the button that does them."""
+    def _update_analyse(self) -> None:
+        """The line above the waveform: how many of the picked disc's tracks have none yet (adding a track to a
+        disc analyses it in the background, a burn does it from the rendered audio, and a sync does what is left)."""
         survey = self._surveys.get(self._current_disc_id() or -1)
         todo = self._picked_to_analyse()
         if survey is None or survey.input.problems:
             note = ""
         elif todo:
-            note = f"{len(todo)} track{'s' if len(todo) != 1 else ''} not analysed yet."
+            note = f"{len(todo)} track{'s' if len(todo) != 1 else ''} not analysed yet: a sync does that first."
         else:
             note = "Every track is analysed."
         self.analyse_note.setText(note)
-        self.analyse_button.setEnabled(bool(todo) and not busy)
 
     def _set_writing(self, writing: bool) -> None:
         """A sync is (or is no longer) writing and ejecting: the card list must leave the card alone."""
@@ -1275,12 +1273,6 @@ class SyncView(QWidget):
                 self._confirm_and_write(surveys)
 
         self._analyse(todo, then)
-
-    def analyse_waveforms(self) -> None:
-        """The Waveforms tab's button: analyse the picked disc's tracks that have no waveform. Needs no card."""
-        todo = self._picked_to_analyse()
-        if todo and not (self._analysing or self._measuring or self._writing):
-            self._analyse(todo)
 
     def _analyse(
         self, todo: list[Track], then: Callable[[], None] | None = None
