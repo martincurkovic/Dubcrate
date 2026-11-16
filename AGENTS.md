@@ -122,7 +122,7 @@ Run ruff and pytest before calling work done. The ruff settings are in `pyprojec
 
 - Python 3.13+, type hints, `pathlib.Path` for paths, stdlib where it will do.
 - Run external tools with `subprocess` and an explicit `check=` argument.
-- **Errors:** a failure a user can cause or that is outside our control (offline, a private repo, no drive, a bad file) is an *expected* error: raise a plain-language exception (`TaskError` from a worker, after translating, as `ui/update_check.py` does with `UpdateCheckError`) so the task layer logs one WARNING line and the UI shows the message. Anything else is a bug and is logged with its traceback. Never let a raw `HTTPError`/`OSError` reach a dialog.
+- **Errors:** a failure a user can cause or that is outside our control (offline, a moved repo, no drive, a bad file) is an *expected* error: raise a plain-language exception (`TaskError` from a worker, after translating, as `ui/update_check.py` does with `UpdateCheckError`) so the task layer logs one WARNING line and the UI shows the message. Anything else is a bug and is logged with its traceback. Never let a raw `HTTPError`/`OSError` reach a dialog.
 - **Subprocess output:** read it with `encoding="utf-8", errors="replace"`, never `text=True` alone: that decodes with the system's code page, which on Windows turned ffprobe's UTF-8 tags into mojibake. Likewise pass `encoding="utf-8"` to `read_text` / `open` in tests and code.
 - **GUI threading:** the SQLite `Library` belongs to the GUI thread. A `run_async` task may scan, probe or read a rekordbox snapshot, but never touches the library: it returns a result and the GUI-thread callback stores it (`probe_lengths` / `scan_folder` / `read_master_db` are the task-safe pieces).
 - **Audio:** the playback callback runs on a native thread that calls into Python, so keep `render_block` light (numpy slicing, no I/O), and keep long GIL holds off the GUI thread: a full garbage collection (30 to 45 ms) or a long paint is a crackle in the preview (`ui/app.py: freeze_garbage_collector` freezes the start-up objects out of the collector and `tune_gil_for_audio` sets the GIL's switch interval to 0.2 ms, because the default 5 ms is longer than a 128-frame buffer; `spikes/audio_jitter.py` measures it; `dev_docs/audio.md`). A device still running at interpreter exit kills the process on macOS (found in AKAISDS), hence the `atexit` guard in `player.py`: keep it. Tests never open a real device (`tests/conftest.py` patches the factory); a real-device check is a manual smoke test with silent audio.
@@ -260,7 +260,7 @@ on a disc must be a library track (hence the hidden Explorer source). `dev_docs/
 
 ### Looking at the window
 
-To see the status bar's "Update available" button without a release (the repository is private, so a
+To see the status bar's "Update available" button without a release (the repository is public but has no release yet, so a
 real check finds nothing): `uv run scripts/preview_update_button.py` (`--theme`, `--version`, `--dialog`,
 `--screenshot PNG`). It tells the real update checker it found a release; nothing is fetched or saved.
 

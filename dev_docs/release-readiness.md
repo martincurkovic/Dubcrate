@@ -1,6 +1,6 @@
 # Before the first release: what the README claims, and what was found in the history
 
-Written 2026-11-15 for the owner (`TODO.md`, "Before making the repo public"). The repository is **already public**, so nothing
+Written 2026-11-15 for the owner (`TODO.md`, "Before the first release"). The repository is **already public**, so nothing
 here changes history: the scan only reports. **Updated 2026-11-16:** the README was brought into line with most of the suggestions below (marked *applied*); the claims table keeps its 2026-11-15 findings, with what has changed noted in the rows.
 
 Status words: **Tried** (done on real hardware or a real library, with the date or the evidence), **Tests only** (the automated tests

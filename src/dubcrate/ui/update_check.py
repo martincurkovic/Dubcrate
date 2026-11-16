@@ -25,7 +25,7 @@ UPDATE_CHECK_INTERVAL_SECONDS = 24 * 60 * 60
 
 
 def _check() -> UpdateInfo | None:
-    """`check_for_update` for a worker: a failed check is an expected outcome (offline, a private
+    """`check_for_update` for a worker: a failed check is an expected outcome (offline, a moved
     repository), so it is logged as a one-line warning, not as a bug with a traceback."""
     try:
         return check_for_update()

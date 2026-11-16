@@ -47,9 +47,9 @@ Open items by area; finished work is under **Completed** at the bottom (same hea
 - [ ] Open the built `.dmg` on a clean Mac to check Gatekeeper and quarantine on the bundled ffmpeg and ffprobe ([roadmap.md](dev_docs/roadmap.md)).
 - [ ] Check the Intel build (it needs `nasm`, so only the workflow does it) and the FFmpeg tarball's GPG signature ([roadmap.md](dev_docs/roadmap.md)).
 - [ ] Check the built app bundles QtPrintSupport and that DiscRecording can reach the drive from the bundled app ([roadmap.md](dev_docs/roadmap.md)).
-- [ ] Check the update check against a real GitHub release once the repo is public, since it gets a 404 while private ([roadmap.md](dev_docs/roadmap.md)).
+- [ ] Check the update check against a real GitHub release once the first one is published (the repo is public, so until then the check just says you're up to date) ([roadmap.md](dev_docs/roadmap.md)).
 
-### Before making the repo public
+### Before the first release
 
 - [ ] Give the README real download and install steps and re-check that every claim in it has actually been tried ([roadmap.md](dev_docs/roadmap.md)). (the audit and suggested wording: dev_docs/release-readiness.md)
 - [ ] Re-read the README's trademark wording and the "not affiliated" notice ([roadmap.md](dev_docs/roadmap.md)).
@@ -118,7 +118,7 @@ Open items by area; finished work is under **Completed** at the bottom (same hea
 - [x] Investigate 60 FPS waveform scrolling (2026-11-16, `spikes/waveform_fps.py`, everything in [waveform-60fps.md](dev_docs/waveform-60fps.md), short version in [audio.md](dev_docs/audio.md)): possible, worth doing; the 3-band look takes 16 ms a frame (the whole 60 FPS budget) because of three polygon fills, so it needs a cheaper renderer first (a numpy image: 2 to 5 ms).
 - [x] Build 60 FPS scrolling (2026-11-16): an image-based 3-band look (16 ms -> 3.4 ms a frame, checked against the polygons in dark, light and System 6), the position moving between audio blocks, a 16 ms tick, and Settings > Appearance > Waveform speed (Smooth 60 / Light 30). No late audio callbacks at 128 or 256 frames offscreen ([waveform-60fps.md](dev_docs/waveform-60fps.md), "What was built").
 
-### Before making the repo public
+### Before the first release
 
 - [x] Look through the git history for anything personal that shouldn't be public ([roadmap.md](dev_docs/roadmap.md)). (scanned 2026-11-15, nothing sensitive; the decisions it leaves are in dev_docs/release-readiness.md)
 - [x] Decide whether `AGENTS.md` and `CLAUDE.md` stay in the public repo ([roadmap.md](dev_docs/roadmap.md)). (they stay: decided 2026-11-15)

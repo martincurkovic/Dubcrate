@@ -89,7 +89,7 @@ done and have nothing left to say are in "Decisions so far".
       Import, Explorer) become expected errors with the same plain words (`TaskError`), not raw
       `RenderError` text. Also log the paths found in `logsetup.log_startup`.
    2. **Bundle LGPL builds of both, per architecture** (Apple Silicon and Intel), for the first release.
-      The older note in "Before making the repository public" says *decode-only*; that predates MP3 CDs,
+      The older note in the pre-release checklist (now `TODO.md`, "Before the first release") says *decode-only*; that predates MP3 CDs,
       which re-encode a file that isn't constant bitrate (`render.render_mp3`), so the build needs the
       LAME MP3 encoder (LGPL) as well as decoders for MP3, WAV, FLAC, AIFF, AAC/M4A, Ogg, Opus and WMA, and
       the sample-rate conversion and dither `render_track` uses. Built in CI **without** `--enable-gpl` or
@@ -316,8 +316,7 @@ done and have nothing left to say are in "Decisions so far".
   the app, the Applications shortcut, the background and the layout. NOT checked: opening it from Finder by
   hand, the DMG window's look on a real display, the Intel build, the GitHub workflows (never run), and whether DiscRecording can reach the drive from the bundled app (a hardware
   check). The first smoke run caught a real fault (`_cffi_backend` missing); a new dependency can do the same.
-- The update check against real GitHub: `updates.py` is tested against a fake. While GitHub
-  answers 404 for the release list (the repository private, or no release published), *Check for Updates* reports a failure and the start-up check stays silent.
+- The update check against real GitHub: `updates.py` is tested against a fake. No release is published yet, so the check has never seen a real one (the repository is public, so an empty release list means "up to date"; a 404 would mean the project moved).
 - The splash on a real display and from a built app: a true splash window doesn't take focus on macOS, so
   from source it is an ordinary frameless window (`activating`) and in a built app a real splash. Its own
   `background: transparent` stylesheet (so the theme's can't fill its corners) is a precaution: offscreen
@@ -358,9 +357,9 @@ done and have nothing left to say are in "Decisions so far".
   detected after a write, unexplained (a second identical card is fine). See [card-sync.md](card-sync.md) (Handover)
   and [cdj1000mk3-card.md](cdj1000mk3-card.md) (Gaps).
 
-## Before making the repository public
+## Before the first release
 
-The checklist lives in [../TODO.md](../TODO.md) ("Before making the repo public", and what is done under *Completed*), so it is kept in one place. What it covers:
+The checklist lives in [../TODO.md](../TODO.md) ("Before the first release", and what is done under *Completed*), so it is kept in one place. What it covers:
 the README's claims against what has been tried and its trademark wording, reading the third-party notices, the changelog ([../CHANGELOG.md](../CHANGELOG.md) is a draft),
 code signing and notarisation, opening the built `.dmg` on a clean Mac, the first CI run of `build.yml`, and the update check against a real release. The audit
 and what was found in the git history are in [release-readiness.md](release-readiness.md). Done so far: the ruff settings, packaging (Nuitka and a DMG,

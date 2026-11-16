@@ -154,8 +154,8 @@ def http_error(code, reason="x"):
     return urllib.error.HTTPError(updates.RELEASES_API_URL, code, reason, {}, None)  # type: ignore[arg-type]
 
 
-def test_a_missing_repository_says_so_plainly():  # GitHub answers 404 while the repository is private
-    with pytest.raises(UpdateCheckError, match="no public releases") as caught:
+def test_a_missing_repository_says_so_plainly():  # GitHub answers 404 for a repository that has moved or gone
+    with pytest.raises(UpdateCheckError, match="release list doesn.t exist") as caught:
         check_for_update("0.1.0", urlopen=refusing(http_error(404, "Not Found")))
     assert isinstance(caught.value.__cause__, urllib.error.HTTPError)
 

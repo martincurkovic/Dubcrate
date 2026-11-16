@@ -1499,7 +1499,7 @@ def _update_none(ctx):
 
 
 @scene("msg-update-failed", "Messages and questions", "Message: the update check failed", kind="message",
-       about="Check for Updates while the repository is private (GitHub answers 404), through the real check.")  # fmt: skip
+       about="Check for Updates when GitHub can't find the release list (a 404: the project moved), through the real check.")  # fmt: skip
 def _update_failed(ctx):
     import urllib.error
     from unittest import mock

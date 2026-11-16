@@ -147,7 +147,7 @@ def test_a_failure_is_only_reported_when_you_asked_and_is_not_counted_as_a_check
 def test_an_expected_failure_is_logged_as_one_warning_without_a_traceback(
     checker, wait_for, boxes, monkeypatch, caplog
 ):
-    # What a private repository does: GitHub answers 404 (updates.py turns it into UpdateCheckError)
+    # What a repository that has moved does: GitHub answers 404 (updates.py turns it into UpdateCheckError)
     def refuse(*_a, **_k):
         raise urllib.error.HTTPError(
             "https://api.github.com/x", 404, "Not Found", {}, None
@@ -157,7 +157,7 @@ def test_an_expected_failure_is_logged_as_one_warning_without_a_traceback(
     caplog.set_level("DEBUG")
     run(checker, wait_for, manual=True)
     [(kind, _title, text)] = boxes
-    assert kind == "warning" and "no public releases" in text
+    assert kind == "warning" and "release list doesn't exist" in text
     failures = [r for r in caplog.records if r.name == "dubcrate.ui.tasks"]
     assert [r.levelname for r in failures] == ["WARNING"]
     assert "Traceback" not in caplog.text and "unexpected" not in caplog.text

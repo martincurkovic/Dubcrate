@@ -47,8 +47,8 @@ class UpdateCheckError(RuntimeError):
 
 def _http_failure(error: urllib.error.HTTPError) -> str:
     if error.code == 404:
-        # GitHub answers 404 for a private repository too, so this is also "not published yet"
-        return "GitHub has no public releases of Dubcrate to find (the repository may not be public yet)."
+        # (a public repository with no release answers 200 and an empty list, so a 404 means the repository is gone or has moved)
+        return "GitHub says Dubcrate's release list doesn't exist (error 404): the project may have moved or been renamed."
     if error.code in (403, 429):
         return "GitHub is limiting requests from this connection right now. Try again later."
     return f"GitHub answered with an error ({error.code} {error.reason})."

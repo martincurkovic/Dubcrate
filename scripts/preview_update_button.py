@@ -2,7 +2,7 @@
 
 Nothing is fetched and nothing is saved: the update checker is told it found a release, exactly
 as it would after reading GitHub's list, so the "Update available" button and the notice it opens
-are the real ones. Useful while the repository is private (GitHub answers 404, so a real check
+are the real ones. Useful while no release is published (GitHub's list is empty, so a real check
 finds nothing).
 
     uv run scripts/preview_update_button.py                       # a scratch library, dark theme
