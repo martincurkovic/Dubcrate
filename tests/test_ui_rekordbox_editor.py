@@ -41,16 +41,17 @@ class FakeWrite:
 
     def __init__(self, fail: str | None = None):
         self.calls: list[tuple[dict, bool]] = []
+        self.loop_calls: list[dict] = []  # the loops of each call
         self.fail = fail
 
-    def __call__(self, db, edits, backup_dir, *, keep_backup=True, **_):
+    def __call__(self, db, edits, backup_dir, *, keep_backup=True, loops=None, **_):
         self.calls.append(({k: list(v) for k, v in edits.items()}, keep_backup))
+        self.loop_calls.append({k: list(v) for k, v in (loops or {}).items()})
         if self.fail:
             raise rw.WriteError(self.fail)
-        plan = rw.WritePlan(changes=[SimpleNamespace(key=k) for k in edits])
-        return rw.WriteOutcome(
-            plan, Path("/bk") if keep_backup else None, written=list(edits)
-        )
+        keys = list(dict.fromkeys([*edits, *(loops or {})]))
+        plan = rw.WritePlan(changes=[SimpleNamespace(key=k) for k in keys])
+        return rw.WriteOutcome(plan, Path("/bk") if keep_backup else None, written=keys)
 
 
 @pytest.fixture
@@ -246,6 +247,109 @@ def test_write_waiting_asks_again_when_editing_was_turned_off(lib, monkeypatch, 
     assert editor.write_waiting() is True
     assert settings.get_rekordbox_editing() is True
     assert wait_for(lambda: lib.memory_cue_sets() == {})
+
+
+# -- loops saved in Dubcrate (`WRITE_LOOPS`: off until the command line has been tried live) --------------------
+
+
+def test_loops_are_not_sent_to_rekordbox_while_the_switch_is_off(lib, qapp):
+    assert RekordboxEditor.WRITE_LOOPS is False  # (the shipped default)
+    settings.set_rekordbox_editing(True)
+    editor, _, _ = make(lib)
+    lib.set_memory_loops(IN_RB.path, [(1000, 3000, "")])
+    editor.saved(IN_RB)
+    qapp.processEvents()
+    assert editor._write.calls == [] and editor.waiting() == 0
+    assert lib.memory_loops(IN_RB.path) == [(1000, 3000, "")]
+
+
+def test_a_saved_loop_is_written_then_dropped_from_dubcrate(lib, wait_for, monkeypatch):
+    monkeypatch.setattr(RekordboxEditor, "WRITE_LOOPS", True)
+    settings.set_rekordbox_editing(True)
+    editor, cache, seen = make(lib)
+    lib.set_memory_loops(IN_RB.path, [(1000, 3000, "x")])
+    editor.saved(IN_RB)
+    assert wait_for(lambda: seen.settled == 1)
+    assert editor._write.calls == [({}, True)]  # (no memory cue edits)
+    assert editor._write.loop_calls == [{path_key(IN_RB.path): [(1000, 3000, "x")]}]
+    assert (
+        lib.memory_loops(IN_RB.path) == []
+    )  # rekordbox has it: Dubcrate's copy is gone
+    assert seen.messages == [] and cache.refreshed == 1
+
+
+def test_cue_edits_and_loops_go_in_one_write_and_both_are_dropped(
+    lib, wait_for, monkeypatch
+):
+    monkeypatch.setattr(RekordboxEditor, "WRITE_LOOPS", True)
+    settings.set_rekordbox_editing(True)
+    editor, _, seen = make(lib)
+    lib.set_memory_cues(IN_RB.path, [(500, "")])
+    lib.set_memory_loops(IN_RB.path, [(1000, 3000, "")])
+    editor.saved(IN_RB)
+    assert wait_for(lambda: seen.settled == 1)
+    assert len(editor._write.calls) == 1
+    assert editor._write.calls[0][0] == {path_key(IN_RB.path): [(500, "")]}
+    assert editor._write.loop_calls[0] == {path_key(IN_RB.path): [(1000, 3000, "")]}
+    assert lib.memory_cues(IN_RB.path) is None and lib.memory_loops(IN_RB.path) == []
+
+
+def test_a_loop_saved_while_writing_is_kept_and_written_next(
+    lib, wait_for, monkeypatch
+):
+    monkeypatch.setattr(RekordboxEditor, "WRITE_LOOPS", True)
+    settings.set_rekordbox_editing(True)
+    editor, _, seen = make(lib)
+    lib.set_memory_loops(IN_RB.path, [(1000, 3000, "")])
+    editor.saved(IN_RB)  # the worker is now busy
+    lib.set_memory_loops(IN_RB.path, [(1000, 3000, ""), (5000, 7000, "")])
+    editor.saved(IN_RB)
+    assert wait_for(lambda: len(editor._write.calls) == 2 and seen.settled == 2)
+    assert editor._write.loop_calls[-1] == {
+        path_key(IN_RB.path): [(1000, 3000, ""), (5000, 7000, "")]
+    }
+    assert lib.memory_loops(IN_RB.path) == []
+
+
+def test_a_failed_loop_write_keeps_the_loop_in_dubcrate_and_says_why(
+    lib, wait_for, monkeypatch
+):
+    monkeypatch.setattr(RekordboxEditor, "WRITE_LOOPS", True)
+    settings.set_rekordbox_editing(True)
+    editor, _, seen = make(lib, FakeWrite(fail="rekordbox is running: close it first"))
+    lib.set_memory_loops(IN_RB.path, [(1000, 3000, "")])
+    editor.saved(IN_RB)
+    assert wait_for(lambda: bool(seen.messages))
+    assert "Kept in Dubcrate only" in seen.messages[0]
+    assert lib.memory_loops(IN_RB.path) == [(1000, 3000, "")] and seen.settled == 0
+
+
+def test_waiting_loops_count_and_are_written_with_the_waiting_edits(
+    lib, wait_for, monkeypatch
+):
+    monkeypatch.setattr(RekordboxEditor, "WRITE_LOOPS", True)
+    settings.set_rekordbox_editing(True)
+    editor, _, seen = waiting_editor(lib)
+    lib.set_memory_cues("/m/a.mp3", [(1000, "")])
+    lib.set_memory_loops("/m/c.mp3", [(2000, 4000, "")])
+    assert editor.waiting() == 2
+    assert editor.write_waiting() is True
+    assert wait_for(
+        lambda: lib.memory_loop_sets() == {} and lib.memory_cue_sets() == {}
+    )
+    assert len(editor._write.calls) == 1
+    assert set(editor._write.loop_calls[0]) == {path_key("/m/c.mp3")}
+    assert wait_for(lambda: seen.messages[-1].startswith("Saved the memory cues of 2"))
+
+
+def test_the_first_edit_question_names_loops_only_when_they_are_written(monkeypatch):
+    heading, explanation = editor_module.enable_editing_text()
+    assert heading == "Save memory cue changes into your rekordbox library?"
+    assert "loops" not in heading + explanation
+    monkeypatch.setattr(RekordboxEditor, "WRITE_LOOPS", True)
+    heading, explanation = editor_module.enable_editing_text()
+    assert heading == "Save memory cue and loop changes into your rekordbox library?"
+    assert "memory cues and loops" in explanation
 
 
 def test_the_setting_is_a_checkbox_in_the_settings_window(qapp):

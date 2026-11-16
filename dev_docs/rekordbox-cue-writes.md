@@ -131,20 +131,49 @@ jump are what it expects.
 plain cue at its start. `with_edits` adds saved loops (`Cue.local`) to a track's cues, they reach the card as memory loops, and they
 count in the ten places. Nothing about them is written to rekordbox.
 
-**Writing them to rekordbox: not built, and why.** The owner's library (read from a snapshot, 2026-11-16) has 4,313 live cue rows and
-**only two loops, both `Kind` 5 (hot cue D saved as a loop), and no memory loop at all**. So nothing real shows what rekordbox writes for a
-memory loop. What is known from those two rows: `OutMsec` / `OutFrame` hold the end (`OutFrame = floor(OutMsec x 0.15)`), `BeatLoopSize`
-is `8388609` (a field we can't explain: it looks like a flag bit 0x800000 plus a small number, perhaps a size), `ActiveLoop` 0, `Color` 255,
-`CueMicrosec` 0, `InMpegFrame` / `OutMpegFrame` 0. A memory loop's `Kind` (0, as the plain memory cue, with an out point, is the working
-guess), its `BeatLoopSize` and whether `ActiveLoop` or a colour differ are guesses until seen.
+### What rekordbox 7.2.19 wrote (read from a snapshot, 2026-11-16)
 
-**The checklist (the same table-first, then writer order the memory cues took):**
-1. The owner makes **three memory loops in rekordbox** on one throwaway track (a 4-beat, an 8-beat and one set by hand with IN / OUT, one of
-   them with a name), closes rekordbox, and runs `uv run python spikes/rekordbox_loop_rows.py --title TRACK` (read-only, snapshot copy).
-   Better still, do it twice: once saving a loop at a different size, to see which field is the size.
-2. Compare the rows with the two hot-cue loops: `Kind`, `BeatLoopSize`, `ActiveLoop`, `Color`, `ColorTableIndex`, `Comment`, the `*MpegFrame` columns.
-3. Only then extend `rekordbox_write.py` (its own function and its own tests on synthetic databases, `commit(` still only in that module): write
-   a saved loop as a row copied from those real ones, soft delete one that is removed, read back and restore as for the memory cues, a dry run
-   first (`dubcrate rekordbox write-memory-cues` shows loops too), and the loop table's rows dropped only once rekordbox has them.
-4. A live test on a throwaway copy of the library first, then the owner's: write one loop, open rekordbox, check it loads, loops and survives
-   a restart and a USB export.
+Until that day the owner's library had no memory loop at all (4,313 live cue rows, two loops, both hot D saved as loops: `Kind` 5, `BeatLoopSize`
+8388609). The owner then made three memory loops and a memory cue in rekordbox on **DANGER DANGER (Extended)** (130 bpm), and
+`spikes/rekordbox_loop_rows.py` (read-only, snapshot copy) showed:
+
+| | 4-beat loop | 8-beat loop | loop set by hand | plain memory cue |
+|---|---|---|---|---|
+| `Kind` | 0 | 0 | 0 | 0 |
+| `InMsec` / `OutMsec` | 3809 / 5655 | 7501 / 11193 | 13039 / 13501 | 19039 / NULL |
+| `BeatLoopSize` | 262145 (`4 << 16 \| 1`) | 524289 (`8 << 16 \| 1`) | **0** | NULL |
+| everything else | `InFrame` 0, `OutFrame` NULL, `InMpegFrame` 0, `InMpegAbs` 0, `OutMpegFrame` NULL, `OutMpegAbs` NULL, `Color` 255, `ColorTableIndex` 0, `ActiveLoop` 0, `Comment` '', `CueMicrosec` NULL, `*SeekInfo` NULL, `rb_local_usn` set (92318, 92320, 92322, 92323: loops take two each), `usn` NULL | same | same | same |
+
+- **A memory loop is a `Kind` 0 row with an out point after its in point**: exactly what `rekordbox.cue_from_row` already reads as `loop` with no slot.
+- **`BeatLoopSize` = `beats << 16 | 1`** for a loop made with a beat size (the hot D loops' 8388609 is `128 << 16 | 1`, 128 beats); **0 for a loop set by hand**.
+  What fractions of a beat give is not known, so a loop saved in Dubcrate (it has no beat size) is written with **0**.
+- **rekordbox 7.2.19 no longer fills the frame columns** (`InFrame` 0, `OutFrame` NULL, in all 101 of the rows it made in 2026-10 too); older rows (and
+  Dubcrate's memory cue writer) have `floor(InMsec x 0.15)`. Both are read fine, so a loop is written as rekordbox now writes one.
+
+### The writer for loops (built 2026-11-16, tested on synthetic databases only)
+
+`rekordbox_write.py`: `plan_write(..., loops=)` / `apply_write(..., loops=)` take `{path_key: [(start ms, end ms, label)]}`. **Loops are only ever
+added**: a loop rekordbox has within `SAME_LOOP_MS` (50 ms) at both ends is not added again, a soft-deleted loop and a hot cue's loop (`Kind` != 0) do
+not count as a memory loop, a loop that ends before it starts is skipped, and no row rekordbox has is changed or removed for a loop. A new row copies
+`Color` / `ColorTableIndex` / `ActiveLoop` from the newest memory cue and the rest from `LOOP_SHAPE` (the table above). It is the same one transaction,
+backup, `CueUpdated` bump (once a track), read-back (`PRAGMA integrity_check`, the row counts, each track's loops as expected, no other track changed)
+and restore as for the memory cues. `tests/test_rekordbox_write.py` has the shape, the add-only rules, the read-back restore and the CLI.
+
+**Switched off, in two steps (the owner asked for loops to be tested before they are written):**
+- The command line: `dubcrate rekordbox write-memory-cues --loops` (a dry run unless `--yes`, and nothing about loops without `--loops`).
+- The app: `RekordboxEditor.WRITE_LOOPS = False`. With it on, MEMORY with a loop on asks the first-edit question (which then says "memory cues and
+  loops"), saves the loop in Dubcrate and queues it like a memory cue edit (`editor.saved`); the Dubcrate copy is dropped once rekordbox has been
+  re-read and has the loop. With it off a saved loop stays in Dubcrate only and the status bar says so.
+
+**Known limit (decided with the owner, 2026-11-16: loops are added beside rekordbox's):** once a loop has landed in rekordbox it is rekordbox's, and
+Dubcrate cannot delete it (a rekordbox loop has no ✕). Deleting a loop saved in Dubcrate that has not been written yet is fine. If this is wanted,
+the memory cues' way (Dubcrate keeps the whole list, an edited list replaces rekordbox's) would need a `memory_loop_set` like `memory_cue_set`.
+
+**The live test (the owner runs it, on a copy first):**
+1. Close rekordbox (the command checks for it, even for a copy). Copy `~/Library/Pioneer/rekordbox/master.db` (and its `-wal` / `-shm` if present) to a
+   scratch folder. In Dubcrate save a loop on a track that is in rekordbox (MEMORY with a loop on; with `WRITE_LOOPS` off it stays in Dubcrate).
+2. `dubcrate rekordbox write-memory-cues --loops --db SCRATCH/master.db` (a dry run): read what it adds. Then again with `--yes`, and look at the result
+   with `uv run python spikes/rekordbox_loop_rows.py --db SCRATCH/master.db --title TRACK`: the new row should look like the table above.
+3. On the real library, after your own backup (Dubcrate makes one too): the same command without `--db`, then open rekordbox: the loop is in the track's
+   memory list, it loops, survives a restart and goes onto a USB export.
+4. If it all works: set `RekordboxEditor.WRITE_LOOPS = True`.

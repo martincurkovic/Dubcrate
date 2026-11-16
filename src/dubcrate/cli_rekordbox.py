@@ -2,8 +2,9 @@
 
 A dry run unless `--yes`, like `burn` and `card sync`. With `--yes` rekordbox must be closed; the
 database's files are copied aside first, the cues are written in one transaction, read back, and the
-copy is put back if anything is wrong (`rekordbox_write`). Only memory cues are written. **Tried on
-synthetic databases only.**
+copy is put back if anything is wrong (`rekordbox_write`). Only memory cues are written, and with `--loops`
+the memory loops saved in Dubcrate are added too (never removed or changed in rekordbox). **Tried on
+synthetic databases only; the memory cue part has been run by the owner on their library, the loop part not.**
 """
 
 import argparse
@@ -35,27 +36,54 @@ def _cues(cues: list[tuple[int, str]]) -> str:
     )
 
 
+def _loops(loops: list[tuple[int, int, str]]) -> str:
+    if not loops:
+        return "none"
+    return ", ".join(
+        f"{_stamp(a)} to {_stamp(b)}" + (f" {label!r}" if label else "")
+        for a, b, label in loops
+    )
+
+
 def describe(change: TrackChange) -> list[str]:
-    return [
-        f"  {change.title or change.path}",
-        f"    now:    {_cues(change.before)}",
-        f"    after:  {_cues(change.after)}",
-    ]
+    lines = [f"  {change.title or change.path}"]
+    if change.before != change.after:
+        lines += [
+            f"    memory cues now:    {_cues(change.before)}",
+            f"    memory cues after:  {_cues(change.after)}",
+        ]
+    if change.new_loops:
+        lines += [
+            f"    loops now:    {_loops(change.before_loops)}",
+            f"    adds:         {_loops(change.new_loops)}",
+        ]
+    return lines
 
 
 def cmd_write_memory_cues(lib: Library, args: argparse.Namespace) -> int:
     edits = lib.memory_cue_sets()
-    if not edits:
-        print("No memory cues have been edited in Dubcrate: nothing to write.")
+    loops = lib.memory_loop_sets() if args.loops else {}
+    if not edits and not loops:
+        print(
+            "No memory cues have been edited in Dubcrate"
+            + (" and no loops saved" if args.loops else "")
+            + ": nothing to write."
+        )
+        if not args.loops and lib.memory_loop_sets():
+            print("(Loops saved in Dubcrate are only written with --loops.)")
         return 0
     try:
         db = Path(args.db).expanduser() if args.db else default_database()
-        plan = plan_write(db, edits)
+        plan = plan_write(db, edits, loops=loops)
     except WriteError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
     print(f"rekordbox library: {db}")
-    print(f"{len(edits)} track(s) with edited memory cues:")
+    print(
+        f"{len(edits)} track(s) with edited memory cues"
+        + (f", {len(loops)} with saved loops" if args.loops else "")
+        + ":"
+    )
     for change in plan.changes:
         print("\n".join(describe(change)))
     if plan.unchanged:
@@ -66,6 +94,8 @@ def cmd_write_memory_cues(lib: Library, args: argparse.Namespace) -> int:
         if args.yes and plan.unchanged and not args.keep_edits:
             for key in plan.unchanged:
                 lib.clear_memory_cue_key(key)
+                if args.loops:
+                    lib.clear_memory_loop_key(key)
             print("Dropped the edits that rekordbox already has.")
         return 0
     if not args.yes:
@@ -79,18 +109,21 @@ def cmd_write_memory_cues(lib: Library, args: argparse.Namespace) -> int:
         Path(args.backup_dir).expanduser() if args.backup_dir else default_backup_dir()
     )
     try:
-        outcome = apply_write(db, edits, backup_dir)
+        outcome = apply_write(db, edits, backup_dir, loops=loops)
     except WriteError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
     print(
         f"\nWrote {len(outcome.written)} track(s): {outcome.cues_added} cue(s) added, "
-        f"{outcome.cues_moved} changed, {outcome.cues_removed} removed."
+        f"{outcome.cues_moved} changed, {outcome.cues_removed} removed"
+        + (f", {outcome.loops_added} loop(s) added." if args.loops else ".")
     )
     print(f"The database's files were copied to {outcome.backup} first.")
     if not args.keep_edits:
         for key in outcome.done_keys:
             lib.clear_memory_cue_key(key)
+            if args.loops:
+                lib.clear_memory_loop_key(key)
         print(
             "Dubcrate's edits for these tracks are dropped: rekordbox's cues are used again."
         )
@@ -110,6 +143,11 @@ def add_parsers(sub: argparse._SubParsersAction) -> None:
     )
     p.add_argument(
         "--backup-dir", help="default: rekordbox-backups next to the library"
+    )
+    p.add_argument(
+        "--loops",
+        action="store_true",
+        help="also add the memory loops saved in Dubcrate (never removed or changed in rekordbox; not yet tried live)",
     )
     p.add_argument(
         "--keep-edits",

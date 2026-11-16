@@ -321,6 +321,15 @@ def beat_jump_label(beats: int) -> str:
 DEFAULT_BEAT_JUMP = 4  # one bar
 
 
+def get_quantise() -> bool:
+    """Whether the player's Q (quantise) is on: on the first time, then whatever the user last chose."""
+    return _as_bool(_qs().value("playback/quantise", True), True)
+
+
+def set_quantise(on: bool) -> None:
+    _qs().setValue("playback/quantise", bool(on))
+
+
 def get_beat_jump() -> int:
     """How many beats the left and right arrow keys jump."""
     try:

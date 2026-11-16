@@ -115,7 +115,13 @@ def test_the_side_panel_lists_memory_cues_loops_and_hot_cues(strip):
     strip.show_cues(CUES)
     side = strip.side
     memory = [side.memory.topLevelItem(i).text(0) for i in range(side.memory.topLevelItemCount())]  # fmt: skip
-    assert memory == ["00:00.000", "00:31.500", "01:00.000  →  01:04.000"]
+    assert memory == ["00:00.000", "00:31.500", "01:00.000"]
+    # (a loop is its start time with a loop mark after it; where it ends is its tooltip)
+    from dubcrate.ui.player_side import LOOP_ROLE
+
+    marks = [side.memory.topLevelItem(i).data(0, LOOP_ROLE) for i in range(3)]
+    assert marks == [False, False, True]
+    assert side.memory.topLevelItem(2).toolTip(0) == "Loop: 01:00.000 to 01:04.000"
     hot = [(side.hot.topLevelItem(i).text(0), side.hot.topLevelItem(i).text(1)) for i in range(8)]  # fmt: skip
     assert hot[0] == ("A", "01:17.933") and hot[1] == ("B", "00:29.250")
     assert hot[2] == ("C", "") and hot[3] == ("D", "03:20.000") and hot[7] == ("H", "")

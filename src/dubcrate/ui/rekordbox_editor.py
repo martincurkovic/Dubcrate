@@ -33,21 +33,33 @@ log = logging.getLogger(__name__)
 Write = Callable[..., rw.WriteOutcome]
 
 
+def enable_editing_text() -> tuple[str, str]:
+    """The first-edit question's heading and explanation: they name loops only while loops are written too."""
+    loops = RekordboxEditor.WRITE_LOOPS
+    what = "memory cues and loops" if loops else "memory cues"
+    changes = "memory cue and loop changes" if loops else "memory cue changes"
+    return (
+        f"Save {changes} into your rekordbox library?",
+        (
+            f"Dubcrate can write the {what} you change here straight into rekordbox's library, so they show up"
+            f" in rekordbox and on your USB exports. Only {what} are written, nothing else.\n\n"
+            "rekordbox has to be closed when Dubcrate saves (otherwise the change waits in Dubcrate). Before the first"
+            " change of each session Dubcrate copies rekordbox's database files aside, and it checks what it wrote and"
+            " puts the copy back if anything is wrong.\n\n"
+            "“Keep in Dubcrate” leaves rekordbox alone: changes stay in Dubcrate. You can change this later in"
+            " Settings > Library."
+        ),
+    )
+
+
 def ask_enable_editing() -> bool:
     """The first-edit question. True: save edits into rekordbox's library from now on (remembered)."""
     box = QMessageBox(QApplication.activeWindow())
     box.setIcon(QMessageBox.Icon.Question)
     box.setWindowTitle("Edit your rekordbox library?")
-    box.setText("Save memory cue changes into your rekordbox library?")
-    box.setInformativeText(
-        "Dubcrate can write the memory cues you change here straight into rekordbox's library, so they show up"
-        " in rekordbox and on your USB exports. Only memory cues are written, nothing else.\n\n"
-        "rekordbox has to be closed when Dubcrate saves (otherwise the change waits in Dubcrate). Before the first"
-        " change of each session Dubcrate copies rekordbox's database files aside, and it checks what it wrote and"
-        " puts the copy back if anything is wrong.\n\n"
-        "“Keep in Dubcrate” leaves rekordbox alone: changes stay in Dubcrate. You can change this later in"
-        " Settings > Library."
-    )
+    heading, explanation = enable_editing_text()
+    box.setText(heading)
+    box.setInformativeText(explanation)
     enable = box.addButton("Enable Editing", QMessageBox.ButtonRole.AcceptRole)
     box.addButton("Keep in Dubcrate", QMessageBox.ButtonRole.RejectRole)
     box.setDefaultButton(enable)
@@ -56,6 +68,11 @@ def ask_enable_editing() -> bool:
 
 
 class RekordboxEditor(QObject):
+    # Loops saved in Dubcrate go into rekordbox too (`rekordbox_write`: only ever added). **Off** until the command
+    # line (`dubcrate rekordbox write-memory-cues --loops`) has been tried on the owner's library, as the memory
+    # cues were: then this is the one switch. The question says "and loops" when it is on.
+    WRITE_LOOPS = False
+
     message = Signal(str)  # for the status bar
     settled = Signal()  # an edit was handed over to rekordbox: what is drawn from the cues can be asked again
 
@@ -77,8 +94,9 @@ class RekordboxEditor(QObject):
             str, Path
         ] = {}  # path_key -> its database, edits not yet in rekordbox
         self._sent: dict[
-            str, list[tuple[int, str]]
-        ] = {}  # in the write that just finished
+            str,
+            tuple[list[tuple[int, str]] | None, list[tuple[int, int, str]] | None],
+        ] = {}  # (memory cues, loops) in the write that just finished
         self._sent_db: Path | None = None
         self._busy = False
         self._backed_up = False  # this session's backup exists
@@ -114,9 +132,13 @@ class RekordboxEditor(QObject):
             (Path(s.path) for s in self._lib.sources() if s.kind == "rekordbox"), None
         )
 
+    def _loop_sets(self) -> dict[str, list[tuple[int, int, str]]]:
+        """The loops saved in Dubcrate that are to go into rekordbox (none while `WRITE_LOOPS` is off)."""
+        return self._lib.memory_loop_sets() if self.WRITE_LOOPS else {}
+
     def waiting(self) -> int:
-        """How many files have memory cues edited in Dubcrate (not all need be in rekordbox)."""
-        return len(self._lib.memory_cue_sets())
+        """How many files have memory cues (or loops) edited in Dubcrate (not all need be in rekordbox)."""
+        return len(set(self._lib.memory_cue_sets()) | set(self._loop_sets()))
 
     def write_waiting(self) -> bool:
         """Send every edit that is waiting in Dubcrate to rekordbox: the ones made while rekordbox was open,
@@ -126,7 +148,7 @@ class RekordboxEditor(QObject):
         if database is None:
             self.message.emit("No rekordbox library has been imported")
             return False
-        waiting = self._lib.memory_cue_sets()
+        waiting = set(self._lib.memory_cue_sets()) | set(self._loop_sets())
         if not waiting:
             self.message.emit("No memory cues are waiting in Dubcrate")
             return False
@@ -163,11 +185,13 @@ class RekordboxEditor(QObject):
         database = next(iter(self._pending.values()))
         batch = [k for k, d in self._pending.items() if d == database]
         have = self._lib.memory_cue_sets()
+        loop_have = self._loop_sets()
         edits = {k: have[k] for k in batch if k in have}
+        loops = {k: loop_have[k] for k in batch if k in loop_have}
         for k in batch:
-            if k not in edits:  # reset since: nothing to write
+            if k not in edits and k not in loops:  # reset since: nothing to write
                 del self._pending[k]
-        if not edits:
+        if not edits and not loops:
             return self._start()
         keep = not self._backed_up
         self._busy = True
@@ -175,20 +199,21 @@ class RekordboxEditor(QObject):
 
         def job() -> rw.WriteOutcome:
             try:
-                return write(database, edits, backup_dir, keep_backup=keep)
+                return write(database, edits, backup_dir, keep_backup=keep, loops=loops)
             except rw.WriteError as exc:
                 raise TaskError(str(exc)) from exc
 
         run_async(
             job,
-            lambda outcome: self._done(database, edits, outcome, keep),
-            lambda text: self._failed(edits, text),
+            lambda outcome: self._done(database, edits, loops, outcome, keep),
+            lambda text: self._failed([*edits, *loops], text),
         )
 
     def _done(
         self,
         database: Path,
         edits: Mapping[str, Sequence[tuple[int, str]]],
+        loops: Mapping[str, Sequence[tuple[int, int, str]]],
         outcome: rw.WriteOutcome,
         kept: bool,
     ) -> None:
@@ -201,18 +226,23 @@ class RekordboxEditor(QObject):
             log.info("rekordbox edit of %s stays in Dubcrate: %s", key, why)
         done = set(outcome.done_keys)
         self._manual_done += len(outcome.written)
-        self._sent = {k: list(edits[k]) for k in edits if k in done}
+        self._sent = {
+            k: (
+                list(edits[k]) if k in edits else None,
+                list(loops[k]) if k in loops else None,
+            )
+            for k in {*edits, *loops}
+            if k in done
+        }
         self._sent_db = database
         if not self._sent:
             return self._start()
         self._cues.refresh(database)
 
-    def _failed(
-        self, edits: Mapping[str, Sequence[tuple[int, str]]], text: str
-    ) -> None:
+    def _failed(self, keys: Sequence[str], text: str) -> None:
         self._busy = False
         self._manual = False  # (its own message is this one)
-        for key in edits:
+        for key in keys:
             self._pending.pop(key, None)
         log.warning("memory cues not saved to rekordbox: %s", text)
         self.message.emit(f"Kept in Dubcrate only, not saved to rekordbox: {text}")
@@ -229,9 +259,13 @@ class RekordboxEditor(QObject):
             return
         sent, self._sent = self._sent, {}
         have = self._lib.memory_cue_sets()
-        for key, cues in sent.items():
-            if have.get(key) == cues:  # not edited again meanwhile
+        loop_have = self._lib.memory_loop_sets()
+        for key, (cues, loops) in sent.items():
+            if cues is not None and have.get(key) == cues:  # not edited again meanwhile
                 self._lib.clear_memory_cue_key(key)
+                self._pending.pop(key, None)
+            if loops is not None and loop_have.get(key) == loops:
+                self._lib.clear_memory_loop_key(key)
                 self._pending.pop(key, None)
         self.settled.emit()
         self._start()

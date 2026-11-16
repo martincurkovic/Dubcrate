@@ -1,7 +1,11 @@
-"""Write memory cues edited in Dubcrate into rekordbox's `master.db` (Qt-free).
+"""Write memory cues, and memory loops, edited in Dubcrate into rekordbox's `master.db` (Qt-free).
 
-**The one place Dubcrate writes to a rekordbox library**, and only memory cues: the owner allowed exactly
-this (`AGENTS.md`, "Hard rules"). Hot cues, loops, tracks, playlists and everything else are never touched.
+**The one place Dubcrate writes to a rekordbox library**, and only memory cues and memory loops: the owner
+allowed exactly this (`AGENTS.md`, "Hard rules"). Hot cues (and the loops saved in a hot cue), tracks, playlists
+and everything else are never touched. **Loops are only ever added**: a saved loop becomes a `Kind` 0 row with
+an out point (the shape rekordbox 7.2.19 itself wrote for three loops the owner made, read 2026-11-16: no
+frame numbers, `BeatLoopSize` 0 as for a loop set by hand), and no row rekordbox has is changed or removed
+for it (`plan_write(loops=)`, `apply_write(loops=)`).
 The order is the safety, as in `card_apply`:
 
 1. **Planning reads a snapshot copy** (`plan_write`: what would change, nothing written). rekordbox must not
@@ -33,6 +37,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from dubcrate.library.cue_edits import SAME_LOOP_MS
 from dubcrate.library.paths import default_library_path
 from dubcrate.library.rekordbox import (
     RekordboxError,
@@ -51,6 +56,19 @@ FALLBACK_SHAPE: dict[str, Any] = {
     "Color": 255,
     "ColorTableIndex": 0,
     "ActiveLoop": 0,
+}
+# The columns of a memory loop that are not copied from a memory cue: as rekordbox 7.2.19 wrote them (three loops
+# the owner made on 2026-11-16: 4 beats, 8 beats and one set by hand). `BeatLoopSize` is `beats << 16 | 1` for a
+# loop made with a beat size and 0 for one set by hand: a loop saved in Dubcrate has no beat size, so 0.
+LOOP_SHAPE: dict[str, Any] = {
+    "InFrame": 0,
+    "InMpegFrame": 0,
+    "InMpegAbs": 0,
+    "OutFrame": None,
+    "OutMpegFrame": None,
+    "OutMpegAbs": None,
+    "BeatLoopSize": 0,
+    "CueMicrosec": None,
 }
 
 
@@ -80,10 +98,16 @@ class TrackChange:
     path: str
     before: list[tuple[int, str]]
     after: list[tuple[int, str]]
+    # memory loops, (start ms, end ms, label): what rekordbox has and what it will have (the old ones and the new)
+    before_loops: list[tuple[int, int, str]] = field(default_factory=list)
+    after_loops: list[tuple[int, int, str]] = field(default_factory=list)
+    new_loops: list[tuple[int, int, str]] = field(
+        default_factory=list
+    )  # the ones to add
 
     @property
     def changed(self) -> bool:
-        return self.before != self.after
+        return self.before != self.after or bool(self.new_loops)
 
     @property
     def added(self) -> int:
@@ -117,6 +141,7 @@ class WriteOutcome:
     cues_added: int = 0
     cues_moved: int = 0  # changed in place
     cues_removed: int = 0
+    loops_added: int = 0
 
     @property
     def done_keys(self) -> list[str]:
@@ -196,22 +221,78 @@ def _listed(rows: Sequence[Any]) -> list[tuple[int, str]]:
     return [(int(r.InMsec or 0), str(r.Comment or "")) for r in rows]
 
 
-def _resolve(
-    db: Any, edits: Mapping[str, Sequence[tuple[int, str]]]
-) -> tuple[WritePlan, dict[str, tuple[Any, list[Any]]]]:
-    """Match each edit to its rekordbox track. Returns the plan and, per changed key, (content row, cue rows)."""
+def _is_memory_loop(row: Any) -> bool:
+    """A loop that is not deleted and not a hot cue's: `Kind` 0 with an out point after its in point."""
+    if row.rb_local_deleted or (row.Kind or 0) != 0:
+        return False
+    out = row.OutMsec if row.OutMsec is not None else -1
+    return out > (row.InMsec or 0)
+
+
+def _loop_rows(db: Any, content_id: str) -> list[Any]:
     from pyrekordbox.masterdb import models
 
+    rows = db.session.query(models.DjmdCue).filter_by(ContentID=content_id).all()
+    return sorted(
+        (r for r in rows if _is_memory_loop(r)), key=lambda r: (r.InMsec or 0, r.ID)
+    )
+
+
+def _listed_loops(rows: Sequence[Any]) -> list[tuple[int, int, str]]:
+    return sorted(
+        (int(r.InMsec or 0), int(r.OutMsec or 0), str(r.Comment or "")) for r in rows
+    )
+
+
+def _new_loops(
+    wanted: Sequence[tuple[int, int, str]], have: Sequence[tuple[int, int, str]]
+) -> list[tuple[int, int, str]]:
+    """The wanted loops rekordbox has no loop for (both ends within `SAME_LOOP_MS` of one it has). A loop that
+    ends before it starts is skipped, and the same loop twice is one."""
+    spare = list(have)
+    adding: list[tuple[int, int, str]] = []
+    for start, end, label in sorted(wanted):
+        if end <= start:
+            continue
+        near = next(
+            (
+                h
+                for h in spare
+                if abs(h[0] - start) < SAME_LOOP_MS and abs(h[1] - end) < SAME_LOOP_MS
+            ),
+            None,
+        )
+        if near is not None:
+            spare.remove(near)
+            continue
+        adding.append((int(start), int(end), str(label)))
+        spare.append(
+            (start, end, label)
+        )  # (a second copy of it in `wanted` is this one)
+    return adding
+
+
+def _resolve(
+    db: Any,
+    edits: Mapping[str, Sequence[tuple[int, str]]],
+    loops: Mapping[str, Sequence[tuple[int, int, str]]] | None = None,
+) -> tuple[WritePlan, dict[str, tuple[Any, list[Any]]]]:
+    """Match each edit (and each track's loops to add) to its rekordbox track. Returns the plan and, per changed
+    key, (content row, cue rows)."""
+    from pyrekordbox.masterdb import models
+
+    loops = loops or {}
+    keys = set(edits) | set(loops)
     by_key: dict[str, list[Any]] = {}
     for content in db.session.query(models.DjmdContent).all():
         if content.rb_local_deleted or not content.FolderPath:
             continue
         key = path_key(str(content.FolderPath))
-        if key in edits:
+        if key in keys:
             by_key.setdefault(key, []).append(content)
     plan = WritePlan()
     targets: dict[str, tuple[Any, list[Any]]] = {}
-    for key, wanted in sorted(edits.items()):
+    for key in sorted(keys):
         rows = by_key.get(key, [])
         if not rows:
             plan.skipped.append((key, "not a track in the rekordbox library"))
@@ -227,8 +308,15 @@ def _resolve(
         content = rows[0]
         cues = _memory_rows(db, str(content.ID))
         before = _listed(cues)
-        after = sorted((int(ms), str(label)) for ms, label in wanted)
-        if before == after:
+        # (a track with only loops to add keeps its memory cues as they are)
+        after = (
+            sorted((int(ms), str(label)) for ms, label in edits[key])
+            if key in edits
+            else before
+        )
+        before_loops = _listed_loops(_loop_rows(db, str(content.ID)))
+        adding = _new_loops(loops.get(key, ()), before_loops)
+        if before == after and not adding:
             plan.unchanged.append(key)
             continue
         plan.changes.append(
@@ -239,6 +327,9 @@ def _resolve(
                 str(content.FolderPath),
                 before,
                 after,
+                before_loops,
+                sorted([*before_loops, *adding]),
+                adding,
             )
         )
         targets[key] = (content, cues)
@@ -249,9 +340,11 @@ def plan_write(
     master_db: Path,
     edits: Mapping[str, Sequence[tuple[int, str]]],
     *,
+    loops: Mapping[str, Sequence[tuple[int, int, str]]] | None = None,
     unlock: bool = True,
 ) -> WritePlan:
-    """What a write of `edits` (by `path_key`) would change, from a snapshot copy; writes nothing."""
+    """What a write of `edits` (memory cues by `path_key`) and `loops` (memory loops to add, by `path_key`) would
+    change, from a snapshot copy; writes nothing."""
     if not master_db.is_file():
         raise WriteError(f"no rekordbox master.db found at {master_db}")
     with tempfile.TemporaryDirectory(prefix="dubcrate-rbw-") as tmp:
@@ -259,7 +352,7 @@ def plan_write(
         db = _open(copy, unlock)
         try:
             check_schema(db)
-            return _resolve(db, edits)[0]
+            return _resolve(db, edits, loops)[0]
         except WriteError:
             raise
         except Exception as exc:
@@ -294,13 +387,14 @@ def _set_time(row: Any, ms: int) -> None:
 
 def _write_changes(
     db: Any, targets: Mapping[str, tuple[Any, list[Any]]], plan: WritePlan
-) -> tuple[int, int, int]:
-    """Make the changes in the open session (nothing is committed here). Returns (added, moved, removed)."""
+) -> tuple[int, int, int, int]:
+    """Make the changes in the open session (nothing is committed here). Returns (cues added, moved, removed,
+    loops added)."""
     from pyrekordbox.masterdb import models
 
     now = _now()
     shape = _template(db)
-    added = moved = removed = 0
+    added = moved = removed = loops_added = 0
     for change in plan.changes:
         content, cues = targets[change.key]
         # Same time: keep the row (a label change updates its comment).
@@ -351,10 +445,28 @@ def _write_changes(
                 )
             )
             added += 1
+        for start, end, label in change.new_loops:
+            db.session.add(
+                models.DjmdCue(
+                    ID=str(db.generate_unused_id(models.DjmdCue)),
+                    ContentID=str(content.ID),
+                    ContentUUID=content.UUID,
+                    UUID=str(uuid.uuid4()),
+                    InMsec=start,
+                    OutMsec=end,
+                    Kind=0,
+                    Comment=label,
+                    created_at=now,
+                    updated_at=now,
+                    **LOOP_SHAPE,
+                    **shape,
+                )
+            )
+            loops_added += 1
         count = int(str(content.CueUpdated or "0").strip() or 0)
         content.CueUpdated = str(count + 1)
         content.updated_at = now
-    return added, moved, removed
+    return added, moved, removed, loops_added
 
 
 def _others(db: Any, skip: set[str]) -> dict[str, list[tuple[int, int, str, int]]]:
@@ -437,6 +549,12 @@ def _verify(
                         f"{change.title or change.path}: the cues read back as {got}, "
                         f"not {change.after}"
                     )
+                loops = _listed_loops(_loop_rows(db, change.content_id))
+                if loops != change.after_loops:
+                    raise WriteError(
+                        f"{change.title or change.path}: the loops read back as {loops}, "
+                        f"not {change.after_loops}"
+                    )
             touched = {c.content_id for c in plan.changes}
             if _others(db, touched) != before_others:
                 raise WriteError("the cues of a track that was not edited have changed")
@@ -449,11 +567,13 @@ def apply_write(
     edits: Mapping[str, Sequence[tuple[int, str]]],
     backup_dir: Path,
     *,
+    loops: Mapping[str, Sequence[tuple[int, int, str]]] | None = None,
     unlock: bool = True,
     running: Callable[[], bool] = rekordbox_running,
     keep_backup: bool = True,
 ) -> WriteOutcome:
-    """Write `edits` (memory cues by `path_key`) into `master_db`: back it up, write, read back, undo on failure.
+    """Write `edits` (memory cues by `path_key`) and add `loops` (memory loops by `path_key`: (start ms, end ms,
+    label), only ever added) into `master_db`: back it up, write, read back, undo on failure.
 
     Raises `WriteError` with the library as it was (the message says so) if anything goes wrong; a write that
     is refused up front touches nothing. The backup is always made first (the read-back's undo needs it);
@@ -461,7 +581,7 @@ def apply_write(
     cue), and a kept one prunes the oldest beyond `KEEP_BACKUPS`."""
     if running():
         raise WriteError("rekordbox is running: close it first, then try again")
-    plan = plan_write(master_db, edits, unlock=unlock)
+    plan = plan_write(master_db, edits, loops=loops, unlock=unlock)
     if plan.empty:
         return WriteOutcome(plan, None)
     backup = _new_backup_dir(backup_dir)
@@ -477,11 +597,13 @@ def apply_write(
         db = _open(master_db, unlock)
         try:
             check_schema(db)
-            plan, targets = _resolve(db, edits)  # again, in the session that writes
+            plan, targets = _resolve(
+                db, edits, loops
+            )  # again, in the session that writes
             touched = {c.content_id for c in plan.changes}
             before_others = _others(db, touched)
             rows_before = _counts_in(db)
-            added, moved, removed = _write_changes(db, targets, plan)
+            added, moved, removed, loops_added = _write_changes(db, targets, plan)
             db.commit(autoinc=True)
         except BaseException:
             try:
@@ -493,7 +615,7 @@ def apply_write(
         _verify(
             master_db,
             plan,
-            (rows_before[0], rows_before[1] + added),
+            (rows_before[0], rows_before[1] + added + loops_added),
             before_others,
             unlock,
         )
@@ -514,11 +636,12 @@ def apply_write(
     else:
         shutil.rmtree(backup, ignore_errors=True)
     log.info(
-        "rekordbox write: %d track(s), +%d ~%d -%d cue(s)",
+        "rekordbox write: %d track(s), +%d ~%d -%d cue(s), +%d loop(s)",
         len(plan.changes),
         added,
         moved,
         removed,
+        loops_added,
     )
     return WriteOutcome(
         plan,
@@ -527,6 +650,7 @@ def apply_write(
         cues_added=added,
         cues_moved=moved,
         cues_removed=removed,
+        loops_added=loops_added,
     )
 
 

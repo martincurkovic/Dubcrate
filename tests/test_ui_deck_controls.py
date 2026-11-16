@@ -8,6 +8,7 @@ import pytest
 from PySide6.QtCore import Qt
 from PySide6.QtTest import QTest
 
+from dubcrate import settings
 from dubcrate.audio.player import AudioPlayer
 from dubcrate.library import Library, TrackRecord
 from dubcrate.ui.player_strip import PlayerStrip
@@ -30,6 +31,9 @@ def write_wav(path, seconds=SECONDS, rate=44_100):
 
 @pytest.fixture
 def rig(qapp, tmp_path, wait_for):
+    settings.set_quantise(
+        False
+    )  # (the player starts as it was left: these tests start with Q off)
     lib = Library.open(":memory:")
     lib.replace_source(
         "folder",
@@ -603,3 +607,66 @@ def test_a_loop_saved_here_is_added_to_rekordboxs_loops_not_in_place_of_them(
     loops = [c for c in rig.strip._cues if c.kind == "loop"]
     assert sum(c.local for c in loops) == 1 and len(loops) == 3
     assert sorted(c.time for c in loops if not c.local) == [20.0, 25.0]
+
+
+def test_with_loop_writing_on_a_saved_loop_is_queued_for_rekordbox_and_says_nothing(rig, monkeypatch):  # fmt: skip
+    from dubcrate.ui.rekordbox_editor import RekordboxEditor
+
+    monkeypatch.setattr(RekordboxEditor, "WRITE_LOOPS", True)
+    calls = []
+    monkeypatch.setattr(rig.c.editor, "allow", lambda track: calls.append("allow") or True)  # fmt: skip
+    monkeypatch.setattr(rig.c.editor, "saved", lambda track: calls.append("saved"))
+    loop_on(rig)
+    rig.messages.clear()
+    rig.strip.memory_button.click()
+    assert saved_loops(rig) and calls == ["allow", "saved"]
+    assert rig.messages == []  # (it is going into rekordbox: no "Dubcrate only" note)
+
+
+def test_with_loop_writing_on_a_loop_that_cannot_go_to_rekordbox_says_so(rig, monkeypatch):  # fmt: skip
+    from dubcrate.ui.rekordbox_editor import RekordboxEditor
+
+    monkeypatch.setattr(RekordboxEditor, "WRITE_LOOPS", True)
+    calls = []
+    monkeypatch.setattr(
+        rig.c.editor, "allow", lambda track: False
+    )  # (not a rekordbox track, or declined)
+    monkeypatch.setattr(rig.c.editor, "saved", lambda track: calls.append("saved"))
+    loop_on(rig)
+    rig.strip.memory_button.click()
+    assert saved_loops(rig) and calls == []
+    assert rig.messages[-1] == "Loop saved in Dubcrate (not in rekordbox)"
+
+
+# -- quantise is on the first time and then as it was left ------------------------------------------
+
+
+def make_controller(qapp):
+    strip = PlayerStrip()
+    controller = PreviewController(Library.open(":memory:"), strip, AudioPlayer())
+    return strip, controller
+
+
+def test_quantise_is_on_by_default_the_first_time(qapp):
+    from PySide6.QtCore import QSettings
+
+    QSettings().remove("playback/quantise")
+    assert settings.get_quantise() is True
+    strip, controller = make_controller(qapp)
+    assert strip.quantise_button.isChecked() and controller.deck.quantise
+    controller.shutdown()
+
+
+def test_the_last_quantise_choice_is_remembered_for_the_next_start(qapp):
+    strip, controller = make_controller(qapp)
+    strip.quantise_button.setChecked(False)
+    assert settings.get_quantise() is False
+    controller.shutdown()
+    strip, controller = make_controller(qapp)  # (a new window, as after a restart)
+    assert not strip.quantise_button.isChecked() and not controller.deck.quantise
+    strip.quantise_button.setChecked(True)
+    assert settings.get_quantise() is True
+    controller.shutdown()
+    strip, controller = make_controller(qapp)
+    assert strip.quantise_button.isChecked() and controller.deck.quantise
+    controller.shutdown()

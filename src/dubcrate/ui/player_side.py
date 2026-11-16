@@ -12,9 +12,21 @@ rekordbox's. A **memory loop saved in Dubcrate** (MEMORY with a loop on) is list
 cues and rekordbox's own loops are only shown.
 """
 
-from PySide6.QtCore import QRectF, Qt, Signal
-from PySide6.QtGui import QColor, QFont, QImage, QPainter, QPainterPath, QPen, QPixmap
+import math
+
+from PySide6.QtCore import QPointF, QRectF, Qt, Signal
+from PySide6.QtGui import (
+    QColor,
+    QFont,
+    QImage,
+    QPainter,
+    QPainterPath,
+    QPen,
+    QPixmap,
+    QPolygonF,
+)
 from PySide6.QtWidgets import (
+    QApplication,
     QButtonGroup,
     QFrame,
     QHBoxLayout,
@@ -23,6 +35,9 @@ from PySide6.QtWidgets import (
     QMenu,
     QSizePolicy,
     QStackedWidget,
+    QStyle,
+    QStyledItemDelegate,
+    QStyleOptionViewItem,
     QTreeWidget,
     QTreeWidgetItem,
     QVBoxLayout,
@@ -42,6 +57,64 @@ DELETABLE_ROLE = (
     Qt.ItemDataRole.UserRole + 41
 )  # a memory cue or a loop saved here: one that can be deleted here
 MOVABLE_ROLE = Qt.ItemDataRole.UserRole + 42  # a plain memory cue (a loop has no move)
+LOOP_ROLE = Qt.ItemDataRole.UserRole + 43  # a loop: a small loop mark follows its time
+LOOP_COLOR = "#f0922b"  # the orange rbxport marks a loop with
+
+
+def draw_loop_mark(painter: QPainter, centre: QPointF, color: QColor) -> None:
+    """A small circular arrow (a loop) about 12 pixels across, centred on `centre`."""
+    radius = 5.0
+    start, span = (
+        120.0,
+        -285.0,
+    )  # degrees, counter-clockwise from 3 o'clock: clockwise, with a gap at the top
+    painter.save()
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+    pen = QPen(color, 1.6)
+    pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+    painter.setPen(pen)
+    painter.setBrush(Qt.BrushStyle.NoBrush)
+    box = QRectF(centre.x() - radius, centre.y() - radius, 2 * radius, 2 * radius)
+    painter.drawArc(box, round(start * 16), round(span * 16))
+    # the arrow head at the end of the arc, pointing the way the arc runs (clockwise)
+    end = math.radians(start + span)
+    tip_from = QPointF(
+        centre.x() + radius * math.cos(end), centre.y() - radius * math.sin(end)
+    )
+    along = QPointF(math.sin(end), math.cos(end))
+    across = QPointF(-along.y(), along.x())
+    head = QPolygonF(
+        [
+            tip_from + along * 3.5,
+            tip_from + across * 3.2,
+            tip_from - across * 3.2,
+        ]
+    )
+    painter.setPen(Qt.PenStyle.NoPen)
+    painter.setBrush(color)
+    painter.drawPolygon(head)
+    painter.restore()
+
+
+class _LoopMarkDelegate(QStyledItemDelegate):
+    """The Memory list's rows, with a small orange loop mark after the time of a loop (as rbxport marks one)."""
+
+    def paint(self, painter, option, index) -> None:
+        super().paint(painter, option, index)
+        if not index.data(LOOP_ROLE):
+            return
+        opt = QStyleOptionViewItem(option)
+        self.initStyleOption(opt, index)
+        widget = opt.widget
+        style = widget.style() if widget is not None else QApplication.style()
+        text_box = style.subElementRect(
+            QStyle.SubElement.SE_ItemViewItemText, opt, widget
+        )
+        margin = style.pixelMetric(QStyle.PixelMetric.PM_FocusFrameHMargin, opt, widget) + 1  # fmt: skip
+        x = text_box.left() + margin + opt.fontMetrics.horizontalAdvance(opt.text) + 12
+        mono = theme.current_palette().get("hard_edges")
+        color = opt.palette.text().color() if mono else QColor(LOOP_COLOR)
+        draw_loop_mark(painter, QPointF(x, opt.rect.center().y()), color)
 
 
 def cue_clock(seconds: float) -> str:
@@ -185,6 +258,7 @@ class SidePanel(QWidget):
         self.memory.header().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
         self.memory.header().setSectionResizeMode(1, QHeaderView.ResizeMode.Fixed)
         self.memory.setColumnWidth(1, 26)
+        self.memory.setItemDelegateForColumn(0, _LoopMarkDelegate(self.memory))
         self.memory.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.memory.customContextMenuRequested.connect(self._memory_context_menu)
         self.memory.itemClicked.connect(self._clicked)
@@ -283,16 +357,22 @@ class SidePanel(QWidget):
             text = cue_clock(cue.time)
             plain = cue.kind == "memory"
             deletable = plain or cue.local
-            if cue.kind == "loop" and cue.end:
-                text += f"  →  {cue_clock(cue.end)}"
+            is_loop = cue.kind == "loop" and bool(cue.end)
             item = QTreeWidgetItem([text, "✕" if deletable else ""])
             item.setData(0, TIME_ROLE, cue.time)
             item.setData(0, DELETABLE_ROLE, deletable)
             item.setData(0, MOVABLE_ROLE, plain)
+            item.setData(
+                0, LOOP_ROLE, is_loop
+            )  # (a loop shows a loop mark after its time, as in rbxport)
             item.setTextAlignment(1, Qt.AlignmentFlag.AlignCenter)
+            if is_loop:
+                item.setToolTip(
+                    0, f"Loop: {cue_clock(cue.time)} to {cue_clock(cue.end)}"
+                )
             if deletable:
                 what = "memory cue" if plain else "loop"
-                item.setToolTip(1, f"Delete this {what} (rekordbox is not changed)")
+                item.setToolTip(1, f"Delete this {what}")
             self.memory.addTopLevelItem(item)
         self.hot.clear()
         by_slot = {c.slot: c for c in cues if c.slot}

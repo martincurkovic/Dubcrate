@@ -108,7 +108,9 @@
 - [x] Write the edits that are waiting in Dubcrate (made while rekordbox was open, or before editing was allowed) in one go from the app: File > Save Waiting Memory Cue Edits to rekordbox (not tried live).
 - [x] Save memory loops in Dubcrate: MEMORY with a loop on (`memory_loop` table; shown in the player, on the card as memory loops, counted in the ten; not written to rekordbox).
 - [ ] Try memory loops by hand: set a loop, press MEMORY, check the Memory tab row and ✕, sync to the card and see the loop on the player.
-- [ ] Make three memory loops in rekordbox (different sizes, one named) and run `spikes/rekordbox_loop_rows.py --title TRACK`, so the writer can copy real rows (`dev_docs/rekordbox-cue-writes.md`, "Memory loops"); then write loops to rekordbox.
+- [x] Make three memory loops in rekordbox and read their rows (2026-11-16: DANGER DANGER (Extended); `dev_docs/rekordbox-cue-writes.md`, "Memory loops").
+- [x] Write memory loops into rekordbox (`rekordbox_write.py`, add-only, tested on synthetic databases): `dubcrate rekordbox write-memory-cues --loops`. **Switched off in the app** (`RekordboxEditor.WRITE_LOOPS`).
+- [ ] Try `dubcrate rekordbox write-memory-cues --loops` on a COPY of master.db (dry run, then `--yes`, then `spikes/rekordbox_loop_rows.py --db COPY`), then on the real library; open rekordbox and check the loop. Then set `RekordboxEditor.WRITE_LOOPS = True` (checklist in `dev_docs/rekordbox-cue-writes.md`).
 - [ ] Hot cues and loops: edit hot cues in the player and write them to rekordbox (`dev_docs/rekordbox-cue-writes.md` has the `Kind` numbers; only memory cues are written so far).
 
 ### Linux and Windows

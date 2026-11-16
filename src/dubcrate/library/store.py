@@ -980,6 +980,22 @@ class Library:
         """Forget the file's saved memory loops."""
         self.set_memory_loops(path, [])
 
+    def clear_memory_loop_key(self, key: str) -> None:
+        """`clear_memory_loops` for a file known by its `path_key`."""
+        with self._conn:
+            self._conn.execute("DELETE FROM memory_loop WHERE path_key = ?", (key,))
+
+    def memory_loop_sets(self) -> dict[str, list[tuple[int, int, str]]]:
+        """Every file with memory loops saved in Dubcrate, by its `path_key`: (start ms, end ms, label), in time order."""
+        found: dict[str, list[tuple[int, int, str]]] = {}
+        for row in self._conn.execute(
+            "SELECT path_key, start_ms, end_ms, label FROM memory_loop ORDER BY start_ms, id"
+        ):
+            found.setdefault(row["path_key"], []).append(
+                (row["start_ms"], row["end_ms"], row["label"])
+            )
+        return found
+
     def previews_for(self, tracks: Iterable[Track]) -> dict[int, Waveform]:
         """The kept Preview waveform of each of these tracks that has one, by track id. A track whose
         file has changed size since it was kept has none (the old one is stale); a bad row is skipped."""

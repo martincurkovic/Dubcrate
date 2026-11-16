@@ -110,6 +110,7 @@ class PreviewController(QObject):
         strip.cue_pressed.connect(self.cue_pressed)
         strip.cue_released.connect(self.cue_released)
         strip.quantise_toggled.connect(self.set_quantise)
+        strip.quantise_button.setChecked(settings.get_quantise())  # (as last left)
         strip.auto_loop_requested.connect(self.auto_loop)
         strip.loop_size_changed.connect(self.loop_size)
         strip.loop_in_requested.connect(self.loop_in)
@@ -199,6 +200,7 @@ class PreviewController(QObject):
 
     def set_quantise(self, on: bool) -> None:
         self.deck.quantise = on
+        settings.set_quantise(on)  # (remembered for the next start)
         if on and self._track is not None and self.deck.beat_length() is None:
             self.message.emit(
                 "This track has no beat grid or tempo, so there is no beat to snap to"
@@ -305,10 +307,12 @@ class PreviewController(QObject):
         return round(found[0] * 1000), round(found[1] * 1000)
 
     def _memory_loop_add(self, start: int, end: int) -> None:
-        """MEMORY with a loop on: save the loop as a memory loop (in Dubcrate only: loops are not written to
-        rekordbox). The loop stays on."""
+        """MEMORY with a loop on: save the loop as a memory loop in Dubcrate, and, if loops are being written into
+        rekordbox (`RekordboxEditor.WRITE_LOOPS`) and that is allowed, send it there too. The loop stays on."""
         if self._memory_cues(ask=False) is None:
             return
+        # (asks the first time a rekordbox track is edited; a track outside rekordbox never goes there)
+        goes = RekordboxEditor.WRITE_LOOPS and self.editor.allow(self._track)
         found = self.cues.cues_for(self._track) or ()
         if any(
             is_memory_loop(c)
@@ -326,7 +330,10 @@ class PreviewController(QObject):
             mine = self._lib.memory_loops(self._track.path)
             self._lib.set_memory_loops(self._track.path, [*mine, (start, end, "")])
             self._show_cues()
-            self.message.emit("Loop saved in Dubcrate (not in rekordbox)")
+            if goes:
+                self.editor.saved(self._track)
+            else:
+                self.message.emit("Loop saved in Dubcrate (not in rekordbox)")
 
     def _delete_memory_loop(self, start: int) -> bool:
         """Delete the loop saved here that starts at `start` (ms). False: there is none."""
