@@ -517,6 +517,7 @@ class MainWindow(QMainWindow):
         self.setStatusBar(AppStatusBar(self))  # (version, update button, then messages)
         self.statusBar().update_clicked.connect(lambda: self.updates.show_available())
         self.updates.on_available = self.statusBar().set_update
+        settings.changes.rekordbox_editing.connect(self._update_library_badge)
         self.busy_bar = QProgressBar()
         self.busy_bar.setMaximumWidth(180)
         self.busy_bar.setTextVisible(False)
@@ -827,6 +828,14 @@ class MainWindow(QMainWindow):
 
     # -- sources ----------------------------------------------------------
 
+    def _update_library_badge(self) -> None:
+        """The status bar's badge: shown when a rekordbox library has been imported, saying whether Dubcrate
+        may write memory cues into it (Settings > Library) or leaves it read-only."""
+        if not any(s.kind == "rekordbox" for s in self._lib.sources()):
+            self.statusBar().set_library_badge(None)
+        else:
+            self.statusBar().set_library_badge(bool(settings.get_rekordbox_editing()))
+
     def refresh_sources(
         self, select: tuple | None = None, *, reload: bool = True
     ) -> None:
@@ -853,6 +862,7 @@ class MainWindow(QMainWindow):
             index = find_selection(model, ("all",))
         self.tree.setCurrentIndex(index)  # (before connecting: this is not a change)
         self.tree.selectionModel().currentChanged.connect(self._on_tree_current_changed)
+        self._update_library_badge()  # (a rekordbox library may have been imported or removed)
         if reload or replaced:
             self._on_tree_current_changed(
                 index, QModelIndex()

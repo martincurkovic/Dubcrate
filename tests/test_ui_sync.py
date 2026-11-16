@@ -13,7 +13,7 @@ from dubcrate.library import Library, TrackRecord
 from dubcrate.ui import main_window, sync_view
 from dubcrate.ui.main_window import MainWindow
 from dubcrate.ui.source_tabs import SourceTabBar, sd_card_glyph
-from dubcrate.ui.sync_view import COL_STATUS, COL_TICK, CardPanel, SyncView
+from dubcrate.ui.sync_view import COL_NAME, CardPanel, SyncView
 
 DATA = Path(__file__).parent / "data" / "cdj_card"
 
@@ -61,8 +61,10 @@ def add_disc(lib, name, *, source="rekordbox", folder=None, measured=True, longe
 
 
 def shown(view: SyncView) -> list[tuple[str, str]]:
-    """(name, status) of each disc row in the order shown."""
-    return [(i.text(0), i.text(COL_STATUS)) for i in view._disc_items()]
+    """(name, status) of each disc row in the order shown (the status is the first line of its tooltip)."""
+    return [
+        (i.text(0), i.toolTip(COL_NAME).splitlines()[0]) for i in view._disc_items()
+    ]
 
 
 @pytest.fixture
@@ -96,7 +98,7 @@ def test_the_panel_lists_the_cards_that_are_plugged_in_and_picks_the_first(
     panel.card_changed.connect(told.append)
     panel.refresh()
     assert panel.current_card() == card
-    assert panel.subtitle.text() == "1 card found" and not panel.hint.isVisibleTo(panel)
+    assert panel.subtitle.text() == "1 card found"
     assert told == [card]
     panel.refresh()
     assert told == [card]  # nothing changed: nothing said
@@ -112,7 +114,6 @@ def test_a_card_that_is_taken_out_is_gone_after_a_refresh(qapp, tmp_path):
     here.clear()
     panel.refresh()
     assert panel.current_card() is None and told == [None]
-    assert panel.hint.isVisibleTo(panel)
 
 
 def test_a_folder_chosen_by_hand_is_listed_and_picked(qapp, tmp_path, monkeypatch):
@@ -193,21 +194,88 @@ def test_only_discs_with_something_to_write_can_be_ticked_and_a_folder_ticks_the
     assert cue_view._tickable(items["A"]) and cue_view._tickable(items["B"])
     assert not cue_view._tickable(items["Plain"])  # nothing to write
     folder = cue_view.tree.topLevelItem(0)
-    folder.setCheckState(COL_TICK, Qt.CheckState.Checked)
+    folder.setCheckState(COL_NAME, Qt.CheckState.Checked)
     assert sorted(cue_view.ticked_ids()) == sorted(
         d.id for d in lib.discs() if d.name in ("A", "B")
     )
     assert cue_view.subtitle.text() == "2 of 2 discs selected"
     assert cue_view.footer_title.text() == "2 discs → CARD"
     assert cue_view.footer_note.text() == "2 cues to add."
-    items["A"].setCheckState(COL_TICK, Qt.CheckState.Unchecked)
-    assert folder.checkState(COL_TICK) == Qt.CheckState.PartiallyChecked
+    items["A"].setCheckState(COL_NAME, Qt.CheckState.Unchecked)
+    assert folder.checkState(COL_NAME) == Qt.CheckState.PartiallyChecked
     assert cue_view.subtitle.text() == "1 of 2 discs selected"
     cue_view.clear_button.click()
     assert (
         cue_view.ticked_ids() == []
-        and folder.checkState(COL_TICK) == Qt.CheckState.Unchecked
+        and folder.checkState(COL_NAME) == Qt.CheckState.Unchecked
     )
+
+
+def test_the_tick_boxes_are_in_the_name_column_and_there_is_no_status_or_tick_column(
+    cue_view, lib, tmp_path
+):
+    add_disc(lib, "A")
+    add_disc(lib, "Plain")
+    cue_view.cues["A-0"] = [Cue("memory", 5.0)]
+    cue_view.look(card_folder(tmp_path))
+    assert [cue_view.tree.headerItem().text(c) for c in range(cue_view.tree.columnCount())] == ["Disc", "Tracks"]  # fmt: skip
+    items = {i.text(0): i for i in cue_view._disc_items()}
+    assert items["A"].data(COL_NAME, Qt.ItemDataRole.CheckStateRole) is not None
+    assert items["Plain"].data(COL_NAME, Qt.ItemDataRole.CheckStateRole) is None
+    assert "Not on the card" in items["A"].toolTip(
+        COL_NAME
+    )  # (the status is the tooltip's first line)
+
+
+def test_the_header_box_ticks_every_disc_that_can_be_synced_and_shows_how_many_are_ticked(
+    cue_view, lib, tmp_path, wait_for
+):
+    inside = lib.create_disc_folder("Sets")
+    add_disc(lib, "A", folder=inside)
+    add_disc(lib, "B")
+    add_disc(lib, "Plain")
+    cue_view.cues.update({"A-0": [Cue("memory", 5.0)], "B-3": [Cue("memory", 9.0)]})
+    header = cue_view.tick_header
+    cue_view.look(None)  # (no card: nothing can be written, so nothing can be ticked)
+    assert header._available is False and cue_view.ticked_ids() == []
+    cue_view.look(card_folder(tmp_path))
+    assert wait_for(lambda: header._available)
+    assert header._state == Qt.CheckState.Unchecked
+    header.tick_clicked.emit()  # a click on the box
+    assert len(cue_view.ticked_ids()) == 2 and header._state == Qt.CheckState.Checked
+    assert cue_view.subtitle.text() == "2 of 2 discs selected"
+    items = {i.text(0): i for i in cue_view._disc_items()}
+    items["B"].setCheckState(COL_NAME, Qt.CheckState.Unchecked)
+    assert header._state == Qt.CheckState.PartiallyChecked
+    header.tick_clicked.emit()  # (part ticked: ticks the rest)
+    assert len(cue_view.ticked_ids()) == 2 and header._state == Qt.CheckState.Checked
+    header.tick_clicked.emit()  # (all ticked: unticks all)
+    assert cue_view.ticked_ids() == [] and header._state == Qt.CheckState.Unchecked
+    assert not cue_view._tickable(items["Plain"])  # (never ticked)
+
+
+def test_a_click_on_the_header_box_ticks_and_a_click_on_the_heading_does_not(
+    cue_view, lib, tmp_path
+):
+    from PySide6.QtCore import QPoint
+    from PySide6.QtTest import QTest
+
+    add_disc(lib, "A")
+    cue_view.cues["A-0"] = [Cue("memory", 5.0)]
+    cue_view.look(card_folder(tmp_path))
+    cue_view.disc_panel.resize(420, 500)
+    cue_view.disc_panel.show()
+    header = cue_view.tick_header
+    section = header._box(
+        header.rect()
+        .adjusted(0, 0, 0, 0)
+        .translated(header.sectionViewportPosition(COL_NAME), 0)
+    )
+    QTest.mouseClick(header.viewport(), Qt.MouseButton.LeftButton, pos=section.center())
+    assert len(cue_view.ticked_ids()) == 1
+    QTest.mouseClick(header.viewport(), Qt.MouseButton.LeftButton, pos=QPoint(header.sectionSize(COL_NAME) - 20, 5))  # fmt: skip
+    assert len(cue_view.ticked_ids()) == 1  # (the heading itself does nothing)
+    cue_view.disc_panel.close()
 
 
 def test_a_disc_with_nothing_to_write_never_counts_as_ticked(cue_view, lib, tmp_path):
@@ -215,7 +283,7 @@ def test_a_disc_with_nothing_to_write_never_counts_as_ticked(cue_view, lib, tmp_
     cue_view.look(card_folder(tmp_path))
     item = cue_view._disc_items()[0]
     item.setCheckState(
-        COL_TICK, Qt.CheckState.Checked
+        COL_NAME, Qt.CheckState.Checked
     )  # (not something a click can do)
     assert cue_view.ticked_ids() == []
 
@@ -225,7 +293,7 @@ def test_ticks_survive_a_refresh(cue_view, lib, tmp_path):
     cue_view.cues["A-0"] = [Cue("memory", 5.0)]
     card = card_folder(tmp_path)
     cue_view.look(card)
-    cue_view._disc_items()[0].setCheckState(COL_TICK, Qt.CheckState.Checked)
+    cue_view._disc_items()[0].setCheckState(COL_NAME, Qt.CheckState.Checked)
     cue_view.look(card)
     assert len(cue_view.ticked_ids()) == 1
 
@@ -236,10 +304,11 @@ def test_picking_a_disc_shows_its_dry_run_and_picking_nothing_explains_the_rules
     add_disc(lib, "A")
     cue_view.cues["A-0"] = [Cue("memory", 15.0)]
     cue_view.look(card_folder(tmp_path))
-    assert "Pick a disc" in cue_view.detail.toPlainText()
-    assert "never touched" in cue_view.detail.toPlainText()
+    assert "Pick a disc" in cue_view.browser.message.text()
     cue_view.tree.setCurrentItem(cue_view._disc_items()[0])
-    text = cue_view.detail.toPlainText()
+    text = cue_view._disc_items()[0].toolTip(
+        COL_NAME
+    )  # (the dry run is the disc's tooltip)
     assert "rekordbox cues found on 1 of 12 tracks" in text and "+ cue  track 1" in text
 
 
@@ -267,7 +336,7 @@ def test_with_the_switch_off_the_sync_button_is_off_and_says_why(
     cue_view.cues["A-0"] = [Cue("memory", 5.0)]
     card = card_folder(tmp_path)
     cue_view.look(card)
-    cue_view._disc_items()[0].setCheckState(COL_TICK, Qt.CheckState.Checked)
+    cue_view._disc_items()[0].setCheckState(COL_NAME, Qt.CheckState.Checked)
     assert not cue_view.sync_button.isEnabled()
     assert (
         "no card file written by Dubcrate has been loaded"
@@ -470,7 +539,7 @@ def test_a_rekordbox_database_that_cant_be_read_is_said_per_disc(
     assert wait_for(lambda: bool(view._surveys))
     assert shown(view) == [("A", "Can't sync")]
     view.tree.setCurrentItem(view._disc_items()[0])
-    assert "Couldn't read rekordbox's cues: it is locked" in view.detail.toPlainText()
+    assert "Couldn't read rekordbox's cues: it is locked" in view.browser.message.text()
 
 
 def test_the_lengths_of_unmeasured_tracks_can_be_measured_from_the_view(
@@ -746,7 +815,7 @@ def test_a_card_that_is_plugged_in_appears_by_itself_and_one_taken_out_goes(
 
     shutil.rmtree(card)
     assert wait_for(lambda: panel.current_card() is None)
-    assert told == [card, None] and panel.hint.isVisibleTo(panel)
+    assert told == [card, None]
 
 
 def test_a_second_card_joins_the_list_and_the_picked_one_stays_picked(
@@ -907,16 +976,6 @@ def test_a_card_rows_text_is_shortened_with_an_ellipsis_not_cut_off(qapp, plugge
 # -- waveforms -----------------------------------------------------------------------------------
 
 
-@pytest.fixture(autouse=True)
-def waveforms_on_again():
-    """The tick box is a saved setting: every test starts, and ends, with it on."""
-    from dubcrate import settings
-
-    settings.set_sync_waveforms(True)
-    yield
-    settings.set_sync_waveforms(True)
-
-
 def saw():
     return [1 + k % 15 for k in range(100)]
 
@@ -937,7 +996,6 @@ def look_again(writing, text):
 def test_waveforms_are_counted_in_the_list_the_question_and_the_card(writing):
     analyse_everything(writing.lib)
     look_again(writing, "waveforms")
-    assert writing.view.waves_check.isChecked()
     assert [s for _n, s in shown(writing.view)] == [
         "Not on the card: 2 cues and 12 waveforms to add",
         "Not on the card: 1 cue and 12 waveforms to add",
@@ -954,24 +1012,6 @@ def test_waveforms_are_counted_in_the_list_the_question_and_the_card(writing):
     assert sorted(len(f.fine) for f in written) == [12, 12]
     assert written[0].fine[0].time_values() == saw()
     assert "(3 cues, 24 waveforms)" in writing.said[-1]
-
-
-def test_unticking_write_waveforms_goes_back_to_cues_only_and_remembers(writing):
-    analyse_everything(writing.lib)
-    look_again(writing, "waveforms")
-    writing.view.waves_check.setChecked(False)
-    assert [s for _n, s in shown(writing.view)] == [
-        "Not on the card: 2 cues to add",
-        "Not on the card: 1 cue to add",
-    ]
-    from dubcrate import settings
-
-    assert settings.get_sync_waveforms() is False
-    writing.view._tick_all(Qt.CheckState.Checked)
-    writing.view.sync_button.click()
-    assert writing.finished()
-    _, files = cc.read_card(writing.card)
-    assert all(f.fine == [] for f in files.values() if f is not None)
 
 
 def test_tracks_with_no_waveform_yet_are_analysed_before_the_question_is_asked(
@@ -1018,8 +1058,6 @@ def test_the_waveforms_tab_shows_a_strip_per_track_as_the_player_will_draw_it(wr
     assert [r.state for r in view.waves.rows] == ["write"] * 12
     assert view.browser.strip.values == saw()  # (the picked track's: the first)
     assert view.browser.selected_row().number == 1
-    view.waves_check.setChecked(False)
-    assert {r.state for r in view.waves.rows} == {"none"} and view.waves.rows[0].note == "Write waveforms is off"  # fmt: skip
 
 
 def test_after_a_sync_the_tab_shows_the_cards_waveforms_as_already_there(writing):
@@ -1167,21 +1205,6 @@ def test_the_waveforms_tab_has_a_button_that_analyses_the_picked_disc_and_writes
     assert sum(t.waveform is not None for t in writing.lib.tracks()) >= 12
 
 
-def test_the_analyse_button_is_off_while_write_waveforms_is_unticked(writing, monkeypatch, tmp_path):  # fmt: skip
-    real_files(writing, tmp_path)
-    look_again(writing, "waveforms")
-    view = writing.view
-    view.tree.setCurrentItem(next(i for i in view._disc_items() if i.text(0) == "A"))
-    assert view.analyse_button.isEnabled()
-    view.waves_check.setChecked(False)
-    assert not view.analyse_button.isEnabled()
-    assert view.analyse_note.text() == "Write waveforms is off."
-    monkeypatch.setattr(
-        sync_view, "measure_waveforms", lambda *a, **k: pytest.fail("ran")
-    )
-    view.analyse_waveforms()  # (a call anyway does nothing)
-
-
 def test_the_analyse_button_can_be_cancelled_like_a_sync(writing, monkeypatch, tmp_path):  # fmt: skip
     import time
 
@@ -1242,7 +1265,7 @@ def pick_disc(view, name="A"):
     view.tree.setCurrentItem(next(i for i in view._disc_items() if i.text(0) == name))
 
 
-def test_the_middle_lists_the_picked_discs_tracks_with_what_a_sync_does_for_each(writing):  # fmt: skip
+def test_the_middle_lists_the_picked_discs_tracks(writing):  # fmt: skip
     analyse_everything(writing.lib)
     look_again(writing, "waveforms")
     view = writing.view
@@ -1253,9 +1276,9 @@ def test_the_middle_lists_the_picked_discs_tracks_with_what_a_sync_does_for_each
     assert table.topLevelItemCount() == 12
     first = [table.topLevelItem(0).text(c) for c in range(table.columnCount())]
     assert first[0] == "1" and first[1].startswith("A0") and first[3].count(":") == 1
-    assert first[4] == "2 to add"  # (A-0 has a memory cue and a hot cue)
-    assert first[5] == "Will be written"
-    assert table.topLevelItem(1).text(4) == "–"  # (no cues on track 2)
+    assert [table.headerItem().text(c) for c in range(table.columnCount())] == ["#", "Title", "Artist", "Time"]  # fmt: skip
+    # (what a sync does is said under the waveform and in the disc's line, not in columns)
+    assert not hasattr(view.browser, "details_button")
     assert (
         view.browser.title.text() == "A" and "12 tracks" in view.browser.message.text()
     )
@@ -1282,7 +1305,7 @@ def test_the_picked_track_stays_picked_when_the_disc_is_looked_at_again(writing)
     view = writing.view
     pick_disc(view)
     view.browser.table.setCurrentItem(view.browser.table.topLevelItem(4))
-    view._waves_toggled(True)  # (looks at every disc again)
+    view._look_at_discs(view._loaded)  # (looks at every disc again)
     assert view.browser.selected_row().number == 5
     pick_disc(view, "B")  # a different disc starts at its first track
     assert view.browser.selected_row().number == 1
@@ -1294,18 +1317,6 @@ def test_a_track_not_analysed_yet_shows_a_dashed_line_and_says_so(writing, monke
     view = writing.view
     pick_disc(view)
     assert view.browser.strip.state == "pending"
-    assert view.browser.table.topLevelItem(0).text(5) == "Not analysed"
-
-
-def test_details_are_behind_a_button_and_a_disc_that_cannot_be_synced_says_why(writing):  # fmt: skip
-    look_again(writing, "cue")
-    view = writing.view
-    pick_disc(view)
-    assert not view.detail.isVisibleTo(view.browser)
-    view.browser.details_button.click()
-    assert view.detail.isVisibleTo(view.browser) and "cues" in view.detail.toPlainText()
-    view.browser.details_button.click()
-    assert not view.detail.isVisibleTo(view.browser)
 
 
 def test_the_sync_tab_swaps_the_right_hand_list_and_a_disc_click_stays_on_sync(qapp, tmp_path, monkeypatch):  # fmt: skip

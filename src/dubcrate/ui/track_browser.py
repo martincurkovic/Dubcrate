@@ -1,12 +1,11 @@
 """The Sync tab's middle: the tracks of the disc picked in the list on the right, and the waveform of the track picked here.
 
 A read-only browser (`TrackBrowser`), so a disc can be looked through without leaving the Sync tab: one
-row for each track with its place, title, artist, length on the disc, what a sync does with its cues and
-what its waveform is (will be written, already on the card, not analysed yet). **Only the picked track's
+row for each track with its place, title, artist and length on the disc. **Only the picked track's
 waveform is drawn**, at the bottom, as the CDJ's display draws it (`wave_strip.CdjWaveStrip`: 100 columns
-by 7 rows, from the bottom), with the **Analyse Waveforms** button beside it. Above the tracks are the
-disc's name, the one line of what a sync would do, any warnings, and the full dry run behind a Details
-button. `SyncView` feeds it (`show_disc` / `show_message`) and connects the button.
+by 7 rows, from the bottom, with what a sync does with it written under it), with the **Analyse
+Waveforms** button beside it. Above the tracks are the disc's name, the one line of what a sync would do
+and any warnings. `SyncView` feeds it (`show_disc` / `show_message`) and connects the button.
 """
 
 from PySide6.QtCore import Qt
@@ -15,7 +14,6 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QHeaderView,
     QLabel,
-    QPlainTextEdit,
     QPushButton,
     QSizePolicy,
     QTreeWidget,
@@ -34,19 +32,13 @@ from dubcrate.card_discs import (
 
 from .wave_strip import CARD, NONE, PENDING, WRITE, CdjWaveStrip
 
-COL_NUMBER, COL_TITLE, COL_ARTIST, COL_TIME, COL_CUES, COL_WAVE = range(6)
-HEADINGS = ["#", "Title", "Artist", "Time", "Cues", "Waveform"]
+COL_NUMBER, COL_TITLE, COL_ARTIST, COL_TIME = range(4)
+HEADINGS = ["#", "Title", "Artist", "Time"]
 STRIP_STATES = {
     WAVE_WRITE: WRITE,
     WAVE_CARD: CARD,
     WAVE_PENDING: PENDING,
     WAVE_NONE: NONE,
-}
-WAVE_WORDS = {
-    WAVE_WRITE: "Will be written",
-    WAVE_CARD: "On the card",
-    WAVE_PENDING: "Not analysed",
-    WAVE_NONE: "–",
 }
 
 
@@ -78,17 +70,7 @@ class TrackBrowser(QWidget):
         layout.setSpacing(8)
         self.title = unsized(QLabel("Tracks"))
         self.title.setObjectName("panelTitle")
-        self.details_button = QPushButton("Details")
-        self.details_button.setCheckable(True)
-        self.details_button.setFlat(True)
-        self.details_button.setToolTip(
-            "The full list of what a sync would do for this disc"
-        )
-        self.details_button.toggled.connect(self._toggle_detail)
-        head = QHBoxLayout()
-        head.addWidget(self.title, 1)
-        head.addWidget(self.details_button)
-        layout.addLayout(head)
+        layout.addWidget(self.title)
         self.message = unsized(
             QLabel()
         )  # the disc's one line, or why there is no disc to show
@@ -99,11 +81,6 @@ class TrackBrowser(QWidget):
         self.warnings.setWordWrap(True)
         self.warnings.hide()
         layout.addWidget(self.warnings)
-        self.detail = QPlainTextEdit()
-        self.detail.setReadOnly(True)
-        self.detail.setMaximumHeight(150)
-        self.detail.hide()
-        layout.addWidget(self.detail)
 
         self.table = QTreeWidget()
         self.table.setColumnCount(len(HEADINGS))
@@ -119,8 +96,6 @@ class TrackBrowser(QWidget):
         header.setSectionResizeMode(COL_TITLE, QHeaderView.ResizeMode.Stretch)
         header.setSectionResizeMode(COL_ARTIST, QHeaderView.ResizeMode.Interactive)
         header.setSectionResizeMode(COL_TIME, QHeaderView.ResizeMode.ResizeToContents)
-        header.setSectionResizeMode(COL_CUES, QHeaderView.ResizeMode.ResizeToContents)
-        header.setSectionResizeMode(COL_WAVE, QHeaderView.ResizeMode.ResizeToContents)
         self.table.setColumnWidth(COL_ARTIST, 160)
         self.table.currentItemChanged.connect(lambda *_: self._show_wave())
         layout.addWidget(self.table, 1)
@@ -146,10 +121,6 @@ class TrackBrowser(QWidget):
 
     # -- what is shown ---------------------------------------------------------------
 
-    def _toggle_detail(self, shown: bool) -> None:
-        self.detail.setVisible(shown)
-        self.details_button.setText("Hide Details" if shown else "Details")
-
     def show_message(self, text: str, title: str = "Tracks") -> None:
         """No disc to show (or one that can't be synced): `text` says why, and the list is empty."""
         self._disc_key = None
@@ -167,7 +138,6 @@ class TrackBrowser(QWidget):
         summary: str,
         rows: list[WaveRow],
         warnings: list[str] = (),
-        detail: str = "",
     ) -> None:
         """The disc's tracks. The track that was picked stays picked if this is the same disc (`key`)."""
         keep = self.selected_row().number if self.selected_row() and key == self._disc_key else None  # fmt: skip
@@ -177,7 +147,6 @@ class TrackBrowser(QWidget):
         self.message.setText(summary)
         self.warnings.setVisible(bool(warnings))
         self.warnings.setText("\n".join(warnings))
-        self.detail.setPlainText(detail)
         self.table.blockSignals(True)
         self.table.clear()
         items: dict[int, QTreeWidgetItem] = {}
@@ -188,8 +157,6 @@ class TrackBrowser(QWidget):
                     row.name or row.title,
                     row.artist,
                     time_text(row.seconds) if row.seconds else "",
-                    row.cues,
-                    WAVE_WORDS[row.state],
                 ]
             )
             item.setData(COL_NUMBER, Qt.ItemDataRole.UserRole, row.number)
@@ -197,9 +164,6 @@ class TrackBrowser(QWidget):
                 item.setTextAlignment(
                     column, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
                 )
-            item.setToolTip(COL_WAVE, row.note)
-            if row.state in (WAVE_PENDING, WAVE_NONE):
-                item.setForeground(COL_WAVE, self.palette().placeholderText())
             self.table.addTopLevelItem(item)
             items[row.number] = item
         self.table.blockSignals(False)

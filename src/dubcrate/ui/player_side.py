@@ -7,7 +7,7 @@ none), the rating and comment rekordbox gave it and what the file is (type, size
 bordered frame like the other two pages.
 
 The Memory page is also where **memory cues are edited** (the rekordbox library itself is never written): a row's ✕
-deletes it, right-click moves it to the playhead, and an edited track says so with a **Reset** that goes back to
+deletes it, right-click moves it to the playhead, and the right-click menu of an edited track offers **Reset**, which goes back to
 rekordbox's. A **memory loop saved in Dubcrate** (MEMORY with a loop on) is listed with its ✕ too (no move); hot
 cues and rekordbox's own loops are only shown.
 """
@@ -219,27 +219,10 @@ class SidePanel(QWidget):
                 QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred
             )
         self._edited = False
-        self.edited_note = QLabel("Edited here: rekordbox's are unchanged")
-        self.edited_note.setObjectName("mutedLabel")
-        self.edited_note.setMinimumWidth(0)
-        self.edited_note.setSizePolicy(
-            QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred
-        )
-        self.reset_button = PillButton("Reset", height=22, shape="tile", size_delta=-1)
-        self.reset_button.setToolTip("Forget the edits: rekordbox's memory cues again")
-        self.reset_button.clicked.connect(self.memory_reset_requested)
-        notice = QWidget()
-        notice_row = QHBoxLayout(notice)
-        notice_row.setContentsMargins(0, 0, 0, 0)
-        notice_row.addWidget(self.edited_note, 1)
-        notice_row.addWidget(self.reset_button)
-        self.edited_row = notice
-        notice.hide()
         memory_page = QWidget()
         memory_box = QVBoxLayout(memory_page)
         memory_box.setContentsMargins(0, 0, 0, 0)
         memory_box.setSpacing(4)
-        memory_box.addWidget(notice)
         memory_box.addWidget(self.memory, 1)
         self.pages = QStackedWidget()
         for page in (memory_page, self.hot, info):
@@ -285,9 +268,13 @@ class SidePanel(QWidget):
         self.file.setText("\n".join(file_lines(track)))
 
     def set_edited(self, edited: bool) -> None:
-        """Say whether the track's memory cues are the ones edited here (with a Reset) or rekordbox's."""
+        """Say whether the track's memory cues are the ones edited here: the Memory list's right-click menu
+        then offers Reset (nothing else on the page says so)."""
         self._edited = edited
-        self.edited_row.setVisible(edited)
+
+    @property
+    def edited(self) -> bool:
+        return self._edited
 
     def set_cues(self, cues: tuple[Cue, ...]) -> None:
         """The loaded track's cues: memory cues and loops in time order, and the hot cues by letter."""

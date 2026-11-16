@@ -69,6 +69,23 @@ def test_a_rekordbox_track_that_has_left_rekordbox_is_not_a_twin(lib):
     assert lib.rekordbox_twin(found["/m/a.mp3"]) is None
 
 
+def test_the_twin_lookup_is_held_between_calls_and_never_goes_stale(lib):
+    """A window asks for a twin per visible row; the map of rekordbox files is built once until a row changes."""
+    rekordbox(lib, rb("/m/a.mp3", bpm=128.0))
+    found = explorer(lib, "/m", rb("/m/a.mp3"), rb("/m/b.mp3"))
+    first = lib._rekordbox_rows_by_file()
+    assert lib.rekordbox_twin(found["/m/a.mp3"]) is not None
+    assert lib._rekordbox_rows_by_file() is first  # (reused: nothing changed)
+    assert lib.rekordbox_twin(found["/m/b.mp3"]) is None
+    rekordbox(
+        lib, rb("/m/a.mp3", bpm=128.0), rb("/m/b.mp3", bpm=99.0)
+    )  # (a re-import adds b)
+    assert lib.rekordbox_twin(found["/m/b.mp3"]) is not None
+    rekordbox(lib)  # (and then drops both again)
+    assert lib.rekordbox_twin(found["/m/a.mp3"]) is None
+    assert lib.rekordbox_twin(found["/m/b.mp3"]) is None
+
+
 # -- rekordbox's tempo and key ---------------------------------------------------------------------
 
 

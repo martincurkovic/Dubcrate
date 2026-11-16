@@ -1,5 +1,6 @@
 """The window's status bar: "Dubcrate v0.1.0" at the left, an "Update available" button beside it
-when there is one, then the messages (what was added, imported, burned) after them.
+when there is one, a badge saying whether the rekordbox library is read-only, then the messages (what was added, imported,
+burned) after them.
 
 A plain QStatusBar hides its left-hand widgets while a message shows, so the version would
 vanish every time a message appeared. This one keeps its own label for messages instead, and
@@ -24,6 +25,20 @@ class AppStatusBar(QStatusBar):
         self.setSizeGripEnabled(False)
         self.version_label = QLabel(version_text())
         self.version_label.setObjectName("versionLabel")
+        self.read_only_badge = QLabel("Library read-only")
+        self.read_only_badge.setObjectName("readOnlyBadge")
+        self.read_only_badge.setToolTip(
+            "Dubcrate never changes your rekordbox library. Memory cue changes stay in Dubcrate "
+            "(Settings > Library lets them be saved into rekordbox)."
+        )
+        self.writable_badge = QLabel("Library writable")
+        self.writable_badge.setObjectName("writableBadge")
+        self.writable_badge.setToolTip(
+            "Memory cue changes you make are saved into your rekordbox library. Nothing else in it is "
+            "changed. (Settings > Library switches this off.)"
+        )
+        self.read_only_badge.hide()
+        self.writable_badge.hide()
         self.update_button = QPushButton("Update available")
         self.update_button.setObjectName("updateButton")
         self.update_button.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -40,6 +55,8 @@ class AppStatusBar(QStatusBar):
         layout.setContentsMargins(10, 0, 8, 0)
         layout.setSpacing(8)
         layout.addWidget(self.version_label, 0, Qt.AlignmentFlag.AlignVCenter)
+        layout.addWidget(self.read_only_badge, 0, Qt.AlignmentFlag.AlignVCenter)
+        layout.addWidget(self.writable_badge, 0, Qt.AlignmentFlag.AlignVCenter)
         layout.addWidget(self.update_button, 0, Qt.AlignmentFlag.AlignVCenter)
         layout.addSpacing(6)
         layout.addWidget(self.message_label, 1, Qt.AlignmentFlag.AlignVCenter)
@@ -67,6 +84,14 @@ class AppStatusBar(QStatusBar):
 
     def currentMessage(self) -> str:
         return self.message_label.text()
+
+    # -- the rekordbox library badge -------------------------------------------------------
+
+    def set_library_badge(self, writable: bool | None) -> None:
+        """The rekordbox library's badge: None hides it (no rekordbox library), False says read-only and True
+        that memory cue changes are saved into it."""
+        self.read_only_badge.setVisible(writable is False)
+        self.writable_badge.setVisible(writable is True)
 
     # -- the update button ----------------------------------------------------------------
 

@@ -17,7 +17,8 @@ import shutil
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 
-from PySide6.QtCore import QFileSystemWatcher, QSize, Qt, QTimer, Signal
+from PySide6.QtCore import QFileSystemWatcher, QRect, QSize, Qt, QTimer, Signal
+from PySide6.QtGui import QPainter
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QCheckBox,
@@ -32,6 +33,8 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QPushButton,
     QSizePolicy,
+    QStyle,
+    QStyleOptionViewItem,
     QTreeWidget,
     QTreeWidgetItem,
     QVBoxLayout,
@@ -78,7 +81,7 @@ WAITING_NOTE = (
     "CDJ yet. `dubcrate card sync` is the way to try it, on an imaged card."
 )
 
-COL_NAME, COL_TRACKS, COL_STATUS, COL_TICK = range(4)
+COL_NAME, COL_TRACKS = range(2)  # (the tick box is in the name column, on the left)
 
 
 def ask_card_folder(parent: QWidget | None) -> str:
@@ -195,6 +198,99 @@ class _ElidedLabel(QLabel):
         self.setToolTip(self._full if shown != self._full else "")
 
 
+class _TickHeader(QHeaderView):
+    """The disc list's header, with a tick box at the left of the first column that ticks (or unticks) every disc
+    that can be synced, drawn as the list's own boxes are. It shows ticked, unticked or partly from the discs."""
+
+    tick_clicked = Signal()
+    BOX_AT = 7  # the box's distance from where the tree's indentation ends: lines up with the list's own boxes
+
+    def __init__(self, parent: QWidget | None = None):
+        super().__init__(Qt.Orientation.Horizontal, parent)
+        self._state = Qt.CheckState.Unchecked
+        self._available = (
+            False  # no disc can be ticked: the box is drawn dim and does nothing
+        )
+        self._indent = (
+            20  # the tree's indentation: the boxes of the top level discs sit after it
+        )
+        self.setSectionsClickable(True)
+        self.set_indent(self._indent)
+
+    def box_width(self) -> int:
+        # (the list's own boxes are a little bigger than a plain check box's indicator)
+        return 4 + self.style().pixelMetric(
+            QStyle.PixelMetric.PM_IndicatorWidth, None, self
+        )
+
+    def set_indent(self, indent: int) -> None:
+        self._indent = indent
+        # room in the first heading for the box (the style sheet pads a heading by 8 pixels)
+        self.setStyleSheet(
+            f"QHeaderView::section:first {{ padding-left: {indent + self.BOX_AT + self.box_width() + 6}px; }}"
+        )
+        # (a style sheet on the header would centre the headings: they were left aligned)
+        self.setDefaultAlignment(
+            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
+        )
+
+    def set_state(self, state: Qt.CheckState, available: bool) -> None:
+        if (state, available) != (self._state, self._available):
+            self._state, self._available = state, available
+            self.viewport().update()
+
+    def _box(self, section: QRect) -> QRect:
+        size = self.box_width()
+        return QRect(
+            section.left() + self._indent + self.BOX_AT,
+            section.top() + (section.height() - size) // 2,
+            size,
+            size,
+        )
+
+    def paintSection(self, painter: QPainter, rect: QRect, logical_index: int) -> None:
+        super().paintSection(painter, rect, logical_index)
+        if logical_index != COL_NAME:
+            return
+        option = QStyleOptionViewItem()
+        option.initFrom(self)
+        option.rect = self._box(rect)
+        option.state = QStyle.StateFlag.State_Active | (
+            QStyle.StateFlag.State_Enabled
+            if self._available
+            else QStyle.StateFlag.State_None
+        )
+        option.state |= {
+            Qt.CheckState.Checked: QStyle.StateFlag.State_On,
+            Qt.CheckState.PartiallyChecked: QStyle.StateFlag.State_NoChange,
+            Qt.CheckState.Unchecked: QStyle.StateFlag.State_Off,
+        }[self._state]
+        self.style().drawPrimitive(
+            QStyle.PrimitiveElement.PE_IndicatorItemViewItemCheck, option, painter, self
+        )
+
+    def mousePressEvent(self, event) -> None:
+        if (
+            self._available
+            and event.button() == Qt.MouseButton.LeftButton
+            and self.logicalIndexAt(event.position().toPoint()) == COL_NAME
+        ):
+            section = QRect(
+                self.sectionViewportPosition(COL_NAME),
+                0,
+                self.sectionSize(COL_NAME),
+                self.height(),
+            )
+            if (
+                self._box(section)
+                .adjusted(-4, -4, 4, 4)
+                .contains(event.position().toPoint())
+            ):
+                self.tick_clicked.emit()
+                return  # (the box is not a click on the heading)
+        super().mousePressEvent(event)
+
+
 class CardRow(QWidget):
     """One card in the list: an icon, its name, its size and how many discs it holds, and a button
     to eject it (for a folder chosen by hand, one that takes it off the list instead)."""
@@ -304,15 +400,6 @@ class CardPanel(QWidget):
         self.cards.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.cards.customContextMenuRequested.connect(self._on_context_menu)
         layout.addWidget(self.cards, 1)
-        self.hint = QLabel(
-            "Plug the CDJ's SD card into this computer: it appears here by itself, found by its "
-            "PIONEER folder (click Refresh if it doesn't).\n\nA blank card can be set up by right-clicking "
-            "this list and choosing Format a Card. A copy of a card's folder, or a disk image of a card, "
-            "can be chosen by hand."
-        )
-        self.hint.setObjectName("mutedLabel")
-        self.hint.setWordWrap(True)
-        layout.addWidget(self.hint)
         self.choose_button = QPushButton("Choose Folder…")
         self.choose_button.clicked.connect(self.choose_folder)
         layout.addWidget(self.choose_button)
@@ -414,7 +501,6 @@ class CardPanel(QWidget):
         self.subtitle.setText(
             "No card found" if not n else f"{n} card{'s' if n != 1 else ''} found"
         )
-        self.hint.setVisible(not shown)
         if announce and self.current_card() != before:
             self.card_changed.emit(self.current_card())
 
@@ -666,8 +752,12 @@ class SyncView(QWidget):
         panel.addWidget(self.search)
 
         self.tree = QTreeWidget()
-        self.tree.setColumnCount(4)
-        self.tree.setHeaderLabels(["Disc", "Tracks", "Status", ""])
+        self.tick_header = _TickHeader(self.tree)
+        self.tree.setHeader(self.tick_header)
+        self.tree.setColumnCount(2)
+        self.tree.setHeaderLabels(["Disc", "Tracks"])
+        self.tick_header.set_indent(self.tree.indentation())
+        self.tick_header.tick_clicked.connect(self._tick_clicked)
         self.tree.setRootIsDecorated(True)
         self.tree.setUniformRowHeights(True)
         self.tree.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
@@ -675,10 +765,6 @@ class SyncView(QWidget):
         header.setStretchLastSection(False)
         header.setSectionResizeMode(COL_NAME, QHeaderView.ResizeMode.Stretch)
         header.setSectionResizeMode(COL_TRACKS, QHeaderView.ResizeMode.ResizeToContents)
-        header.setSectionResizeMode(COL_STATUS, QHeaderView.ResizeMode.Interactive)
-        header.setSectionResizeMode(COL_TICK, QHeaderView.ResizeMode.Fixed)
-        self.tree.setColumnWidth(COL_STATUS, 150)
-        self.tree.setColumnWidth(COL_TICK, 40)
         self.tree.itemChanged.connect(self._on_item_changed)
         self.tree.currentItemChanged.connect(lambda *_: self._show_detail())
         panel.addWidget(self.tree, 1)
@@ -712,15 +798,7 @@ class SyncView(QWidget):
         self.eject_check = QCheckBox("Eject after syncing")
         self.eject_check.setChecked(settings.get_sync_eject())
         self.eject_check.toggled.connect(settings.set_sync_eject)
-        self.waves_check = QCheckBox("Write waveforms")
-        self.waves_check.setChecked(settings.get_sync_waveforms())
-        self.waves_check.setToolTip(
-            "Also write each track's waveform to the card, so the player doesn't analyse the track "
-            "when the disc loads. A track that already has a waveform on the card keeps it."
-        )
-        self.waves_check.toggled.connect(self._waves_toggled)
         checks = QHBoxLayout()
-        checks.addWidget(self.waves_check)
         checks.addWidget(self.eject_check)
         checks.addStretch(1)
         panel.addLayout(checks)
@@ -737,7 +815,6 @@ class SyncView(QWidget):
         self.waves = (
             self.browser
         )  # (its rows and message, as the tests and callers look)
-        self.detail = self.browser.detail
         self.analyse_note = self.browser.analyse_note
         self.analyse_button = self.browser.analyse_button
         self.analyse_button.clicked.connect(self.analyse_waveforms)
@@ -782,10 +859,6 @@ class SyncView(QWidget):
 
         run_async(lambda: _read_all(databases), done, failed)
 
-    def _waves_toggled(self, on: bool) -> None:
-        settings.set_sync_waveforms(on)
-        self._look_at_discs(self._loaded)
-
     def _look_at_discs(self, loaded: dict) -> None:
         self._loaded = loaded
 
@@ -801,7 +874,7 @@ class SyncView(QWidget):
             self._card,
             RekordboxCues(self._lib, load=load),
             disc_paths(self._lib),
-            waves=self.waves_check.isChecked(),
+            waves=True,
         )
         self._surveys = {s.disc.id: s for s in surveys}
         self._unmeasured = self._tracks_to_measure(surveys)
@@ -862,21 +935,21 @@ class SyncView(QWidget):
                     [
                         survey.disc.name,
                         str(survey.disc.track_count),
-                        survey.status,
                     ],
                 )
                 item.setData(COL_NAME, Qt.ItemDataRole.UserRole, survey.disc.id)
                 item.setIcon(COL_NAME, _disc_icon("audio"))
-                item.setToolTip(COL_STATUS, "\n".join(survey.detail()))
+                item.setToolTip(COL_NAME, "\n".join([survey.status, *survey.detail()]))
                 item.setTextAlignment(
                     COL_TRACKS,
                     Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
                 )
-                if survey.input.problems:
-                    item.setForeground(COL_STATUS, self.palette().placeholderText())
-                if survey.writable:
+                if not survey.writable:  # (no box; greyed, and the tooltip says why)
+                    for column in (COL_NAME, COL_TRACKS):
+                        item.setForeground(column, self.palette().placeholderText())
+                else:
                     item.setCheckState(
-                        COL_TICK,
+                        COL_NAME,
                         Qt.CheckState.Checked
                         if survey.disc.id in ticked
                         else Qt.CheckState.Unchecked,
@@ -922,19 +995,19 @@ class SyncView(QWidget):
 
     @staticmethod
     def _tickable(item: QTreeWidgetItem) -> bool:
-        return item.data(COL_TICK, Qt.ItemDataRole.CheckStateRole) is not None
+        return item.data(COL_NAME, Qt.ItemDataRole.CheckStateRole) is not None
 
     def _update_folder(self, folder: QTreeWidgetItem) -> None:
         """A folder shows ticked, unticked or partly, from the discs inside it (none: no box)."""
         states = [
-            i.checkState(COL_TICK)
+            i.checkState(COL_NAME)
             for i in self._walk(folder)
             if self._id(i) is not None and self._tickable(i)
         ]
         if not states:
             return
         folder.setCheckState(
-            COL_TICK,
+            COL_NAME,
             Qt.CheckState.Checked
             if all(s == Qt.CheckState.Checked for s in states)
             else Qt.CheckState.Unchecked
@@ -944,16 +1017,16 @@ class SyncView(QWidget):
 
     def _on_item_changed(self, item: QTreeWidgetItem, column: int) -> None:
         """A tick on a folder ticks every disc in it; a tick on a disc brings its folders up to date."""
-        if self._ticking or column != COL_TICK:
+        if self._ticking or column != COL_NAME:
             return
         self._ticking = True
         try:
             if self._id(item) is None:
-                state = item.checkState(COL_TICK)
+                state = item.checkState(COL_NAME)
                 if state != Qt.CheckState.PartiallyChecked:
                     for disc in self._walk(item):
                         if self._id(disc) is not None and self._tickable(disc):
-                            disc.setCheckState(COL_TICK, state)
+                            disc.setCheckState(COL_NAME, state)
             for folder in self._folder_items():
                 self._update_folder(folder)
         finally:
@@ -964,11 +1037,32 @@ class SyncView(QWidget):
         self._ticking = True
         for item in self._disc_items():
             if self._tickable(item):
-                item.setCheckState(COL_TICK, state)
+                item.setCheckState(COL_NAME, state)
         for folder in self._folder_items():
             self._update_folder(folder)
         self._ticking = False
         self._update_buttons()
+
+    def _tick_clicked(self) -> None:
+        """The header's box: tick every disc that can be synced, or, when all are ticked, none."""
+        every = len(self.ticked_ids()) == len(self._tickable_discs())
+        self._tick_all(Qt.CheckState.Unchecked if every else Qt.CheckState.Checked)
+
+    def _tickable_discs(self) -> list[QTreeWidgetItem]:
+        return [i for i in self._disc_items() if self._tickable(i)]
+
+    def _update_header_tick(self) -> None:
+        """The header's box shows how many of the discs that can be synced are ticked."""
+        discs = self._tickable_discs()
+        ticked = len(self.ticked_ids())
+        state = (
+            Qt.CheckState.Unchecked
+            if not ticked
+            else Qt.CheckState.Checked
+            if ticked == len(discs)
+            else Qt.CheckState.PartiallyChecked
+        )
+        self.tick_header.set_state(state, bool(discs))
 
     def ticked_ids(self) -> list[int]:
         """The ticked discs' ids, in the order listed."""
@@ -976,7 +1070,7 @@ class SyncView(QWidget):
             self._id(i)
             for i in self._disc_items()
             if self._tickable(i)
-            and i.checkState(COL_TICK) == Qt.CheckState.Checked
+            and i.checkState(COL_NAME) == Qt.CheckState.Checked
             and self._surveys[self._id(i)].writable
         ]
 
@@ -1008,22 +1102,11 @@ class SyncView(QWidget):
                 if not self._surveys
                 else "Pick a disc on the right to look through its tracks and see what a sync would do for it."
             )
-            self.detail.setPlainText(
-                "No audio discs yet. Make one, or open the Library, and it is listed here."
-                if not self._surveys
-                else "Pick a disc to see what a sync would do for it.\n\n"
-                "Every rekordbox cue (memory cues, hot cues and loops) becomes a memory cue on the "
-                "card. The player's hot cues A, B and C are never touched, and cues already on "
-                "the card are kept. With “Write waveforms” ticked, each track also gets its "
-                "waveform on the card (the player then doesn't analyse it), unless the card "
-                "already has one for it."
-            )
         elif survey.input.problems:
             self.browser.show_message(
                 "This disc can't be synced: " + survey.input.problems[0],
                 title=survey.disc.name,
             )
-            self.detail.setPlainText("\n".join(survey.detail()))
         else:
             entries = self._lib.disc_entries(survey.disc.id)
             plan = survey.plan
@@ -1031,9 +1114,8 @@ class SyncView(QWidget):
                 survey.disc.id,
                 survey.disc.name,
                 f"{survey.disc.track_count} tracks · {survey.status}",
-                wave_rows(survey, entries, self.waves_check.isChecked()),
+                wave_rows(survey, entries, True),
                 warnings=[*survey.input.warnings, *(plan.notes if plan else [])],
-                detail="\n".join(survey.detail()),
             )
         self._update_analyse(self._measuring or self._writing or self._analysing)
 
@@ -1049,10 +1131,10 @@ class SyncView(QWidget):
                 else "No audio discs"
             )
         self.clear_button.setEnabled(bool(ticked))
+        self._update_header_tick()
         busy = self._measuring or self._writing or self._analysing
         self.cancel_button.setVisible(self._measuring or self._analysing)
         self.measure_button.setEnabled(bool(self._unmeasured) and not busy)
-        self.waves_check.setEnabled(not busy)
         self._update_analyse(busy)
         card = self._card_path.name if self._card_path else ""
         if self._card is None:
@@ -1113,9 +1195,9 @@ class SyncView(QWidget):
             self.cues_chosen.emit(chosen)
 
     def _picked_to_analyse(self) -> list[Track]:
-        """The picked disc's tracks that have no waveform yet (none when Write waveforms is off)."""
+        """The picked disc's tracks that have no waveform yet."""
         survey = self._surveys.get(self._current_disc_id() or -1)
-        if survey is None or survey.input.problems or not self.waves_check.isChecked():
+        if survey is None or survey.input.problems:
             return []
         return list(survey.input.to_analyse)
 
@@ -1125,8 +1207,6 @@ class SyncView(QWidget):
         todo = self._picked_to_analyse()
         if survey is None or survey.input.problems:
             note = ""
-        elif not self.waves_check.isChecked():
-            note = "Write waveforms is off."
         elif todo:
             note = f"{len(todo)} track{'s' if len(todo) != 1 else ''} not analysed yet."
         else:
@@ -1180,10 +1260,9 @@ class SyncView(QWidget):
 
     def _tracks_to_analyse(self, surveys: Sequence[DiscSurvey]) -> list[Track]:
         found: dict[int, Track] = {}
-        if self.waves_check.isChecked():
-            for survey in surveys:
-                for track in survey.input.to_analyse:
-                    found[track.id] = track
+        for survey in surveys:
+            for track in survey.input.to_analyse:
+                found[track.id] = track
         return list(found.values())
 
     def _analyse_then_write(self, todo: list[Track], disc_ids: list[int]) -> None:

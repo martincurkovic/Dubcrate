@@ -382,6 +382,8 @@ class Library:
     def __init__(self, conn: sqlite3.Connection) -> None:
         self._conn = conn
         self._conn.row_factory = sqlite3.Row
+        # the rekordbox rows by file, and the connection's `total_changes` they were read at (see below)
+        self._rekordbox_files: tuple[int, dict[str, sqlite3.Row]] | None = None
 
     @classmethod
     def open(cls, path: Path | str | None = None) -> "Library":
@@ -1732,13 +1734,21 @@ class Library:
     # -- the same file under two rows ------------------------------------
 
     def _rekordbox_rows_by_file(self) -> dict[str, sqlite3.Row]:
-        """The rekordbox tracks (not stale), by `path_key`; the first if two share a file."""
+        """The rekordbox tracks (not stale), by `path_key`; the first if two share a file.
+
+        Held until the connection has changed any row (`total_changes`: every insert, update and delete through
+        it counts, so a re-import, a stale flag or a new track can't leave this out of date): a window asks
+        for a twin once per visible row, and building this for the whole library each time was 0.2 s a refresh."""
+        changes = self._conn.total_changes
+        if self._rekordbox_files is not None and self._rekordbox_files[0] == changes:
+            return self._rekordbox_files[1]
         found: dict[str, sqlite3.Row] = {}
         for r in self._conn.execute(
             "SELECT t.* FROM track t JOIN source s ON s.id = t.source_id"
             " WHERE s.kind = 'rekordbox' AND t.stale = 0 ORDER BY t.id"
         ):
             found.setdefault(path_key(r["path"]), r)
+        self._rekordbox_files = (changes, found)
         return found
 
     def rekordbox_twin(self, track: Track) -> Track | None:

@@ -205,8 +205,6 @@ class RekordboxEditor(QObject):
         self._sent_db = database
         if not self._sent:
             return self._start()
-        if outcome.written:
-            self.message.emit("Memory cues saved to rekordbox")
         self._cues.refresh(database)
 
     def _failed(

@@ -60,6 +60,12 @@ DARK_PALETTE = {
     "update_text": "#ffffff",
     "update_text_hover": "#ffffff",
     "update_border": "#2f6fd0",
+    "badge_ro_bg": "#e6b422",
+    "badge_ro_border": "#e6b422",
+    "badge_ro_text": "#1a1a1a",
+    "badge_rw_bg": "#e0702a",
+    "badge_rw_border": "#e0702a",
+    "badge_rw_text": "#ffffff",
     # alternating-row tint for tables/trees. Deliberately close to bg_panel
     # rather than bg_input/bg_selected - a stripe should read as a faint
     # banding cue, not as an editable field or a selection highlight.
@@ -130,6 +136,12 @@ LIGHT_PALETTE = {
     "update_text": "#ffffff",
     "update_text_hover": "#ffffff",
     "update_border": "#2563eb",
+    "badge_ro_bg": "#f2c230",
+    "badge_ro_border": "#f2c230",
+    "badge_ro_text": "#1a1a1a",
+    "badge_rw_bg": "#d9651c",
+    "badge_rw_border": "#d9651c",
+    "badge_rw_text": "#ffffff",
     # same reasoning as DARK_PALETTE's bg_zebra - close to this theme's own
     # bg_panel ("#ffffff"), just a faint step down rather than a strong tint
     "bg_zebra": "#f6f3fb",
@@ -191,6 +203,12 @@ SYSTEM6_PALETTE = {
     "update_text": "#000000",
     "update_text_hover": "#ffffff",
     "update_border": "#000000",
+    "badge_ro_bg": "#ffffff",
+    "badge_ro_border": "#000000",
+    "badge_ro_text": "#000000",
+    "badge_rw_bg": "#000000",
+    "badge_rw_border": "#000000",
+    "badge_rw_text": "#ffffff",
     "bg_zebra": "#f0f0f0",
     # eight dark greys for what is still coloured by position (the loop markers on the sample waveform); the volumes themselves are hatched
     "volume_color_1": "#000000",

@@ -319,6 +319,13 @@ def stored(rig):
     return rig.lib.memory_cues(rig.c.track.path)
 
 
+def reset(rig):
+    """Reset, the way it is reached now: the Memory list's right-click menu (on an empty spot)."""
+    menu = rig.strip.side.memory_menu(None)
+    [action] = [a for a in menu.actions() if a.text() == "Reset to rekordbox's"]
+    action.trigger()
+
+
 def test_the_memory_button_adds_a_memory_cue_at_the_playhead_and_it_is_kept(rig):
     assert (
         rig.strip.memory_button.isEnabled()
@@ -328,9 +335,7 @@ def test_the_memory_button_adds_a_memory_cue_at_the_playhead_and_it_is_kept(rig)
     rig.strip.memory_button.click()
     assert stored(rig) == [(12500, "")]
     assert memory_times(rig) == [12.5]
-    assert rig.strip.side.edited_row.isVisibleTo(
-        rig.strip.side
-    )  # (it says it is edited, with a Reset)
+    assert rig.strip.side.edited  # (so the list's right-click menu offers Reset)
     assert [c.time for c in rig.strip._cues if c.kind == "memory"] == [
         12.5
     ]  # (and it is drawn on the waveforms)
@@ -381,7 +386,7 @@ def test_the_list_x_deletes_that_cue_and_a_loop_has_none(rig):
     assert (
         stored(rig) == [] and memory_times(rig) == []
     )  # (all deleted: still an edit, not rekordbox's)
-    assert side.edited_row.isVisibleTo(side)
+    assert side.edited
 
 
 def test_the_x_by_memory_deletes_the_one_near_the_playhead_and_says_when_there_is_none(
@@ -418,9 +423,9 @@ def test_reset_goes_back_to_rekordboxs_and_forgets_the_edits(rig):
     at(rig, 5.0)
     rig.strip.memory_button.click()
     assert stored(rig) == [(5000, "")]
-    rig.strip.side.reset_button.click()
+    reset(rig)
     assert stored(rig) is None and memory_times(rig) == []
-    assert not rig.strip.side.edited_row.isVisibleTo(rig.strip.side)
+    assert not rig.strip.side.edited
 
 
 def test_the_menu_of_a_loop_or_an_empty_spot_has_no_edit_items_and_reset_only_when_edited(
@@ -501,7 +506,7 @@ def test_memory_with_a_loop_on_saves_a_memory_loop_and_the_loop_stays_on(rig):
     )  # (no memory cue was made, and rekordbox's cues are not an edit)
     assert rig.c.deck.loop_active and rig.player.looping
     assert [(c.kind, c.local) for c in rig.strip._cues if c.kind == "loop"] == [("loop", True)]  # fmt: skip
-    assert rig.strip.side.edited_row.isVisibleTo(rig.strip.side)
+    assert rig.strip.side.edited
     assert "Dubcrate" in rig.messages[-1]
 
 
@@ -580,8 +585,8 @@ def test_the_x_by_memory_deletes_a_loop_the_playhead_is_inside_or_next_to(rig):
 def test_reset_forgets_saved_loops_too(rig):
     loop_on(rig)
     rig.strip.memory_button.click()
-    rig.strip.side.reset_button.click()
-    assert saved_loops(rig) == [] and not rig.strip.side.edited_row.isVisibleTo(rig.strip.side)  # fmt: skip
+    reset(rig)
+    assert saved_loops(rig) == [] and not rig.strip.side.edited
 
 
 def test_a_loop_saved_here_is_added_to_rekordboxs_loops_not_in_place_of_them(

@@ -493,7 +493,7 @@ def _sync(ctx):
     ctx.settle(8)
     view = window.sync_view
     warm = next(i for i in view._disc_items() if "Warm" in i.text(0))
-    warm.setCheckState(sync_view.COL_TICK, Qt.CheckState.Checked)
+    warm.setCheckState(sync_view.COL_NAME, Qt.CheckState.Checked)
     view.tree.setCurrentItem(warm)
     view.tree.setFocus()  # (not the search box, whose focus ring would draw the eye)
     ctx.settle(8)

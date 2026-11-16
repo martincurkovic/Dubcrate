@@ -115,7 +115,7 @@ def test_an_edit_is_written_then_dropped_from_dubcrate(lib, wait_for):
     assert (
         lib.memory_cues(IN_RB.path) is None
     )  # rekordbox has them: Dubcrate's copy is gone
-    assert seen.messages == ["Memory cues saved to rekordbox"]
+    assert seen.messages == []  # (a good save is silent; only a problem is said)
     assert cache.refreshed == 1
 
 

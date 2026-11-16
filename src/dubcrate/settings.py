@@ -1,6 +1,6 @@
 """Persistent user settings (QSettings: plist / registry / ini per platform)."""
 
-from PySide6.QtCore import QByteArray, QSettings
+from PySide6.QtCore import QByteArray, QObject, QSettings, Signal
 
 from dubcrate import keys, labels, loudness, mp3
 
@@ -9,6 +9,16 @@ THEME_LIGHT = "light"
 THEME_DARK = "dark"
 THEME_SYSTEM6 = "system6"
 THEME_VALUES = (THEME_SYSTEM, THEME_LIGHT, THEME_DARK, THEME_SYSTEM6)
+
+
+class _Changes(QObject):
+    """Settings that other parts of the window show, announced when they change (the Settings window, or the
+    first-edit question, changes them while the main window is up)."""
+
+    rekordbox_editing = Signal()
+
+
+changes = _Changes()
 
 
 def _qs() -> QSettings:
@@ -196,6 +206,7 @@ def get_rekordbox_editing() -> bool | None:
 
 def set_rekordbox_editing(on: bool) -> None:
     _qs().setValue("rekordbox/editing", bool(on))
+    changes.rekordbox_editing.emit()
 
 
 def get_sync_eject() -> bool:
@@ -206,16 +217,6 @@ def get_sync_eject() -> bool:
 
 def set_sync_eject(on: bool) -> None:
     _qs().setValue("sync/eject", bool(on))
-
-
-def get_sync_waveforms() -> bool:
-    """Whether Sync writes waveforms for the tracks the card has none for (on unless switched off:
-    the player then skips analysing them when the disc loads)."""
-    return _as_bool(_qs().value("sync/waveforms", True), True)
-
-
-def set_sync_waveforms(on: bool) -> None:
-    _qs().setValue("sync/waveforms", bool(on))
 
 
 def get_levels_choice() -> str:
