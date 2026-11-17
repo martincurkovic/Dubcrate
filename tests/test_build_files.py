@@ -231,7 +231,7 @@ def test_the_appimage_tool_is_pinned_with_a_hash_for_each_architecture():
 def test_the_linux_names_the_script_makes_are_the_ones_the_workflow_uploads_and_smoke_tests():
     assert 'IMAGE="$APP_NAME-linux-$ARCH.AppImage"' in LINUX_SCRIPT
     assert 'zip -q "$APP_NAME-linux-$ARCH.zip" "$IMAGE"' in LINUX_SCRIPT
-    job = BUILD_WORKFLOW.split("  build-linux:")[1].split("\n  release:")[0]
+    job = BUILD_WORKFLOW.split("  build-linux:")[1].split("\n  build-windows:")[0]
     assert "runs-on: ubuntu-24.04" in job and "build_linux.sh" in job
     assert "${{ env.APP_NAME }}-linux-x86_64.zip" in job
     assert (
@@ -250,3 +250,67 @@ def test_the_docker_build_wraps_the_same_script_and_checks_the_result():
     for needed in ("build-essential", "patchelf", "nasm", "zip", "file", "zlib1g-dev"):
         assert needed in dockerfile, needed
         assert needed in LINUX_SCRIPT, needed
+
+
+# -- Windows (written, never run: the first CI run is the first build) -----------------------------------------------
+
+WINDOWS_SCRIPT = (ROOT / "scripts" / "build_windows.ps1").read_text(encoding="utf-8")
+FFMPEG_WINDOWS = (ROOT / "scripts" / "build_ffmpeg_windows.sh").read_text(encoding="utf-8")  # fmt: skip
+INSTALLER = (ROOT / "assets" / "windows" / "Dubcrate.iss").read_text(encoding="utf-8")
+
+
+def test_the_windows_build_bundles_the_same_data_and_modules_as_the_others():
+    assert data_args(WINDOWS_SCRIPT) and data_args(WINDOWS_SCRIPT) == data_args(BUILD_SCRIPT)  # fmt: skip
+    for module in ("pyrekordbox", "sqlcipher3", "cffi", "_cffi_backend"):
+        assert module in WINDOWS_SCRIPT, module
+    assert "--windows-console-mode=disable" in WINDOWS_SCRIPT
+    code = "\n".join(l for l in WINDOWS_SCRIPT.splitlines() if not l.lstrip().startswith("#"))  # fmt: skip
+    for macos in ("MACOSX", "codesign", "plutil", "dmgbuild", "DiscRecording"):
+        assert macos not in code, macos
+    assert re.search(r'^\$AppName\s*=\s*"Dubcrate"', WINDOWS_SCRIPT, re.MULTILINE)
+    assert "build_ffmpeg_windows.sh" in WINDOWS_SCRIPT and "dubcrate/bin" in WINDOWS_SCRIPT  # fmt: skip
+
+
+def test_the_windows_ffmpeg_is_the_same_lgpl_build():
+    for name in ("FFMPEG_VERSION", "FFMPEG_SHA256", "LAME_VERSION", "LAME_SHA256"):
+        assert assigned(FFMPEG_WINDOWS, name) == assigned(FFMPEG_MACOS, name), name
+    for needed in ("--enable-libmp3lame", "--enable-encoder=pcm_s16le,libmp3lame", "--enable-muxer=pcm_s16le", "--disable-autodetect", "--enable-static"):  # fmt: skip
+        assert needed in FFMPEG_WINDOWS, needed
+    for banned in ("--enable-gpl", "--enable-nonfree", "--enable-version3"):
+        assert not re.search(rf"^\s*{banned}\b", FFMPEG_WINDOWS, re.MULTILINE), banned
+    assert (
+        "--enable-gpl" in FFMPEG_WINDOWS
+    )  # (the check that refuses a GPL build names it)
+    configure = lambda text: re.findall(
+        r"^\s+(--(?:enable|disable)-[^\s\\]+)", text, re.MULTILINE
+    )
+    shared = [c for c in configure(FFMPEG_MACOS) if c != "--enable-zlib"]
+    assert set(shared) <= set(configure(FFMPEG_WINDOWS)) | {"--enable-gpl"}
+
+
+def test_the_installer_is_a_fixed_identity_and_packs_what_the_build_makes():
+    guid = re.search(r"^AppId=\{\{([0-9A-F-]+)\}$", INSTALLER, re.MULTILINE)
+    assert guid and re.fullmatch(r"[0-9A-F]{8}(-[0-9A-F]{4}){3}-[0-9A-F]{12}", guid.group(1))  # fmt: skip
+    assert (
+        guid.group(1) != "AFD717DE-AB64-4611-BACB-BFA2AD915AE5"
+    )  # (JV Studio's: each app has its own)
+    assert '#define MyAppName "Dubcrate"' in INSTALLER
+    assert '#define MyAppExeName "main.exe"' in INSTALLER
+    assert 'Source: "..\\..\\src\\Dubcrate.dist\\*"' in INSTALLER
+    assert "LicenseFile=..\\..\\LICENSE" in INSTALLER and (ROOT / "LICENSE").is_file()
+    assert "SetupIconFile=..\\icon\\Dubcrate.ico" in INSTALLER
+    assert "Dubcrate.ico" in (ROOT / "scripts" / "make_ico.py").read_text(encoding="utf-8")  # fmt: skip
+    assert "assets/icon/*.ico" in (ROOT / ".gitignore").read_text(encoding="utf-8")
+
+
+def test_the_windows_names_the_script_makes_are_the_ones_the_workflow_uploads():
+    setup = re.search(r"^OutputBaseFilename=(\S+)$", INSTALLER, re.MULTILINE).group(1)
+    assert setup == "Dubcrate-windows-x64-Setup"
+    assert "$AppName-windows-x64-Setup.exe" in WINDOWS_SCRIPT
+    job = BUILD_WORKFLOW.split("  build-windows:")[1].split("\n  release:")[0]
+    assert "runs-on: windows-latest" in job and "build_windows.ps1" in job
+    assert "${{ env.APP_NAME }}-windows-x64-Setup.exe" in job
+    assert "--smoke-test=" in job and "src\\$env:APP_NAME.dist\\main.exe" in job
+    assert "msys2/setup-msys2" in job and "build_ffmpeg_windows.sh" in job
+    assert "needs: [test, test-macos]" in job
+    assert "build-windows" in BUILD_WORKFLOW.split("  release:")[1].split("steps:")[0]

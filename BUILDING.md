@@ -6,6 +6,7 @@
 - A C compiler for Nuitka, which compiles the app
 - **macOS 14 or newer** (the Qt 6.12 wheels need it) with the Xcode Command Line Tools (`xcode-select --install`). Its build script is `scripts/build_macos.sh`
 - **Linux** (x86_64 or aarch64; Ubuntu 24.04 is what CI and the Docker build use): `sudo apt install build-essential patchelf curl xz-utils nasm zip file zlib1g-dev`. Its build script is `scripts/build_linux.sh`, which makes an **AppImage**; with Docker running, `scripts/build_linux_docker.sh` does the whole build in a container, from any computer (see below)
+- **Windows 10 or 11 (64-bit)**: the Visual Studio Build Tools' C++ workload (or let Nuitka download MinGW), [MSYS2](https://www.msys2.org) (to build ffmpeg: `winget install MSYS2.MSYS2`, then in an MSYS2 MINGW64 shell `pacman -S --needed base-devel diffutils make nasm xz curl mingw-w64-x86_64-gcc mingw-w64-x86_64-zlib mingw-w64-x86_64-pkgconf`) and [Inno Setup 6](https://jrsoftware.org/isinfo.php) (`winget install JRSoftware.InnoSetup`). Its build script is `scripts/build_windows.ps1`, which makes an **installer**
 - `ffmpeg` and `ffprobe` to run the app from source (`brew install ffmpeg` on a Mac, `sudo apt install ffmpeg` on Linux). The built app carries its own (see below)
 - `nasm` on an Intel Mac or an x86_64 Linux, to build those (`brew install nasm`, `sudo apt install nasm`)
 
@@ -48,6 +49,17 @@ chmod +x Dubcrate-linux-x86_64.AppImage && ./Dubcrate-linux-x86_64.AppImage
 
 The Docker build on an Apple Silicon Mac makes an **aarch64** AppImage; the GitHub runner makes the x86_64 one. It was built and smoke-tested in Docker, but **has not been run on a real Linux desktop** (a window on screen, sound, a drive): see `dev_docs/linux-test-plan.md`. An AppImage built on Ubuntu 24.04 needs a distribution with glibc 2.39 or newer. `cdrdao` is GPL and is not bundled: install it with the package manager to burn.
 
+## Building for Windows (an installer)
+
+`scripts/build_windows.ps1` (run it from PowerShell) does what the Linux script does: `uv sync`, the icon (`scripts/make_ico.py` makes `assets/icon/Dubcrate.ico`, not tracked, from the 1024 px master), the version from the git tag (with a four-part product version for Windows), `scripts/build_ffmpeg_windows.sh` run through MSYS2 (the same pinned FFmpeg and LAME as the other two, LGPL, static, checked to be no GPL build and to need only DLLs every Windows has; set `MSYS2_ROOT` if MSYS2 is not in `C:\msys64`), `pyside6-deploy` (Nuitka, standalone, `src\Dubcrate.dist\main.exe`, no console window), and then, if Inno Setup is installed, `assets/windows/Dubcrate.iss`, which makes `Dubcrate-windows-x64-Setup.exe` in the repository root. The installer installs for the current user (no administrator prompt) on Windows 10 (1809) or newer. Its `AppId` is the program's identity for Windows' upgrades and uninstaller: **never change it**.
+
+```
+.\scripts\build_windows.ps1
+src\Dubcrate.dist\main.exe --smoke-test=report.txt     # the same check as on the other systems
+```
+
+**Not yet run.** The Windows scripts, the installer and the CI job were written from JV Studio's and the Linux scripts and checked only by `tests/test_build_files.py`; the first CI run is the first build. `cdrdao` is not bundled and has no tested Windows build, so on Windows the burn window says it can't burn and **Export Disc as Files…** is the way to a disc.
+
 ## Icons and the DMG background
 
 `assets/icon/AppIcon.png` is the master: 1024x1024, already in macOS icon form (rounded square, transparent corners; see `AppIcon.txt`). `scripts/make_icons.sh` makes `assets/icon/Dubcrate-macos.icns` from it on every build, and the `.icns` is not tracked.
@@ -57,4 +69,4 @@ The Docker build on an Apple Silicon Mac makes an **aarch64** AppImage; the GitH
 ## CI
 
 - `.github/workflows/test.yml`: lint (`ruff`) and the tests on Linux, on every push, to any branch. `test-macos.yml` and `test-windows.yml` run the same tests on those systems, by hand only (Actions tab > Run workflow), to spare the Actions quota; a release (`build.yml`) also runs the macOS one.
-- `.github/workflows/build.yml`: on a `v*.*.*` tag (or by hand): the tests, then the macOS Apple Silicon and Intel builds and the Linux (AppImage, x86_64) build, each smoke-tested, then a **draft** GitHub release with the two DMGs and the Linux zip. Publish the draft to release. (Windows is not built yet.)
+- `.github/workflows/build.yml`: on a `v*.*.*` tag (or by hand): the tests, then the macOS Apple Silicon and Intel builds, the Linux (AppImage, x86_64) build and the Windows installer build (on `windows-latest`, with MSYS2 for ffmpeg), each smoke-tested, then a **draft** GitHub release with the two DMGs, the Linux zip and the Windows installer. Publish the draft to release.

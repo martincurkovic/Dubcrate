@@ -131,8 +131,52 @@ jobs:
           name: ${{ env.APP_NAME }}-linux
           path: ${{ env.APP_NAME }}-linux-x86_64.zip
 
+  build-windows:
+    # the push-time tests already ran on Linux (the `test` job), and the macOS ones above; the Windows ones are run by hand
+    # (test-windows.yml), so this only builds
+    needs: [test, test-macos]
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version-file: ".python-version"
+      - uses: astral-sh/setup-uv@v6
+      - name: Set up MSYS2
+        # scripts/build_windows.ps1 builds LGPL ffmpeg and ffprobe in it (scripts/build_ffmpeg_windows.sh)
+        id: msys2
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: false
+          install: base-devel diffutils make nasm xz curl mingw-w64-x86_64-gcc mingw-w64-x86_64-zlib mingw-w64-x86_64-pkgconf
+      - name: Cache the ffmpeg build
+        uses: actions/cache@v4
+        with:
+          path: build/ffmpeg
+          key: ffmpeg-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/build_ffmpeg_windows.sh') }}
+      - name: Install Inno Setup
+        run: choco install innosetup -y
+      - name: Build
+        env:
+          MSYS2_ROOT: ${{ steps.msys2.outputs.msys2-location }}
+        run: .\scripts\build_windows.ps1  # also builds $env:APP_NAME-windows-x64-Setup.exe at the repo root
+      - name: Smoke-test the built app
+        # the built app has no console, so Start-Process waits for it and the report comes from a file
+        run: |
+          $env:QT_QPA_PLATFORM = "offscreen"
+          $p = Start-Process -FilePath "src\$env:APP_NAME.dist\main.exe" -ArgumentList "--smoke-test=smoke.txt" -Wait -PassThru
+          if (Test-Path smoke.txt) { Get-Content smoke.txt } else { Write-Host "no smoke test report was written" }
+          if ($p.ExitCode -ne 0) { throw "smoke test failed (exit code $($p.ExitCode))" }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.APP_NAME }}-windows
+          path: ${{ env.APP_NAME }}-windows-x64-Setup.exe
+
   release:
-    needs: [build-macos-arm, build-macos-intel, build-linux]
+    needs: [build-macos-arm, build-macos-intel, build-linux, build-windows]
     if: github.ref_type == 'tag'
     runs-on: ubuntu-latest
     permissions:

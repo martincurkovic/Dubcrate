@@ -30,3 +30,4 @@ nuitka-crash-report.xml
 *.app/
 *.dmg
 deployment/
+assets/icon/*.ico
