@@ -15,8 +15,6 @@ Dubcrate helps you put music from your rekordbox library (or any folder) onto au
 - [The Explorer](#the-explorer)
 - [Listening to tracks](#listening-to-tracks)
 - [Your discs](#your-discs)
-- [Planning a disc](#planning-a-disc)
-- [Checking tracks you already used](#checking-tracks-you-already-used)
 - [Burning a disc](#burning-a-disc)
 - [Printing labels](#printing-labels)
 - [Syncing cues to the card](#syncing-cues-to-the-card)
@@ -32,11 +30,11 @@ Dubcrate helps you put music from your rekordbox library (or any folder) onto au
 
 1. **Import your music.** Choose **File > Import Folder…** for a folder of music, or **File > Import rekordbox Library…** for your rekordbox library.
 2. **Find some tracks.** Pick a playlist or folder on the left, or search.
-3. **Build a disc.** Choose **Disc > New Disc** (or press the **+** in the Discs list) and type a name over the one it suggests, then drag tracks onto it, or select them and press **⌘Return**.
+3. **Build a disc.** Choose **Disc > New Disc** (or press the **+** in the Discs list), type a name, then drag tracks onto it, or select them and press **⌘Return**.
 4. **Watch the bar.** It shows how full the disc is and turns red if the disc is too long.
-5. **Burn it.** Open the disc by clicking it, press **Burn…**, load a blank CD-R and burn.
+5. **Burn it.** Open the disc, press **Burn…**, load a blank CD-R and burn.
 
-Dubcrate comes with **ffmpeg** and **ffprobe**, which it uses to read tracks and to prepare them for the disc, so there is nothing to install. **Settings > Library** shows where it found each one and which version it is. (A copy you have installed yourself, for instance with Homebrew, is only used if Dubcrate's own is missing.)
+Dubcrate includes **ffmpeg** and **ffprobe**, which it uses to read tracks and prepare them for the disc, so there is nothing to install.
 
 ---
 
@@ -44,10 +42,10 @@ Dubcrate comes with **ffmpeg** and **ffprobe**, which it uses to read tracks and
 
 ![The main window, dark theme](screenshots/main-window-dark.png "The main window")
 
-- **Library, Explorer and Sync** (left): tabs down the left edge. **Library** is everything you have imported: **All Tracks** first, then your folders and playlists, as in rekordbox; click one to see its tracks. With a single source imported, it has no row of its own (**All Tracks** is the same set of tracks, and **Re-import Selected Source** and **Remove Selected Source…** act on it); with two or more, each source gets a row, with its folders and playlists beneath it. **Explorer** browses the folders on your Mac or a drive without importing anything: see [The Explorer](#the-explorer). **Sync**, fixed at the bottom of the strip, is for the CDJ's SD card: see [Syncing cues to the card](#syncing-cues-to-the-card).
-- **Tracks** (middle): the tracks of whatever is selected on the left, with a search box above. Right-click a track for **Add to Disc** and **Fit All Shown Tracks to Disc** (also on the **Disc** menu). When you open a disc, the middle shows that disc instead.
-- **Player** (across the top): play and pause, previous and next, the title, time, key and BPM of the track you are previewing, a **cog** that opens Settings, a small **volume knob** (drag it up or down, hold Shift to go slowly, double-click to reset it), and two waveforms.
-- **Discs** (right): your burn playlists, filed in folders. See [Your discs](#your-discs).
+- **Library, Explorer and Sync** (left): tabs down the left edge. **Library** is everything you have imported: **All Tracks** first, then your folders and playlists, as in rekordbox. **Explorer** browses folders and drives without importing ([The Explorer](#the-explorer)). **Sync** is for the CDJ's SD card ([Syncing cues to the card](#syncing-cues-to-the-card)).
+- **Tracks** (middle): the tracks of whatever is selected on the left, with a search box above. Right-click a track for **Add to Disc** and **Fit All Shown Tracks to Disc**. When you open a disc, the middle shows that disc instead.
+- **Player** (across the top): play and pause, previous and next, the title, time, key and BPM of the track you are previewing, a **cog** that opens Settings, a **volume knob** (drag it; Shift for fine steps; double-click to reset), and two waveforms.
+- **Discs** (right): your burn playlists, filed in folders.
 
 **View > Theme** switches between System, Light, Dark and Macintosh System 6 (black and white, with a bitmap-style font).
 
@@ -55,7 +53,7 @@ Dubcrate comes with **ffmpeg** and **ffprobe**, which it uses to read tracks and
 
 ![The main window, Macintosh System 6 theme](screenshots/main-window-system6.png "The Macintosh System 6 theme")
 
-**Help > User Guide** opens this guide in its own window, which can stay open beside the app. Press **⌘F** in it to search the page, and click the links in the contents to jump to a section. **Help > Check for Updates…** looks for a newer version ([Updates](#updates-and-what-dubcrate-sends)), **Help > Third-Party Notices…** lists the licences of what Dubcrate includes, and **Help > About Dubcrate** shows the version.
+**Help > User Guide** opens this guide in its own window (⌘F searches it). **Help > Check for Updates…**, **Help > Third-Party Notices…** and **Help > About Dubcrate** are there too.
 
 ---
 
@@ -64,395 +62,217 @@ Dubcrate comes with **ffmpeg** and **ffprobe**, which it uses to read tracks and
 | Do this | To |
 | --- | --- |
 | **File > Import Folder…** (⌘O) | Read a folder of music. Each sub-folder becomes something you can browse. |
-| **File > Import rekordbox Library…** (⇧⌘O) | Read your rekordbox library, with its folders and playlists in their running order. |
-| **File > Re-import Selected Source** (⇧⌘R) | Bring the selected source up to date after you added or moved music. |
+| **File > Import rekordbox Library…** (⇧⌘O) | Read your rekordbox library, with its folders and playlists. |
+| **File > Re-import Selected Source** (⇧⌘R) | Bring a source up to date after you added or moved music. |
 | **File > Remove Selected Source…** | Forget a source. Your music files are not touched. |
 
-**Dubcrate keeps your rekordbox library up to date by itself.** Each time it starts, a splash screen shows while it re-reads a rekordbox library you have already imported, so tracks you added in rekordbox are there when the window opens. Afterwards the status bar says what changed (for example, "Brought in 12 new tracks from rekordbox"). A small badge in the bottom right corner of the status bar says whether Dubcrate may write into that library: a yellow **Library read-only** (it never changes your rekordbox library) or, once you have allowed saving memory cues into rekordbox, an orange **Library writable** (hover over either for what it means; **Settings > Library** changes it). There is no badge until a rekordbox library has been imported. Things to know:
+**Your music is never changed, and importing never changes your rekordbox library.** Dubcrate reads a temporary copy of the rekordbox database and only reads your audio files. (The one thing it can write to rekordbox, if you allow it, is the memory cues you edit in the player.) It keeps its own library of track information and your discs.
 
-- It only updates a library you imported yourself, and it never imports one on its own.
-- Folders are **not** re-scanned at startup, because that takes too long. Use **File > Re-import Selected Source** (⇧⌘R) for those, or for a rekordbox update while Dubcrate is already open.
-- If rekordbox's library is missing, locked or unreadable, Dubcrate skips it and tells you in the status bar. If rekordbox reports no tracks at all, Dubcrate doesn't believe it and keeps your library as it was.
-- A track you deleted in rekordbox is removed here too, unless it is on one of your discs: that one is kept and marked, so no disc ever silently loses a track.
-- Turn this off under **File > Settings… > Library**, or start with `dubcrate-gui --no-import`.
+**A rekordbox library is kept up to date by itself.** Each time Dubcrate starts, a splash screen shows while it re-reads a rekordbox library you have already imported. It never imports one on its own, and it doesn't re-scan folders (use ⇧⌘R for those). A track you deleted in rekordbox is removed here too, unless it is on one of your discs: that one is kept and marked, so no disc ever silently loses a track. Turn this off under **Settings > Library**, or start with `dubcrate-gui --no-import`.
 
-**Your music is never changed, and importing never changes your rekordbox library.** Dubcrate reads a temporary copy of the rekordbox database and only reads your audio files. (The one thing it can write to rekordbox, if you allow it, is the memory cues you edit in the player: see *Memory cues* below.) It keeps its own library of imported track information and your discs.
+A small badge at the bottom right of the status bar says whether Dubcrate may write into your rekordbox library: a yellow **Library read-only** or, once you have allowed it, an orange **Library writable**.
 
-If Dubcrate can't find your rekordbox library, choose **Choose File…** when it asks and pick `master.db`, normally in `~/Library/Pioneer/rekordbox/`. Version 7 is the version Dubcrate has been tried with. (rekordbox doesn't run on Linux, so there Dubcrate has no default place to look: import a folder of music, or pick a `master.db` you copied over.)
-
-Re-importing keeps your discs intact. A track that has vanished from its source but is on a disc is kept and marked, so a disc never silently loses a track.
+If Dubcrate can't find your rekordbox library, choose **Choose File…** when it asks and pick `master.db` (normally in `~/Library/Pioneer/rekordbox/`). Version 7 is the one it has been tried with.
 
 Supported music: MP3, WAV, FLAC, AIFF, AAC/M4A, Ogg, Opus and WMA.
 
-A long job, such as an import, measuring track lengths or levels, or analysing waveforms, shows how far it has got (for example, "Measuring levels… 12 of 40") and has a **Cancel** button beside the message at the bottom of the window (in the Sync tab, and in the Burn window for level measuring). Cancelling an import changes nothing; for measuring and analysing, what was already worked out is kept, so the next try carries on from there.
+Long jobs (an import, measuring lengths or levels, analysing waveforms) show their progress and have a **Cancel** button at the bottom of the window. Cancelling an import changes nothing; for the others, what was worked out is kept.
 
 ---
 
 ## Browsing and searching
 
 - Click a source, playlist or folder on the left to list its tracks.
-- Type in the **search box** to filter by title, artist, album or genre. Press **⌘F** from anywhere in the main window to jump to it, and **Esc** to step out of it again (what you typed stays) so that **Space** plays and pauses without a click elsewhere. **Return** steps out too and picks the first track of what the search found (it doesn't play it: press **Return** again to load it, or **Space** to play), so the arrow keys can carry on from there.
-- Click a **column heading** to sort by it, and click again to reverse.
-- The marker, the Preview waveform and the short number and date columns have a **fixed width**, so they stay the same size when the window changes. The text columns can be resized by dragging the edge of their heading.
-- **Drag a column heading** left or right to reorder the columns. The dot column stays first, and your layout is remembered.
-- **Right-click a column heading** to show or hide columns, or choose **Reset Columns** to go back to the default layout and columns.
+- The **search box** filters by title, artist, album or genre. **⌘F** jumps to it, **Esc** steps out of it (so **Space** plays again) and **Return** steps out and picks the first track found.
+- Click a **column heading** to sort, and click again to reverse. Drag a heading to reorder columns, and right-click one to show or hide columns or **Reset Columns**. Your layout is remembered. Some columns (the marker, Preview, BPM, Key, Time) keep a **fixed width**.
+- The dot at the start of a row shows where the track is: **●** on the disc you have open, **○** on another disc, nothing if it is on no disc.
 
-Only the essentials show at first: Title, Artist, BPM, Key, Time, the Preview waveform and Genre. Everything else is under **More Columns** in that menu, off until you switch it on:
+Only Title, Artist, BPM, Key, Time, Preview and Genre show at first. **More Columns** adds Album, Year, Rating, My Tags, Label, Remixer, Composer, Comment, Plays, Date Added, Bitrate, Sample Rate, Format and Path. The rekordbox ones (Rating, My Tags, Label, Remixer, Composer, Plays, Date Added) are read at import, so re-import once after updating Dubcrate to fill in new ones. Music from a folder has none of them.
 
-| Column | What it shows |
-| --- | --- |
-| Album, Year | From the track's tags |
-| Rating | rekordbox's star rating, as ★★★★☆ |
-| My Tags | rekordbox's My Tag names, separated by commas |
-| Label, Remixer, Composer | From rekordbox |
-| Comment | The track's comment |
-| Plays | How many times it has been played in rekordbox |
-| Date Added | When it was added to rekordbox |
-| Bitrate, Sample Rate, Format | The audio file's details |
-| Path | Where the file is |
-
-Click any of these headings to sort by it. rekordbox's own fields (Rating, My Tags, Label, Remixer, Composer, Plays, Date Added) are read when you import, so **re-import your rekordbox library once** (⇧⌘R) after updating Dubcrate to fill in the ones that are new. Music imported from a folder has none of rekordbox's fields.
-- The dot at the start of a row shows where the track is: a filled **●** if it is on the disc you have open, an outline **○** if it is on another disc, and nothing if it is on no disc yet.
-
-Tracks whose file can't be found are greyed out in the list, and shown in red on the disc. The file has moved, or the drive it lives on isn't connected. Reconnect it and re-import the source.
+Tracks whose file can't be found are greyed out in the list and red on a disc. Reconnect the drive or put the file back, then re-import the source.
 
 ---
 
 ## The Explorer
 
-The **Explorer** tab (the second tab down the left edge) is for music that isn't in a library you have imported: a folder of downloads, or a USB stick. There is nothing to import. Open the folders on the left and click one, and the audio files directly inside it appear in the track list, ready to preview, sort, search and add to a disc, exactly like the tracks of the Library.
+The **Explorer** tab is for music that isn't in an imported library: a folder of downloads, or a USB stick. Open folders on the left and click one, and the audio files directly inside it appear in the track list, ready to preview, sort, search and add to a disc.
 
 ![The Explorer tab: a folder of music, with a pinned folder's tab below it](screenshots/explorer.png "The Explorer, with a pinned folder")
 
-- The tree starts at your **Music** folder and your **home folder**, and lists any **drives** plugged in (a USB stick or an external disk). It never offers the computer's whole system disk, nor the system's own folders that sit beside the drives (such as Time Machine's local snapshots). Folders are read only when you open them.
-- Dubcrate reads the tags of the files in a folder when you click it. A folder you have visited shows at once and is then checked again for files that came or went; a file that hasn't changed isn't read again.
-- Only the **files directly inside** the folder you picked show, not those in its sub-folders: open the sub-folder to see them.
-- Tags are just read, never worked out. A file with no BPM or key tag has them blank: Dubcrate doesn't analyse tracks (the CDJ-1000 can't use that data on a disc anyway), and the waveform you see when you preview is drawn from the audio itself.
-- **A file that is also in rekordbox** (the same path) uses rekordbox's data: its BPM and key show in the list (rekordbox's win over the tags; the tags fill in what rekordbox leaves blank), and previewing it shows rekordbox's waveform, beat grid, cues and phrases. A file elsewhere, or a copy, is just a file. Rekordbox's data is read when you open the folder, so re-import rekordbox, then open the folder again, to pick up a change.
-- **The Explorer's tracks are not part of your Library**: they don't appear in **All Tracks** or in a search of it. A track you add to a disc, though, is kept on that disc. What else the Explorer read is remembered for next time, so a folder opens at once and only new or changed files are read again (the oldest are forgotten past 20,000 tracks).
-- If a folder can't be read, the status bar says why. On a Mac, the first time you open Documents, Downloads, Desktop or a drive, macOS may ask whether Dubcrate may read it; if you said no, allow it under **System Settings > Privacy & Security > Files & Folders**.
-- A drive you plug in or take out while Dubcrate is open appears or goes away by itself a moment later (on a Mac and, we expect, on Linux; on Windows it is listed again when you next open the Explorer tab). If the folder you were looking at was on that drive, nothing is picked afterwards and the list keeps showing what it had. Right-click any folder and choose **Refresh** to list its sub-folders again (and, if it is the folder showing, to read its files again).
-- Dubcrate remembers which tab and which folder you were on.
+- The tree starts at your **Music** and **home** folders and lists plugged-in **drives** (a drive appears or goes by itself). It never offers the whole system disk. Right-click a folder and choose **Refresh** to list it again.
+- Only the files **directly inside** the picked folder show; open a sub-folder to see its files.
+- Tags are only read, never worked out: a file with no BPM or key tag has them blank. **A file that is also in rekordbox** (the same path) uses rekordbox's BPM, key, waveform, beat grid and cues.
+- The Explorer's tracks are **not part of your Library** (they aren't in **All Tracks**), but a track you add to a disc is kept on it.
+- On a Mac, the first time you open Documents, Downloads, Desktop or a drive, macOS may ask whether Dubcrate may read it. If you said no, allow it under **System Settings > Privacy & Security > Files & Folders**.
 
-### Pinned folders
-
-For a folder you use all the time (say, MP3s that aren't in rekordbox), **right-click it in the Explorer and choose Pin Folder**. It gets a tab of its own below Explorer, named for the folder. The tab lists the **folders inside it** (not the folder again), and shows the folder's own files when you open it. Click a folder to see its files, and click the empty space under the list to come back to the pinned folder's own files. Dubcrate stays on the screen you were on and says in the status bar that the folder is pinned; click the new tab when you want it. The folder is read again every time you open its tab, so files you have added since show up.
-
-- **Drag a pinned tab up or down** to put your pins in the order you like (or right-click it and choose **Move Up** or **Move Down**). Library and Explorer always stay first and second. The order is remembered.
-- With more pins than fit, the tab strip **scrolls** (mouse wheel or trackpad); a small arrow at the top or bottom shows there are more tabs beyond that edge, and the tab you pick is always scrolled into view.
-- To remove a tab, right-click it (or the folder in any tree) and choose **Unpin Folder**. The folder and its files are not touched.
-- A pinned folder on a drive keeps its tab when the drive is unplugged; the status bar says the folder isn't there until you plug it back in.
-- The tab shows only the start of a long folder name; hold the pointer over it for the full path.
+**Pinned folders.** Right-click a folder and choose **Pin Folder** to give it a tab of its own below Explorer. The tab lists the folders inside it, and its own files show when you open it (or click the empty space under the list). Drag a pinned tab, or use **Move Up** / **Move Down**, to reorder; **Unpin Folder** removes the tab and touches nothing else.
 
 ---
 
 ## Listening to tracks
 
-**Double-click** a track to preview it (or **drag it from a list onto the player**), and press **Space** to play or pause (and **←** and **→** to beat jump). These keys work wherever you are in the window, except where you are typing, so the search box, a title you are editing and a setting you are typing into keep their keys. A slider keeps its own arrows, and in the Library and Discs lists **←** and **→** still close and open folders, but **Space** works there too. The **Preview** column shows the whole track as a waveform.
-
-When a track plays to its end, the next one in the list (or in the open disc, in its order) starts by itself, skipping any file that is missing, and playback stops after the last. Pause, or choose another track, and it stays as you left it.
+**Double-click** a track to preview it (or drag it onto the player). **Space** plays or pauses and **←** / **→** beat jump, wherever you are in the window except in a text box. The **Preview** column shows the whole track as a waveform. When a track ends, the next one in the list or open disc starts, skipping missing files.
 
 ![The player: a cue point set, a loop on, the hot cue list open](screenshots/player.png "The player")
 
-The player is laid out as rbxport's is:
+- **Left:** previous and next track, beat jump back and forward (**‹** **›**) with a menu of how far (1 beat to 32 bars; 4 unless you change it there or in **Settings > Audio**), **CUE** and play / pause.
+- **Middle:** the title, time, key and tempo, the **overview** (whole track, with rekordbox's phrases and cues; click to jump) and the zoomed **detail view** (a fixed playhead over a scrolling waveform with the beat grid and the **bar and beat** count; zoom with **+**, **RST**, **−** or the wheel). Under them are the **hot cue buttons A to H**, **MEMORY**, the loop controls (**AU** automatic, **MA** manual) and **Q** (quantise).
+- **Right:** **MEMORY** (memory cues and loops), **HOT CUE** (A to H) and **INFO** (cover art, rating, comment and file details). Click a cue row, or a lit hot cue button, to jump there. A loop's row also turns that loop on.
 
-- **Left:** previous and next track, beat jump back and forward (**‹** **›**) with a menu of how far (1 beat up to 32 bars), **CUE** and play / pause.
-- **Middle:** the title, artist, time, key and tempo, the two waveforms (the zoomed one shows the **bar and beat under the playhead**, such as *13.3 Bars* for bar 13, beat 3, when the track has a beat grid), and under them the **hot cue buttons A to H**, **MEMORY** with **◀** and **▶**, the loop controls (**AU** automatic, **MA** manual) and **Q** (quantise).
-- **Right:** three tabs, **MEMORY** (the memory cues and loops, with their times), **HOT CUE** (A to H) and **INFO** (the track's **cover art**, a small square of the picture embedded in the file or a musical note if there isn't one; the rating and comment from rekordbox; and what the file is: type, size, sample rate, bitrate). Dubcrate reads covers from MP3 (ID3), FLAC and M4A files; other kinds show the note.
+For rekordbox tracks the waveforms, beat grid and phrases come from rekordbox's own analysis and the cues from its library. For other music Dubcrate draws the waveform itself. **None of this goes on the CD.**
 
-**rekordbox's hot cues and loops are only shown, never changed** (a loop you save yourself is the one exception, below). A hot cue button is lit when the track has that cue, and pressing it (or a row in the memory or hot cue list) jumps there, playing or paused as it was (**a loop's row also turns that loop on**, so it plays round from its start: leave it with the loop button or **RELOOP**); **◀** and **▶** go to the memory cue or loop before or after the playhead. Hot cues are read-only.
+**Scratching.** Drag the zoomed waveform as you would a jog wheel; you hear the track move with it. A playing track carries on from where you let go.
 
-**Memory cues can be edited.** Changes show at once in the player, on the **Sync** tab's waveform preview and on the **card** (so a sync puts them on the player). The first time you change a memory cue (or save a loop) on a rekordbox track, Dubcrate asks whether to **save memory cue and loop changes into your rekordbox library**; the answer is remembered, and **Settings > Library > Save memory cue and loop changes into my rekordbox library** changes it any time. With it on, each change is written into rekordbox's library behind the scenes (only memory cues and memory loops, nothing else); with it off, changes stay in Dubcrate's own library and rekordbox is not touched.
+**Beat jump** keeps its place within the beat and follows the beat grid. A track with no grid or tempo jumps a fixed 2 seconds.
 
-- **MEMORY** adds a memory cue where the track is (on the nearest beat if **Q** is on). A track can have ten, **memory loops included**.
-- **MEMORY with a loop on saves that loop** as a **memory loop** (set one with **AU**, or **IN** and **OUT**; a loop that is off is not saved). It shows in the **MEMORY** tab as its start time with a small orange **loop mark** after it (hover over it for where the loop ends; rekordbox's own memory loops are marked the same way) and goes to the card on a sync, where it is a memory loop. **A saved loop is written into rekordbox like a memory cue is** (when saving into rekordbox is on, with rekordbox closed). It is added beside rekordbox's own loops, and **any memory loop can be deleted** (below), rekordbox's own and yours alike: the deletion is written into rekordbox too. A loop saved in a hot cue is not a memory loop and is never touched.
-- **✕** beside it deletes the memory cue at (or within a second of) the playhead, or a memory loop that the playhead is inside, and the **✕** at the end of a row in the **MEMORY** tab deletes that one (a loop too, whoever made it).
-- **Right-click** a row in the **MEMORY** tab for **Move to Playhead** and **Delete**. A loop can be deleted but not moved (save it again where you want it).
-- **Saving into rekordbox needs rekordbox to be closed.** If it is open, the change waits in Dubcrate (the status bar says so) and is saved the next time you edit that track with rekordbox closed, or when you choose **File > Save Waiting Memory Cue Edits to rekordbox** (that item is only in the menu while something is waiting). The first save of each session copies rekordbox's database files to a `rekordbox-backups` folder next to Dubcrate's library (the newest 20 are kept), the result is read back and checked, and anything that doesn't check out is undone. This is new: it has been tried on test databases and, from the command line, on one real rekordbox 7.2 library, so keep your own backup of the rekordbox library as well.
-- A track whose changes are only in Dubcrate (saving is off, or waiting for rekordbox to close) is **edited here**: right-click the **MEMORY** tab and choose **Reset to rekordbox's**, which forgets those changes (and the loops you saved or deleted) and goes back to rekordbox's (the choice is only there for a track that has such changes). Deleting every memory cue is an edit too (the track then has none).
-- The edits are tied to the music file, so they survive re-importing your library and are the same whichever list the file is shown from. A change that is still only in Dubcrate is not in rekordbox: if you change the cues in rekordbox afterwards, such a track keeps showing your memory cues until you choose **Reset to rekordbox's** (right-click the **MEMORY** tab).
-- **File > Save Waiting Memory Cue Edits to rekordbox** writes everything that is waiting in Dubcrate in one go (close rekordbox first). The menu item says how many tracks are waiting and is only there while some are. It asks the first-time question again if you had said no, and tracks that aren't in rekordbox stay in Dubcrate. The status bar says how it went.
-- Changes that waited in Dubcrate can also be written from the command line: `dubcrate rekordbox write-memory-cues` shows what would change, and adding `--yes` writes them, with rekordbox closed. Adding `--loops` includes the memory loops you saved or deleted in Dubcrate: saved ones are **added** to rekordbox, deleted ones are deleted there (as a memory cue is: rekordbox keeps the row and marks it deleted). Loops are written the same way the app does it, so this is only needed for loops that waited in Dubcrate (made while rekordbox was open, say).
+### Memory cues and loops
 
-**CUE and loops are the preview's own.** They are for finding your way round a track and trying a loop, and they **last only until another track is loaded**: nothing is saved (except a loop you save with **MEMORY**, above), and nothing is written to rekordbox.
+**rekordbox's hot cues are only shown, never changed.** Memory cues and loops can be edited, and the changes show in the player, on the Sync tab and on the card.
 
-- **CUE** works like a CDJ's. While the track plays, it goes back to the **cue point** and stops (the cue point starts at the beginning of the track). With the track stopped on the cue point, **hold CUE to hear it from there**; let go and it returns and stops. Stopped anywhere else, CUE **sets the cue point** to where you are (with **Q** on, on the nearest beat, and the track moves onto it; then anywhere on that beat counts as being on the cue point). The cue point is shown as a small orange marker.
-- **AU (automatic loop)**: the number is how many beats the loop is (**‹** and **›** make it half or twice as long: 1/64, 1/32, 1/16, 1/8, 1/4, 1/2, 1, 2, 4, 8, 16, 32). Press the number to loop that many beats from where the track is; press it again to leave the loop. If a loop is on, **‹** and **›** resize it from the same start; making it shorter while the track is in the part that goes moves the track into the loop, at the same place in the beat, so it keeps looping. This needs a beat grid or a tempo (from rekordbox, or the file's BPM tag): without one it says so, and the manual loop still works.
-- **MA (manual loop)**: **IN** marks where the loop starts, **OUT** marks where it ends and starts it: the track goes straight back to IN and loops from there. **RELOOP** leaves a loop that is on, or goes back to the start of the last one and loops it again. A new **IN** leaves the loop that was on.
-- A loop that is on is the tinted stretch on both waveforms, and the number (or RELOOP) is lit.
-- **Q (quantise)**: with it on, the cue point and a loop's edges land on the nearest **beat** instead of exactly where the track is. Without a beat grid or a tempo there is nothing to snap to, and it says so. **Q is on the first time you run Dubcrate, and after that stays as you left it** (it is not reset when another track is loaded).
+- **MEMORY** adds a memory cue at the playhead (on the nearest beat if **Q** is on). With a loop on, it **saves that loop** as a memory loop (marked with a small orange loop mark). A track holds ten cues and loops together.
+- **✕** deletes the cue or loop at the playhead. In the **MEMORY** tab, each row has its own **✕**, and right-click gives **Move to Playhead** (cues only) and **Delete**. Right-click the tab for **Reset to rekordbox's**, which forgets your changes to that track.
+- **Saving into rekordbox.** The first time you edit a rekordbox track, Dubcrate asks whether to save such changes to rekordbox (change it any time in **Settings > Library**). With it on they are written into rekordbox's library, and nothing else is. **rekordbox must be closed**: if it is open the change waits in Dubcrate and is saved with your next edit of that track, or with **File > Save Waiting Memory Cue Edits to rekordbox** (only in the menu while something waits). Before the first save of a session Dubcrate copies rekordbox's database files to a `rekordbox-backups` folder next to its library, checks what it wrote and undoes it if anything is wrong. Keep your own backup too.
 
-The two waveforms in the player:
+### Cue point and loops
 
-- The **overview** shows the whole track. For rekordbox tracks it also shows the phrases (such as INTRO, CHORUS, DOWN, UP and OUTRO) and your cue points. Click anywhere in it to jump there.
-- The **detail view** is zoomed in and scrolls past a fixed playhead, with the beat grid and, for rekordbox tracks, your cues drawn on it. Zoom with the **+**, **RST** and **−** buttons over its left edge, or the mouse wheel, and drag it to scratch (below).
+These are for finding your way round a track and **last only until another track is loaded** (apart from a loop you save with MEMORY).
 
-For rekordbox tracks the waveforms, beat grid and phrases come from rekordbox's own analysis, and the cues from its library (read when you first play one of its tracks, and again if rekordbox has changed them). Hot cues show their letter and colour, memory cues are red, and a loop is a tinted stretch. The **Preview** column in the track list flags the hot cues too, as small lettered boxes along the top of each strip (as in rekordbox). For other music Dubcrate draws the waveform itself. Beat grids and cues are only shown for your planning: **they do not go on the CD.**
+- **CUE** works like a CDJ's: while playing, it goes back to the cue point and stops. Stopped on the cue point, **hold CUE** to hear it from there. Stopped anywhere else, it sets the cue point.
+- **AU**: the number is the loop length in beats (**‹** and **›** halve or double it). Press the number to loop from where the track is; press it again to leave. This needs a beat grid or tempo.
+- **MA**: **IN** marks the start, **OUT** marks the end and starts the loop. **RELOOP** leaves a loop, or returns to the last one.
+- **Q**: cue points and loop edges land on the nearest beat. It is on the first time you run Dubcrate and stays as you leave it.
 
-**Scratching.** Grab the zoomed waveform and drag it, as you would a CDJ's jog wheel. The waveform sticks to your pointer, and you hear the track move with it: drag right to take it back, left to move it forward, faster for a higher pitch, and hold still for silence. While your hand is on it, a playing track is held, and it carries on from wherever you let go. A paused track stays paused after you let go, so you can use this to find a spot. Clicking without dragging doesn't jump anywhere: to jump, click the overview.
+### Waveform looks
 
-**Beat jump.** **←** and **→**, or the **‹** and **›** buttons, jump back or forward by the number of beats in the player's menu (4 unless you change it there or in **Settings > Audio**; the menu also has bars, up to 32). The jump keeps its place within the beat, so the track stays in time, and it follows the beat grid, including any change of tempo. Tracks without rekordbox's beat grid use their tempo instead. A track with neither (say, an MP3 with no BPM tag that isn't in rekordbox) jumps a fixed **2 seconds**, whatever the setting. A playing track keeps playing.
-
-**Waveform looks.** Choose how waveforms are drawn under **View > Waveform**, or in **Settings > Appearance**:
-
-- **3-Band** is rekordbox's default: low frequencies in blue, mids in amber and highs in white.
-- **RGB** colours each moment by what is in it: lows red, mids green and highs blue, mixing where they overlap.
-- **Blue** is rekordbox's classic blue waveform: blue, with a whiter core where the sound is brighter.
-
-The look applies to the overview, the detail view and the Preview column, and works for every track, with or without rekordbox's analysis. For RGB and Blue, Dubcrate works the colours out from the same three bands rather than reading rekordbox's own colour waveform, so they resemble rekordbox's without being identical.
-
-**Waveform speed.** The playing waveform moves 60 times a second, as rekordbox's does. On a slower computer, or to save a little battery, choose **30 FPS** under **Settings > Appearance > Waveform speed**; the sound is the same either way.
-
-**Waveform background.** The waveform follows your theme, so it is light in the light theme. If you prefer rekordbox's dark waveform whatever the theme, choose **Always dark** under **Settings > Appearance**. The Macintosh System 6 theme always draws the 3-band look in black and white.
-
-Choose where previews play, and test it, in [Settings](#settings).
+**View > Waveform** (or **Settings > Appearance**) chooses **3-Band** (rekordbox's default: lows blue, mids amber, highs white), **RGB** or **Blue**. System 6 always uses black-and-white 3-Band. **Waveform background** can keep rekordbox's dark look in any theme, and **Waveform speed** can drop from 60 to 30 FPS on a slower computer.
 
 ---
 
 ## Your discs
 
-A disc is a playlist that goes on a CD. They live in the **Discs** list on the right, just as your rekordbox playlists live in the Library on the left, and they can be filed in folders.
+A disc is a playlist that goes on a CD. Discs live in the **Discs** list on the right, filed in folders.
 
 ![A disc open in the middle, with its capacity bar under the tracks](screenshots/disc-open.png "An open disc and its capacity bar")
 
-- **Open a disc** by clicking it. Its tracks appear in the middle, ready to arrange and edit. Opening a disc also makes it the one that tracks are **added to**: its name is in bold, and under the track list it says **Adding to “…”**.
-- **Add tracks** by selecting them and pressing **⌘Return** or **⌘D**, or right-click > **Add to Disc** (they go to the open disc), or by **dragging** them from the track list onto any disc in the Discs list. Dragging onto a disc that isn't open adds to that one and leaves the open disc as it is.
-- **Disc > New Disc** and **New Folder**, the **+** at the end of a row, and right-click in the Discs list make them. The new disc or folder appears in the list at once with its name ready to type over: type a name and press **Return**, or press **Esc** to keep the suggested one. A new disc goes in the folder you have picked, or beside the disc you have picked.
-- **Rename** a disc or folder by **double-clicking** its name, or by picking it and pressing **⌘R** (or right-click > **Rename**), then type and press **Return**. An empty name is ignored.
-- **Delete** a disc or folder by picking it and pressing **⌘⌫** (or **Disc > Delete…**, or right-click > **Delete**). If it is empty it goes at once; if it has tracks or things in it, Dubcrate asks first, and **Yes** is the answer Return gives. Nothing you delete here touches the tracks in your library or your music files: a disc only lists tracks. **Take care with folders: deleting a folder deletes what is in it**, meaning the discs and folders inside it, at any depth. The question says how many.
-- **The + button** does the same in one click, as in rekordbox. Click a row and a **+** appears at its right-hand end: on a folder it makes a disc inside the folder, and on a disc it makes another disc beside it, in the same folder. The new disc's name is ready to type over.
-- **A disc that is too long** is marked with an orange **\*** before its track count. Hover over it to see how far over it is. It can still be saved, but it can't be burned until it fits.
-- **Drag a disc or folder** into a folder to file it, or onto empty space to move it to the top level. Folders can hold folders.
-- **Right-click** a disc to open, rename, duplicate, burn or delete it, or a folder to make something inside it, rename it or delete it. Deleting a folder deletes the discs and folders in it too.
-- Discs and folders are listed A to Z, with folders first.
+- **Open a disc** by clicking it. It becomes the disc tracks are **added to** (shown as **Adding to “…”** above the track list).
+- **Add tracks** with **⌘Return** or **⌘D**, right-click > **Add to Disc**, or by dragging them onto any disc in the list. **Disc > Fit All Shown Tracks** adds every track shown until the disc is full. **Disc > Split Shown Tracks Across Discs…** (⇧⌘D) cuts a long list into as many discs as it takes.
+- **New discs and folders:** **Disc > New Disc** / **New Folder**, the **+** at the end of a row, or right-click in the list. The name is ready to type over (**Esc** keeps the suggestion). A new disc goes in the folder or beside the disc you picked.
+- **Rename** by double-clicking a name (or ⌘R). **Duplicate** keeps edits. **Drag** discs and folders to file them.
+- **Delete** with ⌘⌫ or right-click. Nothing you delete here touches your library or music files. **Deleting a folder deletes what is in it**, at any depth, after a question that says how many.
+- A disc that is **too long** is marked with an orange **\*** (hover for how far over). It can be saved but not burned.
+- A disc is just a playlist: **a burned disc is still fully editable**. Dubcrate only remembers *when* it was burned.
 
-**Audio CDs and MP3 CDs.** A disc is an **audio CD** (the default) or an **MP3 CD**. An audio CD plays in any CD player and is measured in minutes (80 or 74, see Settings). An MP3 CD is a data disc of MP3 files, for players that read MP3 discs such as the CDJ-1000MK3; it is measured in megabytes (about 703 MB on an 80-minute disc), so it holds hours of music, has no 99-track limit and no gaps setting. Make one with **Disc > New MP3 Disc** (⇧⌘N), right-click > **New MP3 Disc**, or the **+** in the Discs list, which asks whether the new disc is an **audio** or an **MP3** one, and switch an existing disc with right-click > **Make MP3 CD** / **Make Audio CD** (its tracks stay). Its title and size say **MP3 CD**, and in the Discs list an MP3 disc has its own icon (a page of files with a disc) and says **MP3** before its track count. Files on an MP3 disc are always **constant bitrate** (CBR), because variable-bitrate (VBR) files are slow to load on a CDJ: lossless files (FLAC, WAV, AIFF) are encoded at **320 kbit/s**; an MP3 that is already constant bitrate is copied as it is; a VBR MP3 is encoded to constant bitrate; and a lossy file below 320 keeps its own rate (a 245 kbit/s file becomes 256), since encoding it higher would only make it bigger. **Settings > Discs** can lower the top rate for new discs. Artist and title edits for the disc are written into the files' tags, and files are named `01 Artist - Title.mp3`, `02 …`, so players that sort by name keep your order.
+**What goes on the CD.** The disc list shows the track **#**, **Time**, and the **Artist** and **Title** written to the disc as CD-TEXT. The CD's own title is the disc's name. **Double-click an artist or title to change what is written on the CD**:
 
-**Folders on an MP3 CD.** An MP3 disc can hold folders, like a folder on a USB stick, and its folders are listed under it in the Discs list (open the little arrow beside it). Click a folder to see and edit its tracks in the middle; click the disc itself to see the tracks in its root. The bar under the tracks always shows the whole disc.
+- The edit is for **this disc only**; it never changes your library, the audio file or other discs. Edited text is in *italics* (hover to see the original; clear it to go back).
+- Drag rows to reorder, and press **Delete** (or right-click > **Remove from Disc**) to take tracks off. Double-click a track's number or time to listen.
+
+**Size and gaps.** New discs are planned for **80 minutes** and are **gapless**. Change either under **Settings > Discs**; a disc keeps what it was made with. When you burn, the disc in the drive is what counts. The capacity bar shows each track as a block, with time used and left. A CD holds at most **99 tracks**. A length with **~** is an estimate; exact lengths are measured when you add a track and again when the disc is prepared.
+
+**Tracks you already used.** Adding a track that is already on this or another disc asks first: **Add Anyway**, **Skip Duplicates** or **Cancel**. The same file counts as one track even if it is in rekordbox and in an Explorer folder.
+
+### MP3 CDs
+
+A disc is an **audio CD** (default; plays anywhere, measured in minutes) or an **MP3 CD** (a data disc of MP3 files for players that read them, such as the CDJ-1000MK3; measured in megabytes, so it holds hours of music, with no 99-track limit). Make one with **Disc > New MP3 Disc** (⇧⌘N), or the **+**, which asks which kind. Right-click > **Make MP3 CD** / **Make Audio CD** switches a disc (its tracks stay). If an audio CD goes over its length, Dubcrate offers to make it an MP3 CD.
+
+Files on an MP3 disc are always **constant bitrate**: lossless files become 320 kbit/s MP3s, an MP3 that is already constant bitrate is copied as it is, and a lossy file below 320 keeps its own rate. **Settings > Discs** can lower the top rate. Artist and title edits are written into the files' tags, and files are named `01 Artist - Title.mp3` so players that sort by name keep your order.
+
+An MP3 disc can hold **folders**, listed under it in the Discs list. Click a folder to see and edit its tracks, or a step in the path above the tracks to go back up.
 
 ![An MP3 disc with a folder open: the folders are listed under the disc on the right](screenshots/mp3-disc.png "An MP3 CD and its folders")
 
-- **Make a folder** with the little **folder button** that appears beside the **+** when you pick an MP3 disc or one of its folders: it makes a folder *inside* the one you picked. The **+** on a folder makes one *beside* it, at the same level (on the disc itself, the + makes another disc, after asking which kind). Right-click > **New Folder on Disc** or **New Folder Inside** does the same as the folder button. Name it in place, as for a disc.
-- **Move around** by clicking a folder in the Discs list, or by clicking a step in the path above the tracks (for example **Super Cool Trax 001 / some stuff / more stuff**): every step but the last is a link, and the disc's name takes you back to its root.
-- **Add tracks to a folder** by opening it and adding as usual (⌘Return, right-click > **Add to Disc**), or by dragging tracks from the track list onto the folder in the Discs list.
-- **Move tracks between folders** by dragging them from the middle onto a folder (or onto the disc, for its root), or by right-clicking them > **Move to Folder**.
-- **Move a folder** (with everything in it) by dragging it in the Discs list onto another folder of the same disc, or onto the disc itself for its root, or by right-clicking it > **Move Folder to** and picking where. A folder can't go inside itself, beside one of the same name, or so deep that the 8 levels are passed: Dubcrate says so and changes nothing.
-- **Delete a folder** with ⌘⌫, or right-click > **Delete Folder from Disc…**. Its tracks come off the disc and its folders go too, at any depth, after a question that says how many (nothing at all is asked if it is empty). The tracks stay in your library.
-- **Folders have limits**, which are the CDJs': at most **999 files in a folder**, **99 folders** on a disc (the disc's root counts as one) and **8 levels** (the root counts as the first). Dubcrate stops you at each. Files are numbered from 1 again in every folder (`01 Artist - Title.mp3`).
-- Making an MP3 disc an **audio CD** removes its folders, after asking, and lists its tracks folder by folder.
-
-**When a playlist gets too long.** If adding tracks makes an audio CD longer than it holds (or past 99 tracks), Dubcrate asks whether to **make it an MP3 CD** instead. Say no and it stays an audio CD, marked as too long; it asks once per disc until you restart.
-
-**A burned disc is just a disc.** There is no separate record and nothing is frozen: you can keep editing a disc after you burn it. Dubcrate only remembers *when* it was last burned: hover over the disc to see it, and you'll be reminded if you add a track that is on a disc you burned. To keep a copy of a mix before you change it, right-click it and choose **Duplicate**.
-
----
-
-## Planning a disc
-
-The disc you open is shown in the middle: its tracks as they will be written on the CD, and a capacity bar under them.
-
-**Adding tracks**
-
-- Drag tracks from the track list onto the disc, **or** select them and press **⌘Return** or **⌘D**, or right-click > **Add to Disc**.
-- **Disc > Fit All Shown Tracks** (or right-click > **Fit All Shown Tracks to Disc**) adds every track shown, in order, until the disc is full.
-- **Disc > Split Shown Tracks Across Discs…** (⇧⌘D) cuts a long list into as many audio discs as it takes, keeping the order. **Disc > Split Shown Tracks Across MP3 Discs…** does the same for MP3 CDs, by file size at the bitrate chosen in Settings, with every file in the disc's root.
-- If you add tracks and no disc is open yet, one is created for you.
-
-**What goes on the CD**
-
-The disc list shows only what a CD can hold: the track **#**, its **Time**, and the **Artist** and **Title** that are written to the disc as CD-TEXT and shown on a player's display. The CD's own title (the "album") is the **disc's name**: double-click it in the Discs list to rename it.
-
-You can change the artist and track name for the CD without touching anything else. **Double-click** an artist or title and type:
-
-- The edit is for **this disc only**. It never changes your rekordbox library, the original audio file, or the same track on another disc.
-- An edited cell is shown in *italics*. Hover over it to see what the library has, and clear the text to go back to that.
-- Edits stay with their track when you reorder the list or add and remove others.
-- **Duplicate** keeps the edits in the copy.
-- Characters CD-TEXT can't show are simplified when the disc is burned (see [Good to know](#good-to-know)).
-
-**Arranging**
-
-- Drag rows up and down to reorder them.
-- Select rows and press **Delete**, or right-click > **Remove from Disc**, to take them off the disc.
-- **Double-click** a track's number or time to listen to it. **Space** plays and pauses, and **←** and **→** beat jump, as in the track list.
-
-**Size and gaps**
-
-New discs are planned for **80 minutes** and are **gapless**: no silence between songs, so the most music fits. Change either under **File > Settings… > Discs** (see [Settings](#settings)). The new choice applies to discs you create from then on; a disc keeps the size and gaps it was made with.
-
-The disc size you plan for is only a guide. When you burn, **the disc in the drive is what counts**: see [Burning a disc](#burning-a-disc).
-
-**The capacity bar**
-
-The bar under the list shows each track as a coloured block, with the time used and the time left. When a disc is over its size, the bar still shows everything and marks where the disc would end. A CD holds at most **99 tracks**, and Dubcrate stops adding at that point.
-
-A length shown with **~** is an estimate. Dubcrate measures each track's exact length when you add it and again when the disc is prepared, and the prepared length is the one that counts.
-
-A disc can't be burned if it is empty, over its size, or holds a track whose file is missing or no longer in its source. When it's ready, press **Burn…**: see [Burning a disc](#burning-a-disc).
-
----
-
-## Checking tracks you already used
-
-When you add a track that is **already on this disc or on another disc**, Dubcrate asks before adding it:
-
-> 2 of the 5 tracks are already used:
->
-> • Artist - Title: already on this disc; on "Friday night" (burned 2026-11-01)
->
-> Add them anyway, or skip the duplicates?
-
-Choose **Add Anyway** to add everything, **Skip Duplicates** to add only the tracks that aren't used anywhere yet, or **Cancel** to add nothing. Return chooses **Add Anyway**. **Skip Duplicates** is left out when every track is already used, since there would be nothing to add. A track counts as a duplicate if it is on this disc or on any other disc, and the status bar tells you how many were skipped. The notice names each place a track is used, and lists the first eight tracks if there are more.
-
-**The same file counts as one track**, even when it is in rekordbox and in an Explorer folder: if the rekordbox copy is on a disc, the Explorer copy is flagged as used too (and the other way round). Dubcrate tells them apart by the file's path, ignoring capital letters, so a copy of the file in another place is a different track. The ● and ○ marks in the track list follow the same rule.
-
-A disc you burned says when. A test write (a simulated burn) puts nothing on a disc, so it doesn't count as a burn.
+- **Make a folder** with the folder button beside the **+** (inside the one you picked), or right-click > **New Folder on Disc** / **New Folder Inside**.
+- **Move tracks** by dragging them onto a folder (or right-click > **Move to Folder**). **Move a folder** by dragging it, or right-click > **Move Folder to**.
+- **Limits** (the CDJs'): 999 files per folder, 99 folders, 8 levels. Dubcrate stops you at each. Making a disc an audio CD removes its folders, after asking.
 
 ---
 
 ## Burning a disc
 
-> **A real burn uses up a blank CD-R.** Use a blank **CD-R**, not a CD-RW, which old players read badly.
+> **A real burn uses up a blank CD-R.** Use **CD-R**, not CD-RW, which old players read badly.
 
-![The burn window: the drive, speed and the blank CD-R confirmation](screenshots/burn.png "The burn window")
+![The burn window: the drive, the disc in it and the burn speed](screenshots/burn.png "The burn window")
 
-**From the window**
+1. Open the disc and press **Burn…** (or **Disc > Burn Disc…**, ⌘B).
+2. Load a blank CD-R. Dubcrate shows the drive, whether the disc is blank, and how much it holds. If there is no disc, or it isn't blank, change it and press **Check Again**. With two or more drives, a menu lets you pick one (remembered); a burn on a drive other than the first isn't checked afterwards.
+3. Check the **Speed** (it starts at your **Settings > Burning** default; slower is more reliable on old players).
+4. Press **Burn**. It stays grey until the drive has a disc that fits, and Return never starts a burn. The window can't be closed until it finishes.
 
-1. Open the disc, then press **Burn…** beside the capacity bar under its tracks (or choose **Disc > Burn Disc…**, ⌘B, or right-click the disc in the Discs list and choose **Burn…**).
-2. Put a blank CD-R in the drive. Dubcrate asks the drive what is inside and shows it: the drive's name, whether the disc looks blank, and how much it holds. If the drive says there is no disc, or the disc isn't blank, put in a good one and press **Check Again**. **With two or more drives** a drive menu appears beside it (with one, nothing changes): pick the drive to burn on, and Dubcrate remembers it for next time. A burn on a drive other than the first is not checked afterwards (the check and the tray opening use the first drive), and the burner opens the tray itself. An MP3 CD is written as a data disc (ISO 9660 with Joliet names), and the burn window says **MP3 CD** at the top.
-3. Check the **Speed**. It starts at your default from **File > Settings… > Burning**; change it here to use another speed for this burn only.
-4. Press **Burn**. It stays grey until the drive has a disc that fits, and Return never starts a burn. The log shows each track being prepared and then the burn. The window can't be closed until it finishes.
+Dubcrate **won't burn** an empty disc, one longer than the disc in the drive, or one with a missing file; the reasons are listed in red. Every track is converted to CD quality (16-bit, 44.1 kHz stereo) with CD-TEXT titles. After a burn the disc is marked as burned, and **Print Labels…** appears.
 
-Things to know:
+- **Cancel** shows while the disc is prepared and stops at once, writing nothing. **Once writing starts there is no Cancel.** After a failed or cancelled burn, Dubcrate looks at the drive again before you can burn once more.
+- **Levels** (audio CDs): tick **Normalise** to give each track one fixed volume change, with no compression or limiting. **Loud** (-9), **Club** (-10), **Balanced** (-12) and **Gentle** (-14) bring tracks to about the same loudness; a track is never turned up enough to clip, and ones that can't reach the target are counted as **held back**. **Peak to full scale** instead makes each track as loud as it safely can be. The first measuring takes a moment (it is remembered). MP3 discs and your music files are never changed.
+- After a real audio burn Dubcrate reads the disc's table of contents back to check it matches the plan (the log says so), then opens the tray. Syncing cues relies on that match. The check is new and hasn't run on a real burn yet.
 
-- Dubcrate **won't burn** if there is no disc, if the music is longer than what the disc holds (a 74-minute disc with 78 minutes planned, say), or if the disc can't be burned as planned. The reasons are listed in red. If the drive can't say how much a disc holds, Dubcrate goes by the size the disc was planned for.
-- **Levels** (audio CDs): tick **Normalise** to give each track one fixed volume change, and pick what to bring the tracks to, and the window shows the range of changes it will make (for example "gains -6.0 to +3.2 dB across 16 tracks"). It never compresses or limits, so the music keeps its dynamics. The loudness choices (**Loud** -9, **Club** -10, **Balanced** -12 and **Gentle** -14 LUFS, a loudness scale) bring the tracks to about the same level: -10 keeps loud dance tracks close to how they were, and -14 is the gentlest. A track is never turned up so far that its peaks would clip: one that can't reach the target without that is lifted as far as is safe and counted as **held back by peak headroom**. **Peak to full scale** works differently: each track is made as loud as it can safely be, with its highest peak just under full scale (-0.3 dBTP, a little below 0 dB so the 16-bit conversion and a player's output can't clip), so tracks end up at different loudnesses. It can turn a track down by a hair if its peak was already over, and no track is lifted by more than 12 dB (one that would need more is counted as **held back by the 12 dB limit**). The box starts as you set it in **Settings > Burning**. The first time a track is measured takes a moment (it is remembered after that, until the file changes). The same setting applies to **Export…**, MP3 discs are left as they are, and your music files are never changed: only the copy written to the disc is.
-- **Cancel** appears while Dubcrate is preparing the disc (making the WAVs or MP3 files, which can take a minute or two for a long disc). It stops at once and removes what it had made: nothing was written, so the blank disc is still good, and you can burn again. **Once the writing starts there is no Cancel**: a disc can't be stopped half written, so the button goes. (Export… cannot be cancelled yet.)
-- After a real burn the disc is marked as burned, and it stays open and editable. After a failed or cancelled burn Dubcrate looks at the drive again before you can burn once more. A **Print Labels…** button then appears: it closes the burn window and opens the [label window](#printing-labels) with this disc ticked (nothing prints by itself).
-- **After a real audio burn** Dubcrate leaves the disc in the drive for a moment and reads its table of contents back, to check it is what was planned (the log says so), and then opens the tray itself. This matters only for [syncing cues to the CDJ's card](#syncing-cues-to-the-card), which recognises a disc by its table of contents. If the check can't be made, or the disc differs from the plan, the log says so and the disc is still fine. (A Mac only, and the check is new: it has not yet been run on a real burn.)
-- A failed burn says why in the log, and the disc is not marked. A burn can't be stopped once it has started.
+**Export instead of burning.** **Disc > Export Disc as Files…** writes the open disc into a new folder inside one you choose, so you can burn it with another program. An **audio CD** gives one WAV per track, a `disc.toc` for the free program [cdrdao](https://cdrdao.sourceforge.net), and a `README.txt` with the commands. An **MP3 CD** gives the disc's folder, a `disc.iso` any program can burn, and a `README.txt`. On a computer that can't burn from Dubcrate (Linux without `cdrdao`; Windows isn't supported yet), this is the way to get a disc.
 
-**Exporting instead of burning**
-
-**Disc > Export Disc as Files…** writes the open disc as files, so you can burn it with another program or on another computer, and it needs no drive. It makes a new folder, named after the disc, inside the folder you choose (it never overwrites anything):
-
-- An **audio CD** gives one WAV per track (`01 Artist - Title.wav` and so on, each a whole number of CD sectors, so tracks join exactly), `disc.toc` (a table of contents for the free program [cdrdao](https://cdrdao.sourceforge.net), with the CD-TEXT), and a `README.txt` with the commands.
-- An **MP3 CD** gives the folder that goes on the disc, `disc.iso` (the same disc as an image any program can burn, made by Dubcrate itself, with nothing to install), and a `README.txt` beside them that says how to burn it as a data CD.
-
-On a computer that can't burn from Dubcrate, the burn window says so and **Export Disc as Files…** is the way to get a disc (on Linux, Dubcrate burns with `cdrdao` when it is installed, but that is new and has not been tried on a real drive; Windows isn't supported yet). Exporting does not mark the disc as burned.
-
-**From the command line**
-
-The command line does the same job. Put the disc number in place of `1` (the number is shown by `dubcrate disc list`).
+**Command line.** Put the disc number from `dubcrate disc list` in place of `1`:
 
 ```
 dubcrate burn 1                      # a dry run: checks the disc and burns nothing
 dubcrate burn 1 --yes --simulate     # a laser-off test write, with a disc in the drive
 dubcrate burn 1 --yes                # really burns
+dubcrate export 1 ~/Desktop          # what Export Disc as Files… does
 ```
 
-- The dry run lists anything that stops the disc being burned.
-- Before burning for real, Dubcrate asks the drive about the disc inside. It says how much the disc holds, and **refuses to start if the music won't fit** (for example, a 74-minute disc with 78 minutes planned). It also stops if the drive says there is no disc. If the drive can't tell, Dubcrate goes by the size the disc was planned for.
-- **`--speed`** sets the burn speed. The default is 10x. **Burn slowly:** old players read discs burned at a low speed more reliably.
-- Every track is converted to CD quality (16-bit, 44.1 kHz stereo) and the disc gets **CD-TEXT** titles, so the artist and title show on the player.
-- After a successful real burn, Dubcrate marks the disc as burned.
-- `dubcrate export 1 ~/Desktop` does what **Export Disc as Files…** does, into a new folder inside `~/Desktop`.
-- `--levels match` (with `--target -10`, any whole number from -24 to -6) or `--levels peak` on `burn` and `export` normalises an audio CD's tracks, as **Levels** in the window does.
-
-The full list of command-line options is in the project's developer notes.
+`--speed` sets the speed (default 10x), and `--levels match` (with `--target -10`) or `--levels peak` normalises. The full list of options is in the project's developer notes.
 
 ---
 
 ## Printing labels
 
-Old players have no screen for a track list, so Dubcrate can print one for the case: **index labels** with each disc's track list, on sticker paper in your ordinary printer. Choose **Disc > Print Labels…** (⌘P), or right-click a disc in the Discs list and choose **Print Labels…**. It works for audio CDs and MP3 CDs.
+Old players have no screen for a track list, so Dubcrate can print one for the case: **index labels** on sticker paper in your ordinary printer. Choose **Disc > Print Labels…** (⌘P) or right-click a disc. It works for audio CDs and MP3 CDs.
 
-> **Printing has been checked by saving PDFs, not yet on a real printer.** Try **Save PDF…** and look at it first, or print on plain paper and hold it against a sticker sheet.
+> **Printing has been checked by saving PDFs, not yet on a real printer.** Try **Save PDF…** first, or print on plain paper and hold it against a sticker sheet.
 
 ![The label window: two discs on one sheet, with the settings on the left](screenshots/labels.png "The label window")
 
-1. **Tick the discs** to print, on the left. They are listed in the folders you filed them in, as in the Discs list (folders first, then discs, each A to Z; a folder with no disc in it is left out). Ticking a **folder** ticks every disc inside it, and a folder shows a filled box when only some of its discs are ticked. The disc you opened is ticked already. A disc with no tracks is shown but can't be ticked. **All** and **None** tick or clear the list. Labels are printed in the order shown, and each is headed with the disc's name and the folders it is in (for example *Sets / Friday / Opening*).
-2. Choose the **Paper**: A3, A4, A5, A6, US Letter or US Legal.
-3. Type the size of one label: **Label width** and **Label height**, in the unit chosen in **Settings > Appearance > Units** (millimetres, centimetres or inches). 100 × 50 mm is a good start for a case.
-4. **Font size** is **Auto** (the text as large as fits, up to a limit, so a short list isn't blown up) unless you choose a size in points. The line under the settings says what Auto came to, which is a good place to start.
-5. **Spread each disc over** says how many labels one disc's list is divided between, for a case with several areas to stick on. **Auto** (the default) uses the fewest labels that keep the text readable, at least 6 pt, or the size you chose: a short disc gets one label and a 60-track MP3 CD gets several. Each label is headed with the disc's name and *1/2*, *2/2*.
-6. **Columns (up to)** (1, 2 or 3) lets a long list run in columns on a label, so fewer labels are needed. Each row then reads *Title – Artist* on one line, so long names are cut short with “…”, and the BPM, key and duration columns are smaller. A disc uses as few columns as will do, so a short disc stays in one column even when you allow three. On a 10 × 5 cm label, 60 tracks need about four labels in one column, or two labels in two columns.
-7. **Copies of each** prints every disc's labels again for each copy you burned: burn a disc twice and set 2.
-8. **Page margin** keeps clear of the edge your printer can't print to (10 mm, 1 cm or 0.4 in suits most), and **Gap between labels** leaves room to cut.
-9. Press **Print…**, or **Save PDF…** to get a file. The window closes once the printer has the job; **Save PDF…** leaves it open, in case you want to print as well.
+1. **Tick the discs** to print (ticking a folder ticks its discs; **All** and **None** help). Each label is headed with the disc's name and its folders.
+2. Choose the **Paper** (A3, A4, A5, A6, US Letter or US Legal) and type the **Label width** and **Label height**, in the unit set under **Settings > Appearance > Units**. 100 × 50 mm is a good start for a case.
+3. **Font size** is **Auto** (as large as fits) unless you pick a size. **Spread each disc over** says how many labels one disc is divided between (**Auto** uses the fewest that stay readable). **Columns (up to)** lets a long list run in columns. **Copies of each** repeats every label.
+4. **Page margin** keeps clear of the edge your printer can't reach; **Gap between labels** leaves room to cut. **Draw a thin outline to cut along** can be turned off.
+5. Press **Print…** or **Save PDF…**.
 
-What is on a label: for each track, its **number**, **title** and **artist**, and, each with a box of its own, the track's **BPM** (**Show BPM**, rounded to a whole number), **key** (**Show key**), **year** (**Show year**, the year of release, from rekordbox or the file's tags) and **duration** (**Show duration**, minutes:seconds, as in the track list's Time column). BPM and key start ticked; year and duration are off until you tick them. A track with no year shows nothing in that column. The BPM and key come from your rekordbox library, so a track from a plain folder has neither and those columns stay empty. The key is written the way **Settings > Appearance > Key notation** says. The title and artist are the ones written on the CD, including any edits you made for this disc. For a crowded MP3 disc you may prefer to untick **Show BPM** and **Show key** (and leave **Show year** and **Show duration** off), which gives the titles more room.
+Each track shows its **number**, **title** and **artist** (as written on the CD, including your edits), and optionally **BPM**, **key**, **year** and **duration** (BPM and key start ticked; BPM, key and year come from rekordbox or the file's tags, so a plain-folder track may have none). On an MP3 disc, **folders are headings**; a folder is kept together on one label where readable, else continued under the same heading with *(cont.)*.
 
-**Folders on an MP3 disc** are headings in the list. The tracks on the disc's root come first, then each folder in alphabetical order, as a player lists them, and a folder inside another is named by its path (*Sets / Friday*). Numbers start again at 1 in every folder, as the files on the disc are numbered. A folder is kept together on one label where that is readable; one too long for a label is cut, and the next label picks it up under the same heading with *(cont.)*. A disc with no folders is just a numbered list.
-
-The labels of every ticked disc are laid out one after another, left to right and top to bottom, so **several discs share a page** and little sticker paper is wasted. The preview shows each page, with **◀** and **▶** to turn them. The **Zoom** box, **pinching** on a trackpad, or Ctrl and the mouse wheel zoom in to check the small print, sharp at any size, around the point you zoom on; drag the page to move it when zoomed in. A pinch can stop between the box's sizes, and the box then shows the size it reached. If a list is too long for the label's height (at a size you chose, or too small to read on Auto), a red note under the settings says which disc and suggests what to change (it has its own space, so it never moves the controls): a taller label, more columns, more labels, or a lower font size. A label that doesn't fit the paper with those margins can't be printed. **Draw a thin outline to cut along** draws a hairline round each label, which you can turn off if you cut exactly.
-
-Your choices are remembered for next time.
+Labels from every ticked disc are laid out one after another, so **several discs share a page**. The preview has **◀** and **▶** to turn pages, and a **Zoom** box (also **pinching** on a trackpad, or Ctrl and the wheel). If a list is too long for the label, a red note says which disc and what to change. Your choices are remembered.
 
 ---
 
 ## Syncing cues to the card
 
-The CDJ-1000MK3 keeps the cue points you set on the player on its **SD card**, one file per disc, and it recognises a disc by its table of contents (how many tracks it has and where each begins). So a disc you burned with Dubcrate can load in the player with your **rekordbox cues** already on it, if those cues are put on the card. The card also holds the **waveform** of each track, which the player otherwise works out the first time you load a track (you wait while it does). Dubcrate can write those too, so a track loads at once with its waveform drawn. That is what the **Sync** tab is for: the last tab on the left, fixed below the others.
+The CDJ-1000MK3 keeps the cues you set on the player on its **SD card**, one file per disc, and recognises a disc by its table of contents. So a disc burned with Dubcrate can load with your **rekordbox cues** already on it, and with each track's **waveform** already drawn (otherwise the player works it out the first time you load a track). That is what the **Sync** tab is for.
 
-> **Sync has been tried on one setup**: a CDJ-1000MK3 (firmware 2.20) and a plain 2 GB SD card showed every cue written this way, for discs that were already on the card and for ones it had never seen, and loaded tracks with a waveform written this way without working them out again. It is new, though: Dubcrate copies the card's files aside before it writes anything, and you should still **eject the card before you pull it** (the tab can do it for you). A card pulled too early can be left unreadable by the player.
+> **Sync has been tried on one setup**: a CDJ-1000MK3 (firmware 2.20) and a plain 2 GB SD card showed every cue and waveform written this way. It is new, so always **eject the card before you pull it** (the tab can do it for you): a card pulled too early can be left unreadable by the player.
 
 ![The Sync tab: the card on the left, the picked disc's tracks in the middle, and the discs to tick on the right](screenshots/sync.png "The Sync tab")
 
+1. **The card** (left). A plugged-in card appears by itself, found by its **PIONEER** folder, with an **eject** button. Right-click a card to **Sync** to it, **Import Cues** from it, eject it, or **Format a Card…**. **Refresh** looks again, and **Choose Folder…** adds a copy of a card's folder.
+2. **Discs to sync** (right). Your **audio** discs, with a tick box on each that has something to write (a folder ticks its discs; the header box ticks all). A disc's first tooltip line says what a sync would do: **Not on the card**, **N cues to add**, **In sync**, **No rekordbox cues** or **Can't sync** (the reason is in the middle). Under the list are **Import Cues…**, **Eject after syncing** and **Sync** (also above the card list). Right-click the list for **Measure Lengths** and **Clear Selection**.
+3. **The middle** lists the picked disc's tracks. Click a track to see its waveform **as the player's display draws it** (100 columns by 7 rows). White will be written, dimmer is already on the card, dashed is not analysed yet, and small red dashes are the track's memory cues.
+
 ![The Sync tab with a track picked: its waveform at the bottom, as the CDJ draws it](screenshots/sync-waveforms.png "The waveform a sync will write")
 
-1. **The card** (left). Put the player's SD card into your Mac: it appears in the list by itself a moment later (and goes when you take it out), found by the **PIONEER** folder on it. Each card shows its name, size and how many discs the player has put on it, with an **eject** button on the right that ejects it (right-click a card to **Sync** the ticked discs to it, **Import Cues** from it, eject it, or **Format a Card…**). Click **Refresh** if a card doesn't show up. For a copy of a card's folder, or a disk image of one, use **Choose Folder…**: it is listed with a **×** that takes it off the list again (the folder itself isn't touched).
-2. **Discs to sync** (right). While the Sync tab is on, the list on the right is your **audio** discs, in the folders you filed them in, each with a **tick box** on the left of its name: tick the ones to sync (a folder ticks the discs inside it; the box in the heading ticks every disc that can be synced, or unticks them all when they already are; right-click the list to **Clear Selection**; the box above searches). A disc with nothing to write has no box, and is greyed if it can't be synced. Clicking a disc here only shows it in the middle: it never takes you out of the Sync tab. What a sync would do for a disc is the line above its tracks in the middle, and the first line when you hover over the disc's name:
-   - **Not on the card: 12 cues and 14 waveforms to add**: the player has never seen this disc, or has no file for it yet.
-   - **12 cues to add** (or **3 waveforms to add**): the disc is on the card, and these are not.
-   - **In sync**: the card already has them all.
-   - **No rekordbox cues**: nothing to put on the card. Only tracks that are in rekordbox have cues (a file elsewhere that is the same file as one in rekordbox counts). A disc still gets its waveforms if the card has none for its tracks.
-   - **Can't sync**: the reason is in the middle; see the next point.
+Press **Sync** and Dubcrate asks, copies the card's files to a `card-backups` folder next to your library, writes, flushes, and reads everything back to check. The rules:
 
-   Under the list are **Import Cues…**, **Eject after syncing** and **Sync** (there is a **Sync** button above the card list too).
-3. **Look through a disc** (middle). The disc you click on the right is listed track by track: its number, title, artist and length on the disc. Any warning about the disc is under its name. Click a track and **its waveform is drawn at the bottom, as the player's display draws it**: a dot-matrix of 100 columns and 7 rows growing up from the bottom, square white dots on black like the player's own. White is a waveform that will be written, dimmer one the card already has (the player draws that one, and a sync leaves it alone), and a dashed line a track not analysed yet. **Small red dashes under the dots are the track's memory cues**, where they fall in the track, as on the player's own display (every cue that will be on the card for that track: the ones already there and the ones a sync adds) (Dubcrate works the waveform out by itself, quietly, when you put a track on an audio disc, and again from the rendered audio when you burn; a sync does any that are left before it writes).
-4. **Measure Lengths.** A disc's entry on the card is its table of contents, which needs every track's exact length on the CD. A burn measures them; a disc you haven't burned yet may say *Can't sync: tracks have no measured length*. Right-click the disc list and choose **Measure Lengths**: it reads those files (it changes nothing in them) and the list updates.
-5. **Waveforms** are always written along with the cues. **A burn works the waveforms out for you** (it has the audio in hand anyway), so for a disc you burned with Dubcrate there is nothing to wait for. For any track that has none (a disc you haven't burned here, say), Sync **analyses** it first, under a second each (the list says how far it is), and keeps the result, so the next sync doesn't.
-
-The rules it follows:
-
-- **Every rekordbox cue becomes a memory cue** on the card: memory cues, hot cues (their letters and colours are dropped; the card has no place for them) and loops (as memory loops). The player's own three hot cue buttons are never written or touched.
-- **What is already on the card is kept**: cues you set on the player, its hot cues, its waveforms. Cues are only added, and one that is already there (within a fraction of a second) is skipped. The player holds **100 cues per disc**; if more would be added, the list says how many don't fit.
-- **A track that already has a waveform on the card keeps it**, whether the player made it or Dubcrate did; a waveform is only written for a track with none. The player never changes a waveform it has, so if you want a track's waveform redrawn, the card's copy has to be removed first (the player rebuilds it).
-- **The waveform is Dubcrate's own version of the player's**, worked out from the track's low notes (roughly 100 to 200 Hz), which is what the CDJ-1000MK3 draws. It matches the player's within a step of its height for about three columns in four on real music, which is close enough to look right. **A quiet track is drawn taller**: its loudest point is raised to the top of the view (a track you turned down when normalising its level would otherwise be a thin line), so the waveform doesn't depend on a burn's volume. A track with no low notes at all is left as it is.
-- **Only audio CDs** are listed. MP3 discs, and discs that came from somewhere else, are not.
-- **A disc's ID is worked out from its tracks' lengths**, so a disc you changed after burning it no longer matches the one in the drive; the list warns when a disc isn't marked as burned. Reading the ID from the disc in the drive is available on the command line (`dubcrate card toc` and `dubcrate card sync --from-drive`), which is where to look if the player doesn't show the cues; see the developer notes for the options.
-- **Sync asks first**, saying what will be added and what is kept. Then it copies the card's files to a `card-backups` folder next to your library, writes, flushes the card, and reads everything back to check it. If anything goes wrong, the old files can be put back from that folder.
-- **Eject after syncing** (ticked unless you change it, and only for a card that is plugged in, not a folder you chose) ejects the card once it is written, and the status bar says when it is safe to take out. If the Mac won't let go of it, the status bar says so: eject it in Finder.
-
-Two discs whose tracks are exactly the same lengths would look like the same disc to the player, and so would share their cues.
+- **Every rekordbox cue becomes a memory cue** on the card (hot cue letters and colours are dropped; loops become memory loops). The player's own three hot cue buttons are never written or touched.
+- **What is already on the card is kept**: your cues, its hot cues, its waveforms. Cues are only added, and duplicates are skipped. The player holds **100 cues per disc**.
+- **A track that already has a waveform keeps it.** A burn works waveforms out for you; for any track without one, Sync analyses it first. A quiet track's waveform is drawn taller so it doesn't depend on a burn's volume.
+- **A disc's ID is worked out from its tracks' lengths**, so a disc changed after burning no longer matches the one in the drive (the list warns). **Measure Lengths** is for a disc whose tracks have no measured length yet. **Only audio CDs** are listed.
 
 ![The review of memory cues found on the card: ticked per disc, track and cue](screenshots/card-import.png "Import Cues…")
 
-**Bringing changes back from the card.** What you do on the player itself ends up on the card: cues and loops you set, and cues you delete or move. **Import Cues…** (under the disc list) brings them back. It looks at every disc of yours that is on the card and lists, track by track, what Dubcrate doesn't have: untick any you don't want (a disc, a track or one change), then press **Import**. New cues and loops become **memory cues and loops in Dubcrate**, and in rekordbox too if you have allowed that (**Settings > Library**; rekordbox must be closed for that part, otherwise they wait in Dubcrate). The review lists:
-
-- **New memory cues** and **new loops** you set on the player. A cue Dubcrate put on the card (from rekordbox, hot cues and loops included) is recognised by its place and is not offered again.
-- **Hot cues** you set on the player's three hot cue buttons, as memory cues. These are **not ticked**: tick the ones you want.
-- **Deleted on the player**: a cue Dubcrate put on the card at the last sync that you then deleted there. Ticking it deletes that memory cue in Dubcrate (and in rekordbox, if you have allowed that). Only a **memory cue**, or a loop you saved in Dubcrate that rekordbox doesn't have yet, can be deleted this way; a deleted hot cue or a loop that is in rekordbox is left alone (the review says how many).
-- **Moved on the player**: when a track has as many deleted cues as new ones, they are shown as moves (the old time, then the new). A move is a deletion and an addition, and ticking it does both.
-
-Things to know:
-
-- **Deletions and moves are noticed from the next sync on.** Each sync records what it left on the card, and the review compares the card with that. A disc that has not been synced since this was added shows only new things, and says so. If you delete a cue in Dubcrate or move it there after a sync, it is not offered back as new.
-- A track keeps at most **ten** memory cues and loops together; if more are new, the earliest fit and the review says how many were left out. A deletion makes room.
-- It only reads the card; nothing on it changes. This is new and has not been tried with cues set on a real player.
+**Bringing changes back.** Cues and loops you set, delete or move on the player end up on the card. **Import Cues…** lists, track by track, what Dubcrate doesn't have: untick what you don't want, then press **Import**. New ones become memory cues and loops in Dubcrate (and in rekordbox, if you've allowed that). The player's own **hot cues** are listed but **not ticked**. **Deleted** and **moved** cues are noticed from the next sync on (each sync records what it left on the card), and only memory cues, or loops rekordbox doesn't have, can be deleted this way. It only reads the card, and is new: it hasn't been tried with cues set on a real player.
 
 ### Setting up a blank card
 
-You don't need the player to get a card ready. **Format a Card…** (right-click the card list, on a card or on the empty part of the list) erases a blank SD card, makes it the kind of FAT16 card the player expects (named `DISK_IMG`) and adds the **PIONEER** folder the player keeps its files in. The card appears in the list at once, picked, so you can sync cues and waveforms to it straight away, at home, and put it in the player at the venue.
+**Format a Card…** (right-click the card list) erases a blank SD card, makes it the FAT16 card the player expects (named `DISK_IMG`) and adds the **PIONEER** folder, so you can sync at home before the card has been in a player.
 
 ![The Format a Card window: the removable disks, a card that can be used and one that can't](screenshots/format-card.png "Format a Card")
 
-- **Only plain SD cards of 2 GB or less.** The CDJ-1000MK3 can't read SDHC or SDXC cards (anything bigger than 2 GB is one of those), and the window greys those out with the reason. A card is told apart by its size, which is all most card readers report.
-- **It erases the card, and only a card.** Only removable disks are listed (never the computer's own disk), a locked card or a disk image is greyed out, you have to tick that you understand everything on it will be erased, and the disk is checked again, and checked to still be the one you picked, just before it is erased.
-- **Mac, Linux and Windows.** On a Mac it uses the system's disk tool. On Linux it asks for your password (a desktop password window, or run Dubcrate as root) and needs `sfdisk` and `mkfs.fat` (`dosfstools`); on Windows it asks permission through Windows' own prompt. **The Linux and Windows ways have not yet been tried on a real card.**
-
-> **Not yet tried on a player.** The card it makes follows the layout of a card the player formatted itself (FAT16, 32 KB clusters, the same name), but a CDJ has not yet been shown a card made this way, and the player's own card has its partition 1 MiB closer to the start. If the player says *UNFORMAT* or *CARD ERROR* for a card made here, format it once in the player (the CDJ-1000MK3's own manual says how) and please tell us what the display said.
+- **Only plain SD cards of 2 GB or less**: the CDJ-1000MK3 can't read SDHC or SDXC cards. Others are greyed out with the reason.
+- **It erases a card, and only a card**: only removable disks are listed, you must tick that you understand everything on it will be erased, and the disk is checked again just before.
+- On a Mac it uses the system's disk tool. On Linux it asks for your password and needs `sfdisk` and `mkfs.fat`; on Windows it asks permission through Windows. **The Linux and Windows ways, and a card made this way in a real player, have not been tried.** If the player says *UNFORMAT* or *CARD ERROR*, format the card once in the player and tell us what it said.
 
 ---
 
@@ -464,78 +284,67 @@ You don't need the player to get a card ready. **Format a Card…** (right-click
 
 ![The Settings window, on the Library tab](screenshots/settings-library.png "Settings > Library")
 
-- **Audio:** the **Output device** for previews and the **Buffer size**, and the **Beat jump** distance for the arrow keys.
-- **Discs:** how **new** discs are planned: **Default CD-R size**, 80 minutes (700 MB) or 74 minutes (650 MB), the same size, as megabytes, for an MP3 CD, **Between tracks**, which is **Gapless** unless you choose 1, 2 or 3 seconds of silence (audio CDs only), and **MP3 CDs: highest rate**, the top constant bitrate for new MP3 discs (320 kbit/s unless you lower it).
-- **Burning:** the **Burn speed** a burn starts with (10x unless you change it). Old players read discs burned slowly more reliably, and 10x to 16x is a good range. Your drive may not offer every speed. You can still pick another speed for a single burn in the burn window. **Normalise the levels of tracks on audio CDs** chooses whether a burn starts with normalising on, and **Normalise to** what to bring the tracks to; see [Burning a disc](#burning-a-disc).
-- **Library:** whether Dubcrate updates your rekordbox library each time it starts (on by default), whether memory cue and loop changes you make in the player are **saved into your rekordbox library** (see [Listening to tracks](#listening-to-tracks); asked the first time you edit one), and whether it checks for a newer version of Dubcrate when it starts (also on by default; see [Updates](#updates-and-what-dubcrate-sends)).
-- **Appearance:** the **Theme** (the same choice as **View > Theme**), the **Waveform style** (the same as **View > Waveform**), the **Waveform background**, the **Waveform speed** (**60 FPS** or **30 FPS**), the **Key notation**: **Camelot** (8A) or **Musical** (A min), and the **Units** sizes are shown in: **Millimetres**, **Centimetres** or **Inches**. Only what is shown changes; your library, rekordbox and the files keep what they have (sizes are stored in millimetres, so changing the unit loses nothing, and the label window follows at once).
+- **Audio:** the **Output device**, **Buffer size** (raise it if a preview crackles) and **Beat jump** distance.
+- **Discs:** the **Default CD-R size** for new discs (80 minutes (700 MB) or 74 minutes (650 MB)), **Between tracks** (**Gapless**, or 1 to 3 seconds), and **MP3 CDs: highest rate**.
+- **Burning:** the **Burn speed** a burn starts with (10x unless you change it) and whether it starts with **Normalise** on, and to what. MP3 discs are not normalised.
+- **Library:** whether Dubcrate updates your rekordbox library at start-up, whether memory cue and loop changes are saved into rekordbox, whether it checks for a new version at start-up, the tools it found, and **Verbose logging**.
+- **Appearance:** **Theme**, **Waveform style**, **Waveform background**, **Waveform speed** (60 or 30 FPS), **Key notation** (Camelot or Musical) and **Units** (millimetres, centimetres or inches). Only what is shown changes; sizes are stored in millimetres.
 
 ---
 
 ## Updates, and what Dubcrate sends
 
-Dubcrate checks for a newer version when it starts, at most once a day, and tells you only if there is one: a notice with the release notes and a **View Release…** button that opens the download page. **Skip This Version** silences the notice for that version, and **Remind Me Later** leaves it for tomorrow. Either way, a small blue **Update available** button appears next to the version (**Dubcrate v0.1.0**) at the bottom left of the window for as long as a newer version exists: click it to read what's new. Nothing is downloaded or installed by Dubcrate itself; you download the new `.dmg` yourself.
+Dubcrate checks for a newer version when it starts, at most once a day, and tells you only if there is one: a notice with the release notes and **View Release…**. **Skip This Version** silences it for that version and **Remind Me Later** leaves it for tomorrow. A blue **Update available** button stays next to the version at the bottom left. Nothing is downloaded or installed by Dubcrate itself.
 
-**Help > Check for Updates…** (or the button in **About**) checks straight away and tells you the result, even "you're up to date". Turn off the check at startup under **File > Settings… > Library > Check for a new version when Dubcrate starts**.
+**Help > Check for Updates…** checks straight away and tells you the result. Turn off the start-up check under **Settings > Library**.
 
-This is the only time Dubcrate uses the network. It asks `github.com` for the list of Dubcrate's published releases; it sends nothing about you or your music, only the name and version of the app, as any request must. The version in **Help > About Dubcrate** is the one that is compared, so a build you made yourself that says `development` or `0.0.0-dev` never checks.
+This is the only time Dubcrate uses the network. It asks `github.com` for the list of Dubcrate's releases and sends nothing about you or your music. A build you made yourself that says `development` never checks.
 
 ---
 
 ## Keyboard shortcuts
 
-**Help > Keyboard Shortcuts** (⌘/) opens the full list in a window you can search and keep open; it is made from the menus, so it is always right. The main ones:
+**Help > Keyboard Shortcuts** (⌘/) opens the full, searchable list; it is made from the menus, so it is always right. The main ones (on Windows and Linux, ⌘ is Ctrl):
 
 | Shortcut | Does |
 | --- | --- |
 | Double-click a track | Preview it |
 | Space | Play or pause (anywhere except a text box) |
-| Return | Load the highlighted track into the player and play it |
-| ⌘Return, or ⌘D | Add the selected tracks to the disc (to the folder shown, on an MP3 disc) |
-| ← / → | Beat jump back / forward (anywhere except a text box, a slider or a folder list) |
-| Drag the zoomed waveform | Scratch |
+| Return | Load the highlighted track into the player |
+| ⌘Return, or ⌘D | Add the selected tracks to the disc |
+| ← / → | Beat jump back / forward |
 | Delete | Take the selected tracks off the disc |
-| ⌘O | Import a folder |
-| ⇧⌘O | Import a rekordbox library |
-| ⌘R | Rename the picked disc or folder |
-| ⇧⌘R | Re-import the selected source |
+| ⌘O / ⇧⌘O | Import a folder / a rekordbox library |
+| ⌘R / ⇧⌘R | Rename the picked disc or folder / re-import the source |
 | ⌘⌫ | Delete the picked disc or folder |
-| ⌘/ | Show this list of shortcuts |
-| ⌘N | New disc |
-| ⇧⌘N | New MP3 disc |
+| ⌘N / ⇧⌘N | New disc / New MP3 disc |
 | ⌘B | Burn the disc |
 | ⌘P | Print labels |
 | ⇧⌘D | Split the shown tracks across discs |
+| ⌘F | Find tracks (Esc leaves the box; ⌘F in the guide finds in the guide) |
 | ⌘, | Settings |
-| ⌘F | Find tracks: go to the search box (**View > Find Tracks**) |
-| Esc (in the search box) | Leave the search box for the track list, so Space plays and pauses |
-| Return (in the search box) | The same, and pick the first track of the list |
-| ⌘F (in the guide) | Find in the guide |
+| ⌘/ | Show this list |
 
 ---
 
 ## Troubleshooting
 
-- **A preview crackles.** Raise the buffer size in **Settings** (try 2048 frames).
-- **No sound, or the wrong output.** Choose the output device in **Settings**, then double-click a track to hear it.
-- **Dubcrate says it can't find ffmpeg.** The download includes it, so this means the app has been damaged or changed: download it again. If you run Dubcrate from source, install it with `brew install ffmpeg` and restart. Your library, rekordbox import and previews of MP3, WAV and FLAC files still work without it, but folder import and burning don't. **Settings > Library** shows what Dubcrate found.
-- **New tracks from rekordbox aren't showing.** Dubcrate updates rekordbox when it starts, and only if **Settings > Library** is on. To update while it is open, select the rekordbox source and press ⇧⌘R. If the status bar said it couldn't update, it says why.
-- **Dubcrate can't find my rekordbox library.** Choose **Choose File…** when importing and pick `master.db`.
-- **A track is greyed out, or its file is missing.** Reconnect the drive or put the file back, then re-import the source (⇧⌘R).
-- **The Burn button is grey.** Read the red lines in the burn window: the disc may be empty, too long for the disc in the drive, or missing a file. Press **Check Again** if you just changed the disc.
-- **A disc is over its size.** Take tracks off, switch to a longer disc size, or split the playlist.
-- **Something went wrong and I want to report it.** If Dubcrate hits an error it didn't expect, it says so in a **Something went wrong** message (one line about what it was, with a **Show Log File** button); the details are in the log either way, and a repeating error shows the message once, not every time. **Help > Show Log File** opens the folder with Dubcrate's log (`dubcrate.log`, and `crash.log` if it ever crashed; the command line writes `dubcrate-cli.log`). Attach them to the report. They list file paths and what Dubcrate did, never your audio. To record more detail, tick **Record more detail in the log file** in **Settings > Library** (it takes effect at once and is remembered), or start Dubcrate with `--verbose` for one run.
-- **An MP3 CD won't play, or its tracks are in the wrong order.** Not every player reads MP3 discs, and old ones can be fussy about file names and burn speed. Burn a test disc slowly, and tell the project what your player did, so this guide can say what is known.
-- **A track says it is no longer in its source.** It disappeared from the source at the last re-import but is kept because a disc uses it. Take it off the disc before burning.
+- **A preview crackles, or there is no sound.** Raise the buffer size, or choose the output device, in **Settings > Audio**.
+- **Dubcrate can't find ffmpeg.** The download includes it, so the app has been damaged or changed: download it again. (From source: `brew install ffmpeg`.) **Settings > Library** shows what it found.
+- **New tracks from rekordbox aren't showing.** Select the rekordbox source and press ⇧⌘R. Start-up updating only happens if it is on in **Settings > Library**.
+- **A track is greyed out, or "no longer in its source".** The file moved, the drive is unplugged, or it left the source and is kept only because a disc uses it. Reconnect and re-import, or take it off the disc.
+- **The Burn button is grey.** Read the red lines in the burn window: the disc may be empty, too long, or missing a file, or the drive has no suitable disc (press **Check Again**).
+- **A disc is over its size.** Take tracks off, split the playlist, or make it an MP3 CD.
+- **An MP3 CD won't play, or its tracks are in the wrong order.** Not every player reads MP3 discs, and old ones can be fussy about file names and speed. Burn a test disc slowly and tell the project what your player did.
+- **Something went wrong.** Unexpected errors show a **Something went wrong** message with **Show Log File**. **Help > Show Log File** opens the folder with `dubcrate.log` (and `crash.log`, and `dubcrate-cli.log` for the command line); attach them to a report. They list file paths and what Dubcrate did, never your audio. Tick **Verbose logging** in **Settings > Library**, or start with `--verbose`, for more detail.
 
 ---
 
 ## Good to know
 
-- **Scrolling never changes a control by accident.** The mouse wheel or a trackpad swipe over a number box, drop-down or slider scrolls the page past it: click one first, and a thin outline (dashed in the black-and-white look) shows that it will now answer the wheel. Click anywhere else and it goes back to ignoring it.
-- **Number boxes work like knobs.** Press on one and drag up or down to change it (hold Shift for fine steps), or click it once to select the whole number and type a new one (Return applies). The little arrows and the arrow keys still work.
-- **Titles use CD-TEXT**, which handles Western European characters. Other characters are simplified, or become a question mark, on the disc.
-- **The disc holds only audio and titles.** Cue points, beat grids and rekordbox analysis can't go on an audio CD.
-- **Everything is converted to CD quality** when burned, so a high-resolution file becomes 16-bit, 44.1 kHz.
+- **Titles use CD-TEXT**, which handles Western European characters; others are simplified or become a question mark on the disc.
+- **The disc holds only audio and titles.** Cue points, beat grids and analysis can't go on an audio CD (that is what Sync is for). Everything is converted to 16-bit, 44.1 kHz when burned.
+- **Scrolling never changes a control by accident**: click a number box, drop-down or slider first and it will answer the wheel. **Number boxes work like knobs**: drag up or down (Shift for fine steps), or click once and type.
+- **What has been tried.** Burning through the command line, the rekordbox memory-cue write from the command line, and Sync's cues and waveforms on one CDJ-1000MK3 and card are proven. Burning from the window, MP3 discs, level matching on a player, label printing on a real printer, Import Cues with cues set on a real player and Linux and Windows are not yet.
 - Dubcrate keeps its library in `~/Library/Application Support/Dubcrate/`.
 - Dubcrate is free software under the GNU General Public License, version 3 or later. It is not affiliated with Apple, AlphaTheta or Pioneer DJ. rekordbox, CDJ and Pioneer DJ are trademarks of their owners.

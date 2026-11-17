@@ -36,7 +36,7 @@ def anchors(dialog) -> set[str]:
 def test_the_guide_is_rendered_not_shown_as_raw_markdown(dialog):
     assert dialog.loaded
     text = dialog.viewer.toPlainText()
-    assert "Dubcrate User Guide" in text and "Planning a disc" in text
+    assert "Dubcrate User Guide" in text and "Your discs" in text
     assert "## " not in text and "**" not in text
 
 

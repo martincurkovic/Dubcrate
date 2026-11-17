@@ -128,14 +128,12 @@ def test_the_right_hand_pane_the_guide_describes_is_the_real_one(window):
         "## Your discs",
         "**Discs** (right)",
         "Adding to",
-        "deleting a folder deletes what is in it",
-        "**double-clicking** its name",
-        "The + button",
         "ready to type over",
-        "A burned disc is just a disc",
+        "still fully editable",
         "Duplicate",
     ):
         assert phrase in MANUAL, phrase
+    assert "deleting a folder deletes what is in it" in MANUAL.casefold()
     assert "Burned** view" not in MANUAL and "frozen" not in MANUAL.replace(
         "nothing is frozen", ""
     )
@@ -159,7 +157,6 @@ def test_the_settings_tabs_the_guide_names_exist(qapp):
     names = [tabs.tabText(i) for i in range(tabs.count())]
     assert names == ["Audio", "Discs", "Burning", "Library", "Appearance"]
     assert "Check for a new version when Dubcrate starts" in dialog.auto_update_check.text()  # fmt: skip
-    assert "Check for a new version when Dubcrate starts" in MANUAL
     for name in names:
         assert f"**{name}:**" in MANUAL, name
     assert "Default CD-R size" in MANUAL and "Between tracks" in MANUAL
@@ -222,10 +219,10 @@ def test_the_disc_list_the_guide_describes_is_the_real_one(qapp):
     assert "What goes on the CD" in MANUAL and "this disc only" in MANUAL
     for phrase in ("Double-click", "disc's name", "Duplicate", "CD-TEXT"):
         assert phrase in MANUAL, phrase
-    assert (
-        "BPM"
-        not in MANUAL.split("**What goes on the CD**")[1].split("**Arranging**")[0]
-    )
+    on_the_cd = MANUAL.split("**What goes on the CD.**")[1].split("**Size and gaps.**")[
+        0
+    ]
+    assert "BPM" not in on_the_cd  # (a CD holds no BPM: only #, Time, Artist, Title)
 
 
 def test_the_fixed_width_columns_the_guide_mentions_are_fixed():
@@ -241,8 +238,8 @@ def test_the_startup_update_the_guide_describes_is_real(qapp):
     from dubcrate import settings
     from dubcrate.ui.settings_dialog import SettingsDialog
 
-    for phrase in ("keeps your rekordbox library up to date by itself", "--no-import", "splash screen",
-                   "File > Settings… > Library", "never imports one on its own"):  # fmt: skip
+    for phrase in ("kept up to date by itself", "--no-import", "splash screen",
+                   "Settings > Library", "never imports one on its own"):  # fmt: skip
         assert phrase in MANUAL, phrase
     assert settings.get_auto_import() is True  # "on by default"
     assert (
@@ -284,7 +281,7 @@ def test_the_guide_describes_the_label_window_as_it_is():
         "**Copies of each**",
         "**Zoom**",
         "**pinching**",
-        "**Folders on an MP3 disc**",
+        "**folders are headings**",
         "(cont.)",
     ):
         assert phrase in MANUAL, phrase
@@ -298,7 +295,7 @@ def test_the_guide_describes_the_explorer_tab(window):
         "## The Explorer",
         "**Explorer** tab",
         "**Library**",
-        "never offers the computer's whole system disk",
+        "never offers the whole system disk",
         "not part of your Library",
         "Files & Folders",
     ):
