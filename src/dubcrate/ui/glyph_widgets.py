@@ -8,7 +8,7 @@ with a colour, so it follows every look, System 6's black and white included. `G
 from collections.abc import Callable
 
 from PySide6.QtCore import QPointF, QRectF, QSize, Qt
-from PySide6.QtGui import QColor, QPainter, QPen, QPolygonF
+from PySide6.QtGui import QColor, QIcon, QPainter, QPen, QPixmap, QPolygonF
 from PySide6.QtWidgets import QAbstractButton, QWidget
 
 from . import theme
@@ -53,6 +53,29 @@ def close_glyph(p: QPainter, box: QRectF, colour: QColor) -> None:
         QPointF(box.left() + 12 * u, box.top() + 4 * u),
         QPointF(box.left() + 4 * u, box.top() + 12 * u),
     )
+
+
+def disk_glyph(p: QPainter, box: QRectF, colour: QColor) -> None:
+    """A hard disk: a rounded box with a line across it and a light."""
+    u = box.width() / 16
+    p.setPen(_pen(colour, 1.5))
+    p.setBrush(Qt.BrushStyle.NoBrush)
+    p.drawRoundedRect(QRectF(box.left() + 1.5 * u, box.top() + 4 * u, 13 * u, 8 * u), 1.5 * u, 1.5 * u)  # fmt: skip
+    p.drawLine(QPointF(box.left() + 1.5 * u, box.top() + 9 * u), QPointF(box.left() + 14.5 * u, box.top() + 9 * u))  # fmt: skip
+    p.setBrush(colour)
+    p.drawEllipse(QPointF(box.left() + 12 * u, box.top() + 10.7 * u), 0.7 * u, 0.7 * u)
+
+
+def glyph_icon(glyph: Glyph, size: int, colour: QColor, ratio: float = 2.0) -> QIcon:
+    """A glyph as an icon (for a list row), painted at `size` points in `colour`."""
+    pixmap = QPixmap(round(size * ratio), round(size * ratio))
+    pixmap.setDevicePixelRatio(ratio)
+    pixmap.fill(Qt.GlobalColor.transparent)
+    painter = QPainter(pixmap)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing, theme.antialiasing())
+    glyph(painter, QRectF(2, 2, size - 4, size - 4), colour)
+    painter.end()
+    return QIcon(pixmap)
 
 
 def up_glyph(p: QPainter, box: QRectF, colour: QColor) -> None:

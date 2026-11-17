@@ -7,6 +7,7 @@ from PySide6.QtWidgets import (
     QDialog,
     QDialogButtonBox,
     QFormLayout,
+    QFrame,
     QLabel,
     QTabWidget,
     QVBoxLayout,
@@ -19,6 +20,14 @@ from dubcrate.audio.devices import BUFFER_SIZES, buffer_msec
 
 from . import key_style, theme, wave_style
 from .full_width_tabs import FullWidthTabBar
+
+
+def _rule() -> QFrame:
+    """A thin line between groups of settings (drawn from the theme's border colour by the style sheet)."""
+    line = QFrame()
+    line.setObjectName("settingsRule")
+    line.setFixedHeight(1)
+    return line
 
 
 class SettingsDialog(QDialog):
@@ -239,7 +248,10 @@ class SettingsDialog(QDialog):
             "Asks github.com at most once a day: the only time Dubcrate uses the network, and nothing is"
             " downloaded. Help > Check for Updates checks any time."
         )
-        form.addRow(QLabel("Tools Dubcrate runs:"))
+        form.addRow(_rule())
+        tools_title = QLabel("Tools Dubcrate runs")
+        tools_title.setObjectName("panelTitle")
+        form.addRow(tools_title)
         self.tool_labels: dict[str, QLabel] = {}
         for name in tools.REQUIRED:
             label = QLabel(tools.describe(name))
@@ -254,6 +266,7 @@ class SettingsDialog(QDialog):
             tools_hint.setWordWrap(True)
             tools_hint.setObjectName("mutedLabel")
             form.addRow(tools_hint)
+        form.addRow(_rule())
         self.verbose_check = QCheckBox("Verbose logging")
         self.verbose_check.setChecked(
             settings.get_verbose_logging() or logsetup.is_verbose()

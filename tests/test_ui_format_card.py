@@ -55,16 +55,11 @@ def make(qapp, wait_for):
         dialog.deleteLater()
 
 
-def test_a_card_is_listed_with_its_name_size_and_bus_and_picked(make):
+def test_a_card_is_listed_with_its_name_and_size_and_picked(make):
     dialog = make()
     assert dialog.list.count() == 1
     text = dialog.list.item(0).text()
-    assert (
-        "Generic STORAGE DEVICE" in text
-        and "2.0 GB" in text
-        and "USB" in text
-        and "disk4" in text
-    )
+    assert "Generic STORAGE DEVICE" in text and "2.0 GB" in text and "disk4" in text
     assert "Ready to format" in text
     assert dialog.chosen().device == "disk4"
     assert dialog.status.text() == "1 card can be formatted."

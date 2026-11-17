@@ -1303,7 +1303,7 @@ def test_only_the_picked_tracks_waveform_is_drawn_at_the_bottom(writing):
     assert browser.strip.values == saw() and browser.selected_row().number == 1
     browser.table.setCurrentItem(browser.table.topLevelItem(1))
     assert browser.strip.values == shifted and browser.selected_row().number == 2
-    assert browser.wave_note.text() == "will be written"
+    assert browser.wave_note.text() == "" and browser.wave_note.isHidden()
     assert not hasattr(browser, "strips")  # (one strip, not one for each track)
 
 

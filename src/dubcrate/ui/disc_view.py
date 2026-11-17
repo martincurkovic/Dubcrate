@@ -14,9 +14,6 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QHeaderView,
     QLabel,
-    QListView,
-    QListWidget,
-    QListWidgetItem,
     QMenu,
     QMessageBox,
     QPushButton,
@@ -37,7 +34,7 @@ from dubcrate.mp3 import format_span
 
 from . import theme
 from .capacity_bar import CapacitySummary
-from .models import DiscModel, _folder_icon
+from .models import DiscModel
 from .overlaps import OverlapChoice, ask_overlap, overlap_message
 from .tasks import run_async
 from .track_table import transport_action
@@ -186,22 +183,6 @@ class DiscView(QWidget):
         empty_layout.addWidget(empty_label)
         empty_layout.addStretch(2)
 
-        # the folders inside the open place on an MP3 disc: click one to open it (the list under the heading
-        # would otherwise look blank when a disc's root holds only folders)
-        self.folders = QListWidget()
-        self.folders.setObjectName("discFolders")
-        self.folders.setFlow(QListView.Flow.LeftToRight)
-        self.folders.setWrapping(True)
-        self.folders.setResizeMode(QListView.ResizeMode.Adjust)
-        self.folders.setSelectionMode(QListWidget.SelectionMode.NoSelection)
-        self.folders.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        self.folders.setSpacing(2)
-        self.folders.setMaximumHeight(72)
-        self.folders.setToolTip("Click a folder to open it")
-        self.folders.itemClicked.connect(self._on_folder_clicked)
-        self.folders.hide()
-        full_layout.insertWidget(0, self.folders)
-
         self.stack = QStackedWidget()
         self.stack.addWidget(empty)
         self.stack.addWidget(full)
@@ -312,7 +293,6 @@ class DiscView(QWidget):
             self.summary.show_disc(summary, entries)  # the bar is the whole disc
             self._set_title(summary.name, disc_id)
             n = summary.track_count
-            self._show_folders(summary.kind, disc_id)
             self.count.setText(
                 f"{'MP3 CD  ·  ' if summary.kind == 'mp3' else ''}"
                 f"{n} track{'s' if n != 1 else ''}  ·  {format_span(summary.used_sectors, summary.kind)}"
@@ -325,25 +305,6 @@ class DiscView(QWidget):
             self.title.setText("")
             self.count.setText("")
         self.changed.emit()
-
-    def _show_folders(self, kind: str, disc_id: int) -> None:
-        """List the folders inside the place shown (an MP3 disc's root or one of its folders)."""
-        self.folders.clear()
-        if kind == "mp3":
-            inside = [
-                d for d in self._lib.disc_dirs(disc_id) if d.parent_id == self._dir_id
-            ]
-            for d in sorted(inside, key=lambda d: d.name.casefold()):
-                item = QListWidgetItem(_folder_icon(), d.name)
-                item.setData(Qt.ItemDataRole.UserRole, d.id)
-                self.folders.addItem(item)
-        self.folders.setVisible(self.folders.count() > 0)
-
-    def _on_folder_clicked(self, item: QListWidgetItem) -> None:
-        if self._disc_id is not None:
-            self.navigate_requested.emit(
-                self._disc_id, item.data(Qt.ItemDataRole.UserRole)
-            )
 
     def _on_double_clicked(self, index) -> None:
         """Double-clicking the artist or title edits it; anywhere else listens to the track."""

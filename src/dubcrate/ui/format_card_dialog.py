@@ -15,7 +15,7 @@ The disk listing and the format are injected so a test never touches a disk.
 from collections.abc import Callable
 from pathlib import Path
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import QSize, Qt, Signal
 from PySide6.QtGui import QPalette
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -32,6 +32,8 @@ from PySide6.QtWidgets import (
 from dubcrate import card_format
 from dubcrate.card_format import CardDisk, Formatted
 
+from .glyph_widgets import disk_glyph, glyph_icon, ink
+from .source_tabs import sd_card_glyph
 from .tasks import TaskError, run_async
 
 DiskLister = Callable[[], list[CardDisk]]
@@ -44,6 +46,21 @@ def _real_lister() -> list[CardDisk]:
 
 def _real_formatter(device: str, expect: CardDisk) -> Formatted:
     return card_format.format_card(device, expect=expect)
+
+
+def short_reason(disk: CardDisk) -> str:
+    """Why a disk can't be used, in a few words (`card_format.problems` has the full sentences)."""
+    if not disk.whole:
+        return "Not a whole card"
+    if disk.system or not disk.removable:
+        return "Not a removable card"
+    if disk.virtual:
+        return "A disk image"
+    if not disk.writable:
+        return "Write-protected: unlock the card"
+    if disk.size <= 0:
+        return "No card inside"
+    return f"{disk.card_class}: only plain SD (2 GB or less) works"
 
 
 class FormatCardDialog(QDialog):
@@ -87,6 +104,8 @@ class FormatCardDialog(QDialog):
         self.list.setWordWrap(True)  # a reason is a sentence, not a word
         self.list.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.list.setUniformItemSizes(False)
+        self.list.setIconSize(QSize(36, 36))
+        self.list.setSpacing(3)  # (a gap between one drive and the next)
         self.list.setMinimumHeight(140)
         self.list.currentItemChanged.connect(lambda *_: self._update())
         layout.addWidget(self.list)
@@ -155,9 +174,19 @@ class FormatCardDialog(QDialog):
         self.list.clear()
         for disk in disks:
             why = card_format.problems(disk)
-            line = f"{disk.name or 'Unnamed disk'}   ·   {card_format.size_text(disk.size)}   ·   {disk.protocol or 'unknown'}   ({disk.device})"
-            item = QListWidgetItem(f"{line}\n{why[0] if why else 'Ready to format'}")
+            line = f"{disk.name or 'Unnamed disk'}  ·  {card_format.size_text(disk.size)}  ({disk.device})"
+            item = QListWidgetItem(
+                f"{line}\n{short_reason(disk) if why else 'Ready to format'}"
+            )
             item.setData(Qt.ItemDataRole.UserRole, disk.device)
+            item.setSizeHint(QSize(0, 56))
+            item.setIcon(
+                glyph_icon(
+                    disk_glyph if disk.system or not disk.removable else sd_card_glyph,
+                    36,
+                    ink(enabled=not why),
+                )
+            )
             if why:  # greyed out and not pickable, with the reason as its second line
                 item.setFlags(Qt.ItemFlag.NoItemFlags)
                 item.setForeground(

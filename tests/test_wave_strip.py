@@ -279,7 +279,7 @@ def test_a_track_to_be_written_shows_its_own_waveform(lib, tmp_path):
     rows = card_discs.wave_rows(survey, lib.disc_entries(disc))
     assert [r.state for r in rows] == [card_discs.WAVE_WRITE] * 3
     assert [r.number for r in rows] == [1, 2, 3]
-    assert rows[0].values == tuple(saw()) and rows[0].note == "will be written"
+    assert rows[0].values == tuple(saw()) and rows[0].note == ""
     assert rows[0].title == "A – t0"
 
 

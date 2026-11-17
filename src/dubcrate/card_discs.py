@@ -351,7 +351,9 @@ def wave_rows(
             )
         elif number in plan.waves_added and plan.file is not None:
             values = tuple(plan.file.fine[number - 1].time_values())
-            row = WaveRow(number, title, WAVE_WRITE, values, "will be written")
+            row = WaveRow(
+                number, title, WAVE_WRITE, values
+            )  # (the usual case: nothing to say)
         elif number in plan.waves_kept and plan.file is not None:
             values = tuple(plan.file.fine[number - 1].time_values())
             row = WaveRow(number, title, WAVE_CARD, values, "already on the card: kept")

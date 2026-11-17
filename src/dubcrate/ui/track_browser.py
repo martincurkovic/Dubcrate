@@ -176,6 +176,10 @@ class TrackBrowser(QWidget):
         if row is None:
             self.strip.set_values(None, NONE)
             self.wave_note.setText("")
+            self.wave_note.hide()
             return
         self.strip.set_values(row.values or None, STRIP_STATES[row.state], row.marks)
         self.wave_note.setText(row.note)
+        self.wave_note.setVisible(
+            bool(row.note)
+        )  # (a waveform that will simply be written says nothing)

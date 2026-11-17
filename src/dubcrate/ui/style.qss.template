@@ -796,3 +796,9 @@ QLabel#writableBadge {
     color: ${badge_rw_text};
     border: 1px solid ${badge_rw_border};
 }
+
+/* a thin line between groups of settings */
+QFrame#settingsRule {
+    background-color: ${border};
+    border: none;
+}

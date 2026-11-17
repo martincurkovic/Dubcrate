@@ -17,7 +17,7 @@ from functools import wraps
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -824,6 +824,11 @@ class BurnDialog(QDialog):
         ):  # a burn can't be taken back halfway: wait for it
             return
         super().reject()
+
+    def showEvent(self, event) -> None:
+        super().showEvent(event)
+        # (the first size comes from the layout's size hint, before long messages wrap to the real width)
+        QTimer.singleShot(0, self._grow_to_fit)
 
     def keyPressEvent(self, event) -> None:
         if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
