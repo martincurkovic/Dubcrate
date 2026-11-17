@@ -20,6 +20,7 @@ from dubcrate import mp3
 from dubcrate.build import BuildError, BurnPlan, Progress, render_plan
 from dubcrate.burn.base import DataDisc, Disc, DiscTrack
 from dubcrate.burn.cdrdao import build_toc
+from dubcrate.cancel import Cancelled, CancelToken
 from dubcrate.cd import format_clock, format_msf
 from dubcrate.iso import IsoError, build_iso
 
@@ -72,21 +73,28 @@ def new_export_folder(parent: Path, disc_name: str) -> Path:
 
 
 def export_plan(
-    plan: BurnPlan, parent: Path, progress: Progress | None = None
+    plan: BurnPlan,
+    parent: Path,
+    progress: Progress | None = None,
+    cancel: CancelToken | None = None,
 ) -> ExportResult:
     """Render `plan` into a new folder inside `parent`. Safe on a worker thread.
 
     Raises `ExportError` (or `BuildError`, whose message is also for the user). A folder that
-    could not be finished is removed again: it was made here, so it holds nothing of yours."""
+    could not be finished is removed again: it was made here, so it holds nothing of yours. With a
+    `cancel` token the export stops between tracks (and before the files are put together) and
+    raises `Cancelled`, the folder removed the same way."""
     folder = new_export_folder(Path(parent), plan.name)
     try:
-        rendered = render_plan(plan, folder, progress)
+        rendered = render_plan(plan, folder, progress, cancel)
+        if cancel is not None:
+            cancel.check()
         if isinstance(rendered.disc, DataDisc):
             result = _finish_mp3(plan, folder, rendered.disc)
         else:
             result = _finish_audio(plan, folder, rendered.disc, rendered.lengths)
             result = replace(result, waveforms=rendered.waveforms)
-    except (BuildError, ExportError):
+    except (BuildError, ExportError, Cancelled):
         shutil.rmtree(folder, ignore_errors=True)
         raise
     except OSError as exc:

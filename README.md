@@ -6,7 +6,7 @@
 [![Python 3.13+](https://img.shields.io/badge/python-3.13%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![Qt 6.12 LTS](https://img.shields.io/badge/Qt-6.12%20LTS-41CD52?logo=qt&logoColor=white)](https://doc.qt.io/qtforpython-6/)
 [![uv](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/uv/main/assets/badge/v0.json)](https://github.com/astral-sh/uv)
-[![Platform: macOS](https://img.shields.io/badge/platform-macOS-lightgrey)](#what-you-need)
+[![Platform: macOS, with Windows and Linux builds new](https://img.shields.io/badge/platform-macOS%20%C2%B7%20Windows%20%26%20Linux%20new-lightgrey)](#what-you-need)
 [![License: GPL-3.0-or-later](https://img.shields.io/badge/license-GPL--3.0--or--later-blue)](LICENSE)
 
 **Burn audio CDs and print index cards for old-style CDJs from your DJ library.**
@@ -52,11 +52,12 @@ with CD-TEXT so track titles appear on the CDJ.
 
 ## What you need
 
-- **System requirements** (best guesses, not measured): macOS 14 or later on an Apple Silicon or Intel Mac, about 4 GB of memory,
+- **System requirements** (best guesses, not measured): macOS 14 or later on an Apple Silicon or Intel Mac (or Windows 10 or 11, 64-bit, or a 64-bit Linux with glibc 2.39 or newer: both new), about 4 GB of memory,
   a 1280 × 720 or larger screen (the window can't be made smaller than 980 × 660), and about 1 GB of free disk space while
   burning (the disc's audio is prepared as temporary files).
-- **A Mac**, which is what Dubcrate has been used on. **Linux** is built as an AppImage but is new and not yet tried on a real desktop
-  (you install `cdrdao` with your package manager to burn). Windows is planned.
+- **A Mac**, which is what Dubcrate has been used on. **Linux** is built as an AppImage and **Windows** as an installer, but both are
+  new and not yet tried on a real machine. On Linux you install `cdrdao` with your package manager to burn. **Windows can't burn yet**
+  (it can still plan discs, preview, print labels and sync cues, and **Export Disc as Files** makes a disc for another burning program).
 - **A CD burner** that can write CD-R, and blank **CD-R** discs. (CD-RW is not recommended
   for old CD players, and has not been tried.)
 - **[ffmpeg](https://ffmpeg.org/)**, which Dubcrate uses to read tracks and prepare
@@ -77,6 +78,10 @@ single-person project, so macOS will warn about it the first time. To open it an
 1. Try to open Dubcrate. macOS will warn about security.
 2. Open System Settings ▸ Privacy & Security and scroll down.
 3. Click **Open Anyway**, and confirm with your password or Touch ID.
+
+**Windows and Linux.** Releases will also list `Dubcrate-windows-x64-Setup.exe` (an installer that doesn't need an administrator
+password; it isn't signed either, so Windows SmartScreen will warn: choose **More info**, then **Run anyway**) and
+`Dubcrate-linux-x86_64.zip` (an AppImage: unzip it, `chmod +x` it and run it). Both are untried on a real machine.
 
 If you would rather not trust a download, [BUILDING.md](BUILDING.md) builds it from source.
 
@@ -115,7 +120,7 @@ The keyboard shortcuts and other controls are in *Help ▸ User Guide*.
 
 ## What's coming
 
-Other DJ libraries (eg. Mixxx, Engine DJ), and Windows support. Linux is built but still needs trying on a real machine.
+Other DJ libraries (eg. Mixxx, Engine DJ), and burning on Windows. The Windows and Linux builds still need trying on real machines.
 
 ## More
 

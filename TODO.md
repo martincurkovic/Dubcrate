@@ -58,7 +58,7 @@ Open items by area; finished work is under **Completed** at the bottom (same hea
 ### Features and app polish
 
 - [ ] Try the drive picker with two real drives (the check after a burn is skipped for any but the first).
-- [ ] Cancel the writing of a burn itself (not built: the backends have no abort; DiscRecording's `DRBurn.abort()` exists and `cdrdao` can be terminated, but a stopped write ruins the disc, so it needs a confirmation and a try on a drive). Also let Export… be cancelled.
+- [ ] Cancel the writing of a burn itself (not built: the backends have no abort; DiscRecording's `DRBurn.abort()` exists and `cdrdao` can be terminated, but a stopped write ruins the disc, so it needs a confirmation and a try on a drive).
 - [ ] Read a finished burn back and check it against the disc it was burned from ([roadmap.md](dev_docs/roadmap.md)).
 - [ ] Try dragging an MP3 folder in the Discs list by hand (the feel, and dropping on a collapsed disc).
 - [ ] Give each app library its own Library tab once a second library exists ([roadmap.md](dev_docs/roadmap.md)).
@@ -125,6 +125,7 @@ Open items by area; finished work is under **Completed** at the bottom (same hea
 
 ### Features and app polish
 
+- [x] Let Export Disc as Files… be cancelled (2026-11-17): the Cancel button stops it between tracks and removes the half-made folder.
 - [x] Year on labels (2026-11-16): **Show year** in the label window, off by default, between key and time; from rekordbox or the file's tags. (The album was asked for and skipped: not wanted.)
 - [x] Guard Windows' reserved names in MP3 folder names and the disc's staging folder (`mp3.dir_name`, `mp3.volume_name`).
 - [x] Detect "permission denied" on the drive on Linux and say how to get access, naming the drive's group (`cdrdao.access_problem`, 2026-11-16).

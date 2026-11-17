@@ -1016,3 +1016,26 @@ def test_a_disc_that_is_not_blank_blocks_the_burn(make_dialog):
         dialog
     )  # (put in another disc and look again)
     assert burner.burned == []
+
+
+def test_cancel_stops_an_export_and_removes_the_half_made_folder(make_dialog, wait_for, tmp_path, monkeypatch):  # fmt: skip
+    import threading
+
+    started = threading.Event()
+    monkeypatch.setattr("dubcrate.export.render_plan", _slow_render(started))
+    out = tmp_path / "out"
+    out.mkdir()
+    monkeypatch.setattr("dubcrate.ui.burn_dialog.ask_export_folder", lambda _parent: str(out))  # fmt: skip
+    dialog, _ = make_dialog(export_only=True)
+    assert not dialog.cancel_burn_button.isVisibleTo(dialog)
+    dialog.export_button.click()
+    assert wait_for(started.is_set)
+    assert dialog.cancel_burn_button.isVisibleTo(dialog) and dialog.cancel_burn_button.isEnabled()  # fmt: skip
+    assert [p.name for p in out.iterdir()] == ["Friday export"]  # (made, half done)
+    dialog.cancel_burn_button.click()
+    assert wait_for(lambda: not dialog._busy)
+    assert list(out.iterdir()) == []  # the folder was made here, so it goes
+    assert "Cancelled. Nothing was exported" in dialog.log.toPlainText()
+    assert "export was cancelled" in dialog.status_label.text()
+    assert not dialog.cancel_burn_button.isVisibleTo(dialog)
+    assert dialog.export_button.isEnabled()  # (it can be done again)

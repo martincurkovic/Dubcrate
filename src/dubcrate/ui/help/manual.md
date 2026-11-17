@@ -72,7 +72,7 @@ Dubcrate includes **ffmpeg** and **ffprobe**, which it uses to read tracks and p
 
 A small badge at the bottom right of the status bar says whether Dubcrate may write into your rekordbox library: a yellow **Library read-only** or, once you have allowed it, an orange **Library writable**.
 
-If Dubcrate can't find your rekordbox library, choose **Choose File…** when it asks and pick `master.db` (normally in `~/Library/Pioneer/rekordbox/`). Version 7 is the one it has been tried with.
+If Dubcrate can't find your rekordbox library, choose **Choose File…** when it asks and pick `master.db` (normally in `~/Library/Pioneer/rekordbox/` on a Mac and `%APPDATA%\Pioneer\rekordbox\` on Windows). Version 7 is the one it has been tried with.
 
 Supported music: MP3, WAV, FLAC, AIFF, AAC/M4A, Ogg, Opus and WMA.
 
@@ -200,7 +200,7 @@ An MP3 disc can hold **folders**, listed under it in the Discs list. Click a fol
 
 Dubcrate **won't burn** an empty disc, one longer than the disc in the drive, or one with a missing file; the reasons are listed in red. Every track is converted to CD quality (16-bit, 44.1 kHz stereo) with CD-TEXT titles. After a burn the disc is marked as burned, and **Print Labels…** appears.
 
-- **Cancel** shows while the disc is prepared and stops at once, writing nothing. **Once writing starts there is no Cancel.** After a failed or cancelled burn, Dubcrate looks at the drive again before you can burn once more.
+- **Cancel** shows while the disc is prepared (or an export is made) and stops at once, writing nothing. **Once writing starts there is no Cancel.** After a failed or cancelled burn, Dubcrate looks at the drive again before you can burn once more.
 - **Levels** (audio CDs): tick **Normalise** to give each track one fixed volume change, with no compression or limiting. **Loud** (-9), **Club** (-10), **Balanced** (-12) and **Gentle** (-14) bring tracks to about the same loudness; a track is never turned up enough to clip, and ones that can't reach the target are counted as **held back**. **Peak to full scale** instead makes each track as loud as it safely can be. The first measuring takes a moment (it is remembered). MP3 discs and your music files are never changed.
 - After a real audio burn Dubcrate reads the disc's table of contents back to check it matches the plan (the log says so), then opens the tray. Syncing cues relies on that match. The check is new and hasn't run on a real burn yet.
 
@@ -330,7 +330,7 @@ This is the only time Dubcrate uses the network. It asks `github.com` for the li
 ## Troubleshooting
 
 - **A preview crackles, or there is no sound.** Raise the buffer size, or choose the output device, in **Settings > Audio**.
-- **Dubcrate can't find ffmpeg.** The download includes it, so the app has been damaged or changed: download it again. (From source: `brew install ffmpeg`.) **Settings > Library** shows what it found.
+- **Dubcrate can't find ffmpeg.** The download includes it, so the app has been damaged or changed: download it again. (From source: install ffmpeg with your package manager, such as `brew install ffmpeg` on a Mac.) **Settings > Library** shows what it found.
 - **New tracks from rekordbox aren't showing.** Select the rekordbox source and press ⇧⌘R. Start-up updating only happens if it is on in **Settings > Library**.
 - **A track is greyed out, or "no longer in its source".** The file moved, the drive is unplugged, or it left the source and is kept only because a disc uses it. Reconnect and re-import, or take it off the disc.
 - **The Burn button is grey.** Read the red lines in the burn window: the disc may be empty, too long, or missing a file, or the drive has no suitable disc (press **Check Again**).
@@ -346,5 +346,5 @@ This is the only time Dubcrate uses the network. It asks `github.com` for the li
 - **The disc holds only audio and titles.** Cue points, beat grids and analysis can't go on an audio CD (that is what Sync is for). Everything is converted to 16-bit, 44.1 kHz when burned.
 - **Scrolling never changes a control by accident**: click a number box, drop-down or slider first and it will answer the wheel. **Number boxes work like knobs**: drag up or down (Shift for fine steps), or click once and type.
 - **What has been tried.** Burning through the command line, the rekordbox memory-cue write from the command line, and Sync's cues and waveforms on one CDJ-1000MK3 and card are proven. Burning from the window, MP3 discs, level matching on a player, label printing on a real printer, Import Cues with cues set on a real player and Linux and Windows are not yet.
-- Dubcrate keeps its library in `~/Library/Application Support/Dubcrate/`.
+- Dubcrate keeps its library in `~/Library/Application Support/Dubcrate/` on a Mac, `%LOCALAPPDATA%\Dubcrate\` on Windows and `~/.local/share/Dubcrate/` on Linux.
 - Dubcrate is free software under the GNU General Public License, version 3 or later. It is not affiliated with Apple, AlphaTheta or Pioneer DJ. rekordbox, CDJ and Pioneer DJ are trademarks of their owners.

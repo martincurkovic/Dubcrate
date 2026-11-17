@@ -165,3 +165,18 @@ def test_a_full_disk_is_explained_and_cleaned_up(lib, tmp_path, monkeypatch):
     with pytest.raises(ExportError, match="No space left on device"):
         export_plan(plan, tmp_path)
     assert list(Path(tmp_path).glob("*export*")) == []
+
+
+@needs_ffmpeg
+def test_a_cancelled_export_stops_and_leaves_no_folder(lib, tmp_path):
+    from dubcrate.cancel import Cancelled, CancelToken
+
+    disc = lib.create_disc("Friday")
+    lib.add_to_disc(disc, ids(lib))
+    token = CancelToken()
+    token.cancel()
+    with pytest.raises(Cancelled):
+        export_plan(plan_burn(lib, disc), tmp_path, cancel=token)
+    assert not [
+        p for p in tmp_path.iterdir() if p.name.endswith("export")
+    ]  # (removed again)

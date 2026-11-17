@@ -315,8 +315,8 @@ class BurnDialog(QDialog):
         self.cancel_burn_button = QPushButton("Cancel")
         self.cancel_burn_button.setAutoDefault(False)
         self.cancel_burn_button.setToolTip(
-            "Stop preparing the disc. Nothing has been written to the disc yet, so it stays blank. "
-            "Once writing starts it can't be stopped."
+            "Stop preparing the disc (or the export). Nothing has been written to the disc yet, so it "
+            "stays blank, and a half-made export is removed. Once writing starts it can't be stopped."
         )
         self.cancel_burn_button.clicked.connect(self._cancel_burn)
         self.cancel_burn_button.hide()
@@ -781,6 +781,9 @@ class BurnDialog(QDialog):
         self.status_label.setText("")
         self.progress.setRange(0, 0)
         self.progress.setVisible(True)
+        cancel = self._burn_cancel = (
+            CancelToken()
+        )  # (the Cancel button, as while a burn is prepared)
         self._busy = True
         self._update()
         emit = self._log.emit
@@ -791,13 +794,30 @@ class BurnDialog(QDialog):
 
         def work() -> ExportResult:
             try:
-                return export_plan(plan, Path(parent), say)
+                return export_plan(plan, Path(parent), say, cancel)
             except (ExportError, BuildError, RenderError) as exc:
                 raise TaskError(str(exc)) from exc
 
-        run_async(work, self._export_done, self._export_failed)
+        run_async(
+            work,
+            self._export_done,
+            self._export_failed,
+            on_cancel=lambda _partial: self._export_cancelled(),
+        )
+
+    def _export_cancelled(self) -> None:
+        """Stopped before it finished: the half-made folder has been removed."""
+        self._burn_cancel = None
+        self._busy = False
+        self.progress.setVisible(False)
+        self.cancel_burn_button.setEnabled(True)
+        self._append("Cancelled. Nothing was exported.")
+        self._set_level(self.status_label, "The export was cancelled. Nothing was kept.", "normal")  # fmt: skip
+        logger.info("export of disc %s cancelled", self._disc_id)
+        self._update()
 
     def _export_done(self, result: ExportResult) -> None:
+        self._burn_cancel = None
         remember_rendered(
             self._lib, result.lengths, result.waveforms
         )  # (lengths are exact)
@@ -810,6 +830,7 @@ class BurnDialog(QDialog):
         self._update()
 
     def _export_failed(self, text: str) -> None:
+        self._burn_cancel = None
         self._busy = False
         self.progress.setVisible(False)
         self._append(f"Failed: {text}")

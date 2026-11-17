@@ -12,7 +12,7 @@ done and have nothing left to say are in "Decisions so far".
    marks the disc as burned. It renders and burns on a worker thread, which needs a hardware check
    (see [burning.md](burning.md)). Built since: a **drive menu** (shown only with two or more drives, remembered by name; not tried with two real drives),
    **Cancel while the disc is being prepared** (`CancelToken.commit()` is the point of no return; once writing starts there is no way to stop it, and the backends have no abort), and
-   **Print Labels…** when a burn has finished. Still to do: cancelling the write itself (it would ruin the disc: it needs a confirmation and a try on a drive), and cancelling Export.
+   **Print Labels…** when a burn has finished. Still to do: cancelling the write itself (it would ruin the disc: it needs a confirmation and a try on a drive). Cancelling Export is built (2026-11-17: `export_plan(.., cancel=)`).
 2. **Read a finished burn back.** With the burner attached, read the disc in the drive and
    check it against the disc it was burned from (the old idea of a burn record became
    "a disc just remembers when it was burned").

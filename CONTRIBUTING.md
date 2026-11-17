@@ -5,9 +5,10 @@ the [README](README.md). AI coding agents should also read [AGENTS.md](AGENTS.md
 
 ## Set up
 
-You need a Mac (the primary platform), [uv](https://docs.astral.sh/uv/), and
-`ffmpeg`/`ffprobe` on your `PATH` (`brew install ffmpeg`; a built app bundles its own, see `BUILDING.md`). uv fetches Python 3.13.
-The optional `cdrdao` burn backend needs `brew install cdrdao`.
+You need [uv](https://docs.astral.sh/uv/) and `ffmpeg`/`ffprobe` on your `PATH` (a built app bundles its own, see `BUILDING.md`).
+uv fetches Python 3.13. A **Mac** is the primary platform (`brew install ffmpeg`; the optional `cdrdao` burn backend is `brew install cdrdao`).
+
+**Windows** (early; nothing here has been run on a real Windows machine yet): install ffmpeg (for example `winget install Gyan.FFmpeg`), then `uv sync` and `uv run dubcrate-gui` or `uv run pytest` in PowerShell. Dubcrate can't burn on Windows yet (the burn window says so, and **Disc > Export Disc as Files…** makes a disc for another program). `BUILDING.md` has the installer build; the tests also run on Windows by hand (`test-windows.yml`).
 
 **Linux** (early; burning from the window is not proven there): install `ffmpeg` and `cdrdao` from your package manager (MP3 discs' images are made by Dubcrate itself; `xorriso` is only an optional cross-check in one test), and Qt's libraries for the X11 plugin. The exact packages and a step-by-step
 first-session checklist are in [dev_docs/linux-test-plan.md](dev_docs/linux-test-plan.md). With Docker running,
@@ -30,7 +31,8 @@ uv run ruff check . && uv run ruff format .
 | GUI | PySide6 (Qt 6), themed like the author's other apps (System / Light / Dark / Macintosh System 6) |
 | Packaging | Nuitka (via `pyside6-deploy`) and dmgbuild: [BUILDING.md](BUILDING.md) |
 | Burning (macOS) | Apple DiscRecording through PyObjC; `cdrdao` as the alternative backend |
-| Burning (later) | `cdrdao` on Linux; Windows to be decided; all behind one `Burner` interface |
+| Burning (Linux) | `cdrdao`, not yet tried on a real drive |
+| Burning (Windows) | none yet (Export Disc as Files); all behind one `Burner` interface |
 | Rekordbox | `pyrekordbox`, reading a temporary copy of `master.db` and the analysis files |
 | Audio preview | miniaudio, with ffmpeg for formats it can't decode (M4A, AIFF) |
 | Tags and lengths | `ffprobe`; no tag library |
