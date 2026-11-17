@@ -1257,9 +1257,12 @@ class MainWindow(QMainWindow):
         self.disc_view.add_tracks(track_ids, disc_id=disc_id, dir_id=dir_id)
 
     def _on_rows_dropped(self, disc_id: int, dir_id: object, rows: list) -> None:
-        """Tracks of the open disc dropped on a folder (or on the disc, for its root)."""
+        """Tracks of the open disc dropped on a folder (or on the disc, for its root), or on
+        another disc, which they move to."""
         if disc_id == self.disc_view.current_disc_id():
             self.disc_view.move_rows_to_dir(rows, dir_id)  # type: ignore[arg-type]
+        else:
+            self.disc_view.move_rows_to_disc(rows, disc_id, dir_id)  # type: ignore[arg-type]
 
     def _folder_of(self, pick: tuple | None) -> int | None:
         """The folder a new disc beside `pick` goes in: the folder itself, or the one

@@ -169,6 +169,13 @@ def _no_modal_question(monkeypatch):
 
     monkeypatch.setattr("dubcrate.ui.disc_view.ask_overlap", refuse_overlap)
 
+    def refuse_make_mp3(*_a, **_k):
+        raise AssertionError(
+            "a test opened the 'make this an MP3 CD?' box; patch disc_view.ask_make_mp3"
+        )
+
+    monkeypatch.setattr("dubcrate.ui.disc_view.ask_make_mp3", refuse_make_mp3)
+
     def refuse_editing(*_a, **_k):
         raise AssertionError(
             "a test opened the 'edit your rekordbox library?' box; patch rekordbox_editor.ask_enable_editing"

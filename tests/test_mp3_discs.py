@@ -23,6 +23,7 @@ from dubcrate.library.folder import scan_folder
 from dubcrate.library.store import DiscError
 from dubcrate.render import RenderError, probe, render_mp3
 from dubcrate.ui.burn_dialog import BurnDialog
+from dubcrate.ui.disc_view import Mp3Choice
 from dubcrate.ui.main_window import MainWindow
 from dubcrate.ui.overlaps import OverlapChoice
 
@@ -666,31 +667,32 @@ def window(qapp, lib, monkeypatch):
 
 
 def ask_with(monkeypatch, answer):
+    """Stand in for the "make this an MP3 CD?" box; `asked` collects (text, can_undo)."""
     asked = []
 
-    def question(_parent, title, text, *a, **k):
-        asked.append((title, text))
+    def box(_parent, text, can_undo):
+        asked.append((text, can_undo))
         return answer
 
-    monkeypatch.setattr(QMessageBox, "question", staticmethod(question))
+    monkeypatch.setattr("dubcrate.ui.disc_view.ask_make_mp3", box)
     return asked
 
 
 def test_going_over_length_offers_an_mp3_cd_and_yes_converts_it(window, monkeypatch):
     win, lib = window
-    asked = ask_with(monkeypatch, QMessageBox.StandardButton.Yes)
+    asked = ask_with(monkeypatch, Mp3Choice.MAKE_MP3)
     disc = lib.create_disc("Mix", capacity_sectors=500)
     win.disc_view.set_disc(disc)
     win.disc_view.add_tracks(track_ids(lib), disc_id=disc)
-    [(title, text)] = asked
-    assert title == "Make this an MP3 CD?" and "“Mix”" in text and "too long" in text
+    [(text, can_undo)] = asked
+    assert "“Mix”" in text and "too long" in text and can_undo
     summary = lib.disc(disc)
     assert summary.kind == "mp3" and summary.track_count == 3 and not summary.over
 
 
-def test_saying_no_leaves_it_an_audio_cd_and_does_not_ask_again(window, monkeypatch):
+def test_add_anyway_leaves_it_an_audio_cd_and_does_not_ask_again(window, monkeypatch):
     win, lib = window
-    asked = ask_with(monkeypatch, QMessageBox.StandardButton.No)
+    asked = ask_with(monkeypatch, Mp3Choice.KEEP)
     disc = lib.create_disc("Mix", capacity_sectors=500)
     win.disc_view.set_disc(disc)
     ids = track_ids(lib)
@@ -702,11 +704,30 @@ def test_saying_no_leaves_it_an_audio_cd_and_does_not_ask_again(window, monkeypa
     )  # still flagged as over
 
 
+def test_cancel_takes_back_what_was_just_added(window, monkeypatch):
+    win, lib = window
+    disc = lib.create_disc("Mix", capacity_sectors=500)
+    ids = track_ids(lib)
+    win.disc_view.set_disc(disc)
+    ask_with(monkeypatch, Mp3Choice.KEEP)
+    win.disc_view.add_tracks(ids[:1], disc_id=disc)  # fits
+    assert lib.disc(disc).track_count == 1 and not lib.disc(disc).over
+    asked = ask_with(monkeypatch, Mp3Choice.UNDO)
+    win.disc_view.add_tracks(ids[1:], disc_id=disc)
+    assert len(asked) == 1
+    summary = lib.disc(disc)
+    assert summary.kind == "audio" and summary.track_count == 1 and not summary.over
+    assert win.disc_view.model.rowCount() == 1
+    # cancelling is not "no": the next add that goes over is asked about again
+    win.disc_view.add_tracks(ids[1:], disc_id=disc)
+    assert len(asked) == 2
+
+
 def test_nothing_is_asked_while_the_disc_fits_or_when_it_is_already_mp3(
     window, monkeypatch
 ):
     win, lib = window
-    asked = ask_with(monkeypatch, QMessageBox.StandardButton.Yes)
+    asked = ask_with(monkeypatch, Mp3Choice.MAKE_MP3)
     monkeypatch.setattr(
         "dubcrate.ui.disc_view.ask_overlap", lambda *a, **k: OverlapChoice.ADD_ALL
     )  # (the same tracks go on two discs: add them anyway)
@@ -715,18 +736,18 @@ def test_nothing_is_asked_while_the_disc_fits_or_when_it_is_already_mp3(
     big = lib.create_disc("Already", capacity_sectors=500, kind="mp3")
     win.disc_view.add_tracks(track_ids(lib), disc_id=big)
     # (the second add meets the already-used box, which is not this question)
-    assert [t for t, _text in asked if t == "Make this an MP3 CD?"] == []
+    assert asked == []
 
 
 def test_more_than_99_tracks_also_offers_it(window, monkeypatch):
     win, lib = window
-    asked = ask_with(monkeypatch, QMessageBox.StandardButton.No)
+    asked = ask_with(monkeypatch, Mp3Choice.KEEP)
     disc = lib.create_disc("Many", capacity_sectors=10_000_000)
     lib._write_disc_tracks(
         disc, track_ids(lib) * 34
     )  # 102 tracks, already past what a CD allows
     win.disc_view._offer_mp3(disc)
-    assert "at most 99" in asked[0][1]
+    assert "at most 99" in asked[0][0]
 
 
 def test_the_menus_make_and_convert_mp3_discs(window):

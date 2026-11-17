@@ -119,7 +119,7 @@ def test_editing_a_cd_text_cell_is_left_alone(window):
     win.open_disc(disc)
     table = win.disc_view.table
     table.setFocus()
-    table.edit(win.disc_view.model.index(0, 3))  # the title
+    table.edit(win.disc_view.model.index(0, 2))  # the title
     editor = QApplication.focusWidget()
     assert editor is not table and editor is not None  # the cell's own text editor
     QTest.keyClick(editor, Qt.Key.Key_Space)

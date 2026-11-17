@@ -313,9 +313,9 @@ class TrackTableModel(QAbstractTableModel):
 
 
 # Only what a CD can hold: the track number, its length, and the CD-TEXT artist and
-# track name (the disc's own name is the CD title). Artist and title can be edited here.
-DISC_COLUMNS = ("#", "Time", "Artist", "Title")
-_EDITABLE = {2: "artist", 3: "title"}  # column -> the CD text field it edits
+# track name (the disc's own name is the CD title). Title and artist can be edited here.
+DISC_COLUMNS = ("#", "Time", "Title", "Artist")
+_EDITABLE = {2: "title", 3: "artist"}  # column -> the CD text field it edits
 
 
 class DiscModel(QAbstractTableModel):
@@ -391,9 +391,9 @@ class DiscModel(QAbstractTableModel):
                         track.length_sectors
                     )
                 case 2:
-                    return entry.artist  # what is written on the CD, not the library's
+                    return entry.title  # what is written on the CD, not the library's
                 case 3:
-                    return entry.title
+                    return entry.artist
         elif role == Qt.ItemDataRole.DecorationRole and column == 0:
             return self._swatch(entry.position)
         elif role == Qt.ItemDataRole.TextAlignmentRole:
@@ -407,7 +407,7 @@ class DiscModel(QAbstractTableModel):
         elif role == Qt.ItemDataRole.ToolTipRole:
             lines = []
             if self._is_edited(entry, column):
-                original = track.artist if column == 2 else track.title
+                original = track.title if column == 2 else track.artist
                 lines.append(
                     f"Edited for this disc only. The library has “{original}”."
                     " Clear the text to go back to it."
@@ -427,8 +427,8 @@ class DiscModel(QAbstractTableModel):
 
     @staticmethod
     def _is_edited(entry: DiscEntry, column: int) -> bool:
-        return (column == 2 and entry.artist_override is not None) or (
-            column == 3 and entry.title_override is not None
+        return (column == 2 and entry.title_override is not None) or (
+            column == 3 and entry.artist_override is not None
         )
 
     def setData(self, index: QModelIndex, value, role=Qt.ItemDataRole.EditRole) -> bool:

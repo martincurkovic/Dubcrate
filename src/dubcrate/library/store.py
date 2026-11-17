@@ -1620,6 +1620,52 @@ class Library:
                 disc_id, [s for i, s in enumerate(slots) if i not in drop]
             )
 
+    def move_to_disc(
+        self,
+        from_disc: int,
+        positions: Iterable[int],
+        to_disc: int,
+        dir_id: int | None = None,
+    ) -> int:
+        """Move the tracks at `positions` of one disc to the end of another (into folder
+        `dir_id` of an MP3 disc, else its root), keeping their CD text edits and their order.
+        Like `add_to_disc` it lets a disc go past its length (the caller can warn), but never
+        past the track limit. Returns how many moved."""
+        if from_disc == to_disc:
+            raise DiscError("those tracks are already on this disc")
+        self._disc_row(from_disc)
+        target = self._disc_row(to_disc)
+        if dir_id is not None:
+            self._dir_row(to_disc, dir_id)
+        source = self._slots(from_disc)
+        moving = sorted(set(positions))
+        bad = [p for p in moving if not 0 <= p < len(source)]
+        if bad:
+            raise DiscError(f"no track at position(s) {bad}")
+        landing = self._slots(to_disc)
+        if len([s for s in landing if s.dir_id == dir_id]) + len(moving) > _max_tracks(
+            target["kind"]
+        ):
+            raise DiscError(_limit_error(target["kind"]))
+        landing.extend(replace(source[p], dir_id=dir_id) for p in moving)
+        gone = set(moving)
+        with self._conn:
+            self._write_disc_slots(to_disc, landing)
+            self._write_disc_slots(
+                from_disc, [s for i, s in enumerate(source) if i not in gone]
+            )
+        return len(moving)
+
+    def disc_snapshot(self, *disc_ids: int) -> dict[int, list[_Slot]]:
+        """What is on these discs now, for `restore_discs` (the undo of an add or a move)."""
+        return {d: self._slots(d) for d in disc_ids}
+
+    def restore_discs(self, snapshot: dict[int, list[_Slot]]) -> None:
+        """Put the discs back as `disc_snapshot` found them, CD text edits and folders included."""
+        with self._conn:
+            for disc_id, slots in snapshot.items():
+                self._write_disc_slots(disc_id, slots)
+
     def move_in_disc(self, disc_id: int, from_position: int, to_position: int) -> None:
         self._disc_row(disc_id)
         slots = self._slots(disc_id)

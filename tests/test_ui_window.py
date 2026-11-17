@@ -1053,10 +1053,10 @@ def test_editing_the_disc_list_changes_the_cd_text_and_not_the_library(window, q
     win, lib = window
     ids = [t.id for t in lib.tracks(sort="title")]
     win.disc_view.add_tracks(ids[:3])
-    edit_cell(win, qapp, 1, 3, "Clean Name")
-    edit_cell(win, qapp, 1, 2, "Clean Artist")
+    edit_cell(win, qapp, 1, 2, "Clean Name")
+    edit_cell(win, qapp, 1, 3, "Clean Artist")
     assert (
-        disc_cell(win, 1, 3) == "Clean Name" and disc_cell(win, 1, 2) == "Clean Artist"
+        disc_cell(win, 1, 2) == "Clean Name" and disc_cell(win, 1, 3) == "Clean Artist"
     )
     entry = lib.disc_entries(win.disc_view.current_disc_id())[1]
     assert (entry.title_override, entry.artist_override) == (
@@ -1072,33 +1072,35 @@ def test_editing_the_disc_list_changes_the_cd_text_and_not_the_library(window, q
 def test_clearing_an_edited_cell_in_the_list_restores_the_original(window, qapp):
     win, _lib = window
     win.disc_view.add_tracks([t.id for t in _lib.tracks(sort="title")][:2])
-    edit_cell(win, qapp, 0, 3, "Temporary")
-    edit_cell(win, qapp, 0, 3, "")
-    assert disc_cell(win, 0, 3) == "Song 0"
+    edit_cell(win, qapp, 0, 2, "Temporary")
+    edit_cell(win, qapp, 0, 2, "")
+    assert disc_cell(win, 0, 2) == "Song 0"
 
 
 def test_edits_stay_with_their_tracks_when_the_list_is_reordered(window, qapp):
     win, lib = window
     ids = [t.id for t in lib.tracks(sort="title")]
     win.disc_view.add_tracks(ids[:3])
-    edit_cell(win, qapp, 0, 3, "First, Edited")
+    edit_cell(win, qapp, 0, 2, "First, Edited")
     disc_id = win.disc_view.current_disc_id()
     lib.move_in_disc(disc_id, 0, 2)
     win.disc_view.set_disc(disc_id)
-    assert [disc_cell(win, r, 3) for r in range(3)] == [
+    assert [disc_cell(win, r, 2) for r in range(3)] == [
         "Song 1",
         "Song 2",
         "First, Edited",
     ]
 
 
-def test_the_disc_list_is_edited_by_double_clicking_or_the_edit_key(window):
+def test_the_disc_list_is_edited_by_double_clicking_not_by_the_return_key(window):
     from PySide6.QtWidgets import QAbstractItemView
 
     win, _lib = window
     triggers = win.disc_view.table.editTriggers()
     assert triggers & QAbstractItemView.EditTrigger.DoubleClicked
-    assert triggers & QAbstractItemView.EditTrigger.EditKeyPressed
+    assert (
+        not triggers & QAbstractItemView.EditTrigger.EditKeyPressed
+    )  # Return loads the track
 
 
 def test_the_disc_view_no_longer_lists_bpm_or_key(window):
@@ -1107,7 +1109,7 @@ def test_the_disc_view_no_longer_lists_bpm_or_key(window):
         win.disc_view.model.headerData(c, Qt.Orientation.Horizontal)
         for c in range(win.disc_view.model.columnCount())
     ]
-    assert headers == ["#", "Time", "Artist", "Title"]
+    assert headers == ["#", "Time", "Title", "Artist"]
 
 
 # -- fixed-width columns -------------------------------------------------------

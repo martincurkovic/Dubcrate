@@ -121,7 +121,7 @@ def test_disc_list_shows_position_time_and_artist(qapp):
     assert model.data(model.index(1, 1)).startswith(
         "~"
     )  # not measured yet: an estimate
-    assert model.data(model.index(1, 2)) == "Artist 1"
+    assert model.data(model.index(1, 3)) == "Artist 1"
     lib.set_cd_sectors(model.entry_at(1).track.id, 75 * 61)
     model.set_entries(lib.disc_entries(lib.discs()[0].id))
     assert model.data(model.index(1, 1)) == "1:01"
@@ -544,7 +544,7 @@ def test_the_disc_list_has_only_what_the_cd_holds(qapp):
 
     lib = make_lib()
     model = disc_model(lib)
-    assert DISC_COLUMNS == ("#", "Time", "Artist", "Title")
+    assert DISC_COLUMNS == ("#", "Time", "Title", "Artist")
     assert model.columnCount() == 4
     assert [model.headerData(i, Qt.Orientation.Horizontal) for i in range(4)] == list(
         DISC_COLUMNS
@@ -566,10 +566,10 @@ def test_only_the_artist_and_title_can_be_edited(qapp):
 def test_the_list_shows_the_text_written_on_the_cd(qapp):
     lib = make_lib()
     model, _ = edited_disc_model(lib)
-    assert model.data(model.index(1, 3)) == "Edited Name"
-    assert model.data(model.index(1, 3), Qt.ItemDataRole.EditRole) == "Edited Name"
+    assert model.data(model.index(1, 2)) == "Edited Name"
+    assert model.data(model.index(1, 2), Qt.ItemDataRole.EditRole) == "Edited Name"
     assert (
-        model.data(model.index(0, 3)) == "Title 0"
+        model.data(model.index(0, 2)) == "Title 0"
     )  # unedited rows show the library's
     lib.close()
 
@@ -577,7 +577,7 @@ def test_the_list_shows_the_text_written_on_the_cd(qapp):
 def test_an_edited_cell_looks_edited_and_says_what_it_was(qapp):
     lib = make_lib()
     model, _ = edited_disc_model(lib)
-    edited, plain = model.index(1, 3), model.index(0, 3)
+    edited, plain = model.index(1, 2), model.index(0, 2)
     assert model.data(edited, Qt.ItemDataRole.FontRole).italic()
     assert model.data(plain, Qt.ItemDataRole.FontRole) is None
     tip = model.data(edited, Qt.ItemDataRole.ToolTipRole)
@@ -594,12 +594,12 @@ def test_typing_in_a_cell_asks_for_the_edit_and_the_model_itself_does_not_change
     got = []
     model.text_edited.connect(lambda pos, field, text: got.append((pos, field, text)))
     assert (
-        model.setData(model.index(2, 2), "  New Artist ") is False
+        model.setData(model.index(2, 3), "  New Artist ") is False
     )  # nothing changes in here
-    assert model.setData(model.index(0, 3), "New Title") is False
+    assert model.setData(model.index(0, 2), "New Title") is False
     assert got == [(2, "artist", "New Artist"), (0, "title", "New Title")]
     assert (
-        model.data(model.index(2, 2)) == "Artist 2"
+        model.data(model.index(2, 3)) == "Artist 2"
     )  # until the panel updates the library
     lib.close()
 
@@ -609,10 +609,10 @@ def test_leaving_a_cell_unchanged_asks_for_nothing(qapp):
     model = disc_model(lib)
     got = []
     model.text_edited.connect(lambda *a: got.append(a))
-    model.setData(model.index(0, 3), model.data(model.index(0, 3)))
+    model.setData(model.index(0, 2), model.data(model.index(0, 2)))
     model.setData(model.index(0, 1), "9:99")  # the time can't be edited
     model.setData(
-        model.index(0, 3), "x", Qt.ItemDataRole.DisplayRole
+        model.index(0, 2), "x", Qt.ItemDataRole.DisplayRole
     )  # only a real edit counts
     assert got == []
     lib.close()
@@ -623,7 +623,7 @@ def test_clearing_a_cell_is_asked_for_as_empty_text(qapp):
     model, _ = edited_disc_model(lib)
     got = []
     model.text_edited.connect(lambda pos, field, text: got.append((pos, field, text)))
-    model.setData(model.index(1, 3), "")
+    model.setData(model.index(1, 2), "")
     assert got == [(1, "title", "")]  # empty means "back to the original"
     lib.close()
 

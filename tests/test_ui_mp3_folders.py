@@ -323,7 +323,7 @@ def test_dragging_rows_of_the_open_disc_onto_a_folder_moves_them(mp3):
     assert lib.disc_entries(disc)[1].dir_id is None
 
 
-def test_rows_dragged_onto_a_folder_of_another_disc_are_ignored(mp3):
+def test_rows_dragged_onto_a_folder_of_another_disc_move_there(mp3):
     win, lib, disc, _house, _deep = mp3
     other = lib.create_disc("Other", kind="mp3")
     folder = lib.create_disc_dir(other, "Elsewhere")
@@ -331,7 +331,7 @@ def test_rows_dragged_onto_a_folder_of_another_disc_are_ignored(mp3):
     win.disc_tree.setCurrentIndex(index(win, ("disc", disc)))
     model = win.disc_tree.model()
     model.dropMimeData(mime(DISC_ROWS_MIME, [0]), Qt.DropAction.MoveAction, -1, -1, index(win, ("disc_dir", other, folder)))  # fmt: skip
-    assert lib.dir_file_counts(other) == {} and lib.disc(disc).track_count == 5
+    assert lib.dir_file_counts(other) == {folder: 1} and lib.disc(disc).track_count == 4
 
 
 def test_reordering_in_a_folder_keeps_to_the_folder(mp3):

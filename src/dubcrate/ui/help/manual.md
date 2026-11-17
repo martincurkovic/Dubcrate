@@ -162,10 +162,10 @@ A disc is a playlist that goes on a CD. Discs live in the **Discs** list on the 
 - A disc that is **too long** is marked with an orange **\*** (hover for how far over). It can be saved but not burned.
 - A disc is just a playlist: **a burned disc is still fully editable**. Dubcrate only remembers *when* it was burned.
 
-**What goes on the CD.** The disc list shows the track **#**, **Time**, and the **Artist** and **Title** written to the disc as CD-TEXT. The CD's own title is the disc's name. **Double-click an artist or title to change what is written on the CD**:
+**What goes on the CD.** The disc list shows the track **#**, **Time**, and the **Title** and **Artist** written to the disc as CD-TEXT. The CD's own title is the disc's name. **Double-click a title or artist to change what is written on the CD**:
 
 - The edit is for **this disc only**; it never changes your library, the audio file or other discs. Edited text is in *italics* (hover to see the original; clear it to go back).
-- Drag rows to reorder, and press **Delete** (or right-click > **Remove from Disc**) to take tracks off. Double-click a track's number or time to listen.
+- Drag rows to reorder, and press **Delete** (or right-click > **Remove from Disc**) to take tracks off. Drag rows onto another disc in the Discs list to **move** them there (their edited text goes with them). Double-click a track's number or time, or press **Return** on it, to load it in the player. If a disc goes over what a CD holds, you can make it an MP3 CD, **Add Anyway**, or **Cancel** to take the addition back.
 
 **Size and gaps.** New discs are planned for **80 minutes** and are **gapless**. Change either under **Settings > Discs**; a disc keeps what it was made with. When you burn, the disc in the drive is what counts. The capacity bar shows each track as a block, with time used and left. A CD holds at most **99 tracks**. A length with **~** is an estimate; exact lengths are measured when you add a track and again when the disc is prepared.
 

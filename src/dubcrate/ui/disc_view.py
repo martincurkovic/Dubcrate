@@ -6,6 +6,8 @@ the *target*: the disc that tracks are added to (Return, the Add button, or drag
 The target stays the same while you browse your library, so you can pick tracks and add them.
 """
 
+import logging
+from enum import Enum
 from html import escape
 
 from PySide6.QtCore import Qt, QTimer, Signal
@@ -39,6 +41,8 @@ from .overlaps import OverlapChoice, ask_overlap, overlap_message
 from .tasks import run_async
 from .track_table import transport_action
 
+log = logging.getLogger(__name__)
+
 
 def _things(n: int, noun: str) -> str:
     """ "1 disc", "3 discs", "no folders": for the question before a delete."""
@@ -49,6 +53,7 @@ class DiscTable(QTableView):
     """The disc's track list: reorder by dragging, remove with Delete, edit the CD text."""
 
     remove_requested = Signal()
+    preview_requested = Signal()  # Return on the picked track: load it in the player
     play_pause_requested = Signal()
     beat_jump_requested = Signal(int)
 
@@ -64,11 +69,9 @@ class DiscTable(QTableView):
         self.setShowGrid(False)
         self.setAlternatingRowColors(True)
         self.verticalHeader().hide()
-        # Double-click (or the edit key) edits the artist and title written on the CD.
-        self.setEditTriggers(
-            QAbstractItemView.EditTrigger.DoubleClicked
-            | QAbstractItemView.EditTrigger.EditKeyPressed
-        )
+        # Double-click (or F2: Return loads the track in the player instead) edits the title
+        # and artist written on the CD.
+        self.setEditTriggers(QAbstractItemView.EditTrigger.DoubleClicked)
 
     def dropEvent(self, event) -> None:
         if event.source() is self:
@@ -82,6 +85,15 @@ class DiscTable(QTableView):
         ):  # (with ⌘ it is the shortcut that deletes the disc, not the tracks)
             self.remove_requested.emit()
             return
+        if (
+            event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter)
+            and self.state() != QAbstractItemView.State.EditingState
+        ):
+            self.preview_requested.emit()
+            return
+        if event.key() == Qt.Key.Key_F2 and self.currentIndex().isValid():
+            self.edit(self.currentIndex().siblingAtColumn(2))  # the title
+            return
         action = transport_action(event)
         if action == "play_pause":
             self.play_pause_requested.emit()
@@ -90,6 +102,43 @@ class DiscTable(QTableView):
             self.beat_jump_requested.emit(-1 if action == "jump_back" else 1)
             return
         super().keyPressEvent(event)
+
+
+class Mp3Choice(Enum):
+    MAKE_MP3 = "make mp3"  # turn the disc into an MP3 CD
+    KEEP = "keep"  # leave it an audio CD, over its length
+    UNDO = "undo"  # take back what was just added
+
+
+def ask_make_mp3(parent: QWidget | None, text: str, can_undo: bool) -> Mp3Choice:
+    """The "make this an MP3 CD?" question: Make MP3 CD, Add Anyway (it stays an audio CD that is
+    too full) and, when there is something to take back, Cancel. Escape is Cancel (or Add Anyway
+    when there is no Cancel); Return is Make MP3 CD."""
+    box = QMessageBox(parent)
+    box.setIcon(QMessageBox.Icon.Question)
+    box.setWindowTitle("Make this an MP3 CD?")
+    box.setText(text)
+    box.setStyleSheet(
+        "QLabel { min-width: 430px; }"
+    )  # wide enough for the three buttons
+    make = box.addButton("Make MP3 CD", QMessageBox.ButtonRole.AcceptRole)
+    keep = box.addButton("Add Anyway", QMessageBox.ButtonRole.ActionRole)
+    undo = box.addButton(QMessageBox.StandardButton.Cancel) if can_undo else None
+    box.setDefaultButton(make)
+    box.setEscapeButton(undo or keep)
+    box.exec()
+    clicked = box.clickedButton()
+    choice = (
+        Mp3Choice.MAKE_MP3
+        if clicked is make
+        else Mp3Choice.KEEP
+        if clicked is keep
+        else Mp3Choice.UNDO
+    )
+    log.info(
+        "dialog [make mp3] -> %s", choice.value
+    )  # (the dialog log sees only static boxes)
+    return choice
 
 
 class DiscView(QWidget):
@@ -147,7 +196,7 @@ class DiscView(QWidget):
         header.setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
         for column, width in ((0, 52), (1, 54)):
             self.table.setColumnWidth(column, width)
-        # the artist and the title share what is left: both are text that wants room
+        # the title and the artist share what is left: both are text that wants room
         header.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
         header.setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
         self.table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
@@ -156,6 +205,7 @@ class DiscView(QWidget):
         )
         self.table.remove_requested.connect(self.remove_selected)
         self.table.doubleClicked.connect(self._on_double_clicked)
+        self.table.preview_requested.connect(self._preview_current)
 
         # (tracks come off with the right-click menu or Backspace: no button for it)
         self.burn_button = QPushButton("Burn…")
@@ -306,8 +356,17 @@ class DiscView(QWidget):
             self.count.setText("")
         self.changed.emit()
 
+    def _preview_current(self) -> None:
+        """Return: load the picked track (else the first one picked) in the player."""
+        row = self.table.currentIndex().row()
+        if row < 0:
+            rows = sorted(i.row() for i in self.table.selectionModel().selectedRows())
+            row = rows[0] if rows else -1
+        if row >= 0:
+            self.preview_requested.emit(self.model.entry_at(row).track)
+
     def _on_double_clicked(self, index) -> None:
-        """Double-clicking the artist or title edits it; anywhere else listens to the track."""
+        """Double-clicking the title or artist edits it; anywhere else listens to the track."""
         if index.column() in (0, 1):
             self.preview_requested.emit(self.model.entry_at(index.row()).track)
 
@@ -505,7 +564,7 @@ class DiscView(QWidget):
         self.discs_changed.emit()
 
     def _edit_text(self, position: int, field: str, text: str) -> None:
-        """The user edited an artist or title: change what is written on the CD for this
+        """The user edited a title or artist: change what is written on the CD for this
         disc. Only this disc's list changes: the library, rekordbox and the audio file don't."""
         if self._disc_id is None:
             return
@@ -620,6 +679,7 @@ class DiscView(QWidget):
             folder = (
                 self._dir_id if disc_id is None else dir_id
             )  # (a drop names its own)
+            before = self._lib.disc_snapshot(target)
             try:
                 result = self._lib.add_to_disc(
                     target,
@@ -631,6 +691,13 @@ class DiscView(QWidget):
                 )
             except LibraryError as exc:
                 self._warn("Can't add those tracks", str(exc))
+                return
+            if self._offer_mp3(
+                target, undo=before
+            ):  # (it asks only if the disc is now too full)
+                self._show_disc()
+                self.discs_changed.emit()
+                self.message.emit("Cancelled: nothing was added")
                 return
             self._show_disc()
             self.discs_changed.emit()  # the counts in the tree, and a new disc's entry
@@ -646,7 +713,6 @@ class DiscView(QWidget):
             self.message.emit(text)
             if self._lib.disc(target).kind == "audio":
                 self._analyse_waveforms(list(result.added))
-            self._offer_mp3(target)
 
         self._measured(track_ids, add)
 
@@ -680,30 +746,36 @@ class DiscView(QWidget):
             failed,
         )
 
-    def _offer_mp3(self, disc_id: int) -> None:
+    def _offer_mp3(self, disc_id: int, undo: dict | None = None) -> bool:
         """An audio CD that has just gone over what a CD holds: offer to make it an MP3 CD.
-        Asked once per disc a session, so saying no isn't nagged about."""
+        Asked once per disc a session, so saying no isn't nagged about. With `undo` (a
+        `Library.disc_snapshot` taken before the change) there is also Cancel, which puts the
+        discs back as they were; True is returned then, and only then."""
         summary = self._lib.disc(disc_id)
         too_many = summary.track_count > MAX_TRACKS
         if summary.kind != "audio" or not (summary.over or too_many):
-            return
+            return False
         if disc_id in self._mp3_declined:
-            return
+            return False
         why = (
             f"has {summary.track_count} tracks, and an audio CD holds at most {MAX_TRACKS}"
             if too_many
             else f"is {format_span(-summary.free_sectors)} too long for an audio CD"
         )
-        answer = QMessageBox.question(
+        answer = ask_make_mp3(
             self,
-            "Make this an MP3 CD?",
             f"“{summary.name}” {why}.\n\nMake it an MP3 CD instead? An MP3 CD can hold more music,"
             " but only compatible players can read it.",
+            can_undo=undo is not None,
         )
-        if answer == QMessageBox.StandardButton.Yes:
+        if answer is Mp3Choice.MAKE_MP3:
             self.set_disc_kind(disc_id, "mp3")
+        elif answer is Mp3Choice.UNDO and undo is not None:
+            self._lib.restore_discs(undo)
+            return True
         else:
             self._mp3_declined.add(disc_id)
+        return False
 
     def set_disc_kind(self, disc_id: int, kind: DiscKind) -> None:
         """Make a disc an audio CD or an MP3 CD. Its tracks stay (an audio CD has no folders, so
@@ -804,6 +876,30 @@ class DiscView(QWidget):
             self._warn("Can't move those tracks", str(exc))
         self._show_disc()
         self.discs_changed.emit()
+
+    def move_rows_to_disc(
+        self, rows: list[int], disc_id: int, dir_id: int | None = None
+    ) -> None:
+        """Move the shown tracks at `rows` to the end of another disc (into folder `dir_id` of
+        an MP3 disc), with their CD text edits. If that makes an audio CD too full, the same
+        question as for adding is asked, and Cancel puts everything back."""
+        if self._disc_id is None or disc_id == self._disc_id or not rows:
+            return
+        positions = [self.model.entry_at(r).position for r in rows]
+        before = self._lib.disc_snapshot(self._disc_id, disc_id)
+        try:
+            moved = self._lib.move_to_disc(self._disc_id, positions, disc_id, dir_id)
+        except LibraryError as exc:
+            self._warn("Can't move those tracks", str(exc))
+            return
+        if self._offer_mp3(disc_id, undo=before):
+            text = "Cancelled: nothing was moved"
+        else:
+            name = self._lib.disc(disc_id).name
+            text = f"Moved {moved} track{'s' if moved != 1 else ''} to “{name}”"
+        self._show_disc()
+        self.discs_changed.emit()
+        self.message.emit(text)
 
     def move_selected_to_dir(self, dir_id: int | None) -> None:
         rows = sorted(i.row() for i in self.table.selectionModel().selectedRows())

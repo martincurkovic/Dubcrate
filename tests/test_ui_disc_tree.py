@@ -405,7 +405,7 @@ def test_double_clicking_a_disc_rows_number_listens_and_the_title_edits(window):
     win.disc_view.preview_requested.connect(lambda t: heard.append(t.title))
     win.disc_view._on_double_clicked(win.disc_view.model.index(1, 0))  # the number
     win.disc_view._on_double_clicked(
-        win.disc_view.model.index(1, 3)
+        win.disc_view.model.index(1, 2)
     )  # the title: edits
     assert heard == ["Song 1"]
 
@@ -1188,3 +1188,91 @@ def test_the_plus_menu_can_make_an_mp3_disc_beside_the_row(window, monkeypatch):
     [disc] = lib.discs()
     assert (disc.kind, disc.folder_id) == ("mp3", folder)
     assert editor_of(win, ("disc", disc.id)) is not None  # (its name is up for editing)
+
+
+# -- dragging tracks from the open disc to another disc -------------------------------
+
+
+def test_rows_dragged_from_the_open_disc_onto_another_disc_move_there(window):
+    from dubcrate.ui.models import DISC_ROWS_MIME
+
+    win, lib = window
+    one, two = lib.create_disc("One"), lib.create_disc("Two")
+    lib.add_to_disc(one, ids(lib)[:3])
+    lib.add_to_disc(two, ids(lib)[3:4])
+    lib.set_entry_text(one, 1, "title", "Edited")  # the CD text travels with the track
+    win.refresh_discs()
+    win.open_disc(one)
+    model = win.disc_tree.model()
+    target = find_selection(model, ("disc", two))
+    assert model.dropMimeData(mime(DISC_ROWS_MIME, [1, 2]), Qt.DropAction.MoveAction, -1, -1, target)  # fmt: skip
+    assert [e.title for e in lib.disc_entries(one)] == ["Song 0"]
+    assert [e.title for e in lib.disc_entries(two)] == ["Song 3", "Edited", "Song 2"]
+    assert win.disc_view.model.rowCount() == 1  # the open disc was redrawn
+    assert (
+        lib.disc(two).track_count == 3
+    )  # and the tree's counts follow (discs_changed)
+
+
+def test_a_move_onto_another_disc_that_is_too_full_can_be_cancelled(
+    window, monkeypatch
+):
+    from dubcrate.ui.disc_view import Mp3Choice
+    from dubcrate.ui.models import DISC_ROWS_MIME
+
+    win, lib = window
+    small = lib.create_disc("Small", capacity_sectors=6000)
+    big = lib.create_disc("Big")
+    lib.add_to_disc(small, ids(lib)[:1])
+    lib.add_to_disc(big, ids(lib)[1:4])
+    lib.set_entry_text(big, 0, "artist", "Mine")
+    win.refresh_discs()
+    win.open_disc(big)
+    answers = iter([Mp3Choice.UNDO, Mp3Choice.KEEP])
+    asked = []
+
+    def box(_parent, text, can_undo):
+        asked.append(can_undo)
+        return next(answers)
+
+    monkeypatch.setattr("dubcrate.ui.disc_view.ask_make_mp3", box)
+    model = win.disc_tree.model()
+    drop = lambda: model.dropMimeData(mime(DISC_ROWS_MIME, [0, 1]), Qt.DropAction.MoveAction, -1, -1, find_selection(model, ("disc", small)))  # fmt: skip
+    drop()  # Cancel: everything is as it was, edits included
+    assert asked == [True]
+    assert lib.disc(small).track_count == 1 and lib.disc(big).track_count == 3
+    assert lib.disc_entries(big)[0].artist == "Mine"
+    drop()  # Add Anyway: it moves, the small disc stays an audio CD that is over
+    assert lib.disc(small).track_count == 3 and lib.disc(big).track_count == 1
+    assert lib.disc(small).kind == "audio" and lib.disc(small).over
+
+
+def test_a_move_onto_a_disc_with_no_room_for_more_tracks_says_why(window):
+    from dubcrate.ui.models import DISC_ROWS_MIME
+
+    win, lib = window
+    one, two = lib.create_disc("One"), lib.create_disc("Two")
+    lib.add_to_disc(one, ids(lib)[:2])
+    lib._write_disc_tracks(two, ids(lib) * 17)  # 102 tracks: no room at all
+    win.refresh_discs()
+    win.open_disc(one)
+    model = win.disc_tree.model()
+    model.dropMimeData(mime(DISC_ROWS_MIME, [0]), Qt.DropAction.MoveAction, -1, -1, find_selection(model, ("disc", two)))  # fmt: skip
+    assert lib.disc(one).track_count == 2
+    assert win.shown and "at most 99" in win.shown[-1][2]
+
+
+def test_return_on_a_track_of_the_open_disc_loads_it_in_the_player(window):
+    win, lib = window
+    disc = lib.create_disc("Night")
+    lib.add_to_disc(disc, ids(lib)[:3])
+    win.refresh_discs()
+    win.open_disc(disc)
+    heard = []
+    win.disc_view.preview_requested.connect(lambda t: heard.append(t.title))
+    table = win.disc_view.table
+    table.setCurrentIndex(win.disc_view.model.index(1, 3))  # even on the artist cell
+    table.keyPressEvent(QKeyEvent(QEvent.Type.KeyPress, Qt.Key.Key_Return, Qt.KeyboardModifier.NoModifier))  # fmt: skip
+    table.keyPressEvent(QKeyEvent(QEvent.Type.KeyPress, Qt.Key.Key_Enter, Qt.KeyboardModifier.KeypadModifier))  # fmt: skip
+    assert heard == ["Song 1", "Song 1"]
+    assert table.state() != table.State.EditingState  # it did not start renaming

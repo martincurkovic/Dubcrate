@@ -1368,7 +1368,9 @@ def _offer_mp3(ctx, window):
     ctx.lib.add_to_disc(
         disc, [t.id for t in ctx.lib.tracks(node_id=ctx.demo.node(BROWSE).id)]
     )
-    window.disc_view._offer_mp3(disc)
+    window.disc_view._offer_mp3(
+        disc, undo=ctx.lib.disc_snapshot(disc)
+    )  # as after an add: with Cancel
 
 
 _message_scene("msg-offer-mp3", "Question: make this an MP3 CD?",

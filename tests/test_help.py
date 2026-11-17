@@ -215,14 +215,14 @@ def test_the_extra_columns_the_guide_lists_are_the_real_ones():
 def test_the_disc_list_the_guide_describes_is_the_real_one(qapp):
     from dubcrate.ui.models import DISC_COLUMNS
 
-    assert DISC_COLUMNS == ("#", "Time", "Artist", "Title")
+    assert DISC_COLUMNS == ("#", "Time", "Title", "Artist")
     assert "What goes on the CD" in MANUAL and "this disc only" in MANUAL
     for phrase in ("Double-click", "disc's name", "Duplicate", "CD-TEXT"):
         assert phrase in MANUAL, phrase
     on_the_cd = MANUAL.split("**What goes on the CD.**")[1].split("**Size and gaps.**")[
         0
     ]
-    assert "BPM" not in on_the_cd  # (a CD holds no BPM: only #, Time, Artist, Title)
+    assert "BPM" not in on_the_cd  # (a CD holds no BPM: only #, Time, Title, Artist)
 
 
 def test_the_fixed_width_columns_the_guide_mentions_are_fixed():
