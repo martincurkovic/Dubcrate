@@ -557,7 +557,7 @@ def test_the_drive_line_describes_what_is_known():
     text, level = describe_media(
         MediaInfo(present=True, blank=False, free_sectors=5), 1
     )
-    assert level == "warning" and text == "The drive. This disc isn't blank"
+    assert level == "critical" and text == "The drive. This disc isn't blank"
     assert describe_media(None, 1)[0].startswith("Looking")
 
 
@@ -1002,3 +1002,17 @@ def test_once_writing_starts_cancel_is_gone_and_does_nothing(make_dialog, wait_f
     assert wait_for(lambda: not dialog._busy)
     assert len(burner.burned) == 1  # (it was written, as asked)
     assert "Cancelled" not in dialog.log.toPlainText()
+
+
+def test_a_disc_that_is_not_blank_blocks_the_burn(make_dialog):
+    dialog, burner = make_dialog(
+        FakeBurner(
+            MediaInfo(drive="D", present=True, blank=False, free_sectors=359_849)
+        )
+    )
+    assert not dialog.burn_button.isEnabled()
+    assert dialog.drive_label.property("level") == "critical"
+    assert dialog.check_button.isVisibleTo(
+        dialog
+    )  # (put in another disc and look again)
+    assert burner.burned == []

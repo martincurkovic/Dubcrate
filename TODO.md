@@ -31,7 +31,6 @@ Open items by area; finished work is under **Completed** at the bottom (same hea
 - [ ] Confirm a burned disc is really gapless (tracks at 00:02.00, 00:42.00, 01:12.00 in `drutil toc`) now that the 2 s pregap fix is in ([burning.md](dev_docs/burning.md)).
 - [ ] Find out what unit `DRPreGapLengthKey` uses before trusting the 1, 2 and 3 s "Between tracks" options ([burning.md](dev_docs/burning.md)).
 - [ ] Compare the drive's reported free blocks on a 74 and an 80 minute disc (expect about 333,000 and 359,850) to confirm the capacity check ([burning.md](dev_docs/burning.md)).
-- [ ] Run a Test Only burn from the burn window first, to prove DiscRecording is happy being driven from a worker thread ([burning.md](dev_docs/burning.md)).
 - [ ] Burn a small MP3 disc and check on the CDJ its load time, file order, what it shows (ID3 or file name) and whether ffmpeg's Info frame bothers it (`-write_xing 0` is the fallback) ([burning.md](dev_docs/burning.md)).
 - [ ] Try MP3 disc folders on the CDJ, starting with two nested folders, then the 999-file and 8-level limits and whether `MAX_DEPTH` should be 9 ([burning.md](dev_docs/burning.md)).
 - [ ] Burn a nearly full MP3 disc to check the size estimate and `FILESYSTEM_OVERHEAD_SECTORS` ([burning.md](dev_docs/burning.md)).

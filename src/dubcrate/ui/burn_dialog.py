@@ -110,8 +110,7 @@ def describe_media(
     if media.present is False:
         return f"{drive}: no disc inside.", "critical"
     if media.blank is False:
-        too_small = bool(media.free_sectors) and planned_sectors > media.free_sectors
-        return f"{drive}. This disc isn't blank", "critical" if too_small else "warning"
+        return f"{drive}. This disc isn't blank", "critical"
     parts = [drive]
     if media.blank:
         parts.append("blank disc")
@@ -378,6 +377,8 @@ class BurnDialog(QDialog):
             self._plan is not None
             and not problems
             and self._media is not None
+            and self._media.blank
+            is not False  # (a disc that isn't blank can't be burned on)
             and not working
             and not self._finished
         )

@@ -52,9 +52,11 @@ with CD-TEXT so track titles appear on the CDJ.
 
 ## What you need
 
+- **System requirements** (best guesses, not measured): macOS 14 or later on an Apple Silicon or Intel Mac, about 4 GB of memory,
+  a 1280 × 720 or larger screen (the window can't be made smaller than 980 × 660), and about 1 GB of free disk space while
+  burning (the disc's audio is prepared as temporary files).
 - **A Mac**, which is what Dubcrate has been used on. **Linux** is built as an AppImage but is new and not yet tried on a real desktop
   (you install `cdrdao` with your package manager to burn). Windows is planned.
-- **A screen of 1280 × 720 or more.** The window can't be made smaller than 980 × 660.
 - **A CD burner** that can write CD-R, and blank **CD-R** discs. (CD-RW is not recommended
   for old CD players, and has not been tried.)
 - **[ffmpeg](https://ffmpeg.org/)**, which Dubcrate uses to read tracks and prepare
