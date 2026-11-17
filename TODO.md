@@ -10,7 +10,7 @@ Open items by area; finished work is under **Completed** at the bottom (same hea
 - [ ] Windows burn support
   - [ ] Spike on a real Windows machine (cdrdao + CD-TEXT)
 - [ ] Linux build script (AppImage / Flatpak / uv tool?)
-- [ ] Windows build script and installer
+- [ ] Windows build script and installer: written 2026-11-17 (`scripts/build_windows.ps1`, `build_ffmpeg_windows.sh`, `assets/windows/Dubcrate.iss`, a `build-windows` job in `build.yml`), **never run**: see "Linux and Windows" below
 - [ ] Mixxx library support
 - [ ] Try on a real disc + CDJ (waveform height, any clipping, is -10 LUFS right?) (follow-up to: Audio normalisation setting)
 - [ ] Engine DJ library support
@@ -78,18 +78,19 @@ Open items by area; finished work is under **Completed** at the bottom (same hea
 ### Linux and Windows
 
 - [ ] Run the Linux AppImage on a real desktop (Ubuntu or Fedora): open it, play a preview, burn a test disc, eject a card (`dev_docs/linux-test-plan.md`); then try it on an older glibc, since an AppImage built on Ubuntu 24.04 needs 2.39 or newer ([BUILDING.md](BUILDING.md)).
-- [ ] Build for Windows: a build script, a `build.yml` job and an installer (`jv-studio`'s `build_windows.ps1` and Inno Setup are the model), and an LGPL ffmpeg for it ([cross-platform.md](dev_docs/cross-platform.md), Phase 5).
+- [ ] Run the Windows build for the first time (push a branch and run `build.yml` by hand) and fix what it shows: the MSYS2 ffmpeg build (`build_ffmpeg_windows.sh`), `sqlcipher3` and `miniaudio` under Nuitka, the icon, `--windows-console-mode=disable`, the smoke test, the installer ([cross-platform.md](dev_docs/cross-platform.md), Phase 5; the scripts are written, never run).
+- [ ] Install the built installer on a clean Windows 10 or 11 machine or VM: it installs without an administrator prompt, the app opens and plays a preview, Settings > Library shows the bundled ffmpeg, Export Disc as Files works, the uninstaller removes it, and an upgrade over the old one keeps its settings and library.
+- [ ] Run `test-windows.yml` by hand again (last run 2026-11-13, before the card, label and disc work) and fix what fails.
 - [ ] Try eject (card and disc) and the disc's TOC reader on a real Linux and a real Windows machine (`eject.py`, `drive_toc.py`; tested against stand-in commands only) ([cross-platform.md](dev_docs/cross-platform.md)).
 - [ ] Burn an MP3 disc from a `pycdlib` image (`dubcrate export`'s `disc.iso`, in Brasero or Finder, or `cdrdao` on Linux) and play it in a CDJ and a car player; try a disc 8 folders deep ([cross-platform.md](dev_docs/cross-platform.md)).
 - [ ] Try a long path on Windows (the reserved names are guarded in folder names and in the disc's staging folder, 2026-11-16; the 259-character limit is refused up front, `build.path_too_long`: whether a longer path would really fail there is unchecked) ([cross-platform.md](dev_docs/cross-platform.md), Phase 6 step 5).
-- [ ] Notice an SD card being plugged in on Windows, which has no folder to watch ([cross-platform.md](dev_docs/cross-platform.md), Phase 6 step 6).
 - [ ] Try Format a Card on a spare 2 GB card on Linux and on Windows (built, tested against stand-in commands only: `card_format_linux.py`, `card_format_windows.py`; the Linux layout was checked with the real `sfdisk` and `mkfs.fat` on an image file).
 - [ ] Try the Linux drive permission message on a real machine (take yourself out of the drive's group, then add yourself back without logging out): `cdrdao.access_problem` names the group and the `usermod` line, or says to log out and in; tested with stand-ins only ([cross-platform.md](dev_docs/cross-platform.md)).
 - [ ] Decide between `cdrdao` and `xorriso -as cdrecord` for writing MP3 discs by trying both on a real drive ([linux-test-plan.md](dev_docs/linux-test-plan.md)).
 - [ ] Check the Explorer's real drive lists on Linux and Windows, which are only tested with fake folders ([cross-platform.md](dev_docs/cross-platform.md)).
 - [ ] Find a trustworthy `cdrdao.exe` (build it with MSYS2 or Cygwin in CI) and find out whether it needs administrator rights ([cross-platform.md](dev_docs/cross-platform.md)).
 - [ ] Use IMAPI2 for MP3 discs on Windows, which needs no extra program but a COM dependency (`comtypes` or `pywin32`) and a notices entry ([cross-platform.md](dev_docs/cross-platform.md)).
-- [ ] Add a build job per OS to `build.yml` with the smoke test, and update `BUILDING.md`, `README.md`, `CONTRIBUTING.md` and the guide for each ([cross-platform.md](dev_docs/cross-platform.md)).
+- [ ] Update `README.md`, `CONTRIBUTING.md` and the guide per OS now that every OS has a build job (`BUILDING.md` is done; the guide and CONTRIBUTING still talk about a Mac in places) ([cross-platform.md](dev_docs/cross-platform.md)).
 - [ ] Check what `pyrekordbox`'s SQLCipher needs on Windows and Intel Linux by letting CI run its first full pass ([cross-platform.md](dev_docs/cross-platform.md)).
 
 ## Completed
@@ -176,5 +177,7 @@ Open items by area; finished work is under **Completed** at the bottom (same hea
 
 ### Linux and Windows
 
+- [x] Notice an SD card being plugged in on Windows, which has no folder to watch: `explorer.DrivePoller` polls `mounted_volumes()` every 3 s while the Explorer or the card list is on show ([cross-platform.md](dev_docs/cross-platform.md), Phase 6 step 6). Tested with fake drive lists, not tried on Windows.
+- [x] Write the Windows build (2026-11-17): `build_windows.ps1`, `build_ffmpeg_windows.sh` (MSYS2), `assets/windows/Dubcrate.iss`, `make_ico.py`, a `build-windows` job, tests in `test_build_files.py` and `BUILDING.md`. Written, never run (the open items above).
 - [x] Use `pycdlib` to make the MP3 disc's ISO on every OS, so no `xorriso` is needed and Windows can make MP3 discs ([cross-platform.md](dev_docs/cross-platform.md), Phase 6 step 4).
 - [x] Tell Linux users in the guide that the rekordbox importer has no default path there (folders only, or pick a copied `master.db`) ([cross-platform.md](dev_docs/cross-platform.md)).
