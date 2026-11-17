@@ -118,9 +118,6 @@ def ask_make_mp3(parent: QWidget | None, text: str, can_undo: bool) -> Mp3Choice
     box.setIcon(QMessageBox.Icon.Question)
     box.setWindowTitle("Make this an MP3 CD?")
     box.setText(text)
-    box.setStyleSheet(
-        "QLabel { min-width: 430px; }"
-    )  # wide enough for the three buttons
     make = box.addButton("Make MP3 CD", QMessageBox.ButtonRole.AcceptRole)
     keep = box.addButton("Add Anyway", QMessageBox.ButtonRole.ActionRole)
     undo = box.addButton(QMessageBox.StandardButton.Cancel) if can_undo else None
