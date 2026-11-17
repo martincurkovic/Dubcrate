@@ -260,7 +260,12 @@ INSTALLER = (ROOT / "assets" / "windows" / "Dubcrate.iss").read_text(encoding="u
 
 
 def test_the_windows_build_bundles_the_same_data_and_modules_as_the_others():
-    assert data_args(WINDOWS_SCRIPT) and data_args(WINDOWS_SCRIPT) == data_args(BUILD_SCRIPT)  # fmt: skip
+    # the same, except ffmpeg: --include-data-dir skips every .exe, so the two tools are named one by one
+    own = [a for a in data_args(WINDOWS_SCRIPT) if "ffmpeg" not in a and "ffprobe" not in a]  # fmt: skip
+    shared = [a for a in data_args(BUILD_SCRIPT) if "build/ffmpeg" not in a]
+    assert own and own == shared
+    for tool in ("ffmpeg", "ffprobe"):
+        assert f"--include-data-files=../build/ffmpeg/bundle/{tool}.exe=dubcrate/bin/{tool}.exe" in WINDOWS_SCRIPT  # fmt: skip
     for module in ("pyrekordbox", "sqlcipher3", "cffi", "_cffi_backend"):
         assert module in WINDOWS_SCRIPT, module
     assert "--windows-console-mode=disable" in WINDOWS_SCRIPT

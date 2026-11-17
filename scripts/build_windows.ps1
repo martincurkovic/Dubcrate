@@ -87,7 +87,8 @@ try {
 
     # Data the app reads at run time, paths relative to src\ (where this runs), as SRC=DEST inside the app: the same as
     # scripts/build_macos.sh and scripts/build_linux.sh (tests/test_build_files.py checks that they agree, and that every file exists).
-    $DataArgs = "--include-data-dir=dubcrate/ui/icons=dubcrate/ui/icons --include-data-files=dubcrate/ui/style.qss.template=dubcrate/ui/style.qss.template --include-data-files=dubcrate/ui/style_system6.qss.template=dubcrate/ui/style_system6.qss.template --include-data-dir=dubcrate/ui/fonts=dubcrate/ui/fonts --include-data-dir=dubcrate/ui/help=dubcrate/ui/help --include-data-files=../assets/icon/AppIcon.png=dubcrate/ui/AppIcon.png --include-data-files=../LICENSE=LICENSE --include-data-dir=../build/ffmpeg/bundle=dubcrate/bin"
+    # The exception is ffmpeg: Nuitka's --include-data-dir leaves out every .exe (and .dll), so the two tools are named one by one.
+    $DataArgs = "--include-data-dir=dubcrate/ui/icons=dubcrate/ui/icons --include-data-files=dubcrate/ui/style.qss.template=dubcrate/ui/style.qss.template --include-data-files=dubcrate/ui/style_system6.qss.template=dubcrate/ui/style_system6.qss.template --include-data-dir=dubcrate/ui/fonts=dubcrate/ui/fonts --include-data-dir=dubcrate/ui/help=dubcrate/ui/help --include-data-files=../assets/icon/AppIcon.png=dubcrate/ui/AppIcon.png --include-data-files=../LICENSE=LICENSE --include-data-files=../build/ffmpeg/bundle/ffmpeg.exe=dubcrate/bin/ffmpeg.exe --include-data-files=../build/ffmpeg/bundle/ffprobe.exe=dubcrate/bin/ffprobe.exe"
 
     # Modules that are loaded by name, which Nuitka's import scan can miss: the rekordbox reader with its encrypted-database driver,
     # and the C bridge miniaudio is built on (cffi). (No PyObjC: DiscRecording is macOS's.) --smoke-test shows if one is missing.
