@@ -37,8 +37,9 @@ ROW_HEIGHT = 28
 
 
 def transport_action(event) -> str | None:
-    """What a key does to the preview player, if anything: "play_pause" (Space), or
-    "jump_back" / "jump_forward" (Left / Right: beat jump, as in rekordbox).
+    """What a key does to the preview player, if anything: "play_pause" (Space),
+    "jump_back" / "jump_forward" (Left / Right: beat jump, as in rekordbox), or
+    "previous_track" / "next_track" ([ and ]).
 
     On macOS Qt marks the arrow keys with KeypadModifier, so "no modifiers" would never
     be true for them: only the modifiers that matter (shift, control, alt, command) count.
@@ -55,6 +56,10 @@ def transport_action(event) -> str | None:
         return "jump_back"
     if key == Qt.Key.Key_Right:
         return "jump_forward"
+    if key == Qt.Key.Key_BracketLeft:
+        return "previous_track"
+    if key == Qt.Key.Key_BracketRight:
+        return "next_track"
     return None
 
 
@@ -63,13 +68,13 @@ def transport_key_is_taken(widget: QWidget | None, action: str) -> bool:
 
     Anything you type into keeps every one of them (Space is a character, the arrows move
     the cursor); a slider or drop-down keeps its arrows; a tree keeps Left and Right, which
-    close and open its folders. Space is free everywhere else, even on a button.
+    close and open its folders. Space, [ and ] are free everywhere else, even on a button.
     """
     if isinstance(
         widget, QLineEdit | QTextEdit | QPlainTextEdit | QAbstractSpinBox | QComboBox
     ):
         return True
-    if action == "play_pause":
+    if action not in ("jump_back", "jump_forward"):
         return False
     return isinstance(widget, QAbstractSlider | QTreeView)
 

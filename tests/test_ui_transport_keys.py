@@ -56,6 +56,26 @@ def test_space_and_the_arrows_work_wherever_focus_is(window, where):
     assert win.seen == expected
 
 
+@pytest.mark.parametrize(
+    "where", ["track_table", "player_strip", "center", "tracks_title", "tree"]
+)
+def test_the_square_brackets_step_to_the_previous_and_next_track_wherever_focus_is(window, where):  # fmt: skip
+    win = window
+    win._step_track = lambda delta: win.seen.append(("step", delta))
+    target = getattr(win, where)
+    target.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+    press(target, Qt.Key.Key_BracketLeft)
+    press(target, Qt.Key.Key_BracketRight)
+    assert win.seen == [("step", -1), ("step", 1)]
+
+
+def test_the_brackets_are_typed_in_the_search_box_not_taken(window):
+    win = window
+    win._step_track = lambda delta: win.seen.append(("step", delta))
+    press(win.search, Qt.Key.Key_BracketLeft)
+    assert win.seen == [] and win.search.text() == "["
+
+
 def test_the_open_discs_table_and_the_disc_tree_work_too(window):
     win = window
     disc = win._lib.create_disc("Night")

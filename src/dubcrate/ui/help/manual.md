@@ -111,7 +111,7 @@ The **Explorer** tab is for music that isn't in an imported library: a folder of
 
 ## Listening to tracks
 
-**Double-click** a track to preview it (or drag it onto the player). **Space** plays or pauses and **←** / **→** beat jump, wherever you are in the window except in a text box. The **Preview** column shows the whole track as a waveform. When a track ends, the next one in the list or open disc starts, skipping missing files.
+**Double-click** a track to preview it (or drag it onto the player). **Space** plays or pauses, **←** / **→** beat jump and **[** / **]** load the previous / next track, wherever you are in the window except in a text box. The **Preview** column shows the whole track as a waveform. When a track ends, the next one in the list or open disc starts, skipping missing files.
 
 ![The player: a cue point set, a loop on, the hot cue list open](screenshots/player.png "The player")
 
@@ -313,6 +313,7 @@ This is the only time Dubcrate uses the network. It asks `github.com` for the li
 | Return | Load the highlighted track into the player |
 | ⌘Return, or ⌘D | Add the selected tracks to the disc |
 | ← / → | Beat jump back / forward |
+| [ / ] | Previous / next track |
 | Delete | Take the selected tracks off the disc |
 | ⌘O / ⇧⌘O | Import a folder / a rekordbox library |
 | ⌘R / ⇧⌘R | Rename the picked disc or folder / re-import the source |

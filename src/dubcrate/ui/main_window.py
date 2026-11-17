@@ -1974,7 +1974,8 @@ class MainWindow(QMainWindow):
     # -- the transport keys -----------------------------------------------
 
     def eventFilter(self, watched, event) -> bool:
-        """Space plays or pauses, Left and Right beat jump, wherever focus is in this window.
+        """Space plays or pauses, Left and Right beat jump, [ and ] load the previous and next track,
+        wherever focus is in this window.
 
         The two track lists handle these keys themselves, but focus is often elsewhere (the
         trees, the disc's title, a button), and then nothing happened. A modal dialog, a
@@ -1989,6 +1990,8 @@ class MainWindow(QMainWindow):
                 if action == "play_pause":
                     if not event.isAutoRepeat():  # (holding Space must not flicker)
                         self.preview.toggle()
+                elif action in ("previous_track", "next_track"):
+                    self._step_track(-1 if action == "previous_track" else 1)
                 else:
                     self.preview.beat_jump(-1 if action == "jump_back" else 1)
                 return True

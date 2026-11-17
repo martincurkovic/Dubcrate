@@ -24,6 +24,8 @@ EXTRA_SHORTCUTS: tuple[tuple[str, str, str], ...] = (
     ("Playing", "Play or pause (anywhere except a text box)", "Space"),
     ("Playing", "Beat jump back", "←"),
     ("Playing", "Beat jump forward", "→"),
+    ("Playing", "Previous track", "["),
+    ("Playing", "Next track", "]"),
     ("Playing", "Preview a track", "Double-click it"),
     ("Playing", "Scratch", "Drag the zoomed waveform"),
     ("Track lists", "Load the highlighted track into the player", "Return"),
