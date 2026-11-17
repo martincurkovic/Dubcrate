@@ -14,7 +14,7 @@ move: save it again where you want it); hot cues are only shown.
 
 import math
 
-from PySide6.QtCore import QPointF, QRectF, Qt, Signal
+from PySide6.QtCore import QPointF, QRectF, QSize, Qt, Signal
 from PySide6.QtGui import (
     QColor,
     QFont,
@@ -33,6 +33,7 @@ from PySide6.QtWidgets import (
     QHeaderView,
     QLabel,
     QMenu,
+    QScrollArea,
     QSizePolicy,
     QStackedWidget,
     QStyle,
@@ -169,50 +170,83 @@ class InfoFrame(QFrame):
 class ArtworkView(QWidget):
     """The track's cover, a square (cropped from the middle if the picture is not), or a placeholder.
 
-    The placeholder is painted, not an image file: a music note on a plain square in the theme's colours."""
+    The placeholder is painted, not an image file: a music note on a plain square in the theme's colours.
+    It is as big as `SIZE` when there is room and shrinks to fit when there is not, so the Info page never asks the
+    player strip for more height than the Memory and Hot Cue pages need (the window used to grow when INFO was picked)."""
 
     SIZE = 160
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setFixedSize(self.SIZE, self.SIZE)
-        self._pixmap: QPixmap | None = None
+        self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred)
+        self.setMaximumHeight(self.SIZE)
+        self._source: QImage | None = (
+            None  # the cover, cropped to a square at its own size
+        )
+        self._scaled: tuple[int, QPixmap] | None = (
+            None  # (device pixels a side, the cover at that size)
+        )
         theme.notifier.changed.connect(self.update)
 
     @property
     def has_image(self) -> bool:
-        return self._pixmap is not None
+        return self._source is not None
+
+    def sizeHint(self) -> QSize:
+        return QSize(self.SIZE, self.SIZE)
+
+    def minimumSizeHint(self) -> QSize:
+        return QSize(0, 0)
 
     def set_image(self, data: bytes | None) -> None:
         """Show the picture in `data` (a JPEG or PNG), or the placeholder if there is none or it can't be read."""
-        self._pixmap = None
+        self._source = None
+        self._scaled = None
         if data:
             image = QImage.fromData(data)
             if not image.isNull():
-                ratio = self.devicePixelRatioF()
-                side = round(self.SIZE * ratio)
-                scaled = image.scaled(
-                    side,
-                    side,
-                    Qt.AspectRatioMode.KeepAspectRatioByExpanding,
-                    Qt.TransformationMode.SmoothTransformation,
-                )
-                left, top = (scaled.width() - side) // 2, (scaled.height() - side) // 2
-                self._pixmap = QPixmap.fromImage(scaled.copy(left, top, side, side))
-                self._pixmap.setDevicePixelRatio(ratio)
+                side = min(image.width(), image.height())
+                left, top = (image.width() - side) // 2, (image.height() - side) // 2
+                self._source = image.copy(left, top, side, side)
         self.update()
 
+    def _square(self) -> QRectF:
+        """The square the cover is drawn in: as big as the room allows (at most `SIZE`), in the middle."""
+        side = min(self.width(), self.height(), self.SIZE)
+        return QRectF((self.width() - side) / 2, (self.height() - side) / 2, side, side)
+
+    def _cover(self, side: float) -> QPixmap | None:
+        if self._source is None:
+            return None
+        ratio = self.devicePixelRatioF()
+        device = max(1, round(side * ratio))
+        if self._scaled is None or self._scaled[0] != device:
+            scaled = self._source.scaled(
+                device,
+                device,
+                Qt.AspectRatioMode.IgnoreAspectRatio,
+                Qt.TransformationMode.SmoothTransformation,
+            )
+            pixmap = QPixmap.fromImage(scaled)
+            pixmap.setDevicePixelRatio(ratio)
+            self._scaled = (device, pixmap)
+        return self._scaled[1]
+
     def paintEvent(self, _event) -> None:
+        square = self._square()
+        if square.width() < 1:
+            return
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, theme.antialiasing())
         palette = theme.current_palette()
-        box = QRectF(self.rect()).adjusted(0.5, 0.5, -0.5, -0.5)
+        box = square.adjusted(0.5, 0.5, -0.5, -0.5)
         radius = 0 if palette.get("hard_edges") else 4
         clip = QPainterPath()
         clip.addRoundedRect(box, radius, radius)
-        if self._pixmap is not None:
+        cover = self._cover(square.width())
+        if cover is not None:
             painter.setClipPath(clip)
-            painter.drawPixmap(self.rect(), self._pixmap)
+            painter.drawPixmap(square.toRect(), cover)
             painter.setClipping(False)
             painter.setPen(QPen(QColor(palette["border_list"]), 1))
             painter.setBrush(Qt.BrushStyle.NoBrush)
@@ -222,10 +256,33 @@ class ArtworkView(QWidget):
         painter.setBrush(QColor(palette["bg_input"]))
         painter.drawRoundedRect(box, radius, radius)
         font = QFont(self.font())
-        font.setPointSizeF(self.SIZE * 0.34)
+        font.setPointSizeF(max(1.0, square.width() * 0.34))
         painter.setFont(font)
         painter.setPen(QColor(palette["text_disabled"]))
         painter.drawText(box, Qt.AlignmentFlag.AlignCenter, "♪")
+
+
+class _CommentArea(QScrollArea):
+    """Holds the track's comment, which wraps. A wrapping label's height depends on its width, which would make the
+    Info page, the side panel and the whole player strip ask for a taller window; in a scroll area it is cut off and
+    scrolls instead, and the area itself asks for no height."""
+
+    def __init__(self, label: QLabel, parent=None):
+        super().__init__(parent)
+        self.setWidget(label)
+        self.setWidgetResizable(True)
+        self.setFrameShape(QFrame.Shape.NoFrame)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Expanding)
+        self.setStyleSheet("QScrollArea { background: transparent; border: none; }")
+        self.viewport().setAutoFillBackground(False)
+        label.setAutoFillBackground(False)
+
+    def minimumSizeHint(self) -> QSize:
+        return QSize(0, self.fontMetrics().lineSpacing())
+
+    def sizeHint(self) -> QSize:
+        return QSize(0, self.fontMetrics().lineSpacing() * 2)
 
 
 def _list() -> QTreeWidget:
@@ -287,13 +344,13 @@ class SidePanel(QWidget):
         box = QVBoxLayout(info)
         box.setContentsMargins(10, 10, 10, 10)
         box.setSpacing(8)
-        box.addWidget(self.art, 0, Qt.AlignmentFlag.AlignHCenter)
+        box.addWidget(self.art, 4)  # (the cover gives way first when the page is short)
         facts = QHBoxLayout()  # (stars at the left, the file at the right: one line, so the cover can be big)
         facts.setSpacing(8)
         facts.addWidget(self.rating)
         facts.addWidget(self.file, 1)
         box.addLayout(facts)
-        box.addWidget(self.comment, 1)
+        box.addWidget(_CommentArea(self.comment), 1)
         for label in (self.rating, self.comment, self.file):
             label.setMinimumWidth(0)
             label.setSizePolicy(
@@ -330,6 +387,12 @@ class SidePanel(QWidget):
         layout.addLayout(row)
         self.set_track(None)
         self.set_cues(())
+
+    def sizeHint(self) -> QSize:
+        """As tall as the least it needs, not as tall as the page showing wants: the player strip's height comes from
+        its left and middle columns, so choosing a page (the Hot Cue list's and the Info page's own sizes are bigger
+        than the Memory list's) never makes the strip taller or the window with it."""
+        return QSize(super().sizeHint().width(), self.minimumSizeHint().height())
 
     # -- what is shown -----------------------------------------------------------
 

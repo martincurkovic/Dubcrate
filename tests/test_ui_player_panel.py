@@ -6,6 +6,7 @@ import json
 import pytest
 from PySide6.QtCore import QMimeData, QPointF, Qt
 from PySide6.QtGui import QDropEvent
+from PySide6.QtWidgets import QApplication
 
 from dubcrate import settings
 from dubcrate.analysis import Cue
@@ -477,11 +478,36 @@ def test_a_track_without_a_cover_shows_the_placeholder_and_one_with_a_cover_show
     art = strip.side.art
     assert not art.has_image  # (the placeholder: a note on a square)
     strip.side.set_artwork(png_bytes())
-    assert art.has_image and art.size().width() == art.size().height() == art.SIZE
+    assert (
+        art.has_image and art.sizeHint().width() == art.sizeHint().height() == art.SIZE
+    )
     strip.side.set_artwork(None)
     assert not art.has_image
     strip.side.set_artwork(b"this is not a picture")
     assert not art.has_image  # (undecodable: the placeholder, never an error)
+
+
+def test_choosing_a_tab_never_changes_the_height_the_strip_asks_for(strip):
+    """The Info page (a 160 px cover, four lines about the file, a comment) is taller than the Memory list: it used to
+    make the strip, and the window, grow when INFO was picked."""
+    side = strip.side
+    side.set_artwork(png_bytes())
+    side.file.setText("MP3 File\n9.9 MB\n44100 Hz\n320 kbps")
+    side.comment.setText("A long comment that wraps onto several lines. " * 20)
+    strip.show()
+    heights = []
+    for tab in side.tabs:
+        tab.click()
+        QApplication.processEvents()
+        heights.append((strip.sizeHint().height(), strip.minimumSizeHint().height()))
+    assert len(set(heights)) == 1, heights
+    assert (
+        not strip.hasHeightForWidth()
+    )  # (a wrapping comment must not make the height depend on the width)
+    art = side.art
+    assert (
+        0 < art.size().height() <= art.SIZE
+    )  # (the cover gave way: it is smaller than its full size here)
 
 
 def test_a_wide_cover_is_cropped_to_a_square_from_the_middle(strip):
@@ -501,11 +527,22 @@ def test_a_wide_cover_is_cropped_to_a_square_from_the_middle(strip):
     buffer.open(QIODevice.OpenModeFlag.WriteOnly)
     image.save(buffer, "PNG")
     strip.side.set_artwork(bytes(buffer.data()))
-    shot = strip.side.art.grab().toImage()
-    middle = QColor(shot.pixel(shot.width() // 2, shot.height() // 2))
+    art = strip.side.art
+    art.resize(160, 160)  # (not shown here: no layout has given it its room)
+    shot = art.grab().toImage()
+    square = (
+        art._square()
+    )  # (the cover is drawn in a square in the middle of the widget)
+    ratio = shot.devicePixelRatio()
+    at = lambda fx: QColor(
+        shot.pixel(
+            round((square.left() + square.width() * fx) * ratio),
+            round((square.top() + square.height() / 2) * ratio),
+        )
+    )
+    middle = at(0.5)
     assert middle.green() > 200 and middle.red() < 60 and middle.blue() < 60
-    corner = QColor(shot.pixel(shot.width() // 5, shot.height() // 2))
-    assert corner.green() > 200  # (the red third was cropped off, not squeezed in)
+    assert at(0.2).green() > 200  # (the red third was cropped off, not squeezed in)
 
 
 def test_choosing_a_track_clears_the_old_cover_until_its_own_arrives(strip):
