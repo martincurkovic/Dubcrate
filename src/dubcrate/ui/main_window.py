@@ -1395,6 +1395,10 @@ class MainWindow(QMainWindow):
             menu.addSeparator()
             menu.addAction("Burn…", lambda: self._open_and_burn(disc_id))
             menu.addAction("Print Labels…", lambda: self.print_labels(disc_id))
+            if self._lib.disc(disc_id).kind == "audio":
+                menu.addAction(
+                    "TOC Manager…", lambda: self.sync_view.open_toc_manager(disc_id)
+                )
             menu.addSeparator()
             menu.addAction("Delete…", lambda: self.disc_view.delete_disc(disc_id))
         elif kind == "disc_dir":

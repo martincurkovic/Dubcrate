@@ -30,7 +30,7 @@ class Rig:
         if self._eject_error:
             raise self._eject_error
 
-    def run(self, lengths=LENGTHS, gap=0):
+    def run(self, lengths=LENGTHS, gap=0, record=None):
         return burn_check.check_burn(
             lengths,
             gap,
@@ -38,6 +38,7 @@ class Rig:
             read=self.read,
             eject=self.eject,
             sleep=lambda _s: None,
+            record=record,
         )
 
 
@@ -113,3 +114,20 @@ def test_a_disc_too_short_to_have_a_toc_to_compare_is_still_ejected(lengths):
     rig = Rig(toc=planned())
     rig.run(lengths=lengths)
     assert rig.ejected == [1]
+
+
+def test_the_tocs_are_handed_over_to_be_kept_and_the_message_says_so():
+    starts, lead_out = planned()
+    actual = ([starts[0], starts[1] + 1, starts[2] + 1], lead_out + 1)
+    kept = []
+    rig = Rig(toc=actual)
+    assert rig.run(record=lambda p, a: kept.append((p, a))) is False
+    assert kept == [(planned(), actual)]
+    assert "Sync uses it" in rig.said[0] and "--from-drive" not in rig.said[0]
+
+
+def test_a_disc_with_another_number_of_tracks_is_not_handed_over():
+    kept = []
+    rig = Rig(toc=([150, 15150], 31150))
+    rig.run(record=lambda p, a: kept.append((p, a)))
+    assert kept == []

@@ -8,6 +8,7 @@ from PySide6.QtCore import QEvent, Qt
 from PySide6.QtGui import QKeyEvent
 from PySide6.QtWidgets import QMessageBox
 
+from dubcrate import cdj_card as cc
 from dubcrate import loudness, settings
 from dubcrate.burn import BurnError, MediaInfo
 from dubcrate.library import Library
@@ -182,7 +183,7 @@ def test_with_a_readable_drive_an_audio_burn_keeps_the_disc_in_and_checks_its_to
     monkeypatch.setattr("dubcrate.ui.burn_dialog.can_read_toc", lambda: True)
     monkeypatch.setattr(
         "dubcrate.ui.burn_dialog.check_burn",
-        lambda sectors, gap, say: checks.append((list(sectors), gap)),
+        lambda sectors, gap, say, **_kw: checks.append((list(sectors), gap)),
     )
     dialog, burner = make_dialog()
     burn(dialog, wait_for)
@@ -191,13 +192,40 @@ def test_with_a_readable_drive_an_audio_burn_keeps_the_disc_in_and_checks_its_to
     assert checks == [([150, 225], 0)]  # the burned tracks' lengths, and the gap
 
 
+def test_the_toc_the_drive_read_back_is_kept_for_the_disc(
+    lib, disc_id, make_dialog, wait_for, monkeypatch
+):
+    monkeypatch.setattr("dubcrate.ui.burn_dialog.can_read_toc", lambda: True)
+
+    def check(sectors, gap, say, record):
+        planned = cc.toc_from_lengths(sectors, gap)
+        starts, lead_out = planned
+        record(planned, ([starts[0], starts[1] + 1], lead_out + 1))
+
+    monkeypatch.setattr("dubcrate.ui.burn_dialog.check_burn", check)
+    dialog, _burner = make_dialog()
+    burn(dialog, wait_for)
+    [known] = lib.disc_tocs(disc_id)
+    assert known.source == "burn"
+    assert known.actual == ([150, known.planned[0][1] + 1], known.planned[1] + 1)
+
+
+def test_a_burn_that_could_not_be_read_back_leaves_the_known_tocs_alone(
+    lib, disc_id, make_dialog, wait_for
+):
+    lib.add_disc_toc(disc_id, ([150, 300], 500), ([150, 301], 501))
+    dialog, _burner = make_dialog()  # (conftest's check_burn reads nothing)
+    burn(dialog, wait_for)
+    assert len(lib.disc_tocs(disc_id)) == 1
+
+
 def test_a_check_that_says_something_puts_it_in_the_burn_log(
     make_dialog, wait_for, monkeypatch
 ):
     monkeypatch.setattr("dubcrate.ui.burn_dialog.can_read_toc", lambda: True)
     monkeypatch.setattr(
         "dubcrate.ui.burn_dialog.check_burn",
-        lambda sectors, gap, say: say("Checked: as planned."),
+        lambda sectors, gap, say, **_kw: say("Checked: as planned."),
     )
     dialog, _burner = make_dialog()
     burn(dialog, wait_for)
@@ -367,7 +395,7 @@ def test_a_burn_on_the_first_drive_is_checked_afterwards_and_on_another_it_is_no
     monkeypatch.setattr("dubcrate.ui.burn_dialog.can_read_toc", lambda: True)
     monkeypatch.setattr(
         "dubcrate.ui.burn_dialog.check_burn",
-        lambda sectors, gap, say: checks.append(sectors),
+        lambda sectors, gap, say, **_kw: checks.append(sectors),
     )
     for pick, checked in ((0, True), (1, False)):
         burner = FakeBurner(drives=TWO)

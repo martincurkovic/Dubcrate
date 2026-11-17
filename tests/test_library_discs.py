@@ -362,3 +362,27 @@ def test_tracks_on_discs_lists_every_track_that_is_on_a_disc_but_the_excluded_on
     assert lib.tracks_on_discs(exclude=99) == set(
         ids[:2]
     )  # (a disc that isn't there excludes nothing)
+
+
+def test_known_tocs_are_kept_per_disc_replaced_removed_and_go_with_their_disc(lib):
+    disc_id = lib.create_disc("Burned")
+    plan = ([150, 400], 700)
+    assert lib.disc_tocs(disc_id) == []
+    lib.add_disc_toc(disc_id, plan, ([150, 401], 701))
+    lib.add_disc_toc(disc_id, plan, ([150, 550], 850), source="manual")
+    first, second = lib.disc_tocs(disc_id)[::-1]
+    assert (first.source, second.source) == ("burn", "manual")
+    lib.add_disc_toc(
+        disc_id, plan, ([150, 401], 701), source="manual"
+    )  # same TOC: one row
+    assert len(lib.disc_tocs(disc_id)) == 2
+    lib.set_disc_toc_enabled(second.id, False)
+    assert [k.enabled for k in lib.disc_tocs(disc_id)] == [False, True]
+    lib.add_disc_toc(
+        disc_id, plan, second.actual, source="manual"
+    )  # read again: back on
+    assert all(k.enabled for k in lib.disc_tocs(disc_id))
+    lib.remove_disc_toc(first.id)
+    assert [k.actual for k in lib.disc_tocs(disc_id)] == [([150, 550], 850)]
+    lib.delete_disc(disc_id)
+    assert lib.disc_tocs(disc_id) == []

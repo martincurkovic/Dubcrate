@@ -57,6 +57,31 @@ def test_a_disc_of_measured_tracks_gives_the_id_of_its_toc(lib):
     assert result.request.disc_id == cc.DiscId.from_toc(*cd2())
 
 
+def test_the_toc_a_drive_read_after_the_burn_is_the_discs_id_while_it_is_unchanged(lib):
+    disc_id = cd2_disc(lib)
+    entries = lib.disc_entries(disc_id)
+    starts, lead_out = card_discs.disc_toc(entries)
+    read = ([starts[0], *(s + 1 for s in starts[1:])], lead_out + 1)  # a frame late
+    lib.add_disc_toc(disc_id, (starts, lead_out), read)
+    result = card_discs.prepare_disc(lib, disc_id)
+    assert result.request.disc_id == cc.DiscId.from_toc(*read)
+    assert result.starts == read[0]
+    # and the disc in the drive is the disc as planned, not a different one
+    with_drive = card_discs.prepare_disc(lib, disc_id, toc=read)
+    assert with_drive.warnings == []
+
+
+def test_a_disc_edited_since_the_burn_ignores_the_recorded_toc(lib):
+    disc_id = cd2_disc(lib)
+    entries = lib.disc_entries(disc_id)
+    starts, lead_out = card_discs.disc_toc(entries)
+    lib.add_disc_toc(disc_id, (starts, lead_out), (starts, lead_out + 1))
+    lib.move_in_disc(disc_id, 0, 1)  # another order: another TOC
+    result = card_discs.prepare_disc(lib, disc_id)
+    assert result.request.disc_id != cc.DiscId.from_toc(starts, lead_out + 1)
+    assert result.starts == card_discs.disc_toc(lib.disc_entries(disc_id))[0]
+
+
 def test_a_disc_not_marked_as_burned_says_so(lib):
     disc_id = cd2_disc(lib)
     assert any(
@@ -289,3 +314,89 @@ def test_an_unreadable_rekordbox_database_is_said_for_each_disc_not_raised(lib):
     (found,) = survey(lib, cues=broken)
     assert found.status == "Can't sync"
     assert "Couldn't read rekordbox's cues: it is locked" in found.input.problems[0]
+
+
+# -- several TOCs for one playlist, and the TOC Manager's rules -------------------------
+
+
+def shifted(toc, by):
+    starts, lead_out = toc
+    return [starts[0], *(s + by for s in starts[1:])], lead_out + by
+
+
+def test_every_known_toc_of_a_disc_gets_its_own_request_with_cues_at_its_own_positions(
+    lib,
+):
+    disc_id = cd2_disc(lib, kind="audio")
+    entries = lib.disc_entries(disc_id)
+    planned = card_discs.disc_toc(entries)
+    late, later = shifted(planned, 1), shifted(planned, 2)
+    lib.add_disc_toc(disc_id, planned, late)
+    lib.add_disc_toc(disc_id, planned, later)  # the newest comes first
+    result = card_discs.prepare_disc(lib, disc_id)
+    assert result.request.disc_id == cc.DiscId.from_toc(*later)
+    assert [r.disc_id for r in result.alternates] == [cc.DiscId.from_toc(*late)]
+    assert next(r.disc_id for r in result.all_requests()) == result.request.disc_id
+    assert (
+        result.warnings == []
+    )  # (a disc that is really known needs no "assumed" warning)
+
+
+def test_the_plan_is_used_only_when_no_toc_is_known(lib):
+    disc_id = cd2_disc(lib)
+    result = card_discs.prepare_disc(lib, disc_id)
+    assert result.request.disc_id == cc.DiscId.from_toc(*cd2())
+    assert result.alternates == []
+
+
+def test_a_drive_disc_matching_any_known_toc_has_no_warning(lib):
+    disc_id = cd2_disc(lib)
+    planned = card_discs.disc_toc(lib.disc_entries(disc_id))
+    other = shifted(planned, 150)
+    lib.add_disc_toc(disc_id, planned, other)
+    assert card_discs.prepare_disc(lib, disc_id, toc=other).warnings == []
+    assert card_discs.prepare_disc(lib, disc_id, toc=planned).warnings == []
+    assert card_discs.prepare_disc(lib, disc_id, toc=shifted(planned, 7)).warnings
+
+
+def test_a_survey_plans_and_writes_every_toc(lib):
+    disc_id = cd2_disc(lib)
+    planned = card_discs.disc_toc(lib.disc_entries(disc_id))
+    lib.add_disc_toc(disc_id, planned, shifted(planned, 1))
+    lib.add_disc_toc(disc_id, planned, shifted(planned, 2))
+    rows = card_discs.survey_discs(
+        lib,
+        (cc.IndexFile([]), {}),
+        card_discs.RekordboxCues(lib, load=lambda p: {}),
+        {},
+    )
+    assert len(rows[0].extra_plans) == 1
+
+
+def test_a_toc_switched_off_is_not_written_and_back_on_it_is(lib):
+    disc_id = cd2_disc(lib)
+    planned = card_discs.disc_toc(lib.disc_entries(disc_id))
+    old, new = shifted(planned, 1), shifted(planned, 2)
+    lib.add_disc_toc(disc_id, planned, old)
+    lib.add_disc_toc(disc_id, planned, new)
+    newest = next(k for k in lib.disc_tocs(disc_id) if k.actual == new)
+    lib.set_disc_toc_enabled(newest.id, False)
+    result = card_discs.prepare_disc(lib, disc_id)
+    assert (
+        result.request.disc_id == cc.DiscId.from_toc(*old) and result.alternates == []
+    )
+    lib.set_disc_toc_enabled(newest.id, True)
+    assert card_discs.prepare_disc(lib, disc_id).request.disc_id == cc.DiscId.from_toc(
+        *new
+    )
+
+
+def test_with_every_known_toc_off_the_plan_is_used_again(lib):
+    disc_id = cd2_disc(lib)
+    planned = card_discs.disc_toc(lib.disc_entries(disc_id))
+    lib.add_disc_toc(disc_id, planned, shifted(planned, 1))
+    [only] = lib.disc_tocs(disc_id)
+    lib.set_disc_toc_enabled(only.id, False)
+    assert card_discs.prepare_disc(lib, disc_id).request.disc_id == cc.DiscId.from_toc(
+        *planned
+    )

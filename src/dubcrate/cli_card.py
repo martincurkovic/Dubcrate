@@ -17,6 +17,7 @@ from dubcrate.card_apply import apply_sync, default_backup_dir
 from dubcrate.card_discs import (
     RekordboxCues,
     disc_toc,
+    known_tocs,
     prepare_disc,
     toc_differences,
 )
@@ -80,12 +81,21 @@ def cmd_toc(lib: Library, args: argparse.Namespace) -> int:
     if unmeasured := [e for e in entries if not e.track.length_exact]:
         print(f"{len(unmeasured)} tracks have no measured length: can't compare.")
         return 1
-    planned = disc_toc(entries, lib.disc(args.disc).pregap_sectors)
-    if differences := toc_differences(planned, (starts, lead_out)):
+    pregap = lib.disc(args.disc).pregap_sectors
+    planned = disc_toc(entries, pregap)
+    known = known_tocs(lib, args.disc, entries, pregap)
+    drive = (list(starts), lead_out)
+    if any(drive == (list(t[0]), t[1]) for t in (planned, *known)):
+        differences = []
+    else:
+        differences = toc_differences(known[0] if known else planned, drive)
+    if differences:
         print(f"\nDisc {args.disc} as planned now is NOT the disc in the drive:")
         print("\n".join(f"  {d}" for d in differences))
         return 1
-    print(f"\nDisc {args.disc} as planned now has exactly this TOC.")
+    print(
+        f"\nDisc {args.disc} has exactly this TOC (as planned now, or as recorded for it)."
+    )
     return 0
 
 
@@ -138,10 +148,14 @@ def cmd_sync(lib: Library, args: argparse.Namespace) -> int:
             print(f"  can't sync: {problem}")
         for warning in i.warnings:
             print(f"  warning: {warning}")
-    plan = plan_card(index, files, [i.request for i in runnable if i.request])
-    for i, disc_plan in zip(runnable, plan.discs, strict=True):
+    owners = [(i, r) for i in runnable for r in i.all_requests()]
+    plan = plan_card(index, files, [r for _i, r in owners])
+    for (i, request), disc_plan in zip(owners, plan.discs, strict=True):
+        other = (
+            " (another recorded TOC of this disc)" if request is not i.request else ""
+        )
         print(
-            f"\nDisc {i.disc_id}, {i.name!r}: {i.cue_tracks} tracks with rekordbox cues"
+            f"\nDisc {i.disc_id}, {i.name!r}{other}: {i.cue_tracks} tracks with rekordbox cues"
         )
         print("\n".join(describe_plan(disc_plan)))
     if not plan.changes:
@@ -152,9 +166,7 @@ def cmd_sync(lib: Library, args: argparse.Namespace) -> int:
         print("re-run with --yes to write (the card's files are copied aside first).")
         return 0
     try:
-        outcome = apply_sync(
-            card, [i.request for i in runnable if i.request], _backup_dir(args)
-        )
+        outcome = apply_sync(card, [r for _i, r in owners], _backup_dir(args))
     except cc.CardFormatError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1

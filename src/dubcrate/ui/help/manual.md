@@ -264,6 +264,12 @@ Press **Sync** and Dubcrate asks, copies the card's files to a `card-backups` fo
 
 **Bringing changes back.** Cues and loops you set, delete or move on the player end up on the card. **Import Cues…** lists, track by track, what Dubcrate doesn't have: untick what you don't want, then press **Import**. New ones become memory cues and loops in Dubcrate (and in rekordbox, if you've allowed that). The player's own **hot cues** are listed but **not ticked**. **Deleted** and **moved** cues are noticed from the next sync on (each sync records what it left on the card), and only memory cues, or loops rekordbox doesn't have, can be deleted this way. It only reads the card, and is new: it hasn't been tried with cues set on a real player.
 
+### When a copy of a disc has a different table of contents
+
+The card knows a disc by its table of contents (TOC), and a drive can lay a disc out a frame or more differently from the plan: the same playlist burned on another machine, or with another gap setting, gives a copy with its own TOC. **After a burn, Dubcrate reads the disc's TOC back and keeps it** for that playlist, so Sync writes to the TOC the disc really has.
+
+For a disc burned earlier or elsewhere, right-click it in the Discs list (or in the Sync list) and choose **TOC Manager…**. Put the disc in the drive and press **Read from Disc in Drive**. Dubcrate keeps the TOC only if the disc has the same number of tracks and every track is about as long as in the playlist (up to half a second shorter or four seconds longer, which allows for gaps); a different CD is refused, with the tracks that don't fit. Each TOC in the list has a **tick box**: untick one that is wrong or out of date and Sync ignores it, but it stays in the list. **Remove** forgets one. The first, greyed row is the playlist's own TOC as planned: it has no tick box and can't be removed, and Sync uses it only while no TOC below it is ticked. A TOC recorded before you edited the playlist is greyed out and not used.
+
 ### Setting up a blank card
 
 **Format a Card…** (right-click the card list) erases a blank SD card, makes it the FAT16 card the player expects (named `DISK_IMG`) and adds the **PIONEER** folder, so you can sync at home before the card has been in a player.

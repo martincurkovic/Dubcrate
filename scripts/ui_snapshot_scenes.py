@@ -14,6 +14,7 @@ library (or put them right with `ctx.on_cleanup`): the next scene is built from 
 The scene list is also the checklist of the app's windows: when a window or dialog is added, add its scene here.
 """
 
+import json
 from dataclasses import dataclass
 
 import screenshot_recipes as recipes
@@ -1209,6 +1210,53 @@ def _sync_import(ctx):
     ctx.on_cleanup(dialog.close)
     ctx.settle(8)
     return dialog
+
+
+def _toc_manager(ctx, *, filled=True):
+    from dubcrate.card_discs import disc_toc
+    from dubcrate.ui.toc_manager_dialog import TocManagerDialog
+
+    disc_id = ctx.temp_disc("Banger Finishers 002")
+    ctx.lib.add_to_disc(
+        disc_id, [e.track.id for e in ctx.lib.disc_entries(ctx.demo.discs["peak"])]
+    )
+    entries = ctx.lib.disc_entries(disc_id)
+    planned = disc_toc(entries)
+    if filled:
+        starts, lead_out = planned
+        later = lambda n: ([starts[0], *(x + n for x in starts[1:])], lead_out + n)
+        ctx.lib.add_disc_toc(disc_id, planned, later(150), source="manual")
+        ctx.lib.add_disc_toc(disc_id, planned, later(1), source="burn")
+        old = ctx.lib.disc_tocs(disc_id)[-1]
+        ctx.lib.set_disc_toc_enabled(old.id, False)
+        # a record made for another plan (the playlist was edited since): only an edit can leave one, so put it in
+        ctx.lib._conn.execute(
+            "INSERT INTO disc_toc (disc_id, planned, actual, source, saved_at) VALUES (?, ?, ?, 'burn', ?)",
+            (
+                disc_id,
+                "[[150, 9999], 20000]",
+                json.dumps([list(later(2)[0]), later(2)[1]]),
+                "2026-11-10T09:00:00",
+            ),
+        )
+        ctx.lib._conn.commit()
+    dialog = TocManagerDialog(ctx.lib, disc_id, None, read_toc=lambda: planned)
+    dialog.show()
+    ctx.on_cleanup(dialog.close)
+    ctx.settle(8)
+    return dialog
+
+
+@scene("toc-manager", "Sync tab", "TOC Manager: several TOCs, one unticked", sizes=(NATURAL,), kind="dialog",
+       about="A disc with a read-back TOC, one read from another copy (2 s gaps), one switched off.")  # fmt: skip
+def _toc_manager_filled(ctx):
+    return _toc_manager(ctx)
+
+
+@scene("toc-manager-empty", "Sync tab", "TOC Manager: nothing recorded", sizes=(NATURAL,), kind="dialog",
+       about="A disc with no recorded TOC: Sync uses the plan's.")  # fmt: skip
+def _toc_manager_empty(ctx):
+    return _toc_manager(ctx, filled=False)
 
 
 def _format_disks():

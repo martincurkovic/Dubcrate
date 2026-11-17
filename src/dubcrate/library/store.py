@@ -6,6 +6,7 @@ stable, tracks that vanished from the source are removed, and the browse tree
 is rebuilt.
 """
 
+import json
 import logging
 import os
 import sqlite3
@@ -357,14 +358,69 @@ CREATE TABLE memory_loop_removed (
 CREATE INDEX memory_loop_removed_path ON memory_loop_removed (path_key)
 """
 
+# The table of contents the drive read back from a disc just burned (`burn_check`), with the TOC that was planned for it
+# (JSON: [track starts, lead-out] in absolute frames). A drive can lay a disc out a frame differently from the plan, and
+# the card knows a disc by its TOC, so Sync uses `actual` while `planned` is still what the disc would be planned as
+# (an edited disc no longer matches `planned`, so its record is ignored).
+_SCHEMA_V17 = """
+CREATE TABLE disc_burned_toc (
+    disc_id INTEGER PRIMARY KEY REFERENCES disc(id) ON DELETE CASCADE,
+    planned TEXT NOT NULL,
+    actual TEXT NOT NULL,
+    saved_at TEXT NOT NULL
+)
+"""
+
+# Schema 17 kept one TOC per disc; a playlist can be burned more than once (another machine, another gap setting), and
+# each real disc has its own TOC, so a disc has a list: every TOC known to belong to a physical copy of it, `source`
+# 'burn' (read back right after a burn) or 'manual' (read in the TOC Manager), each with the TOC planned when it was
+# recorded (an edited disc no longer matches it, and the record is then ignored). One row per (disc, actual TOC).
+# `enabled` 0: kept in the list but not used by Sync (a TOC that is wrong or out of date).
+_SCHEMA_V18 = """
+CREATE TABLE disc_toc (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    disc_id INTEGER NOT NULL REFERENCES disc(id) ON DELETE CASCADE,
+    planned TEXT NOT NULL,
+    actual TEXT NOT NULL,
+    source TEXT NOT NULL CHECK (source IN ('burn', 'manual')),
+    saved_at TEXT NOT NULL,
+    enabled INTEGER NOT NULL DEFAULT 1,
+    UNIQUE (disc_id, actual)
+);
+INSERT INTO disc_toc (disc_id, planned, actual, source, saved_at)
+    SELECT disc_id, planned, actual, 'burn', saved_at FROM disc_burned_toc;
+DROP TABLE disc_burned_toc
+"""
+
 _MIGRATIONS = (
     _SCHEMA_V1, _SCHEMA_V2, _SCHEMA_V3, _SCHEMA_V4, _SCHEMA_V5, _migrate_to_v6,
     _SCHEMA_V7, _SCHEMA_V8, _SCHEMA_V9, _SCHEMA_V10, _SCHEMA_V11, _SCHEMA_V12,
-    _SCHEMA_V13, _SCHEMA_V14, _SCHEMA_V15, _SCHEMA_V16,
+    _SCHEMA_V13, _SCHEMA_V14, _SCHEMA_V15, _SCHEMA_V16, _SCHEMA_V17, _SCHEMA_V18,
 )  # fmt: skip
 
 MAX_CACHED_PREVIEWS = 20_000  # about 40 MB; past it the oldest are forgotten
 SCHEMA_VERSION = len(_MIGRATIONS)
+
+
+@dataclass(frozen=True)
+class KnownToc:
+    """A TOC recorded for a disc: what the drive read from a physical copy, with the TOC planned at the time."""
+
+    id: int
+    planned: tuple[list[int], int]
+    actual: tuple[list[int], int]
+    source: str  # 'burn' (read back after a burn) or 'manual' (TOC Manager)
+    saved_at: str
+    enabled: bool = True  # False: kept, but Sync ignores it
+
+
+def _toc_json(toc: tuple[Sequence[int], int]) -> str:
+    return json.dumps([list(toc[0]), toc[1]])
+
+
+def _toc_from_json(text: str) -> tuple[list[int], int]:
+    starts, lead_out = json.loads(text)
+    return [int(n) for n in starts], int(lead_out)
 
 
 def _now() -> str:
@@ -1888,6 +1944,61 @@ class Library:
             self._conn.execute(
                 "UPDATE disc SET last_burned_at = ? WHERE id = ?", (when, disc_id)
             )
+
+    def add_disc_toc(
+        self,
+        disc_id: int,
+        planned: tuple[Sequence[int], int],
+        actual: tuple[Sequence[int], int],
+        source: str = "burn",
+    ) -> None:
+        """Record a TOC a physical copy of the disc has (read from the drive), beside the TOC planned for the disc now.
+
+        The same TOC again just refreshes its record. Records made for a different plan are dropped: the disc has
+        been edited since, so they describe discs that are no longer this one."""
+        self._disc_row(disc_id)
+        was, now = _toc_json(planned), _toc_json(actual)
+        with self._conn:
+            self._conn.execute(
+                "DELETE FROM disc_toc WHERE disc_id = ? AND planned != ?",
+                (disc_id, was),
+            )
+            self._conn.execute(
+                "INSERT INTO disc_toc (disc_id, planned, actual, source, saved_at) VALUES (?, ?, ?, ?, ?)"
+                " ON CONFLICT (disc_id, actual) DO UPDATE SET planned = excluded.planned,"
+                " source = excluded.source, saved_at = excluded.saved_at, enabled = 1",
+                (disc_id, was, now, source, _now()),
+            )
+
+    def set_disc_toc_enabled(self, toc_id: int, enabled: bool) -> None:
+        """Switch a recorded TOC on or off: Sync ignores one that is off (wrong, or out of date), and it stays listed."""
+        with self._conn:
+            self._conn.execute(
+                "UPDATE disc_toc SET enabled = ? WHERE id = ?", (int(enabled), toc_id)
+            )
+
+    def remove_disc_toc(self, toc_id: int) -> None:
+        with self._conn:
+            self._conn.execute("DELETE FROM disc_toc WHERE id = ?", (toc_id,))
+
+    def disc_tocs(self, disc_id: int) -> list[KnownToc]:
+        """Every TOC recorded for the disc, newest first (whether or not it still matches the disc: `planned` says)."""
+        rows = self._conn.execute(
+            "SELECT id, planned, actual, source, saved_at, enabled FROM disc_toc WHERE disc_id = ?"
+            " ORDER BY saved_at DESC, id DESC",
+            (disc_id,),
+        ).fetchall()
+        return [
+            KnownToc(
+                r["id"],
+                _toc_from_json(r["planned"]),
+                _toc_from_json(r["actual"]),
+                r["source"],
+                r["saved_at"],
+                bool(r["enabled"]),
+            )
+            for r in rows
+        ]
 
     def duplicate_disc(self, disc_id: int, name: str | None = None) -> int:
         """A copy of a disc: its tracks (with any CD text edits), size, gaps and folder.

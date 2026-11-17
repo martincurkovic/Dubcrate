@@ -67,6 +67,7 @@ from .models import _disc_icon, _folder_icon
 from .source_tabs import explorer_glyph, sd_card_glyph
 from .tasks import TaskError, run_async
 from .tick_header import TickHeader
+from .toc_manager_dialog import TocManagerDialog
 from .track_browser import TrackBrowser, unsized
 
 log = logging.getLogger(__name__)
@@ -121,6 +122,11 @@ def confirmation_text(
         lines.append(
             f"{left_out} cue{'s' if left_out != 1 else ''} won't fit (the player holds "
             f"{cc.MAX_CUES} per disc) and will be left out."
+        )
+    if others := sum(len(s.extra_plans) for s in surveys if s.writable):
+        lines.append(
+            f"The same cues are written for {others} other TOC{'s' if others != 1 else ''} "
+            "recorded for these discs (other copies of them)."
         )
     return lines[0] + ("\n\n" + "\n".join(lines[1:]) if lines[1:] else "")
 
@@ -600,6 +606,7 @@ class SyncView(QWidget):
             lambda _path: False
         )  # (a card plugged in, not a folder)
         self._writing = False
+        self._toc_dialog: TocManagerDialog | None = None
         self._card_path: Path | None = None
         self._card: tuple[cc.IndexFile, Mapping[str, cc.TrackFile | None]] | None = None
         self._card_note = ""  # why the card couldn't be read, if it couldn't
@@ -1048,7 +1055,19 @@ class SyncView(QWidget):
             "Clear Selection", lambda: self._tick_all(Qt.CheckState.Unchecked)
         )
         clear.setEnabled(bool(self.ticked_ids()))
+        menu.addSeparator()
+        toc = menu.addAction("TOC Manager…", self.open_toc_manager)
+        toc.setEnabled(self._current_disc_id() is not None)
         return menu
+
+    def open_toc_manager(self, disc_id: int | None = None) -> None:
+        """The TOC Manager for a disc (the picked one by default); the discs are looked at again when it changes."""
+        disc_id = disc_id if disc_id is not None else self._current_disc_id()
+        if disc_id is None:
+            return
+        self._toc_dialog = TocManagerDialog(self._lib, disc_id, self)
+        self._toc_dialog.changed.connect(self.refresh)
+        self._toc_dialog.open()
 
     def import_from_card(self) -> None:
         """Find what changed on the card that Dubcrate doesn't have (cues and loops set on the player, and, after a
@@ -1219,7 +1238,7 @@ class SyncView(QWidget):
         )
         if not ask_sync_confirmation(self, text):
             return
-        requests = [s.input.request for s in surveys if s.input.request is not None]
+        requests = [r for s in surveys for r in s.input.all_requests()]
         backup_dir = self._backup_dir
         self._set_writing(True)
         self.subtitle.setText("Writing to the card…")

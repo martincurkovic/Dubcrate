@@ -27,6 +27,10 @@ from dubcrate.library.cue_edits import with_edits
 from dubcrate.library.models import DiscEntry, DiscSummary, Track
 from dubcrate.library.rekordbox import RekordboxError, read_cues
 
+Toc = tuple[
+    list[int], int
+]  # a disc's track starts and its lead-out, in absolute frames
+
 
 @dataclass
 class DiscInput:
@@ -43,6 +47,13 @@ class DiscInput:
     starts: list[int] = field(
         default_factory=list
     )  # where each track starts on the disc, absolute frames
+    alternates: list[DiscRequest] = field(
+        default_factory=list
+    )  # the same cues for the disc's other known TOCs (other physical copies of it)
+
+    def all_requests(self) -> list[DiscRequest]:
+        """What a sync writes for this disc: the request, then one for each other TOC it is known to have."""
+        return [self.request, *self.alternates] if self.request else []
 
 
 def disc_toc(
@@ -52,6 +63,21 @@ def disc_toc(
     return cc.toc_from_lengths(
         [e.track.length_sectors for e in entries], pregap_sectors
     )
+
+
+def known_tocs(
+    lib: Library, disc_id: int, entries: Sequence[DiscEntry], pregap_sectors: int = 0
+) -> list[Toc]:
+    """The TOCs recorded for physical copies of this disc (read back after a burn, or in the TOC Manager), newest
+    first, leaving out any switched off in the TOC Manager and any made for a different plan (a disc edited since is no
+    longer the disc they were read from).
+
+    A drive can lay a disc out a frame differently from the plan, and the card knows a disc by its TOC, so these are
+    what Sync writes to; the plan's own TOC is used only when there are none."""
+    planned = disc_toc(entries, pregap_sectors)
+    return [
+        k.actual for k in lib.disc_tocs(disc_id) if k.enabled and k.planned == planned
+    ]
 
 
 def toc_differences(
@@ -151,7 +177,13 @@ def prepare_disc(
             return result
         if not unmeasured:  # (an estimate would only look like a difference)
             planned = disc_toc(entries, summary.pregap_sectors)
-            if differences := toc_differences(planned, (starts, lead_out)):
+            known = known_tocs(lib, disc_id, entries, summary.pregap_sectors)
+            drive = (list(starts), lead_out)
+            if drive in [(list(k[0]), k[1]) for k in (planned, *known)]:
+                differences = []
+            else:
+                differences = toc_differences(known[0] if known else planned, drive)
+            if differences:
                 result.warnings.append(
                     "The disc in the drive isn't the disc as planned now ("
                     + "; ".join(differences[:3])
@@ -166,7 +198,8 @@ def prepare_disc(
         )
         return result
     else:
-        starts, lead_out = disc_toc(entries, summary.pregap_sectors)
+        known = known_tocs(lib, disc_id, entries, summary.pregap_sectors)
+        starts, lead_out = known[0] if known else disc_toc(entries, summary.pregap_sectors)  # fmt: skip
     result.starts = list(starts)
     cues_by_track: dict[int, Sequence[Cue]] = {}
     for entry in entries:
@@ -192,6 +225,18 @@ def prepare_disc(
     )
     if toc is not None:
         return result
+    seen = {result.request.disc_id.key}
+    for other_starts, other_end in known[
+        1:
+    ]:  # (cue positions are absolute: map them again for each TOC)
+        other_id = cc.DiscId.from_toc(other_starts, other_end)
+        if other_id.key in seen:
+            continue
+        seen.add(other_id.key)
+        again = map_cues(cues_by_track, other_starts, other_end)
+        result.alternates.append(DiscRequest(other_id, again.cues, [], wanted_waves))
+    if known:
+        return result
     if summary.pregap_sectors:
         result.warnings.append(
             "This disc has gaps between tracks: the card entry assumes a TOC that has not been "
@@ -216,6 +261,9 @@ class DiscSurvey:
     path: str  # "Folder / Disc", as the label window names it
     input: DiscInput
     plan: DiscPlan | None
+    extra_plans: list[DiscPlan] = field(
+        default_factory=list
+    )  # the plans for the disc's other known TOCs (`DiscInput.alternates`)
 
     @property
     def to_add(self) -> int:
@@ -231,9 +279,10 @@ class DiscSurvey:
     @property
     def writable(self) -> bool:
         """Whether a sync would write something for this disc."""
-        return self.plan is not None and (
-            self.plan.status in (Status.NEW_DISC, Status.NEW_FILE, Status.UPDATE)
-            or bool(self.plan.waves_pending)
+        return self.plan is not None and any(
+            p.status in (Status.NEW_DISC, Status.NEW_FILE, Status.UPDATE)
+            or bool(p.waves_pending)
+            for p in (self.plan, *self.extra_plans)
         )
 
     @property
@@ -261,7 +310,7 @@ class DiscSurvey:
             case Status.UPDATE:
                 return n
             case Status.IN_SYNC:
-                return "In sync"
+                return "In sync" if not self.writable else "Other TOC versions to add"
             case _:
                 return "No rekordbox cues"
 
@@ -277,6 +326,9 @@ class DiscSurvey:
             )
         if self.plan is not None:
             out += describe_plan(self.plan)
+        for n, extra in enumerate(self.extra_plans, 2):
+            out.append(f"  for the disc's TOC no. {n} (another copy of it):")
+            out += describe_plan(extra)
         return out
 
 
@@ -405,8 +457,16 @@ def survey_discs(
             found = DiscInput(
                 disc.id, disc.name, problems=[f"Couldn't read rekordbox's cues: {exc}"]
             )
-        plan = None
+        plans: list[DiscPlan] = []
         if card is not None and found.request is not None:
-            plan = plan_card(card[0], card[1], [found.request]).discs[0]
-        surveys.append(DiscSurvey(disc, paths.get(disc.id, disc.name), found, plan))
+            plans = plan_card(card[0], card[1], found.all_requests()).discs
+        surveys.append(
+            DiscSurvey(
+                disc,
+                paths.get(disc.id, disc.name),
+                found,
+                plans[0] if plans else None,
+                plans[1:],
+            )
+        )
     return surveys

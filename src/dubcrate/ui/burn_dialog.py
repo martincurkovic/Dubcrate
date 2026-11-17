@@ -667,6 +667,8 @@ class BurnDialog(QDialog):
             logger.info("burn: %s", text)
             emit(text)
 
+        read_back: list = []  # (planned, actual) TOC of the burned disc, if it was read
+
         @_expected_failures
         def work():
             with TemporaryDirectory(prefix="dubcrate-burn-") as tmp:
@@ -687,12 +689,15 @@ class BurnDialog(QDialog):
                             [t.sectors for t in rendered.disc.tracks],
                             plan.pregap_sectors,
                             say,
+                            record=lambda planned, actual: read_back.append(
+                                (planned, actual)
+                            ),
                         )
-            return rendered.lengths, rendered.waveforms
+            return rendered.lengths, rendered.waveforms, (read_back or [None])[0]
 
         run_async(
             work,
-            lambda found: self._burn_done(found[0], found[1]),
+            lambda found: self._burn_done(*found),
             self._burn_failed,
             on_cancel=lambda _partial: self._burn_cancelled(),
         )
@@ -731,6 +736,7 @@ class BurnDialog(QDialog):
         self,
         lengths: dict[int, int],
         waveforms: dict[int, list[int]] | None = None,
+        read_back: tuple | None = None,
     ) -> None:
         # what the render found out stays: the exact lengths, and the waveforms Sync would write
         remember_rendered(self._lib, lengths, waveforms or {})
@@ -739,6 +745,8 @@ class BurnDialog(QDialog):
         self._lib.mark_burned(
             self._disc_id
         )  # a note on the disc: it stays fully editable
+        if read_back is not None:  # the card knows the disc by the TOC the drive made
+            self._lib.add_disc_toc(self._disc_id, *read_back, source="burn")
         self._finished = True
         self._append("Done. The disc is marked as burned.")
         self.status_label.setText("Burn finished. The disc is marked as burned.")
