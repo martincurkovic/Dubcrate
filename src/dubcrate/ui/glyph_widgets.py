@@ -55,6 +55,38 @@ def close_glyph(p: QPainter, box: QRectF, colour: QColor) -> None:
     )
 
 
+def up_glyph(p: QPainter, box: QRectF, colour: QColor) -> None:
+    """A chevron pointing up: the previous match."""
+    u = box.width() / 16
+    p.setPen(_pen(colour, 1.8))
+    p.setBrush(Qt.BrushStyle.NoBrush)
+    p.drawPolyline(
+        QPolygonF(
+            [
+                QPointF(box.left() + 3 * u, box.top() + 10 * u),
+                QPointF(box.left() + 8 * u, box.top() + 5 * u),
+                QPointF(box.left() + 13 * u, box.top() + 10 * u),
+            ]
+        )
+    )
+
+
+def down_glyph(p: QPainter, box: QRectF, colour: QColor) -> None:
+    """A chevron pointing down: the next match."""
+    u = box.width() / 16
+    p.setPen(_pen(colour, 1.8))
+    p.setBrush(Qt.BrushStyle.NoBrush)
+    p.drawPolyline(
+        QPolygonF(
+            [
+                QPointF(box.left() + 3 * u, box.top() + 6 * u),
+                QPointF(box.left() + 8 * u, box.top() + 11 * u),
+                QPointF(box.left() + 13 * u, box.top() + 6 * u),
+            ]
+        )
+    )
+
+
 def ink(selected: bool = False, enabled: bool = True) -> QColor:
     """The colour for text and glyphs: on a picked row System 6 inverts (its selection is black)."""
     palette = theme.current_palette()

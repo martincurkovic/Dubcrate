@@ -65,20 +65,16 @@ class FormatCardDialog(QDialog):
         self._done = False
         self._serial = 0  # a newer look at the disks makes an older one's answer stale
         self.setWindowTitle("Format a Card")
-        self.setMinimumWidth(480)
+        self.setMinimumSize(520, 400)
 
         layout = QVBoxLayout(self)
         layout.setSpacing(8)
-        heading = QLabel("Format an SD card for the CDJ-1000MK3")
-        font = heading.font()
-        font.setBold(True)
-        heading.setFont(font)
-        layout.addWidget(heading)
         intro = QLabel(
-            "Sets a blank card up from scratch, so you can put cues and waveforms on it before it has "
-            "ever been in a player: it erases the card, makes it FAT16 named DISK_IMG and adds the "
-            "PIONEER folder the player keeps its files in.\n\n"
-            "Only plain SD cards of 2 GB or less will do: the CDJ-1000MK3 can't read SDHC or SDXC cards."
+            "Initialise card for use in a CDJ-1000MK3. Only plain SD cards of 2GB or less will work."
+        )
+        intro.setToolTip(
+            "Erases the card, makes it FAT16 named DISK_IMG and adds the PIONEER folder the player keeps its"
+            " files in. The CDJ-1000MK3 can't read SDHC or SDXC cards."
         )
         intro.setWordWrap(True)
         layout.addWidget(intro)
@@ -177,7 +173,7 @@ class FormatCardDialog(QDialog):
             self.status.setText(problem)
         elif not disks:
             self.status.setText(
-                "No removable disks found. Put the card in its reader (or the computer's card slot) and press Refresh."
+                "No removable disks found. Put the card in its reader and press Refresh."
             )
         else:
             n = len(usable)
@@ -237,8 +233,8 @@ class FormatCardDialog(QDialog):
             self.understand.setChecked(False)
             self.status.setText("")
             self.result.setText(
-                f"Done. “{found.volume.name}” is ready: it is formatted and has its PIONEER folder. "
-                "Sync cues and waveforms to it now, and eject it before you take it out."
+                f"Done. “{found.volume.name}” is ready to sync to. "
+                "Eject it before you take it out."
             )
             self._update()
             self.formatted.emit(Path(found.volume))

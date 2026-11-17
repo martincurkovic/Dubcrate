@@ -171,7 +171,7 @@ class ArtworkView(QWidget):
 
     The placeholder is painted, not an image file: a music note on a plain square in the theme's colours."""
 
-    SIZE = 104
+    SIZE = 160
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -233,6 +233,9 @@ def _list() -> QTreeWidget:
     tree.setHeaderHidden(True)
     tree.setRootIsDecorated(False)
     tree.setUniformRowHeights(True)
+    tree.setAlternatingRowColors(
+        True
+    )  # (zebra rows: a faint stripe tells one cue from the next)
     tree.setSelectionMode(QTreeWidget.SelectionMode.NoSelection)
     tree.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
     tree.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Expanding)
@@ -275,21 +278,21 @@ class SidePanel(QWidget):
         )
         self.file = QLabel()
         self.file.setObjectName("mutedLabel")
+        self.file.setAlignment(
+            Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
+        )
         self.art = ArtworkView()
-        details = QVBoxLayout()
-        details.setSpacing(4)
-        details.addWidget(self.rating)
-        details.addStretch(1)
-        details.addWidget(self.file)
-        top = QHBoxLayout()
-        top.setSpacing(10)
-        top.addWidget(self.art, 0, Qt.AlignmentFlag.AlignTop)
-        top.addLayout(details, 1)
+        # the cover at the top and big, the stars and file name under it, then the comment
         info = InfoFrame()
         box = QVBoxLayout(info)
         box.setContentsMargins(10, 10, 10, 10)
         box.setSpacing(8)
-        box.addLayout(top)
+        box.addWidget(self.art, 0, Qt.AlignmentFlag.AlignHCenter)
+        facts = QHBoxLayout()  # (stars at the left, the file at the right: one line, so the cover can be big)
+        facts.setSpacing(8)
+        facts.addWidget(self.rating)
+        facts.addWidget(self.file, 1)
+        box.addLayout(facts)
         box.addWidget(self.comment, 1)
         for label in (self.rating, self.comment, self.file):
             label.setMinimumWidth(0)

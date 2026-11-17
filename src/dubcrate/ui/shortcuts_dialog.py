@@ -27,7 +27,7 @@ EXTRA_SHORTCUTS: tuple[tuple[str, str, str], ...] = (
     ("Playing", "Preview a track", "Double-click it"),
     ("Playing", "Scratch", "Drag the zoomed waveform"),
     ("Track lists", "Load the highlighted track into the player", "Return"),
-    ("Track lists", "Take the selected tracks off the disc", "Delete"),
+    ("Track lists", "Take the selected tracks off the disc", "Delete or Backspace"),
     ("Track lists", "Edit the artist or title written on the CD", "Double-click it"),
     ("Discs", "Rename a disc or folder in place", "Double-click its name"),
     ("Discs", "Add tracks to a disc or folder", "Drag them onto it"),
@@ -69,6 +69,7 @@ class ShortcutsDialog(QDialog):
     def __init__(self, window: QMainWindow, parent: QWidget | None = None):
         super().__init__(parent or window)
         self.setWindowTitle("Keyboard Shortcuts")
+        self.setMinimumSize(480, 360)
         self.resize(540, 600)
         self.rows = [*menu_shortcuts(window), *EXTRA_SHORTCUTS]
 
@@ -84,6 +85,7 @@ class ShortcutsDialog(QDialog):
         self.tree.setUniformRowHeights(True)
         self.tree.setSelectionMode(QTreeWidget.SelectionMode.NoSelection)
         self.tree.setAlternatingRowColors(False)
+        self.tree.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         header = self.tree.header()
         header.setStretchLastSection(False)
         header.setSectionResizeMode(0, header.ResizeMode.Stretch)

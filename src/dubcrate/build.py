@@ -86,8 +86,10 @@ def media_problems(
         return ["no disc in the drive"]
     free = media.free_sectors
     if free and used_sectors > free:
-        holds, needs = format_amount(free, kind), format_amount(used_sectors, kind)
-        return [f"the disc in the drive holds {holds} but this disc needs {needs}"]
+        over = format_amount(used_sectors - free, kind)
+        return [
+            f"disc over capacity by {over}, please use a larger disc or remove tracks to fit"
+        ]
     return []
 
 
@@ -149,6 +151,9 @@ class BurnPlan:
     mp3_bitrate: int | None = None
     dirs: tuple[PlanDir, ...] = ()  # parents before their children
     levels_note: str = ""  # what level matching did, in words ("" when it is off)
+    levels_short: str = (
+        ""  # the same without the target, for the burn window's one line
+    )
 
 
 @dataclass(frozen=True)
@@ -229,8 +234,10 @@ def apply_levels(
     listed = [gains[t.track_id] for t in plan.tracks if t.track_id in gains]
     what = "Peak-normalised" if target.peak else "Levels matched"
     to = f"to {PEAK_CEILING_DB:g} dBTP" if target.peak else f"to {target}"
-    note = f"{what} {to}: {describe_gains(listed, unmeasured, target)}"
-    return replace(plan, tracks=tuple(tracks), levels_note=note)
+    gains_text = describe_gains(listed, unmeasured, target)
+    note = f"{what} {to}: {gains_text}"
+    short = gains_text[:1].upper() + gains_text[1:]
+    return replace(plan, tracks=tuple(tracks), levels_note=note, levels_short=short)
 
 
 def render_plan(

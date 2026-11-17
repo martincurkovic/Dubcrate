@@ -250,11 +250,11 @@ def test_a_disc_that_holds_enough_or_that_the_drive_cant_describe_is_fine():
     assert media_problems(300_000, MediaInfo(present=True, free_sectors=0)) == []
 
 
-def test_a_disc_too_small_for_the_audio_is_refused_with_both_lengths():
+def test_a_disc_too_small_for_the_audio_is_refused_with_how_far_over_it_is():
     [problem] = media_problems(
         350_000, MediaInfo(present=True, blank=True, free_sectors=333_000)
     )
-    assert "holds 74:00:00" in problem and "needs 77:46:50" in problem
+    assert "disc over capacity by 03:46:50" in problem and "larger disc" in problem
 
 
 def test_no_disc_in_the_drive_is_a_problem_but_unknown_is_not():
@@ -276,7 +276,7 @@ def test_cli_refuses_to_burn_onto_a_disc_that_is_too_small(
     monkeypatch.setattr("dubcrate.cli_discs.get_burner", lambda _name: burner)
     assert run_cli(tmp_path, "burn", "1", "--yes") == 1
     err = capsys.readouterr().err
-    assert "burn failed" in err and "the disc in the drive holds" in err
+    assert "burn failed" in err and "disc over capacity by" in err
     assert burner.burned == []
     with Library.open(tmp_path / "lib.db") as lib:
         assert lib.disc(1).last_burned_at is None

@@ -432,7 +432,6 @@ def _burn(ctx):
     dialog.levels_combo.setCurrentIndex(dialog.levels_combo.findData("-14"))
     dialog.levels_check.setChecked(True)
     ctx.wait_for(lambda: not dialog._measuring)
-    dialog.confirm_check.setChecked(True)
     ctx.settle(6)
     return dialog
 

@@ -14,6 +14,10 @@ from . import theme
 from .player_controls import PLAY_RING, mix
 
 SKIP_SIZE = 28
+SKIP_WIDTH, SKIP_HEIGHT = (
+    50,
+    30,
+)  # previous and next: the same tiles as the beat jump buttons
 PLAY_SIZE = 34
 KINDS = ("previous", "play", "next")
 
@@ -25,8 +29,11 @@ class TransportButton(QAbstractButton):
         super().__init__(parent)
         self.kind = kind
         self._playing = False
-        size = size or (PLAY_SIZE if kind == "play" else SKIP_SIZE)
-        self.setFixedSize(QSize(size, size))
+        if kind == "play" or size:
+            size = size or PLAY_SIZE
+            self.setFixedSize(QSize(size, size))
+        else:
+            self.setFixedSize(QSize(SKIP_WIDTH, SKIP_HEIGHT))
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setFocusPolicy(Qt.FocusPolicy.TabFocus)
         self.setAttribute(Qt.WidgetAttribute.WA_Hover)
@@ -93,7 +100,7 @@ class TransportButton(QAbstractButton):
                 painter.setPen(QPen(QColor(palette["border_disabled"]), 2.5))
             painter.drawEllipse(box.adjusted(1.2, 1.2, -1.2, -1.2))
         else:
-            radius = 0 if palette.get("hard_edges") else 7
+            radius = 0 if palette.get("hard_edges") else 4
             painter.drawRoundedRect(box, radius, radius)
         painter.setPen(Qt.PenStyle.NoPen)
         painter.setBrush(glyph)
@@ -102,7 +109,7 @@ class TransportButton(QAbstractButton):
     def _glyph(self, box: QRectF) -> QPainterPath:
         """The symbol, centred in `box` and about 40% of its width."""
         cx, cy = box.center().x(), box.center().y()
-        unit = box.width() / 10  # (a 28 px button has a 2.8 px unit)
+        unit = min(box.width(), box.height()) / 10  # (a 28 px button has a 2.8 px unit)
         path = QPainterPath()
         if self.kind == "play":
             if self._playing:  # pause: two bars

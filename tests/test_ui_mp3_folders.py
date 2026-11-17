@@ -235,7 +235,13 @@ def test_clicking_a_folder_shows_its_tracks_and_the_bar_stays_the_whole_disc(mp3
     assert shown_titles(win) == ["Song 2", "Song 3"]
     assert win.disc_view.model.index(1, 0).data() == "2"  # numbered within the folder
     assert win.disc_view.crumb_names() == ["Set", "House"]
-    assert "5 tracks  ·  2 here" in win.disc_view.count.text()
+    assert "5 tracks" in win.disc_view.count.text()
+    assert "here" not in win.disc_view.count.text()
+    names = [
+        win.disc_view.folders.item(i).text()
+        for i in range(win.disc_view.folders.count())
+    ]
+    assert names == ["Deep"]  # (the folders inside House: click one to open it)
     assert len(win.disc_view.summary.bar.spans) == 5  # the whole disc
     win.disc_tree.setCurrentIndex(index(win, ("disc_dir", disc, deep)))
     assert win.disc_view.crumb_names() == ["Set", "House", "Deep"]
@@ -623,3 +629,23 @@ def test_a_disc_converted_with_too_many_files_for_its_root_says_so(window, monke
     lib.move_to_dir(audio, range(300), folder)
     win.disc_view.set_disc(audio)
     assert "at most 999 files" not in win.disc_view.summary.label.text()
+
+
+def test_a_discs_root_lists_its_folders_in_the_middle_and_clicking_one_opens_it(window):
+    win, lib = window
+    disc = lib.create_disc("Car USB", kind="mp3")
+    lib.create_disc_dir(disc, "UK Garage")
+    lib.create_disc_dir(disc, "House")
+    win.open_disc(disc)
+    folders = win.disc_view.folders
+    assert [folders.item(i).text() for i in range(folders.count())] == [
+        "House",
+        "UK Garage",
+    ]
+    assert not folders.isHidden()
+    folders.itemClicked.emit(folders.item(1))
+    assert win.disc_view.crumb_names() == ["Car USB", "UK Garage"]
+    assert folders.isHidden()  # (nothing inside that one)
+    audio = lib.create_disc("Plain")
+    win.open_disc(audio)
+    assert folders.isHidden()

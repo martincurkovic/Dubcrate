@@ -110,7 +110,7 @@ def test_formatting_runs_the_formatter_on_the_picked_card_with_the_disk_as_liste
         device == "disk4" and expect == disk()
     )  # what was listed, so a swapped card is caught
     assert told == [Path("/Volumes/DISK_IMG")]
-    assert "is ready" in dialog.result.text() and "PIONEER" in dialog.result.text()
+    assert "is ready" in dialog.result.text() and "Eject" in dialog.result.text()
     assert (
         dialog.close_button.text() == "Close"
         and not dialog.format_button.isVisibleTo(dialog)

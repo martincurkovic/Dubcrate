@@ -21,7 +21,7 @@ from dubcrate.card_import import (
 )
 from dubcrate.library import Library, TrackRecord
 from dubcrate.ui import preview, sync_view
-from dubcrate.ui.card_import_dialog import CardImportDialog, clock, describe
+from dubcrate.ui.card_import_dialog import ROLE, CardImportDialog, clock, describe
 from dubcrate.ui.player_strip import PlayerStrip
 from dubcrate.ui.sync_view import SyncView
 
@@ -122,10 +122,9 @@ def test_unticking_a_change_a_track_or_a_disc_leaves_it_out(qapp):
     assert not dialog.import_button.isEnabled()
 
 
-def test_the_notes_say_what_cannot_be_deleted_and_when_deletions_are_noticed(qapp):
+def test_the_note_says_when_deletions_are_noticed(qapp):
     dialog = CardImportDialog(findings(baseline=True))
-    assert "1 cue deleted on the player can't be deleted here" in dialog.notes.text()
-    assert "next sync" not in dialog.notes.text()
+    assert dialog.notes.text() == ""  # (what can't be deleted here is not spelled out)
     plain = CardImportDialog(findings(baseline=False))
     assert "Deletions and moves are noticed from the next sync on" in plain.notes.text()
 
@@ -305,3 +304,18 @@ def test_it_waits_while_rekordbox_cues_are_still_being_read(controller, monkeypa
     assert controller.import_memory([ImportChoice(t, add=[5000])]) is None
     assert "still being read" in said[0]
     assert lib.memory_cues(t.path) is None
+
+
+def test_the_header_box_ticks_and_unticks_every_change(qapp):
+    dialog = CardImportDialog(findings(baseline=True))
+    total = sum(1 for leaf in dialog._rows() if leaf.data(0, ROLE) is not None)
+    header = dialog.tick_header
+    assert dialog.intro.text() == "Edited cues and loops. Check which ones to import."
+    dialog._tick_all()  # (some rows start unticked)
+    assert dialog._count() == total
+    assert header._state == Qt.CheckState.Checked
+    dialog._tick_all()
+    assert dialog._count() == 0 and header._state == Qt.CheckState.Unchecked
+    assert not dialog.import_button.isEnabled()
+    dialog._tick_all()
+    assert dialog._count() == total and dialog.import_button.isEnabled()

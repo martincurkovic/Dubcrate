@@ -1,7 +1,9 @@
-"""Burn a planned disc: check the drive and the disc in it, confirm, watch it go.
+"""Burn a planned disc: check the drive and the disc in it, watch it go.
 
-The window never burns by itself. A burn needs the user to tick "a blank CD-R is
-in the drive" and press Burn, and ticking is asked for again after every attempt.
+The window never burns by itself: a burn starts only when Burn is pressed (never by
+Return), and after any attempt the drive is looked at again before it can be pressed
+once more. With `export_only` the same window writes the disc as files instead (Disc >
+Export Disc as Files…): no drive, no speed, an Export… button in place of Burn.
 
 Threading: rendering and burning run on a worker (`run_async`) and never touch
 the library, which belongs to the GUI thread. The disc is snapshotted first
@@ -107,18 +109,17 @@ def describe_media(
     drive = media.drive or "The drive"
     if media.present is False:
         return f"{drive}: no disc inside.", "critical"
-    parts = [drive]
     if media.blank is False:
-        parts.append("this disc doesn't look blank")
-    elif media.blank:
+        too_small = bool(media.free_sectors) and planned_sectors > media.free_sectors
+        return f"{drive}. This disc isn't blank", "critical" if too_small else "warning"
+    parts = [drive]
+    if media.blank:
         parts.append("blank disc")
     if media.free_sectors:
         parts.append(f"holds {format_amount(media.free_sectors, kind)}")
         level = "critical" if planned_sectors > media.free_sectors else "normal"
     else:
         parts.append("couldn't read the disc's size, so going by the planned size")
-        level = "warning"
-    if media.blank is False and level == "normal":
         level = "warning"
     return " · ".join(parts), level
 
@@ -139,15 +140,19 @@ class BurnDialog(QDialog):
         disc_id: int,
         parent=None,
         burner_factory: BurnerFactory | None = None,
+        export_only: bool = False,
     ):
         super().__init__(parent)
+        self._export_only = export_only
         self._lib = lib
         self._disc_id = disc_id
         self._burner_factory = burner_factory or _backend
         # Whether this computer can burn at all (no cdrdao, or not a Mac): said up front, not when
         # the worker fails. A burner a test hands in is taken as able.
         self._backend_problem = (
-            "" if burner_factory else (backend_problem(default_backend()) or "")
+            ""
+            if burner_factory or export_only
+            else (backend_problem(default_backend()) or "")
         )
         self._burner: Burner | None = None
         self._media: MediaInfo | None = None
@@ -161,8 +166,8 @@ class BurnDialog(QDialog):
             None  # set while a burn is being prepared, for Cancel
         )
         self._finished = False  # a real burn is done: this disc is no longer blank
-        self.setWindowTitle("Burn Disc")
-        self.setMinimumWidth(520)
+        self.setWindowTitle("Export Disc" if export_only else "Burn Disc")
+        self.setMinimumWidth(560)
 
         summary = lib.disc(disc_id)
         self._used = summary.used_sectors
@@ -185,7 +190,7 @@ class BurnDialog(QDialog):
             text = (
                 f"MP3 CD · {tracks} · {format_amount(summary.used_sectors, 'mp3')}"
                 f" of {format_amount(summary.capacity_sectors, 'mp3')}"
-                f" · constant bitrate, up to {summary.mp3_bitrate} kbit/s"
+                f" · {summary.mp3_bitrate}kbps CBR"
             )
         else:
             gap = (
@@ -199,6 +204,7 @@ class BurnDialog(QDialog):
             )
         self.disc_label = QLabel(text)
         self.disc_label.setObjectName("mutedLabel")
+        self.disc_label.setWordWrap(True)
 
         self.problems_label = QLabel()
         self.problems_label.setObjectName("usageLabel")
@@ -208,9 +214,12 @@ class BurnDialog(QDialog):
         self.drive_label = QLabel()
         self.drive_label.setObjectName("usageLabel")
         self.drive_label.setWordWrap(True)
-        self.check_button = QPushButton("Check Drive")
+        # (only offered when the drive has a problem to look at again: no disc, not blank, not found)
+        self.check_button = QPushButton("Check Again")
         self.check_button.setAutoDefault(False)
+        self.check_button.setToolTip("Look at the drive and the disc in it again")
         self.check_button.clicked.connect(self.check_drive)
+        self.check_button.hide()
         # the drive to burn on: only shown when the burner sees two or more (one drive: nothing to choose)
         self.drive_combo = QComboBox()
         self.drive_combo.setToolTip(
@@ -232,10 +241,6 @@ class BurnDialog(QDialog):
             f"Your default is {default}x (File > Settings > Burning)."
             " Changing it here affects this burn only."
         )
-        self.simulate_check = QCheckBox("Test only: don't write the disc (laser off)")
-        self.confirm_check = QCheckBox("A blank CD-R is in the drive")
-        self.confirm_check.toggled.connect(lambda _on: self._update())
-        self.simulate_check.toggled.connect(lambda _on: self._update())
 
         # Normalising the levels (audio CDs only; see loudness.py): on or off as the Settings say, per burn
         self.levels_check = QCheckBox("Normalise")
@@ -258,17 +263,16 @@ class BurnDialog(QDialog):
         levels_row.addWidget(self.levels_combo, 1)
 
         form = QFormLayout()
-        form.addRow("Speed:", self.speed_combo)
+        if not export_only:
+            form.addRow("Speed:", self.speed_combo)
         if self._has_levels:
             form.addRow("Levels:", levels_row)
             form.addRow(self.levels_label)
-        form.addRow(self.simulate_check)
-        form.addRow(self.confirm_check)
 
         self.log = QPlainTextEdit()
         self.log.setReadOnly(True)
         self.log.setMinimumHeight(140)
-        self.log.setPlaceholderText("Progress shows here once the burn starts.")
+        self.log.hide()  # (it has nothing to say until a burn or export starts)
         self._log.connect(self._append)
 
         self.status_label = QLabel()
@@ -289,6 +293,8 @@ class BurnDialog(QDialog):
             "Write the disc as files (WAVs and a cdrdao table of contents, or the MP3 folder)"
             " to burn with any other program"
         )
+        self.export_button.setVisible(export_only)
+        self.burn_button.setVisible(not export_only)
         self.export_button.clicked.connect(self.start_export)
         self.labels_button = QPushButton("Print Labels…")
         self.labels_button.setAutoDefault(False)
@@ -317,20 +323,21 @@ class BurnDialog(QDialog):
         self.cancel_burn_button.hide()
         self._writing.connect(self._writing_started)
         buttons = QHBoxLayout()
-        buttons.addWidget(self.export_button)
         buttons.addWidget(self.labels_button)
         buttons.addStretch(1)
         buttons.addWidget(self.cancel_levels_button)
         buttons.addWidget(self.cancel_burn_button)
         buttons.addWidget(self.close_button)
         buttons.addWidget(self.burn_button)
+        buttons.addWidget(self.export_button)
 
         layout = QVBoxLayout(self)
         layout.setSpacing(8)
         layout.addWidget(title)
         layout.addWidget(self.disc_label)
         layout.addWidget(self.problems_label)
-        layout.addLayout(drive_row)
+        if not export_only:
+            layout.addLayout(drive_row)
         layout.addLayout(form)
         layout.addWidget(self.log, 1)
         layout.addWidget(self.progress)
@@ -340,7 +347,7 @@ class BurnDialog(QDialog):
         self._update()
         if self._has_levels:
             self._apply_levels()  # (the Settings may have it on already)
-        if self._plan is not None and not self._backend_problem:
+        if self._plan is not None and not self._backend_problem and not export_only:
             self.check_drive()
 
     # -- state ------------------------------------------------------------
@@ -358,8 +365,6 @@ class BurnDialog(QDialog):
             problems.append(self._backend_problem)
         if self._levels_error:
             problems.append(self._levels_error)
-        if self._media_error:
-            problems.append(self._media_error)
         if self._media is not None:
             problems += media_problems(self._used, self._media, self._kind)
         return problems
@@ -373,57 +378,63 @@ class BurnDialog(QDialog):
             self._plan is not None
             and not problems
             and self._media is not None
-            and self.confirm_check.isChecked()
             and not working
             and not self._finished
         )
         self.burn_button.setEnabled(ready)
-        self.burn_button.setText(
-            "Test Burn" if self.simulate_check.isChecked() else "Burn"
-        )
-        for widget in (
-            self.speed_combo,
-            self.simulate_check,
-            self.confirm_check,
-            self.check_button,
-            self.levels_check,
-        ):
-            widget.setEnabled(not working and not self._finished)
+        idle = not working and not self._finished
+        for widget in (self.speed_combo, self.levels_check):
+            widget.setEnabled(idle and not self._backend_problem)
         self.levels_combo.setEnabled(
-            not working and not self._finished and self.levels_check.isChecked()
+            idle and not self._backend_problem and self.levels_check.isChecked()
         )
         self.close_button.setEnabled(not working)
-        self.drive_combo.setEnabled(not working and not self._finished)
+        self.drive_combo.setEnabled(idle)
         self.cancel_levels_button.setVisible(self._measuring)
         self.cancel_burn_button.setVisible(self._burn_cancel is not None)
         self.export_button.setEnabled(self._plan is not None and not working)
         self.labels_button.setVisible(self._finished)
         self.labels_button.setEnabled(not working)
+        again = False  # whether looking at the drive again could change what it says
         if self._backend_problem:
-            text, level = (
-                (
-                    "Dubcrate can't burn on this computer yet. Export… writes the disc as"
-                    " files that another burning program can burn."
-                ),
-                "critical",
+            text = (
+                "This computer can't burn discs. Use Disc > Export Disc as Files…"
+                " to burn it with another program."
             )
-            self.check_button.setEnabled(False)
+            level = "critical"
         elif self._plan is None:
-            text, level = (
-                "The drive isn't checked until the disc is ready to burn.",
-                "normal",
-            )
-            self.check_button.setEnabled(False)
+            text, level = "", "normal"
         elif self._media is None and not self._media_error:
             text, level = describe_media(None, self._used, self._kind)
         elif self._media is None:
-            text, level = "Couldn't reach the drive.", "critical"
+            text, level = self._media_error, "critical"
+            again = True
         else:
             text, level = describe_media(self._media, self._used, self._kind)
-        self._set_level(self.drive_label, text, level)
+            again = self._media.present is False or self._media.blank is False
+        if (
+            not self._export_only
+        ):  # (there the drive widgets are not in the window at all)
+            self.drive_label.setVisible(bool(text))
+            self.check_button.setVisible(again and idle)
+            self._set_level(self.drive_label, text, level)
+        self._grow_to_fit()
+
+    def _grow_to_fit(self) -> None:
+        """Make the window tall enough for what it says (a long list of problems, the log once a
+        burn starts): it grows when it has to and never shrinks under the user's hand."""
+        layout = self.layout()
+        if layout is None or not self.isVisible():
+            return
+        needed = layout.totalHeightForWidth(self.width())
+        if needed > self.height():
+            self.resize(self.width(), needed)
 
     def _append(self, text: str) -> None:
         self.log.appendPlainText(text)
+        if not self.log.isVisible():
+            self.log.show()
+            self._grow_to_fit()
 
     def _burner_instance(self) -> Burner:
         if self._burner is None:
@@ -533,7 +544,7 @@ class BurnDialog(QDialog):
             measured,
             loudness.preset_for(self.levels_combo.currentData()).target,
         )
-        note = self._plan.levels_note
+        note = self._plan.levels_short or self._plan.levels_note
         held = "held back" in note or bool(problems)
         self._say_levels(note, "warning" if held else "normal")
         for problem in problems:
@@ -613,21 +624,19 @@ class BurnDialog(QDialog):
         burner = self._burner_instance()
         media = self._media
         speed = self.speed_combo.currentData()
-        simulate = self.simulate_check.isChecked()
         # an audio burn keeps the disc in the drive so its table of contents can be checked against the
         # plan (burn_check), and ejects it itself afterwards
-        wants_check = not simulate and plan.kind != "mp3" and can_read_toc()
+        wants_check = plan.kind != "mp3" and can_read_toc()
         check = wants_check and self._is_first_drive()
         options = BurnOptions(
             speed=speed,
-            simulate=simulate,
             pregap_sectors=plan.pregap_sectors,
             eject=not check,
             device=self._device,
         )
         self.log.clear()
         self._append(
-            f"{'Test burn' if simulate else 'Burning'} “{plan.name}”"
+            f"Burning “{plan.name}”"
             f"{' (MP3 CD)' if plan.kind == 'mp3' else ''} at {speed}x"
         )
         if plan.levels_note:
@@ -638,8 +647,7 @@ class BurnDialog(QDialog):
                 " usual."
             )
         logger.info(
-            "%s of disc %s “%s” at %sx",
-            "test burn" if simulate else "burn",
+            "burn of disc %s “%s” at %sx",
             self._disc_id,
             plan.name,
             speed,
@@ -683,7 +691,7 @@ class BurnDialog(QDialog):
 
         run_async(
             work,
-            lambda found: self._burn_done(found[0], simulate, found[1]),
+            lambda found: self._burn_done(found[0], found[1]),
             self._burn_failed,
             on_cancel=lambda _partial: self._burn_cancelled(),
         )
@@ -711,30 +719,22 @@ class BurnDialog(QDialog):
         )
         logger.info("burn of disc %s cancelled before writing", self._disc_id)
         self._update()
+        self.check_drive()  # (look at the disc again before it can be burned on)
 
     def _after_attempt(self) -> None:
         self._burn_cancel = None
         self._busy = False
         self.progress.setVisible(False)
-        self.confirm_check.setChecked(False)  # ask again before the next one
 
     def _burn_done(
         self,
         lengths: dict[int, int],
-        simulate: bool,
         waveforms: dict[int, list[int]] | None = None,
     ) -> None:
         # what the render found out stays: the exact lengths, and the waveforms Sync would write
         remember_rendered(self._lib, lengths, waveforms or {})
         self._after_attempt()
-        logger.info("%s finished", "test burn" if simulate else "burn")
-        if simulate:
-            self._append("Test burn finished. Nothing was written to the disc.")
-            self.status_label.setText(
-                "Test burn finished. The disc is not marked as burned."
-            )
-            self._update()
-            return
+        logger.info("burn finished")
         self._lib.mark_burned(
             self._disc_id
         )  # a note on the disc: it stays fully editable
@@ -760,6 +760,7 @@ class BurnDialog(QDialog):
             "critical",
         )
         self._update()
+        self.check_drive()  # (the disc may be spoilt: see what the drive says now)
 
     # -- exporting --------------------------------------------------------
 

@@ -44,7 +44,7 @@ class Rig:
 def test_a_disc_whose_toc_is_as_planned_is_said_to_match_and_is_ejected():
     rig = Rig(toc=planned())
     assert rig.run() is True
-    assert "exactly as planned" in rig.said[0] and "card" in rig.said[0]
+    assert "exactly as planned" in rig.said[0] and "card" not in rig.said[0]
     assert rig.ejected == [1]
 
 

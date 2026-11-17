@@ -155,7 +155,7 @@ def http_error(code, reason="x"):
 
 
 def test_a_missing_repository_says_so_plainly():  # GitHub answers 404 for a repository that has moved or gone
-    with pytest.raises(UpdateCheckError, match="release list doesn.t exist") as caught:
+    with pytest.raises(UpdateCheckError, match="error 404") as caught:
         check_for_update("0.1.0", urlopen=refusing(http_error(404, "Not Found")))
     assert isinstance(caught.value.__cause__, urllib.error.HTTPError)
 
@@ -163,7 +163,7 @@ def test_a_missing_repository_says_so_plainly():  # GitHub answers 404 for a rep
 def test_rate_limiting_and_other_http_errors_are_told_apart():
     with pytest.raises(UpdateCheckError, match="limiting requests"):
         check_for_update("0.1.0", urlopen=refusing(http_error(403)))
-    with pytest.raises(UpdateCheckError, match=r"500 Server Error"):
+    with pytest.raises(UpdateCheckError, match="error 500"):
         check_for_update("0.1.0", urlopen=refusing(http_error(500, "Server Error")))
 
 

@@ -11,7 +11,14 @@ from dataclasses import dataclass
 
 from PySide6.QtCore import QEvent, QPointF, QRectF, Qt
 from PySide6.QtGui import QBrush, QColor, QPainter, QPainterPath, QPen
-from PySide6.QtWidgets import QLabel, QSizePolicy, QToolTip, QVBoxLayout, QWidget
+from PySide6.QtWidgets import (
+    QHBoxLayout,
+    QLabel,
+    QSizePolicy,
+    QToolTip,
+    QVBoxLayout,
+    QWidget,
+)
 
 from dubcrate import mp3
 from dubcrate.library.models import DiscEntry, DiscSummary
@@ -228,8 +235,15 @@ class CapacitySummary(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 2, 0, 0)
         layout.setSpacing(5)
-        layout.addWidget(self.bar)
+        self._bar_row = QHBoxLayout()
+        self._bar_row.setSpacing(10)
+        self._bar_row.addWidget(self.bar, 1)
+        layout.addLayout(self._bar_row)
         layout.addWidget(self.label)
+
+    def add_trailing(self, widget: QWidget) -> None:
+        """Put a widget (the Burn button) at the right of the bar, which shrinks to make room."""
+        self._bar_row.addWidget(widget)
 
     def _set_text(self, text: str, level: str = "normal") -> None:
         self.label.setText(text)

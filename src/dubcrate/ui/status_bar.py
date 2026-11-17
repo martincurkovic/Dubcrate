@@ -45,7 +45,9 @@ class AppStatusBar(QStatusBar):
         self.badge_box = QWidget()
         self.badge_box.setObjectName("statusBadges")
         badges = QHBoxLayout(self.badge_box)
-        badges.setContentsMargins(0, 0, 8, 0)
+        badges.setContentsMargins(
+            8, 0, 8, 0
+        )  # (room to its left, so Cancel and the busy bar never touch it)
         badges.setSpacing(6)
         badges.addWidget(self.read_only_badge, 0, Qt.AlignmentFlag.AlignVCenter)
         badges.addWidget(self.writable_badge, 0, Qt.AlignmentFlag.AlignVCenter)

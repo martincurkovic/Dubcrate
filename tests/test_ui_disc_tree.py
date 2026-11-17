@@ -84,10 +84,6 @@ def test_three_panes_the_file_tree_the_middle_and_your_discs(window):
     assert win.splitter.widget(0).isAncestorOf(win.tree)
     assert win.splitter.widget(1) is win.center
     assert win.splitter.widget(2).isAncestorOf(win.disc_tree)
-    assert (
-        win.new_disc_button.text() == "New Disc"
-        and win.new_folder_button.text() == "New Folder"
-    )
 
 
 def test_the_left_tree_has_only_the_library_not_the_discs(window):
@@ -454,7 +450,7 @@ def test_new_disc_appears_at_once_named_and_ready_to_type_over(window, monkeypat
     win, lib = window
     no_dialog(monkeypatch)
     win.show()
-    win.new_disc_button.click()
+    win.new_disc()
     [disc] = lib.discs()
     assert disc.name == "Disc 1"
     assert win.center.currentIndex() == 1 and win.disc_view.current_disc_id() == disc.id
@@ -472,7 +468,7 @@ def test_new_folder_appears_at_once_ready_to_type_over(window, monkeypatch):
     win, lib = window
     no_dialog(monkeypatch)
     win.show()
-    win.new_folder_button.click()
+    win.new_disc_folder()
     [folder] = lib.disc_folders()
     assert folder.name == "New Folder" and folder.parent_id is None
     editor = editor_of(win, ("disc_folder", folder.id))
@@ -622,7 +618,7 @@ def test_a_new_disc_goes_in_the_folder_that_is_picked(window, monkeypatch):
     folder = lib.create_disc_folder("Gigs")
     win.refresh_discs()
     pick(win, ("disc_folder", folder))
-    win.new_disc_button.click()
+    win.new_disc()
     assert lib.discs()[0].folder_id == folder
 
 
@@ -633,7 +629,7 @@ def test_a_new_disc_goes_beside_the_picked_disc_in_its_folder(window, monkeypatc
     first = lib.create_disc("First", folder_id=folder)
     win.refresh_discs()
     pick(win, ("disc", first))
-    win.new_disc_button.click()
+    win.new_disc()
     second = next(d for d in lib.discs() if d.name != "First")
     assert second.folder_id == folder
 

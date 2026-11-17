@@ -76,6 +76,23 @@ def _seconds_at(x: float, width: int, duration: float) -> float:
     return 0.0 if width <= 0 else max(0.0, min(1.0, x / width)) * duration
 
 
+def paint_frame(p: QPainter, rect) -> None:
+    """System 6's waveform areas are white on a white window, so each gets a one-pixel black frame (filled,
+    not drawn with a pen, so it is as thick as the outlines around the lists on a 2x screen). The other
+    looks have a background of their own."""
+    if not is_mono():
+        return
+    ink = color("text")
+    w, h = rect.width(), rect.height()
+    for edge in (
+        QRectF(0, 0, w, 1),
+        QRectF(0, h - 1, w, 1),
+        QRectF(0, 0, 1, h),
+        QRectF(w - 1, 0, 1, h),
+    ):
+        p.fillRect(edge, ink)
+
+
 class OverviewView(QWidget):
     """The whole track in one strip; click or drag to seek."""
 
@@ -244,6 +261,7 @@ class OverviewView(QWidget):
                 QRectF(0, CUE_STRIP, x, WAVE_HEIGHT), dim
             )  # what has been played, dimmed
             p.fillRect(QRectF(x - 1, 0, 2, self.HEIGHT), color("wave_playhead"))
+        paint_frame(p, self.rect())
 
     # -- seeking ----------------------------------------------------------
 
@@ -394,6 +412,7 @@ class DetailView(QWidget):
         if self._waveform is None or not self._waveform.columns:
             p.setPen(color("wave_text"))
             p.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, self._message)
+            paint_frame(p, self.rect())
             return
         centre, middle = w / 2, h / 2
         per_second = w / self._window
@@ -406,6 +425,7 @@ class DetailView(QWidget):
         self._paint_cues(p, w, h, centre, per_second)
         p.fillRect(QRectF(centre - 1, 0, 2, h), color("wave_playhead"))
         self._paint_bar_counter(p, centre)
+        paint_frame(p, self.rect())
 
     def bar_text(self) -> str | None:
         """The bar and beat under the playhead (`13.3 Bars`); None for a track with no beat grid."""

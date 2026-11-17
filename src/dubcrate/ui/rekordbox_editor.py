@@ -36,19 +36,10 @@ Write = Callable[..., rw.WriteOutcome]
 def enable_editing_text() -> tuple[str, str]:
     """The first-edit question's heading and explanation: they name loops only while loops are written too."""
     loops = RekordboxEditor.WRITE_LOOPS
-    what = "memory cues and loops" if loops else "memory cues"
     changes = "memory cue and loop changes" if loops else "memory cue changes"
     return (
-        f"Save {changes} into your rekordbox library?",
-        (
-            f"Dubcrate can write the {what} you change here straight into rekordbox's library, so they show up"
-            f" in rekordbox and on your USB exports. Only {what} are written, nothing else.\n\n"
-            "rekordbox has to be closed when Dubcrate saves (otherwise the change waits in Dubcrate). Before the first"
-            " change of each session Dubcrate copies rekordbox's database files aside, and it checks what it wrote and"
-            " puts the copy back if anything is wrong.\n\n"
-            "“Keep in Dubcrate” leaves rekordbox alone: changes stay in Dubcrate. You can change this later in"
-            " Settings > Library."
-        ),
+        f"Save {changes} to rekordbox?",
+        "rekordbox must be closed.",
     )
 
 
@@ -56,12 +47,15 @@ def ask_enable_editing() -> bool:
     """The first-edit question. True: save edits into rekordbox's library from now on (remembered)."""
     box = QMessageBox(QApplication.activeWindow())
     box.setIcon(QMessageBox.Icon.Question)
-    box.setWindowTitle("Edit your rekordbox library?")
+    box.setWindowTitle("Save to rekordbox?")
     heading, explanation = enable_editing_text()
     box.setText(heading)
     box.setInformativeText(explanation)
-    enable = box.addButton("Enable Editing", QMessageBox.ButtonRole.AcceptRole)
-    box.addButton("Keep in Dubcrate", QMessageBox.ButtonRole.RejectRole)
+    enable = box.addButton("Save to rekordbox", QMessageBox.ButtonRole.AcceptRole)
+    no = box.addButton("No", QMessageBox.ButtonRole.RejectRole)
+    no.setToolTip(
+        "Changes stay in Dubcrate. You can change this in Settings > Library."
+    )
     box.setDefaultButton(enable)
     box.exec()
     return box.clickedButton() is enable

@@ -1,7 +1,7 @@
 # The `dubcrate` command-line tool
 
 Almost everything the window does with the library can also be done from a terminal, burning and
-exporting included (the window's **Burn…** and **Export…** do the same), which is handy for scripts
+exporting included (the window's **Burn…** and **Disc > Export Disc as Files…** do the same), which is handy for scripts
 and for trying things (and the only way to try some, such as `doctor` and `card check-waveforms`). Run it with
 `uv run dubcrate ...`.
 

@@ -735,7 +735,9 @@ def _stand_in_render(hold=None):
     return render
 
 
-def _burn_window(ctx, disc_id=None, burner=None, lib=None, render=None, toc=True):
+def _burn_window(
+    ctx, disc_id=None, burner=None, lib=None, render=None, toc=True, export_only=False
+):
     """The burn window as `MainWindow.burn_current_disc` makes it, on a stand-in burner. The renderer is a
     stand-in too (decoding a whole disc is not what is being looked at); the TOC check after a burn is the real
     one, fed the planned TOC as if the drive had read it."""
@@ -765,7 +767,10 @@ def _burn_window(ctx, disc_id=None, burner=None, lib=None, render=None, toc=True
         p.start()
         ctx.on_cleanup(p.stop)
     dialog = BurnDialog(
-        lib, disc_id or ctx.demo.discs["warm"], burner_factory=lambda: burner
+        lib,
+        disc_id or ctx.demo.discs["warm"],
+        burner_factory=lambda: burner,
+        export_only=export_only,
     )
     dialog.show()
     ctx.on_cleanup(dialog.close)
@@ -795,28 +800,9 @@ def _release(ctx, hold, dialog):
 
 
 @scene("burn-fresh", "Burn window", "Burn: just opened", kind="dialog",
-       about="Drive checked, blank disc found; the confirmation box not ticked yet, so Burn is grey.")  # fmt: skip
+       about="Drive checked, blank disc found: Burn is live.")  # fmt: skip
 def _burn_fresh(ctx):
     return _burn_window(ctx)
-
-
-@scene("burn-ready", "Burn window", "Burn: ready", kind="dialog",
-       about="Everything ticked and the Burn button live.")  # fmt: skip
-def _burn_ready(ctx):
-    dialog = _burn_window(ctx)
-    dialog.confirm_check.setChecked(True)
-    ctx.settle(4)
-    return dialog
-
-
-@scene("burn-test-burn", "Burn window", "Burn: test burn chosen", kind="dialog",
-       about="'Test only (laser off)' ticked: the button says Test Burn.")  # fmt: skip
-def _burn_test(ctx):
-    dialog = _burn_window(ctx)
-    dialog.simulate_check.setChecked(True)
-    dialog.confirm_check.setChecked(True)
-    ctx.settle(4)
-    return dialog
 
 
 @scene("burn-levels-gentle", "Burn window", "Burn: level matching on (Gentle)", kind="dialog",
@@ -826,7 +812,6 @@ def _burn_levels(ctx):
     dialog.levels_combo.setCurrentIndex(dialog.levels_combo.findData("-14"))
     dialog.levels_check.setChecked(True)
     ctx.wait_for(lambda: not dialog._measuring, timeout=120)
-    dialog.confirm_check.setChecked(True)
     ctx.settle(4)
     return dialog
 
@@ -837,7 +822,6 @@ def _burn_levels_held(ctx):
     dialog = _burn_window(ctx)
     dialog.levels_check.setChecked(True)
     ctx.wait_for(lambda: not dialog._measuring, timeout=120)
-    dialog.confirm_check.setChecked(True)
     ctx.settle(4)
     return dialog
 
@@ -846,7 +830,6 @@ def _burn_levels_held(ctx):
        about="An MP3 CD: the title says MP3 CD, there is no levels row or gap, and the size is in megabytes.")  # fmt: skip
 def _burn_mp3(ctx):
     dialog = _burn_window(ctx, ctx.demo.discs["usb"])
-    dialog.confirm_check.setChecked(True)
     ctx.settle(4)
     return dialog
 
@@ -860,7 +843,6 @@ def _burn_two_drives(ctx):
         drives=[Drive("disk3", "LITE-ON eSAU108"), Drive("disk4", "ASUS SDRW-08D2S")]
     )
     dialog = _burn_window(ctx, burner=burner)
-    dialog.confirm_check.setChecked(True)
     ctx.settle(4)
     return dialog
 
@@ -872,7 +854,6 @@ def _media_scene(id, title, about, media=None, error=""):
 
         found = MediaInfo(**media) if media else None
         dialog = _burn_window(ctx, burner=StandInBurner(media=found, media_error=error))
-        dialog.confirm_check.setChecked(True)
         ctx.settle(4)
         return dialog
 
@@ -950,7 +931,6 @@ def _burn_preparing(ctx):
 
     hold = threading.Event()
     dialog = _burn_window(ctx, ctx.demo.discs["warm"], render=_stand_in_render(hold))
-    dialog.confirm_check.setChecked(True)
     dialog.burn_button.click()
     ctx.wait_for(lambda: "rendering 4/" in dialog.log.toPlainText())
     _release(ctx, hold, dialog)
@@ -965,7 +945,6 @@ def _burn_writing(ctx):
     hold = threading.Event()
     disc = _isolated_disc(ctx)
     dialog = _burn_window(ctx, disc, burner=StandInBurner(hold=hold))
-    dialog.confirm_check.setChecked(True)
     dialog.burn_button.click()
     ctx.wait_for(lambda: "Writing  12.0%" in dialog.log.toPlainText())
     _release(ctx, hold, dialog)
@@ -976,21 +955,9 @@ def _burn_writing(ctx):
        about="A real burn done: the table-of-contents check, Print Labels… beside Export…, the disc marked as burned.")  # fmt: skip
 def _burn_finished(ctx):
     dialog = _burn_window(ctx, _isolated_disc(ctx))
-    dialog.confirm_check.setChecked(True)
     dialog.burn_button.click()
     ctx.wait_for(lambda: dialog._finished)
     ctx.settle(4)
-    return dialog
-
-
-@scene("burn-test-finished", "Burn window", "Burn: test burn finished", kind="dialog",
-       about="A test burn done: nothing written, not marked as burned.")  # fmt: skip
-def _burn_test_finished(ctx):
-    dialog = _burn_window(ctx, _isolated_disc(ctx))
-    dialog.simulate_check.setChecked(True)
-    dialog.confirm_check.setChecked(True)
-    dialog.burn_button.click()
-    ctx.wait_for(lambda: "Test burn finished" in dialog.status_label.text())
     return dialog
 
 
@@ -1001,7 +968,6 @@ def _burn_failed(ctx):
         fail="The drive reported an error while writing (the disc may be damaged). Try another disc."
     )
     dialog = _burn_window(ctx, _isolated_disc(ctx), burner=burner)
-    dialog.confirm_check.setChecked(True)
     dialog.burn_button.click()
     ctx.wait_for(lambda: "failed" in dialog.status_label.text())
     return dialog
@@ -1014,7 +980,6 @@ def _burn_cancelled(ctx):
 
     hold = threading.Event()
     dialog = _burn_window(ctx, ctx.demo.discs["warm"], render=_stand_in_render(hold))
-    dialog.confirm_check.setChecked(True)
     dialog.burn_button.click()
     ctx.wait_for(lambda: "rendering 4/" in dialog.log.toPlainText())
     dialog.cancel_burn_button.click()
@@ -1050,7 +1015,7 @@ def _burn_export(ctx):
     ):
         p.start()
         ctx.on_cleanup(p.stop)
-    dialog = _burn_window(ctx)
+    dialog = _burn_window(ctx, export_only=True)
     dialog.export_button.click()
     ctx.wait_for(lambda: "Exported to" in dialog.status_label.text())
     return dialog

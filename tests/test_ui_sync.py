@@ -165,20 +165,16 @@ def test_discs_are_listed_in_their_folders_with_a_status_each(cue_view, lib, tmp
     ]
 
 
-def test_with_no_card_the_discs_are_listed_and_the_footer_says_to_choose_one(
-    cue_view, lib
-):
+def test_with_no_card_the_discs_are_listed_and_each_says_to_choose_one(cue_view, lib):
     add_disc(lib, "One")
     cue_view.look(None)
     assert shown(cue_view) == [("One", "Choose a card")]
-    assert cue_view.footer_title.text() == "No card"
-    assert "Choose a card" in cue_view.footer_note.text()
 
 
-def test_a_folder_that_is_not_a_card_is_said_in_the_footer(cue_view, lib, tmp_path):
+def test_a_folder_that_is_not_a_card_is_said_above_the_list(cue_view, lib, tmp_path):
     add_disc(lib, "One")
     cue_view.look(tmp_path)
-    assert "is this the player's card" in cue_view.footer_note.text()
+    assert "is this the player's card" in cue_view.subtitle.text()
 
 
 def test_only_discs_with_something_to_write_can_be_ticked_and_a_folder_ticks_them_all(
@@ -199,12 +195,12 @@ def test_only_discs_with_something_to_write_can_be_ticked_and_a_folder_ticks_the
         d.id for d in lib.discs() if d.name in ("A", "B")
     )
     assert cue_view.subtitle.text() == "2 of 2 discs selected"
-    assert cue_view.footer_title.text() == "2 discs → CARD"
-    assert cue_view.footer_note.text() == "2 cues to add."
     items["A"].setCheckState(COL_NAME, Qt.CheckState.Unchecked)
     assert folder.checkState(COL_NAME) == Qt.CheckState.PartiallyChecked
     assert cue_view.subtitle.text() == "1 of 2 discs selected"
-    cue_view.clear_button.click()
+    clear = next(a for a in cue_view.disc_menu().actions() if a.text() == "Clear Selection")  # fmt: skip
+    assert clear.isEnabled()
+    clear.trigger()
     assert (
         cue_view.ticked_ids() == []
         and folder.checkState(COL_NAME) == Qt.CheckState.Unchecked
@@ -304,7 +300,7 @@ def test_picking_a_disc_shows_its_dry_run_and_picking_nothing_explains_the_rules
     add_disc(lib, "A")
     cue_view.cues["A-0"] = [Cue("memory", 15.0)]
     cue_view.look(card_folder(tmp_path))
-    assert "Pick a disc" in cue_view.browser.message.text()
+    assert cue_view.browser.message.text() == ""  # (nothing picked: nothing said)
     cue_view.tree.setCurrentItem(cue_view._disc_items()[0])
     text = cue_view._disc_items()[0].toolTip(
         COL_NAME
@@ -428,18 +424,12 @@ def test_the_sync_button_is_on_when_the_switch_is_and_discs_are_ticked(writing):
     )
 
 
-def test_the_question_names_each_disc_what_is_kept_and_where_the_backup_goes(writing):
+def test_the_question_is_just_the_question(writing):
     writing.view.sync_button.click()
     (text,) = writing.asked
-    assert "Write rekordbox cues to “CARD”?" in text
-    assert (
-        "A: not on the card: 2 cues to add" in text
-        and "B: not on the card: 1 cue to add" in text
-    )
-    assert "3 cues will be added as memory cues" in text
-    assert "hot cues and its waveforms are kept" in text
-    assert str(writing.backup) in text
+    assert text == "Write rekordbox cues to “CARD”?"
     assert writing.finished()
+    assert any(writing.backup.iterdir())  # (the card's files are still copied aside)
 
 
 def test_yes_copies_the_card_aside_writes_and_the_list_then_says_in_sync(writing):
@@ -447,7 +437,7 @@ def test_yes_copies_the_card_aside_writes_and_the_list_then_says_in_sync(writing
     writing.view.sync_button.click()
     assert (
         not writing.view.sync_button.isEnabled()
-        and not writing.view.measure_button.isEnabled()
+        and not writing.view.disc_menu().actions()[0].isEnabled()
     )
     assert writing.finished()
     (backup,) = list(writing.backup.iterdir())
@@ -515,9 +505,7 @@ def test_a_second_click_while_writing_does_nothing(writing):
     assert writing.finished()
 
 
-def test_the_question_says_when_cues_wont_fit_and_when_a_disc_has_a_warning(
-    cue_view, lib, tmp_path
-):
+def test_the_question_says_when_cues_wont_fit(cue_view, lib, tmp_path):
     from dubcrate.card_discs import DiscInput, DiscSurvey
     from dubcrate.card_sync import DiscPlan, Status, WantedCue
 
@@ -538,7 +526,6 @@ def test_the_question_says_when_cues_wont_fit_and_when_a_disc_has_a_warning(
     )
     text = sync_view.confirmation_text([found], "CARD", tmp_path / "bk")
     assert "1 cue won't fit (the player holds 100 per disc)" in text
-    assert "1 disc has a warning in the list" in text
 
 
 def test_a_rekordbox_database_that_cant_be_read_is_said_per_disc(
@@ -566,7 +553,7 @@ def test_the_lengths_of_unmeasured_tracks_can_be_measured_from_the_view(
     monkeypatch.setattr(sync_view, "needs_measuring", lambda t: t.cd_sectors is None)
     cue_view.look(card)
     assert shown(cue_view) == [("A", "Can't sync")]
-    assert cue_view.measure_button.isEnabled()
+    assert cue_view.disc_menu().actions()[0].isEnabled()
     probed = []
 
     def fake_probe(tracks, report=None, cancel=None):
@@ -575,12 +562,12 @@ def test_the_lengths_of_unmeasured_tracks_can_be_measured_from_the_view(
         return {by_title[f"A{i}"]: s for i, s in enumerate(cd2_lengths())}, []
 
     monkeypatch.setattr(sync_view, "probe_lengths", fake_probe)
-    cue_view.measure_button.click()
+    cue_view.measure_lengths()
     assert wait_for(lambda: cue_view._surveys and shown(cue_view)[0][1] != "Can't sync")
     assert probed == [12] and shown(cue_view) == [
         ("A", "Not on the card: 1 cue to add")
     ]
-    assert not cue_view.measure_button.isEnabled()
+    assert not cue_view.disc_menu().actions()[0].isEnabled()
 
 
 # -- the tab ------------------------------------------------------------------------------------
@@ -704,9 +691,9 @@ def test_a_card_that_is_plugged_in_can_be_ejected(ejecting):
     assert ejecting.view.eject_check.isEnabled()
 
 
-def test_the_question_says_the_card_will_be_ejected(ejecting):
+def test_a_sync_with_eject_ticked_asks_the_same_short_question_and_ejects(ejecting):
     ejecting.view.sync_button.click()
-    assert "will be ejected afterwards" in ejecting.asked[0]
+    assert ejecting.asked[0] == "Write rekordbox cues to “CARD”?"
     assert ejecting.finished()
 
 
@@ -1016,11 +1003,9 @@ def test_waveforms_are_counted_in_the_list_the_question_and_the_card(writing):
         "Not on the card: 1 cue and 12 waveforms to add",
     ]
     writing.view._tick_all(Qt.CheckState.Checked)
-    assert writing.view.footer_note.text() == "3 cues and 24 waveforms to add."
     writing.view.sync_button.click()
     (text,) = writing.asked
-    assert "3 cues will be added as memory cues and 24 waveforms written" in text
-    assert "a track that already has a waveform keeps it" in text
+    assert text == "Write rekordbox cues to “CARD”?"
     assert writing.finished()
     _, files = cc.read_card(writing.card)
     written = [f for f in files.values() if f is not None and f.fine]
@@ -1059,7 +1044,6 @@ def test_tracks_with_no_waveform_yet_are_analysed_before_the_question_is_asked(
     assert writing.finished()
     assert calls and not writing.problems
     assert len(writing.asked) == 1  # asked once, after the analysis
-    assert "waveforms written" in writing.asked[0]
     stored = {t.id for t in writing.lib.tracks() if t.waveform is not None}
     assert set(calls[0]) <= stored
 
@@ -1177,7 +1161,7 @@ def test_the_cancel_button_stops_measuring_lengths_and_keeps_the_ones_measured(c
             time.sleep(0.005)
 
     monkeypatch.setattr(sync_view, "probe_lengths", slow)
-    cue_view.measure_button.click()
+    cue_view.measure_lengths()
     assert wait_until(cue_view, lambda: bool(started)) and cue_view.cancel_button.isVisibleTo(cue_view.disc_panel)  # fmt: skip
     cue_view.cancel_button.click()
     assert wait_until(cue_view, lambda: not cue_view._measuring)
@@ -1203,9 +1187,8 @@ def test_there_is_no_analyse_button_and_the_note_says_a_sync_does_it(writing, mo
     assert {r.state for r in view.waves.rows} == {"pending"}
     analyse_everything(writing.lib)
     view._look_at_discs(view._loaded)
-    assert wait_until(
-        view, lambda: view.analyse_note.text() == "Every track is analysed."
-    )
+    assert wait_until(view, lambda: view.analyse_note.isHidden())  # (nothing to say)
+    assert view.analyse_note.text() == ""
 
 
 def test_analysing_without_a_sync_keeps_the_waveforms_and_writes_nothing(writing, monkeypatch, tmp_path):  # fmt: skip
@@ -1225,7 +1208,7 @@ def test_analysing_without_a_sync_keeps_the_waveforms_and_writes_nothing(writing
     assert wait_until(view, lambda: not view._analysing and bool(calls))
     assert len(calls) == 1 and len(calls[0]) == 12
     assert writing.said[-1] == "Analysed 12 tracks."
-    assert view.analyse_note.text() == "Every track is analysed."
+    assert view.analyse_note.text() == ""
     assert {r.state for r in view.waves.rows} == {"write"}
     assert writing.asked == [] and not writing.backup.exists()
     assert card_files(writing.card) == before  # nothing was written to the card
@@ -1296,7 +1279,7 @@ def test_the_middle_lists_the_picked_discs_tracks(writing):  # fmt: skip
     analyse_everything(writing.lib)
     look_again(writing, "waveforms")
     view = writing.view
-    assert "Pick a disc" in view.browser.message.text()
+    assert view.browser.message.text() == ""
     assert view.browser.table.topLevelItemCount() == 0
     pick_disc(view)
     table = view.browser.table
@@ -1306,9 +1289,7 @@ def test_the_middle_lists_the_picked_discs_tracks(writing):  # fmt: skip
     assert [table.headerItem().text(c) for c in range(table.columnCount())] == ["#", "Title", "Artist", "Time"]  # fmt: skip
     # (what a sync does is said under the waveform and in the disc's line, not in columns)
     assert not hasattr(view.browser, "details_button")
-    assert (
-        view.browser.title.text() == "A" and "12 tracks" in view.browser.message.text()
-    )
+    assert view.browser.title.text() == "A" and view.browser.message.isHidden()
 
 
 def test_only_the_picked_tracks_waveform_is_drawn_at_the_bottom(writing):
@@ -1403,7 +1384,7 @@ def test_right_click_sync_picks_the_card_and_asks_the_same_question_as_the_butto
     writing.view._tick_all(Qt.CheckState.Checked)
     writing.view.sync_to(writing.card)  # (the card is already the one shown)
     assert wait_until(writing.view, lambda: bool(writing.asked))
-    assert len(writing.asked) == 1 and "waveforms" in writing.asked[0]
+    assert writing.asked == ["Write rekordbox cues to “CARD”?"]
     assert writing.finished()
 
 

@@ -181,7 +181,7 @@ def describe_gains(
     low, high = min(g.db for g in gains), max(g.db for g in gains)
     parts = [
         f"gains {low:+.1f} to {high:+.1f} dB" if low != high else f"gain {low:+.1f} dB",
-        f"across {len(gains)} track{'s' if len(gains) != 1 else ''}",
+        f"for {len(gains)} track{'s' if len(gains) != 1 else ''}",
     ]
     held = sum(g.limited for g in gains)
     text = " ".join(parts)
@@ -191,7 +191,7 @@ def describe_gains(
             if target is not None and target.peak
             else "peak headroom"
         )
-        text += f" · {held} held back by {reason}"
+        text += f". {held} held back by {reason}"
     if unmeasured:
-        text += f" · {unmeasured} not measured (left as they are)"
+        text += f". {unmeasured} not measured (left as they are)"
     return text

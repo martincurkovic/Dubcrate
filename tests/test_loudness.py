@@ -124,15 +124,15 @@ def test_peak_normalising_ignores_how_loud_a_track_is():
 def test_the_gains_are_described_in_one_line():
     assert (
         describe_gains([Gain(5, 6), Gain(-6, -6), Gain(0, 0)])
-        == "gains -6.0 to +5.0 dB across 3 tracks · 1 held back by peak headroom"
+        == "gains -6.0 to +5.0 dB for 3 tracks. 1 held back by peak headroom"
     )
-    assert describe_gains([Gain(2, 2)]) == "gain +2.0 dB across 1 track"
+    assert describe_gains([Gain(2, 2)]) == "gain +2.0 dB for 1 track"
     assert describe_gains([Gain(2, 2)], unmeasured=2).endswith(
-        "· 2 not measured (left as they are)"
+        ". 2 not measured (left as they are)"
     )
     assert describe_gains([]) == "No tracks were measured."
     capped = describe_gains([Gain(12, 29.7)], target=loudness.PEAK_TARGET)
-    assert capped.endswith("· 1 held back by the 12 dB limit")  # (not "peak headroom")
+    assert capped.endswith(". 1 held back by the 12 dB limit")  # (not "peak headroom")
 
 
 # -- the presets ---------------------------------------------------------------------------

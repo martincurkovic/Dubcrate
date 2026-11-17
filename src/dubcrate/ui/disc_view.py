@@ -14,6 +14,9 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QHeaderView,
     QLabel,
+    QListView,
+    QListWidget,
+    QListWidgetItem,
     QMenu,
     QMessageBox,
     QPushButton,
@@ -34,7 +37,7 @@ from dubcrate.mp3 import format_span
 
 from . import theme
 from .capacity_bar import CapacitySummary
-from .models import DiscModel
+from .models import DiscModel, _folder_icon
 from .overlaps import OverlapChoice, ask_overlap, overlap_message
 from .tasks import run_async
 from .track_table import transport_action
@@ -156,28 +159,20 @@ class DiscView(QWidget):
         )
         self.table.remove_requested.connect(self.remove_selected)
         self.table.doubleClicked.connect(self._on_double_clicked)
-        self.table.selectionModel().selectionChanged.connect(
-            lambda *_: self._update_buttons()
-        )
 
-        self.remove_button = QPushButton("Remove")
-        self.remove_button.clicked.connect(self.remove_selected)
+        # (tracks come off with the right-click menu or Backspace: no button for it)
         self.burn_button = QPushButton("Burn…")
         self.burn_button.setToolTip("Burn this disc to a blank CD-R")
         self.burn_button.clicked.connect(self.burn_requested)
-        buttons = QHBoxLayout()
-        buttons.addWidget(self.remove_button)
-        buttons.addStretch(1)
-        buttons.addWidget(self.burn_button)
 
         self.summary = CapacitySummary()
+        self.summary.add_trailing(self.burn_button)  # beside the bar, which shrinks
 
         full = QWidget()
         full_layout = QVBoxLayout(full)
         full_layout.setContentsMargins(0, 0, 0, 0)
         full_layout.setSpacing(8)
         full_layout.addWidget(self.table, 1)
-        full_layout.addLayout(buttons)
         full_layout.addWidget(self.summary)
 
         empty = QWidget()
@@ -190,6 +185,22 @@ class DiscView(QWidget):
         empty_layout.addStretch(1)
         empty_layout.addWidget(empty_label)
         empty_layout.addStretch(2)
+
+        # the folders inside the open place on an MP3 disc: click one to open it (the list under the heading
+        # would otherwise look blank when a disc's root holds only folders)
+        self.folders = QListWidget()
+        self.folders.setObjectName("discFolders")
+        self.folders.setFlow(QListView.Flow.LeftToRight)
+        self.folders.setWrapping(True)
+        self.folders.setResizeMode(QListView.ResizeMode.Adjust)
+        self.folders.setSelectionMode(QListWidget.SelectionMode.NoSelection)
+        self.folders.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.folders.setSpacing(2)
+        self.folders.setMaximumHeight(72)
+        self.folders.setToolTip("Click a folder to open it")
+        self.folders.itemClicked.connect(self._on_folder_clicked)
+        self.folders.hide()
+        full_layout.insertWidget(0, self.folders)
 
         self.stack = QStackedWidget()
         self.stack.addWidget(empty)
@@ -244,7 +255,8 @@ class DiscView(QWidget):
         steps.append(escape(chain[-1].name))  # where you are: not a link
         self.title.setTextFormat(Qt.TextFormat.RichText)
         self.title.setText(
-            f"<style>a {{ color: {color}; }}</style>" + " / ".join(steps)
+            f"<style>a {{ color: {color}; text-decoration: underline; }}</style>"
+            + " / ".join(steps)
         )
 
     def crumb_names(self) -> list[str]:
@@ -300,14 +312,10 @@ class DiscView(QWidget):
             self.summary.show_disc(summary, entries)  # the bar is the whole disc
             self._set_title(summary.name, disc_id)
             n = summary.track_count
-            here = (
-                f"  ·  {len(shown)} here"
-                if summary.kind == "mp3" and len(shown) != n
-                else ""
-            )
+            self._show_folders(summary.kind, disc_id)
             self.count.setText(
                 f"{'MP3 CD  ·  ' if summary.kind == 'mp3' else ''}"
-                f"{n} track{'s' if n != 1 else ''}{here}  ·  {format_span(summary.used_sectors, summary.kind)}"
+                f"{n} track{'s' if n != 1 else ''}  ·  {format_span(summary.used_sectors, summary.kind)}"
                 f" of {format_span(summary.capacity_sectors, summary.kind)}"
             )
             settings.set_last_disc(disc_id)
@@ -316,11 +324,26 @@ class DiscView(QWidget):
             self.summary.clear()
             self.title.setText("")
             self.count.setText("")
-        self._update_buttons()
         self.changed.emit()
 
-    def _update_buttons(self) -> None:
-        self.remove_button.setEnabled(bool(self.table.selectionModel().selectedRows()))
+    def _show_folders(self, kind: str, disc_id: int) -> None:
+        """List the folders inside the place shown (an MP3 disc's root or one of its folders)."""
+        self.folders.clear()
+        if kind == "mp3":
+            inside = [
+                d for d in self._lib.disc_dirs(disc_id) if d.parent_id == self._dir_id
+            ]
+            for d in sorted(inside, key=lambda d: d.name.casefold()):
+                item = QListWidgetItem(_folder_icon(), d.name)
+                item.setData(Qt.ItemDataRole.UserRole, d.id)
+                self.folders.addItem(item)
+        self.folders.setVisible(self.folders.count() > 0)
+
+    def _on_folder_clicked(self, item: QListWidgetItem) -> None:
+        if self._disc_id is not None:
+            self.navigate_requested.emit(
+                self._disc_id, item.data(Qt.ItemDataRole.UserRole)
+            )
 
     def _on_double_clicked(self, index) -> None:
         """Double-clicking the artist or title edits it; anywhere else listens to the track."""
@@ -330,7 +353,7 @@ class DiscView(QWidget):
     # -- discs and folders ------------------------------------------------
 
     def _warn(self, title: str, text: str) -> None:
-        QMessageBox.warning(self, title, text)
+        QMessageBox.warning(self, title, text[:1].upper() + text[1:])
 
     def _create(
         self, name: str, folder_id: int | None = None, kind: DiscKind = "audio"
@@ -713,10 +736,8 @@ class DiscView(QWidget):
         answer = QMessageBox.question(
             self,
             "Make this an MP3 CD?",
-            f"“{summary.name}” {why}.\n\nMake it an MP3 CD instead? An MP3 CD is a data disc of"
-            " MP3 files that holds hours of music, but it only plays in players that read MP3"
-            " discs (the CDJ-1000MK3 does). Files that are already MP3 go on as they are; the"
-            " rest are encoded.",
+            f"“{summary.name}” {why}.\n\nMake it an MP3 CD instead? An MP3 CD can hold more music,"
+            " but only compatible players can read it.",
         )
         if answer == QMessageBox.StandardButton.Yes:
             self.set_disc_kind(disc_id, "mp3")

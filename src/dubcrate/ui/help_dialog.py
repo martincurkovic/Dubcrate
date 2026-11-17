@@ -29,7 +29,6 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
-    QPushButton,
     QTextBrowser,
     QTextEdit,
     QVBoxLayout,
@@ -37,6 +36,7 @@ from PySide6.QtWidgets import (
 )
 
 from . import theme
+from .glyph_widgets import GlyphButton, close_glyph, down_glyph, up_glyph
 
 HELP_DIR = Path(__file__).parent / "help"
 MANUAL_PATH = HELP_DIR / "manual.md"
@@ -135,7 +135,7 @@ class HelpDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("User Guide")
-        self.setMinimumSize(480, 360)
+        self.setMinimumSize(620, 440)
         self.resize(820, 700)
         self._matches: list[tuple[int, int]] = []
         self._current = -1
@@ -323,16 +323,10 @@ class HelpDialog(QDialog):
         self.search_input.returnPressed.connect(self.find_next)
         self.results_label = QLabel("")
         self.results_label.setFixedWidth(70)
-        previous, following, close = (
-            QPushButton("←"),
-            QPushButton("→"),
-            QPushButton("×"),
-        )
-        for button in (previous, following, close):
-            button.setAutoDefault(False)  # Return belongs to the search box
-        previous.setToolTip("Previous match")
-        following.setToolTip("Next match")
-        close.setToolTip("Close the search bar (Esc)")
+        # painted glyphs, not text: a font's arrows and cross come in different sizes (System 6's did)
+        previous = GlyphButton(up_glyph, "Previous match", size=26)
+        following = GlyphButton(down_glyph, "Next match", size=26)
+        close = GlyphButton(close_glyph, "Close the search bar (Esc)", size=26)
         previous.clicked.connect(self.find_previous)
         following.clicked.connect(self.find_next)
         close.clicked.connect(self.close_search)

@@ -126,7 +126,7 @@ class DiscRecordingBurner:
     def _pick_device(self, wanted: str | None):
         devices = list_devices()
         if not devices:
-            raise BurnError("DiscRecording found no optical drives")
+            raise BurnError("No optical drives found")
         if wanted is None:
             return devices[0]
         for dev in devices:

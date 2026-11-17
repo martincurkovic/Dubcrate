@@ -375,8 +375,8 @@ def test_the_zoomed_view_draws_the_bands_look_through_the_image(qapp):
 def test_settings_offers_a_waveform_speed_that_starts_smooth_and_applies_at_once(qapp):
     dialog = SettingsDialog()
     assert [dialog.wave_fps_combo.itemText(i) for i in range(2)] == [
-        "Smooth (60 a second)",
-        "Light (30 a second)",
+        "60 FPS",
+        "30 FPS",
     ]
     assert dialog.wave_fps_combo.currentData() == 60
     seen = []

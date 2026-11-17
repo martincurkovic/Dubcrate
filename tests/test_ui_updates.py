@@ -157,7 +157,7 @@ def test_an_expected_failure_is_logged_as_one_warning_without_a_traceback(
     caplog.set_level("DEBUG")
     run(checker, wait_for, manual=True)
     [(kind, _title, text)] = boxes
-    assert kind == "warning" and "release list doesn't exist" in text
+    assert kind == "warning" and text == "Could not check for updates: error 404"
     failures = [r for r in caplog.records if r.name == "dubcrate.ui.tasks"]
     assert [r.levelname for r in failures] == ["WARNING"]
     assert "Traceback" not in caplog.text and "unexpected" not in caplog.text

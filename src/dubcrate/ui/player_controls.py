@@ -207,6 +207,14 @@ class PillButton(QAbstractButton):
                     mix(QColor(palette["bg_disabled"]), self._color, 0.35),
                     QColor(palette["border_disabled"]),
                 )
+            if QColor(palette["bg_input"]).lightness() > 128:
+                # a light theme: a stronger tint and a dark label, or the letter (a lightened colour) is
+                # unreadable at a distance
+                return (
+                    mix(base, self._color, 0.55 if not down else 0.7),
+                    self._color.darker(260),
+                    self._color.darker(130),
+                )
             return (
                 mix(base, self._color, 0.32 if not down else 0.5),
                 self._color.lighter(150),

@@ -107,7 +107,7 @@ class TrackBrowser(QWidget):
         self.wave_note = unsized(QLabel())
         self.wave_note.setObjectName("mutedLabel")
         layout.addWidget(self.wave_note)
-        self.show_message("Pick a disc on the right to look through its tracks.")
+        self.show_message("")
 
     # -- what is shown ---------------------------------------------------------------
 
@@ -118,6 +118,7 @@ class TrackBrowser(QWidget):
         self.table.clear()
         self.title.setText(title)
         self.message.setText(text)
+        self.message.setVisible(bool(text))  # (nothing to say: no empty line)
         self.warnings.hide()
         self._show_wave()
 
@@ -135,6 +136,7 @@ class TrackBrowser(QWidget):
         self.rows = list(rows)
         self.title.setText(title)
         self.message.setText(summary)
+        self.message.setVisible(bool(summary))
         self.warnings.setVisible(bool(warnings))
         self.warnings.setText("\n".join(warnings))
         self.table.blockSignals(True)

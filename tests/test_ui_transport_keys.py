@@ -43,7 +43,7 @@ def press(widget, key, modifiers=Qt.KeyboardModifier.NoModifier):
 
 
 @pytest.mark.parametrize(
-    "where", ["track_table", "player_strip", "center", "new_disc_button", "tree"]
+    "where", ["track_table", "player_strip", "center", "tracks_title", "tree"]
 )
 def test_space_and_the_arrows_work_wherever_focus_is(window, where):
     win = window

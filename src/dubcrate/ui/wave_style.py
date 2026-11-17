@@ -52,7 +52,7 @@ HOT_CUE_RGB = (
 
 
 WAVE_STYLE_LABELS = (("3-Band", "bands"), ("RGB", "rgb"), ("Blue", "blue"))
-WAVE_FPS_LABELS = (("Smooth (60 a second)", 60), ("Light (30 a second)", 30))
+WAVE_FPS_LABELS = (("60 FPS", 60), ("30 FPS", 30))
 WAVE_BACKGROUND_LABELS = (("Match the theme", "theme"), ("Always dark", "dark"))
 
 

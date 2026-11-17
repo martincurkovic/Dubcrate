@@ -17,8 +17,7 @@ import shutil
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 
-from PySide6.QtCore import QFileSystemWatcher, QRect, QSize, Qt, QTimer, Signal
-from PySide6.QtGui import QPainter
+from PySide6.QtCore import QFileSystemWatcher, QSize, Qt, QTimer, Signal
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QCheckBox,
@@ -33,8 +32,6 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QPushButton,
     QSizePolicy,
-    QStyle,
-    QStyleOptionViewItem,
     QTreeWidget,
     QTreeWidgetItem,
     QVBoxLayout,
@@ -69,6 +66,7 @@ from .label_dialog import disc_paths
 from .models import _disc_icon, _folder_icon
 from .source_tabs import explorer_glyph, sd_card_glyph
 from .tasks import TaskError, run_async
+from .tick_header import TickHeader
 from .track_browser import TrackBrowser, unsized
 
 log = logging.getLogger(__name__)
@@ -116,41 +114,15 @@ def confirmation_text(
     backup_dir: Path,
     eject: bool = False,
 ) -> str:
-    """What the question before a write says: each disc and what it adds, what is kept, the backup."""
-    cues = sum(s.to_add for s in surveys)
-    waves = sum(s.waves_to_add for s in surveys)
-    added = f"{cues} cue{'s' if cues != 1 else ''} will be added as memory cues."
-    if waves:
-        added = (
-            f"{cues} cue{'s' if cues != 1 else ''} will be added as memory cues and "
-            f"{waves} waveform{'s' if waves != 1 else ''} written, so the player doesn't analyse those tracks."
-        )
-    lines = [f"Write rekordbox cues to “{card_name}”?", ""]
-    lines += [f"  {s.disc.name}: {s.status[0].lower()}{s.status[1:]}" for s in surveys]
-    kept = "The cues already on the card, its hot cues and its waveforms are kept."
-    if waves:
-        kept = (
-            "The cues already on the card and its hot cues are kept, and a track that already has "
-            "a waveform keeps it."
-        )
-    lines += [
-        "",
-        f"{added} {kept}",
-        f"The card's files are copied to {backup_dir} first.",
-    ]
-    if eject:
-        lines.append("The card will be ejected afterwards, so it is safe to take out.")
+    """What the question before a write says: just the question, and a line if cues won't fit (a disc's own warnings are in the list). The card's files are always copied aside first, so that is
+    not said every time."""
+    lines = [f"Write rekordbox cues to “{card_name}”?"]
     if left_out := sum(len(s.plan.overflow) for s in surveys if s.plan):
         lines.append(
             f"{left_out} cue{'s' if left_out != 1 else ''} won't fit (the player holds "
             f"{cc.MAX_CUES} per disc) and will be left out."
         )
-    if warned := sum(bool(s.input.warnings) for s in surveys):
-        lines.append(
-            f"{warned} disc{'s have' if warned != 1 else ' has'} a warning in the list: "
-            "worth reading before you write."
-        )
-    return "\n".join(lines)
+    return lines[0] + ("\n\n" + "\n".join(lines[1:]) if lines[1:] else "")
 
 
 CARD_SETTLE_MS = (
@@ -196,99 +168,6 @@ class _ElidedLabel(QLabel):
         )
         super().setText(shown)
         self.setToolTip(self._full if shown != self._full else "")
-
-
-class _TickHeader(QHeaderView):
-    """The disc list's header, with a tick box at the left of the first column that ticks (or unticks) every disc
-    that can be synced, drawn as the list's own boxes are. It shows ticked, unticked or partly from the discs."""
-
-    tick_clicked = Signal()
-    BOX_AT = 7  # the box's distance from where the tree's indentation ends: lines up with the list's own boxes
-
-    def __init__(self, parent: QWidget | None = None):
-        super().__init__(Qt.Orientation.Horizontal, parent)
-        self._state = Qt.CheckState.Unchecked
-        self._available = (
-            False  # no disc can be ticked: the box is drawn dim and does nothing
-        )
-        self._indent = (
-            20  # the tree's indentation: the boxes of the top level discs sit after it
-        )
-        self.setSectionsClickable(True)
-        self.set_indent(self._indent)
-
-    def box_width(self) -> int:
-        # (the list's own boxes are a little bigger than a plain check box's indicator)
-        return 4 + self.style().pixelMetric(
-            QStyle.PixelMetric.PM_IndicatorWidth, None, self
-        )
-
-    def set_indent(self, indent: int) -> None:
-        self._indent = indent
-        # room in the first heading for the box (the style sheet pads a heading by 8 pixels)
-        self.setStyleSheet(
-            f"QHeaderView::section:first {{ padding-left: {indent + self.BOX_AT + self.box_width() + 6}px; }}"
-        )
-        # (a style sheet on the header would centre the headings: they were left aligned)
-        self.setDefaultAlignment(
-            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
-        )
-
-    def set_state(self, state: Qt.CheckState, available: bool) -> None:
-        if (state, available) != (self._state, self._available):
-            self._state, self._available = state, available
-            self.viewport().update()
-
-    def _box(self, section: QRect) -> QRect:
-        size = self.box_width()
-        return QRect(
-            section.left() + self._indent + self.BOX_AT,
-            section.top() + (section.height() - size) // 2,
-            size,
-            size,
-        )
-
-    def paintSection(self, painter: QPainter, rect: QRect, logical_index: int) -> None:
-        super().paintSection(painter, rect, logical_index)
-        if logical_index != COL_NAME:
-            return
-        option = QStyleOptionViewItem()
-        option.initFrom(self)
-        option.rect = self._box(rect)
-        option.state = QStyle.StateFlag.State_Active | (
-            QStyle.StateFlag.State_Enabled
-            if self._available
-            else QStyle.StateFlag.State_None
-        )
-        option.state |= {
-            Qt.CheckState.Checked: QStyle.StateFlag.State_On,
-            Qt.CheckState.PartiallyChecked: QStyle.StateFlag.State_NoChange,
-            Qt.CheckState.Unchecked: QStyle.StateFlag.State_Off,
-        }[self._state]
-        self.style().drawPrimitive(
-            QStyle.PrimitiveElement.PE_IndicatorItemViewItemCheck, option, painter, self
-        )
-
-    def mousePressEvent(self, event) -> None:
-        if (
-            self._available
-            and event.button() == Qt.MouseButton.LeftButton
-            and self.logicalIndexAt(event.position().toPoint()) == COL_NAME
-        ):
-            section = QRect(
-                self.sectionViewportPosition(COL_NAME),
-                0,
-                self.sectionSize(COL_NAME),
-                self.height(),
-            )
-            if (
-                self._box(section)
-                .adjusted(-4, -4, 4, 4)
-                .contains(event.position().toPoint())
-            ):
-                self.tick_clicked.emit()
-                return  # (the box is not a click on the heading)
-        super().mousePressEvent(event)
 
 
 class CardRow(QWidget):
@@ -385,10 +264,19 @@ class CardPanel(QWidget):
         self.refresh_button = QPushButton("Refresh")
         self.refresh_button.setToolTip("Look for a card that has been plugged in")
         self.refresh_button.clicked.connect(lambda: self.refresh())
+        self.sync_button = QPushButton("Sync")
+        self.sync_button.setToolTip(
+            "Write the ticked discs' cues and waveforms to the picked card (it asks first)"
+        )
+        self.sync_button.setEnabled(False)
+        self.sync_button.clicked.connect(
+            lambda: self.current_card() and self._sync_to(self.current_card())
+        )
         head = QHBoxLayout()
         head.addWidget(title)
         head.addStretch(1)
         head.addWidget(self.refresh_button)
+        head.addWidget(self.sync_button)
         layout.addLayout(head)
         self.subtitle = QLabel()
         self.subtitle.setObjectName("mutedLabel")
@@ -583,6 +471,12 @@ class CardPanel(QWidget):
         """A sync is writing to the card: its eject button waits, and no card is formatted under it."""
         self._busy = busy
         self._restyle_rows()
+        self._update_sync_button()
+
+    def _update_sync_button(self) -> None:
+        self.sync_button.setEnabled(
+            self.current_card() is not None and not (self._busy or self._ejecting)
+        )
 
     def _eject(self, path: Path) -> None:
         if self._busy or self._ejecting:
@@ -665,6 +559,7 @@ class CardPanel(QWidget):
         self.card_changed.emit(self.current_card())
 
     def _picked(self, *_: object) -> None:
+        self._update_sync_button()
         self.card_changed.emit(self.current_card())
 
 
@@ -732,16 +627,7 @@ class SyncView(QWidget):
         panel.setSpacing(8)
         title = QLabel("Discs to sync")
         title.setObjectName("panelTitle")
-        self.clear_button = QPushButton("Clear selection")
-        self.clear_button.setFlat(True)
-        self.clear_button.clicked.connect(
-            lambda: self._tick_all(Qt.CheckState.Unchecked)
-        )
-        head = QHBoxLayout()
-        head.addWidget(title)
-        head.addStretch(1)
-        head.addWidget(self.clear_button)
-        panel.addLayout(head)
+        panel.addWidget(title)
         self.subtitle = unsized(QLabel())
         self.subtitle.setObjectName("mutedLabel")
         panel.addWidget(self.subtitle)
@@ -752,7 +638,7 @@ class SyncView(QWidget):
         panel.addWidget(self.search)
 
         self.tree = QTreeWidget()
-        self.tick_header = _TickHeader(self.tree)
+        self.tick_header = TickHeader(self.tree)
         self.tree.setHeader(self.tick_header)
         self.tree.setColumnCount(2)
         self.tree.setHeaderLabels(["Disc", "Tracks"])
@@ -767,20 +653,14 @@ class SyncView(QWidget):
         header.setSectionResizeMode(COL_TRACKS, QHeaderView.ResizeMode.ResizeToContents)
         self.tree.itemChanged.connect(self._on_item_changed)
         self.tree.currentItemChanged.connect(lambda *_: self._show_detail())
+        self.tree.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.tree.customContextMenuRequested.connect(
+            lambda where: self.disc_menu().popup(
+                self.tree.viewport().mapToGlobal(where)
+            )
+        )
         panel.addWidget(self.tree, 1)
 
-        self.footer_title = unsized(QLabel())
-        self.footer_note = unsized(QLabel())
-        self.footer_note.setObjectName("mutedLabel")
-        self.footer_note.setWordWrap(True)
-        panel.addWidget(self.footer_title)
-        panel.addWidget(self.footer_note)
-        self.measure_button = QPushButton("Measure Lengths")
-        self.measure_button.setToolTip(
-            "A card entry is the disc's table of contents, which needs every track's exact length "
-            "on the CD (a burn measures them too). Reads the files; changes nothing."
-        )
-        self.measure_button.clicked.connect(self.measure_lengths)
         self.cancel_button = QPushButton("Cancel")
         self.cancel_button.setToolTip(
             "Stop measuring or analysing: what is already done is kept, and nothing is written to the card"
@@ -798,13 +678,9 @@ class SyncView(QWidget):
         self.eject_check = QCheckBox("Eject after syncing")
         self.eject_check.setChecked(settings.get_sync_eject())
         self.eject_check.toggled.connect(settings.set_sync_eject)
-        checks = QHBoxLayout()
-        checks.addWidget(self.eject_check)
-        checks.addStretch(1)
-        panel.addLayout(checks)
         buttons = QHBoxLayout()
-        buttons.addWidget(self.measure_button)
         buttons.addWidget(self.import_button)
+        buttons.addWidget(self.eject_check)
         buttons.addStretch(1)
         buttons.addWidget(self.cancel_button)
         buttons.addWidget(self.sync_button)
@@ -1098,7 +974,7 @@ class SyncView(QWidget):
             self.browser.show_message(
                 "No audio discs yet. Make one, or open the Library, and it is listed on the right."
                 if not self._surveys
-                else "Pick a disc on the right to look through its tracks and see what a sync would do for it."
+                else ""
             )
         elif survey.input.problems:
             self.browser.show_message(
@@ -1111,7 +987,7 @@ class SyncView(QWidget):
             self.browser.show_disc(
                 survey.disc.id,
                 survey.disc.name,
-                f"{survey.disc.track_count} tracks · {survey.status}",
+                "",
                 wave_rows(survey, entries, True),
                 warnings=[*survey.input.warnings, *(plan.notes if plan else [])],
             )
@@ -1124,32 +1000,16 @@ class SyncView(QWidget):
             self._measuring or self._writing or self._analysing
         ):  # (which have their own to show)
             self.subtitle.setText(
-                f"{len(ticked)} of {len(writable)} disc{'s' if len(writable) != 1 else ''} selected"
+                self._card_note  # (a folder that isn't the player's card: said where it is seen)
+                if self._card is None and self._card_note
+                else f"{len(ticked)} of {len(writable)} disc{'s' if len(writable) != 1 else ''} selected"
                 if self._surveys
                 else "No audio discs"
             )
-        self.clear_button.setEnabled(bool(ticked))
         self._update_header_tick()
         busy = self._measuring or self._writing or self._analysing
         self.cancel_button.setVisible(self._measuring or self._analysing)
-        self.measure_button.setEnabled(bool(self._unmeasured) and not busy)
         self._update_analyse()
-        card = self._card_path.name if self._card_path else ""
-        if self._card is None:
-            self.footer_title.setText("No card")
-            self.footer_note.setText(self._card_note or "Choose a card on the left.")
-        else:
-            cues = sum(s.to_add for s in ticked)
-            waves = sum(s.waves_to_add for s in ticked)
-            self.footer_title.setText(
-                f"{len(ticked)} disc{'s' if len(ticked) != 1 else ''} → {card or 'the card'}"
-            )
-            said = f"{cues} cue{'s' if cues != 1 else ''}"
-            if waves:
-                said += f" and {waves} waveform{'s' if waves != 1 else ''}"
-            self.footer_note.setText(
-                f"{said} to add." if ticked else "Tick the discs to sync."
-            )
         self.import_button.setEnabled(
             self._card is not None and bool(self._surveys) and not busy
         )
@@ -1172,6 +1032,23 @@ class SyncView(QWidget):
             if can_eject or self._writing
             else "Only a card that is plugged in can be ejected, not a folder you chose."
         )
+
+    def disc_menu(self) -> QMenu:
+        """What a right-click on the disc list offers: measure the lengths a disc's card entry needs (a burn
+        measures them too, and so does adding a track), and clear the ticks."""
+        menu = QMenu(self)
+        busy = self._measuring or self._writing or self._analysing
+        measure = menu.addAction("Measure Lengths", self.measure_lengths)
+        measure.setEnabled(bool(self._unmeasured) and not busy)
+        measure.setToolTip(
+            "A card entry is the disc's table of contents, which needs every track's exact length "
+            "on the CD. Reads the files; changes nothing."
+        )
+        clear = menu.addAction(
+            "Clear Selection", lambda: self._tick_all(Qt.CheckState.Unchecked)
+        )
+        clear.setEnabled(bool(self.ticked_ids()))
+        return menu
 
     def import_from_card(self) -> None:
         """Find what changed on the card that Dubcrate doesn't have (cues and loops set on the player, and, after a
@@ -1210,8 +1087,9 @@ class SyncView(QWidget):
         elif todo:
             note = f"{len(todo)} track{'s' if len(todo) != 1 else ''} not analysed yet: a sync does that first."
         else:
-            note = "Every track is analysed."
+            note = ""
         self.analyse_note.setText(note)
+        self.analyse_note.setVisible(bool(note))
 
     def _set_writing(self, writing: bool) -> None:
         """A sync is (or is no longer) writing and ejecting: the card list must leave the card alone."""

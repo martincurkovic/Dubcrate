@@ -403,27 +403,14 @@ class MainWindow(QMainWindow):
         header.sectionMoved.connect(lambda *_: self._save_column_order())
         header.sortIndicatorChanged.connect(self._on_sort_changed)
         self.track_table.doubleClicked.connect(self._on_track_double_clicked)
-        self.track_table.selectionModel().selectionChanged.connect(
-            lambda *_: self._update_track_buttons()
-        )
 
-        self.add_button = QPushButton("Add to Disc")
-        self.add_button.setToolTip(
-            "Add the selected tracks to the open disc (or drag them onto a disc in the list on the left)"
-        )
-        self.add_button.clicked.connect(self.add_selected_to_disc)
-        self.fit_button = QPushButton("Fit All to Disc")
-        self.fit_button.setToolTip(
-            "Add every track shown, in order, until the disc is full"
-        )
-        self.fit_button.clicked.connect(self.fit_all_to_disc)
-        self.target_label = QLabel()
+        self.target_label = QLabel()  # which disc adds go to (the open one)
         self.target_label.setObjectName("mutedLabel")
-        buttons = QHBoxLayout()
-        buttons.addWidget(self.add_button)
-        buttons.addWidget(self.fit_button)
-        buttons.addStretch(1)
-        buttons.addWidget(self.target_label)
+        head.insertWidget(2, self.target_label)
+        head.insertSpacing(3, 12)
+        # (adding is on the Disc menu and the list's right-click menu: no buttons under the list)
+        self.track_table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.track_table.customContextMenuRequested.connect(self._show_track_menu)
 
         middle = QWidget()
         middle_layout = QVBoxLayout(middle)
@@ -432,7 +419,6 @@ class MainWindow(QMainWindow):
         middle_layout.addLayout(head)
         middle_layout.addWidget(self.search)
         middle_layout.addWidget(self.track_table, 1)
-        middle_layout.addLayout(buttons)
 
         # the disc: opened from the tree, edited here
         self.disc_view = DiscView(self._lib)
@@ -478,23 +464,12 @@ class MainWindow(QMainWindow):
         self.disc_tree.setEditTriggers(QAbstractItemView.EditTrigger.DoubleClicked)
         self.disc_tree.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.disc_tree.customContextMenuRequested.connect(self._show_disc_tree_menu)
-        self.new_disc_button = QPushButton("New Disc")
-        self.new_disc_button.setToolTip("Make a disc (a playlist to burn to CD)")
-        self.new_disc_button.clicked.connect(lambda: self.new_disc())
-        self.new_folder_button = QPushButton("New Folder")
-        self.new_folder_button.setToolTip("Make a folder to organise your discs")
-        self.new_folder_button.clicked.connect(lambda: self.new_disc_folder())
-        disc_buttons = QHBoxLayout()
-        disc_buttons.addWidget(self.new_disc_button)
-        disc_buttons.addWidget(self.new_folder_button)
-        disc_buttons.addStretch(1)
         right = QWidget()
         right_layout = QVBoxLayout(right)
         right_layout.setContentsMargins(12, 12, 12, 12)
         right_layout.setSpacing(8)
         right_layout.addWidget(self._title("Discs"))
         right_layout.addWidget(self.disc_tree, 1)
-        right_layout.addLayout(disc_buttons)
 
         # the right-hand side is the Discs list, except on the Sync tab, where it is the list of discs to tick
         # and sync (so a disc can be looked at without leaving Sync)
@@ -518,7 +493,6 @@ class MainWindow(QMainWindow):
         body_layout.addWidget(self.player_strip)
         body_layout.addWidget(self.splitter, 1)
         self.setCentralWidget(body)
-        self._update_track_buttons()
 
     def _build_status_bar(self) -> None:
         self.setStatusBar(AppStatusBar(self))  # (version, update button, then messages)
@@ -558,7 +532,7 @@ class MainWindow(QMainWindow):
         self.act_remove_source = file_menu.addAction(
             "&Remove Selected Source…", self.remove_selected_source
         )
-        file_menu.addSeparator()
+        self._waiting_separator = file_menu.addSeparator()
         self.act_save_waiting = file_menu.addAction(
             "Save Waiting Memory Cue Edits to rekordbox", self.save_waiting_cues
         )
@@ -611,6 +585,13 @@ class MainWindow(QMainWindow):
         disc_menu.addSeparator()
         self.act_burn = disc_menu.addAction(
             "&Burn Disc…", self.burn_current_disc, QKeySequence("Ctrl+B")
+        )
+        self.act_export = disc_menu.addAction(
+            "&Export Disc as Files…", self.export_current_disc
+        )
+        self.act_export.setToolTip(
+            "Write the open disc as files (WAVs and a cdrdao table of contents, or the MP3 folder"
+            " and an ISO image) to burn with another program."
         )
         self.act_print_labels = disc_menu.addAction(
             "&Print Labels…", lambda: self.print_labels(), QKeySequence("Ctrl+P")
@@ -818,6 +799,22 @@ class MainWindow(QMainWindow):
         )
         self.burn_dialog.burned.connect(self._on_burned)
         self.burn_dialog.labels_requested.connect(self.print_labels)
+        self.burn_dialog.finished.connect(lambda _r: self.disc_view.reload())
+        self.burn_dialog.open()
+
+    def export_current_disc(self) -> None:
+        """Disc > Export Disc as Files…: the burn window's export mode for the open disc."""
+        disc_id = self.disc_view.current_disc_id()
+        if disc_id is None:
+            self._notify("Export Disc", "Open a disc and add some tracks first.")
+            return
+        self.burn_dialog = BurnDialog(
+            self._lib,
+            disc_id,
+            self,
+            burner_factory=self._burner_factory,
+            export_only=True,
+        )
         self.burn_dialog.finished.connect(lambda _r: self.disc_view.reload())
         self.burn_dialog.open()
 
@@ -1455,11 +1452,11 @@ class MainWindow(QMainWindow):
         """The menu is about to show: say how many edited tracks are waiting in Dubcrate for rekordbox."""
         editor = self.preview.editor
         waiting = editor.waiting() if editor.database() is not None else 0
-        self.act_save_waiting.setEnabled(waiting > 0)
+        # (only there while something waits: edits made while rekordbox was open are kept here until saved)
+        self.act_save_waiting.setVisible(waiting > 0)
+        self._waiting_separator.setVisible(waiting > 0)
         self.act_save_waiting.setText(
             f"Save {waiting} Waiting Memory Cue Edit{'s' if waiting != 1 else ''} to rekordbox"
-            if waiting
-            else "Save Waiting Memory Cue Edits to rekordbox"
         )
 
     def save_waiting_cues(self) -> None:
@@ -1488,9 +1485,7 @@ class MainWindow(QMainWindow):
             box = QMessageBox(self)
             box.setWindowTitle("Import rekordbox Library")
             box.setText(f"Import the rekordbox library found here?\n{found}")
-            box.setInformativeText(
-                "It is only read, from a temporary copy. rekordbox is never changed."
-            )
+            box.setInformativeText("Opened read-only by default")
             import_button = box.addButton("Import", QMessageBox.ButtonRole.AcceptRole)
             choose_button = box.addButton(
                 "Choose File…", QMessageBox.ButtonRole.ActionRole
@@ -1665,7 +1660,6 @@ class MainWindow(QMainWindow):
         total = sum(t.duration for t in tracks)
         count = f"{len(tracks):,} track{'s' if len(tracks) != 1 else ''}"
         self.tracks_count.setText(f"{count}  ·  {_hours(total)}" if tracks else count)
-        self._update_track_buttons()
         self._preview_timer.start()
 
     def _on_sort_changed(self, column: int, order: Qt.SortOrder) -> None:
@@ -1687,11 +1681,22 @@ class MainWindow(QMainWindow):
         rows = sorted(i.row() for i in self.track_table.selectionModel().selectedRows())
         return [self.track_model.track_at(r).id for r in rows]
 
-    def _update_track_buttons(self) -> None:
-        self.add_button.setEnabled(
-            bool(self.track_table.selectionModel().selectedRows())
-        )
-        self.fit_button.setEnabled(self.track_model.rowCount() > 0)
+    def track_menu(self) -> QMenu:
+        """What a right-click on the library's track list offers."""
+        menu = QMenu(self)
+        picked = bool(self.track_table.selectionModel().selectedRows())
+        add = menu.addAction("Add to Disc", self.add_selected_to_disc)
+        add.setEnabled(picked)
+        fit = menu.addAction("Fit All Shown Tracks to Disc", self.fit_all_to_disc)
+        fit.setEnabled(self.track_model.rowCount() > 0)
+        menu.addSeparator()
+        load = menu.addAction("Load in Player", self.load_highlighted_track)
+        load.setEnabled(picked)
+        return menu
+
+    def _show_track_menu(self, position) -> None:
+        menu = self.track_menu()
+        menu.popup(self.track_table.viewport().mapToGlobal(position))
 
     def load_highlighted_track(self) -> None:
         """Return in the track list: load the highlighted track into the player, as a
@@ -1962,7 +1967,7 @@ class MainWindow(QMainWindow):
             self._lib.same_file_ids(self._lib.tracks_on_discs(exclude=disc_id)),
         )
         if disc_id is None:
-            self.target_label.setText("No disc open: adding starts a new one")
+            self.target_label.setText("No disc open")
         else:
             self.target_label.setText(f"Adding to “{self._lib.disc(disc_id).name}”")
 

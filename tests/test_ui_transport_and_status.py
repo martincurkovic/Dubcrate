@@ -13,7 +13,6 @@ from dubcrate.ui.status_bar import AppStatusBar
 from dubcrate.ui.transport_button import (
     KINDS,
     PLAY_SIZE,
-    SKIP_SIZE,
     TransportButton,
 )
 from dubcrate.updates import UpdateInfo
@@ -26,11 +25,15 @@ INFO = UpdateInfo(
 # -- the transport buttons ----------------------------------------------------------------
 
 
-def test_play_is_a_little_bigger_than_previous_and_next(qapp):
+def test_previous_and_next_are_the_beat_jump_tiles_and_play_is_a_round_button(qapp):
     sizes = {kind: TransportButton(kind).size() for kind in KINDS}
     assert (sizes["play"].width(), sizes["play"].height()) == (PLAY_SIZE, PLAY_SIZE)
     assert sizes["previous"] == sizes["next"]
-    assert sizes["previous"].width() == SKIP_SIZE < PLAY_SIZE
+    assert (sizes["previous"].width(), sizes["previous"].height()) == (50, 30)
+    from dubcrate.ui.player_strip import PlayerStrip
+
+    strip = PlayerStrip()
+    assert strip.prev_button.size() == strip.jump_back_button.size()
 
 
 def test_an_unknown_kind_is_an_error(qapp):

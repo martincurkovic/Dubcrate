@@ -36,6 +36,8 @@ from dubcrate.card_import import (
     choice_from,
 )
 
+from .tick_header import TickHeader
+
 ROLE = Qt.ItemDataRole.UserRole
 
 
@@ -83,18 +85,26 @@ class CardImportDialog(QDialog):
     ) -> None:
         super().__init__(parent)
         self.setWindowTitle("Import changes from the card")
+        self.setMinimumSize(520, 320)
         self.resize(640, 480)
         layout = QVBoxLayout(self)
-        self.intro = QLabel(
-            "These are the changes on the card that Dubcrate doesn't have: cues and loops set on the player,"
-            " and cues deleted or moved there since the last sync. Tick the ones to bring in. New ones become"
-            " memory cues and loops in Dubcrate, and in rekordbox if you have allowed that (Settings > Library);"
-            " a deletion deletes that memory cue or loop. The player's hot cues are listed but not ticked."
+        self.intro = QLabel("Edited cues and loops. Check which ones to import.")
+        self.intro.setToolTip(
+            "New ones become memory cues and loops in Dubcrate, and in rekordbox if you have allowed that"
+            " (Settings > Library); a deletion deletes that memory cue or loop. The player's hot cues are"
+            " listed but not ticked."
         )
         self.intro.setWordWrap(True)
         layout.addWidget(self.intro)
         self.tree = QTreeWidget()
+        self.tick_header = TickHeader(
+            self.tree
+        )  # one box that ticks or unticks every change
+        self.tree.setHeader(self.tick_header)
+        self.tree.setColumnCount(2)
         self.tree.setHeaderLabels(["Disc, track and change", "Time"])
+        self.tick_header.set_indent(self.tree.indentation())
+        self.tick_header.tick_clicked.connect(self._tick_all)
         self.tree.setRootIsDecorated(True)
         self.tree.setUniformRowHeights(True)
         header = self.tree.header()
@@ -161,12 +171,6 @@ class CardImportDialog(QDialog):
 
     def _write_notes(self, findings: Sequence[DiscFinding]) -> None:
         lines = []
-        kept = sum(d.kept for d in findings)
-        if kept:
-            lines.append(
-                f"{_plural(kept, 'cue')} deleted on the player can't be deleted here (hot cues, and loops saved in a"
-                " hot cue): left as they are."
-            )
         without = [d.path or d.name for d in findings if not d.has_baseline]
         if without:
             lines.append(
@@ -242,8 +246,32 @@ class CardImportDialog(QDialog):
                 child.setCheckState(0, state)
                 self._set_below(child, state)
 
+    def _tick_all(self) -> None:
+        """The header's box: tick every change, or untick them all when they are all ticked."""
+        leaves = [leaf for leaf in self._rows() if leaf.data(0, ROLE) is not None]
+        everything = all(leaf.checkState(0) == Qt.CheckState.Checked for leaf in leaves)
+        state = Qt.CheckState.Unchecked if everything else Qt.CheckState.Checked
+        self._filling = True
+        try:
+            for d in range(self.tree.topLevelItemCount()):
+                disc = self.tree.topLevelItem(d)
+                disc.setCheckState(0, state)
+                self._set_below(disc, state)
+        finally:
+            self._filling = False
+        self._update()
+
     def _update(self) -> None:
         count = self._count()
+        total = sum(1 for leaf in self._rows() if leaf.data(0, ROLE) is not None)
+        state = (
+            Qt.CheckState.Unchecked
+            if count == 0
+            else Qt.CheckState.Checked
+            if count == total
+            else Qt.CheckState.PartiallyChecked
+        )
+        self.tick_header.set_state(state, total > 0)
         self.import_button.setText(f"Import {_plural(count, 'change')}")
         self.import_button.setEnabled(count > 0)
 

@@ -29,6 +29,7 @@ class NoticesDialog(QDialog):
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
         self.setWindowTitle("Third-Party Notices")
+        self.setMinimumSize(560, 400)
         self.resize(680, 520)
         self.viewer = QTextBrowser()
         self.viewer.setOpenExternalLinks(True)

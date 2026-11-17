@@ -224,6 +224,9 @@ def _write(track: DemoTrack, wave_for) -> tuple[Path, object]:
         "artist": track.artist,
         "album": track.album,
         "genre": track.genre,
+        "date": str(
+            2008 + track.seed % 17
+        ),  # (from the seed: the catalog itself is unchanged)
     }
     if track.tagged:
         tags |= {"TBPM": str(track.bpm), "TKEY": track.key}

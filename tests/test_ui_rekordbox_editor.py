@@ -414,12 +414,12 @@ def test_cues_loops_and_deleted_loops_go_in_one_write(lib, wait_for, monkeypatch
 def test_the_first_edit_question_names_loops_only_when_they_are_written(monkeypatch):
     monkeypatch.setattr(RekordboxEditor, "WRITE_LOOPS", False)
     heading, explanation = editor_module.enable_editing_text()
-    assert heading == "Save memory cue changes into your rekordbox library?"
+    assert heading == "Save memory cue changes to rekordbox?"
     assert "loops" not in heading + explanation
     monkeypatch.setattr(RekordboxEditor, "WRITE_LOOPS", True)
     heading, explanation = editor_module.enable_editing_text()
-    assert heading == "Save memory cue and loop changes into your rekordbox library?"
-    assert "memory cues and loops" in explanation
+    assert heading == "Save memory cue and loop changes to rekordbox?"
+    assert explanation == "rekordbox must be closed."
 
 
 def test_the_setting_is_a_checkbox_in_the_settings_window(qapp):

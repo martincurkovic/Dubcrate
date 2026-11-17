@@ -152,10 +152,11 @@ QComboBox::drop-down {
     background: transparent;
 }
 
+/* the combo's arrow and the spin box's arrows are the same size (the small triangle at 16 px) */
 QComboBox::down-arrow {
-    image: url(${s6_icon_dir}/s6_arrow_down.svg);
-    width: 14px;
-    height: 14px;
+    image: url(${s6_icon_dir}/s6_arrow_down_small.svg);
+    width: 16px;
+    height: 16px;
 }
 
 QComboBox::down-arrow:disabled {
@@ -166,7 +167,7 @@ QComboBox::down-arrow:disabled {
 QSpinBox::up-button, QDoubleSpinBox::up-button {
     subcontrol-origin: padding;
     subcontrol-position: top right;
-    width: 16px;
+    width: 20px;
     border-left: 1px solid ${border};
     background: ${bg_input};
 }
@@ -174,21 +175,26 @@ QSpinBox::up-button, QDoubleSpinBox::up-button {
 QSpinBox::down-button, QDoubleSpinBox::down-button {
     subcontrol-origin: padding;
     subcontrol-position: bottom right;
-    width: 16px;
+    width: 20px;
     border-left: 1px solid ${border};
     background: ${bg_input};
 }
 
 QSpinBox::up-arrow, QDoubleSpinBox::up-arrow {
     image: url(${s6_icon_dir}/s6_arrow_up_small.svg);
-    width: 12px;
-    height: 12px;
+    width: 16px;
+    height: 16px;
 }
 
 QSpinBox::down-arrow, QDoubleSpinBox::down-arrow {
     image: url(${s6_icon_dir}/s6_arrow_down_small.svg);
-    width: 12px;
-    height: 12px;
+    width: 16px;
+    height: 16px;
+}
+
+/* a spin box's number starts where a combo box's text does (a combo box adds its own margin) */
+QSpinBox, QDoubleSpinBox {
+    padding-left: 9px;
 }
 
 /* ---------- Scroll bars: 16 px, outlined on both sides, a dithered track, an arrow box at each end, a white thumb ---------- */

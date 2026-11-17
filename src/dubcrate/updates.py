@@ -48,10 +48,10 @@ class UpdateCheckError(RuntimeError):
 def _http_failure(error: urllib.error.HTTPError) -> str:
     if error.code == 404:
         # (a public repository with no release answers 200 and an empty list, so a 404 means the repository is gone or has moved)
-        return "GitHub says Dubcrate's release list doesn't exist (error 404): the project may have moved or been renamed."
+        return "error 404"
     if error.code in (403, 429):
         return "GitHub is limiting requests from this connection right now. Try again later."
-    return f"GitHub answered with an error ({error.code} {error.reason})."
+    return f"error {error.code}"
 
 
 def _ssl_context() -> ssl.SSLContext:

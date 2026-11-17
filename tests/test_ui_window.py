@@ -114,7 +114,9 @@ def test_starts_on_all_tracks(window):
     assert win.tracks_title.text() == "All Tracks"
     assert win.track_model.rowCount() == 6
     assert win.tracks_count.text().startswith("6 tracks")
-    assert not win.add_button.isEnabled() and win.fit_button.isEnabled()
+    actions = {a.text(): a for a in win.track_menu().actions() if a.text()}
+    assert not actions["Add to Disc"].isEnabled()
+    assert actions["Fit All Shown Tracks to Disc"].isEnabled()
 
 
 def test_a_playlist_shows_its_tracks_in_playlist_order(window):
@@ -173,7 +175,7 @@ def test_source_actions_need_a_source_selected(window):
 def test_adding_selected_tracks_creates_a_disc_and_marks_them(window):
     win, lib = window
     select_rows(win.track_table, [0, 2])
-    assert win.add_button.isEnabled()
+    assert win.track_menu().actions()[0].isEnabled()
     win.add_selected_to_disc()
     assert len(lib.discs()) == 1 and lib.discs()[0].name == "Disc 1"
     assert (
@@ -274,14 +276,14 @@ def test_dragging_rows_reorders_the_disc(window):
     assert [win.disc_view.model.entry_at(r).position for r in range(4)] == [0, 1, 2, 3]
 
 
-def test_remove_button_and_delete_key_take_tracks_off_the_disc(window):
+def test_remove_menu_and_delete_key_take_tracks_off_the_disc(window):
     win, lib = window
     panel = win.disc_view
     panel.add_tracks([t.id for t in lib.tracks(sort="title")][:4])
-    assert not panel.remove_button.isEnabled()
     select_rows(panel.table, [1])
-    assert panel.remove_button.isEnabled()
-    panel.remove_selected()
+    remove = next(a for a in panel.table_menu().actions() if "Remove" in a.text())
+    assert remove.isEnabled()
+    remove.trigger()
     assert disc_titles(win) == ["Song 0", "Song 2", "Song 3"]
     select_rows(panel.table, [0, 1])
     panel.table.keyPressEvent(
@@ -1307,14 +1309,14 @@ def test_file_menu_offers_to_save_the_memory_cues_waiting_for_rekordbox(window):
     editor = win.preview.editor
     win._update_file_menu()
     assert (
-        not win.act_save_waiting.isEnabled()
-    )  # (no rekordbox library, nothing waiting)
+        not win.act_save_waiting.isVisible()
+    )  # (no rekordbox library, nothing waiting: the item is not there)
     lib.set_memory_cues("/m/a.mp3", [(1000, "")])
     win._update_file_menu()
-    assert not win.act_save_waiting.isEnabled()  # (still no rekordbox library)
+    assert not win.act_save_waiting.isVisible()  # (still no rekordbox library)
     lib.replace_source("rekordbox", "/rb/master.db", "rekordbox", [], [])
     win._update_file_menu()
-    assert win.act_save_waiting.isEnabled()
+    assert win.act_save_waiting.isVisible()
     assert win.act_save_waiting.text() == "Save 1 Waiting Memory Cue Edit to rekordbox"
     lib.set_memory_cues("/m/b.mp3", [(1000, "")])
     win._update_file_menu()

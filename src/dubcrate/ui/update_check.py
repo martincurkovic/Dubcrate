@@ -93,7 +93,7 @@ class UpdateChecker:
                 QMessageBox.warning(
                     over,
                     "Update Check Failed",
-                    f"Could not check for updates:\n{message}",
+                    f"Could not check for updates: {message}",
                 )
             # silent at start-up: no need to nag about a flaky connection
 

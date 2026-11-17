@@ -407,8 +407,10 @@ class SourceTabBar(QWidget):
         painter = QPainter(self)
         palette = theme.current_palette()
         painter.fillRect(self.rect(), QColor(palette["bg_statusbar"]))
-        painter.setPen(QColor(palette["border_list"]))
-        painter.drawLine(self.width() - 1, 0, self.width() - 1, self.height())
+        # (filled, not drawn with a pen: a one-pixel pen stays one device pixel on a 2x screen, which made
+        # this line half as thick as the outlines the style sheet draws around the lists)
+        line = QColor(palette["border_list"])
+        painter.fillRect(self.width() - 1, 0, 1, self.height(), line)
         if self._bottom:  # a line between the scrolling tabs and the fixed ones
             y = self._area.geometry().bottom() + 1
-            painter.drawLine(6, y, self.width() - 8, y)
+            painter.fillRect(6, y, self.width() - 14, 1, line)

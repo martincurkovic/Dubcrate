@@ -114,13 +114,10 @@ def test_the_shortcuts_the_guide_lists_are_the_real_ones(window):
 
 
 def test_the_buttons_the_guide_names_exist(window):
-    assert window.add_button.text() == "Add to Disc"
-    assert window.fit_button.text() == "Fit All to Disc"
-    assert window.new_disc_button.text() == "New Disc"
-    assert window.new_folder_button.text() == "New Folder"
-    assert window.disc_view.remove_button.text() == "Remove"
     assert window.disc_view.burn_button.text() == "Burn…"
-    for name in ("Add to Disc", "Fit All to Disc", "New Disc", "New Folder", "Burn…"):
+    texts = [a.text() for a in window.track_menu().actions()]
+    assert "Add to Disc" in texts and "Fit All Shown Tracks to Disc" in texts
+    for name in ("Add to Disc", "Fit All", "New Disc", "New Folder", "Burn…"):
         assert name in MANUAL, name
 
 
@@ -165,7 +162,7 @@ def test_the_settings_tabs_the_guide_names_exist(qapp):
     assert "Check for a new version when Dubcrate starts" in MANUAL
     for name in names:
         assert f"**{name}:**" in MANUAL, name
-    assert "Plan new discs for" in MANUAL and "Between tracks" in MANUAL
+    assert "Default CD-R size" in MANUAL and "Between tracks" in MANUAL
     assert dialog.minutes_combo.currentData() == 80  # "80 minutes ... gapless"
     assert [dialog.minutes_combo.itemText(i) for i in range(2)] == [
         "80 minutes (700 MB)",

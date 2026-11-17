@@ -53,17 +53,13 @@ def check_burn(
                 "The disc's table of contents is not what was planned ("
                 + "; ".join(differences[:3])
                 + (", ..." if len(differences) > 3 else "")
-                + "). The disc itself is fine. It matters only for syncing cues to the CDJ's "
-                "card, which would not recognise this disc from the plan: use the command line "
-                "(`dubcrate card sync … --from-drive`) with the disc in the drive, and please "
+                + "). The disc itself is fine, but Sync may not recognise it: "
+                "use `dubcrate card sync … --from-drive` with the disc in the drive, and please "
                 "report this."
             )
         else:
             verdict = True
-            say(
-                "Checked the disc's table of contents: it is exactly as planned, so syncing "
-                "cues to the CDJ's card will recognise it."
-            )
+            say("Checked the disc's TOC: it is exactly as planned.")
     except DriveTocError as exc:
         log.info("couldn't check the burned disc's TOC: %s", exc)
         say(f"Couldn't check the disc's table of contents: {exc}")

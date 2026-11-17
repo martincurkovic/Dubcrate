@@ -45,7 +45,7 @@ with CD-TEXT so track titles appear on the CDJ.
     <td align="center"><img alt="The label window: two discs' track lists laid out on one sheet of paper" src="src/dubcrate/ui/help/screenshots/labels.png" width="420"><br><sub>Index labels for the case</sub></td>
   </tr>
   <tr>
-    <td align="center"><img alt="The burn window: the drive, the burn speed and the blank CD-R confirmation" src="src/dubcrate/ui/help/screenshots/burn.png" width="420"><br><sub>The burn window</sub></td>
+    <td align="center"><img alt="The burn window: the drive, the disc in it and the burn speed" src="src/dubcrate/ui/help/screenshots/burn.png" width="420"><br><sub>The burn window</sub></td>
     <td align="center"><img alt="The Dubcrate window in the Macintosh System 6 theme: black and white with a bitmap-style font" src="src/dubcrate/ui/help/screenshots/main-window-system6.png" width="420"><br><sub>Macintosh System 6 theme</sub></td>
   </tr>
 </table>
@@ -54,6 +54,7 @@ with CD-TEXT so track titles appear on the CDJ.
 
 - **A Mac**, which is what Dubcrate has been used on. **Linux** is built as an AppImage but is new and not yet tried on a real desktop
   (you install `cdrdao` with your package manager to burn). Windows is planned.
+- **A screen of 1280 × 720 or more.** The window can't be made smaller than 980 × 660.
 - **A CD burner** that can write CD-R, and blank **CD-R** discs. (CD-RW is not recommended
   for old CD players, and has not been tried.)
 - **[ffmpeg](https://ffmpeg.org/)**, which Dubcrate uses to read tracks and prepare
@@ -86,13 +87,13 @@ If you would rather not trust a download, [BUILDING.md](BUILDING.md) builds it f
 2. **Browse and listen.** Pick a playlist, search by title, artist, album or genre,
    and sort by clicking a column heading.
 3. **Build a disc.** Your discs are playlists, listed on the right and can be filed in folders
-   like rekordbox playlists. *New Disc* creates a new playlist for burning.
-   **Fit All to Disc** adds tracks in order until the disc is full, and
+   like rekordbox playlists. *Disc ▸ New Disc* creates a new playlist for burning.
+   Right-click a track for **Fit All Shown Tracks to Disc**, which adds tracks in order until the disc is full, and
    *Disc ▸ Split Shown Tracks Across Discs…* turns a long playlist into several discs.
 4. **Check the bar.** It shows each track as a coloured block. A disc can't be burned
    if it is over its size or contains a track whose file can't be found.
-5. **Burn it.** *Burn…* (or *Disc ▸ Burn Disc…*) shows the drive and asks you to confirm that a blank CD-R is
-   loaded. Burn speed can be adjusted. It is recommended to use a slower burn speed for reliability, particularly with older CD players.
+5. **Burn it.** *Burn…* (or *Disc ▸ Burn Disc…*) shows the drive and the disc in it. Load a blank CD-R and press Burn.
+   Burn speed can be adjusted. It is recommended to use a slower burn speed for reliability, particularly with older CD players.
 6. **Print an index label for the case.** *Disc ▸ Print Labels…* (⌘P) lays out the track list of
    one or several discs on sticker paper.
 

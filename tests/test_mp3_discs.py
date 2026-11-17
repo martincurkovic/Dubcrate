@@ -621,10 +621,9 @@ def test_an_mp3_disc_is_burned_as_data_and_marked_burned(lib, dialog_for, wait_f
     dialog = dialog_for(disc, burner)
     assert (
         "MP3 CD" in dialog.disc_label.text()
-        and "320 kbit/s" in dialog.disc_label.text()
+        and "320kbps CBR" in dialog.disc_label.text()
     )
     assert "MB" in dialog.drive_label.text()
-    dialog.confirm_check.setChecked(True)
     dialog.burn_button.click()
     assert wait_for(lambda: not dialog._busy)
     [(data, options)] = burner.data
@@ -643,7 +642,11 @@ def test_a_disc_in_the_drive_too_small_for_the_files_stops_the_burn(
     small = MediaInfo(drive="Test Drive", present=True, blank=True, free_sectors=mp3.FILESYSTEM_OVERHEAD_SECTORS + 5)  # fmt: skip
     burner = FakeBurner(small)
     dialog = dialog_for(disc, burner)
-    assert "MB" in dialog.problems_label.text() or not dialog.burn_button.isEnabled()
+    dialog.burn_button.click()  # (the planned size fits; the rendered files and their filesystem don't)
+    assert wait_for(lambda: not dialog._busy)
+    assert (
+        "over capacity" in dialog.log.toPlainText() and "MB" in dialog.log.toPlainText()
+    )
     assert burner.data == [] and lib.disc(disc).last_burned_at is None
 
 

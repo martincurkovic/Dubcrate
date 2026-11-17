@@ -83,11 +83,13 @@ def disc_id(lib):
 def make_dialog(qapp, lib, disc_id, wait_for):
     made = []
 
-    def make(burner=None, disc=None):
+    def make(burner=None, disc=None, export_only=False):
         burner = burner or FakeBurner()
-        dialog = BurnDialog(lib, disc or disc_id, burner_factory=lambda: burner)
+        dialog = BurnDialog(
+            lib, disc or disc_id, burner_factory=lambda: burner, export_only=export_only
+        )
         made.append(dialog)
-        if (disc or disc_id) == disc_id:
+        if (disc or disc_id) == disc_id and not export_only:
             assert wait_for(lambda: not dialog._busy)  # the drive check finished
         return dialog, burner
 
@@ -98,7 +100,6 @@ def make_dialog(qapp, lib, disc_id, wait_for):
 
 
 def burn(dialog, wait_for):
-    dialog.confirm_check.setChecked(True)
     assert dialog.burn_button.isEnabled()
     dialog.burn_button.click()
     assert wait_for(lambda: not dialog._busy)
@@ -118,14 +119,16 @@ def test_the_drive_and_disc_are_shown_and_nothing_is_burned_yet(make_dialog):
     assert burner.burned == []
 
 
-def test_burn_waits_for_the_blank_cdr_confirmation(make_dialog):
+def test_burn_is_ready_once_the_drive_has_a_disc_and_there_are_no_checkboxes(
+    make_dialog,
+):
     dialog, _burner = make_dialog()
-    assert not dialog.confirm_check.isChecked()
-    assert not dialog.burn_button.isEnabled()
-    dialog.confirm_check.setChecked(True)
     assert dialog.burn_button.isEnabled()
-    dialog.confirm_check.setChecked(False)
-    assert not dialog.burn_button.isEnabled()
+    assert not hasattr(dialog, "confirm_check") and not hasattr(
+        dialog, "simulate_check"
+    )
+    assert not dialog.check_button.isVisibleTo(dialog)  # (nothing to look at again)
+    assert not dialog.log.isVisibleTo(dialog)  # (nothing to say until a burn starts)
 
 
 def test_no_button_in_the_window_is_the_return_key_default(make_dialog):
@@ -136,7 +139,6 @@ def test_no_button_in_the_window_is_the_return_key_default(make_dialog):
 
 def test_return_never_starts_a_burn(make_dialog):
     dialog, burner = make_dialog()
-    dialog.confirm_check.setChecked(True)
     event = QKeyEvent(
         QEvent.Type.KeyPress, Qt.Key.Key_Return, Qt.KeyboardModifier.NoModifier
     )
@@ -187,21 +189,6 @@ def test_with_a_readable_drive_an_audio_burn_keeps_the_disc_in_and_checks_its_to
     [(_disc, options)] = burner.burned
     assert options.eject is False  # (the check opens the tray itself)
     assert checks == [([150, 225], 0)]  # the burned tracks' lengths, and the gap
-
-
-def test_a_test_burn_is_never_checked_and_still_ejects(
-    make_dialog, wait_for, monkeypatch
-):
-    checks = []
-    monkeypatch.setattr("dubcrate.ui.burn_dialog.can_read_toc", lambda: True)
-    monkeypatch.setattr(
-        "dubcrate.ui.burn_dialog.check_burn", lambda *a: checks.append(1)
-    )
-    dialog, burner = make_dialog()
-    dialog.simulate_check.setChecked(True)
-    burn(dialog, wait_for)
-    [(_disc, options)] = burner.burned
-    assert options.simulate and options.eject is True and checks == []
 
 
 def test_a_check_that_says_something_puts_it_in_the_burn_log(
@@ -263,13 +250,6 @@ def test_print_labels_appears_only_after_a_real_burn_and_asks_for_that_disc(
     assert (
         not dialog.isVisible()
     )  # (the burn window closed itself: no label window over a modal one)
-
-
-def test_a_test_burn_does_not_offer_labels(make_dialog, wait_for):
-    dialog, _burner = make_dialog()
-    dialog.simulate_check.setChecked(True)
-    burn(dialog, wait_for)
-    assert not dialog.labels_button.isVisibleTo(dialog)
 
 
 def test_print_labels_after_a_burn_opens_the_label_window_with_that_disc_ticked(
@@ -441,27 +421,9 @@ def test_after_a_real_burn_the_dialog_cannot_burn_again_and_can_close(
 ):
     dialog, burner = make_dialog()
     burn(dialog, wait_for)
-    assert not dialog.confirm_check.isChecked()
-    dialog.confirm_check.setChecked(True)
     assert not dialog.burn_button.isEnabled()  # the disc is no longer blank
     assert dialog.close_button.isEnabled()
     assert len(burner.burned) == 1
-
-
-def test_a_test_burn_records_nothing_and_asks_for_confirmation_again(
-    lib, make_dialog, wait_for
-):
-    dialog, burner = make_dialog()
-    dialog.simulate_check.setChecked(True)
-    assert dialog.burn_button.text() == "Test Burn"
-    burn(dialog, wait_for)
-    assert burner.burned[0][1].simulate is True
-    assert all(d.last_burned_at is None for d in lib.discs())  # a test is not a burn
-    assert "not marked as burned" in dialog.status_label.text()
-    assert not dialog.confirm_check.isChecked()
-    dialog.confirm_check.setChecked(True)
-    assert dialog.burn_button.isEnabled()  # a test can be repeated
-    assert all(t.cd_sectors is not None for t in lib.tracks())  # lengths still learned
 
 
 def test_a_failed_burn_says_so_and_records_nothing(lib, make_dialog, wait_for, caplog):
@@ -471,8 +433,7 @@ def test_a_failed_burn_says_so_and_records_nothing(lib, make_dialog, wait_for, c
     assert "Failed: drive on fire" in dialog.log.toPlainText()
     assert [r for r in caplog.records if r.levelname == "ERROR"] == []
     assert "failed" in dialog.status_label.text()
-    assert not dialog.confirm_check.isChecked() and dialog.close_button.isEnabled()
-    dialog.confirm_check.setChecked(True)
+    assert dialog.close_button.isEnabled()
     assert dialog.burn_button.isEnabled()  # can try again
 
 
@@ -518,16 +479,15 @@ def test_the_burn_writes_the_text_edited_for_the_disc(
 def test_a_disc_too_small_blocks_the_burn_even_when_confirmed(make_dialog):
     small = MediaInfo(drive="D", present=True, blank=True, free_sectors=100)
     dialog, burner = make_dialog(FakeBurner(small))
-    dialog.confirm_check.setChecked(True)
     assert not dialog.burn_button.isEnabled()
-    assert "the disc in the drive holds" in dialog.problems_label.text()
+    assert "disc over capacity by" in dialog.problems_label.text()
+    assert "use a larger disc or remove tracks" in dialog.problems_label.text()
     assert dialog.drive_label.property("level") == "critical"
     assert burner.burned == []
 
 
 def test_no_disc_in_the_drive_blocks_the_burn(make_dialog):
     dialog, _burner = make_dialog(FakeBurner(MediaInfo(drive="D", present=False)))
-    dialog.confirm_check.setChecked(True)
     assert not dialog.burn_button.isEnabled()
     assert "no disc in the drive" in dialog.problems_label.text()
 
@@ -549,15 +509,15 @@ def test_a_drive_that_cannot_be_reached_blocks_the_burn_and_can_be_rechecked(
         def media_info(self, device):
             self.media_calls += 1
             if self.media_calls == 1:
-                raise BurnError("DiscRecording found no optical drives")
+                raise BurnError("No optical drives found")
             return self.media
 
     burner = Unreachable()
     dialog = BurnDialog(lib, disc_id, burner_factory=lambda: burner)
     assert wait_for(lambda: not dialog._busy)
-    dialog.confirm_check.setChecked(True)
     assert not dialog.burn_button.isEnabled()
-    assert "no optical drives" in dialog.problems_label.text()
+    assert "No optical drives found" in dialog.drive_label.text()
+    assert dialog.check_button.isVisibleTo(dialog)  # (looking again might help)
     # a missing drive is expected: it is shown in the window, not logged as a crash
     assert [r for r in caplog.records if r.levelname == "ERROR"] == []
     dialog.check_button.click()  # plug it in, check again
@@ -570,9 +530,10 @@ def test_an_empty_disc_is_explained_and_the_drive_is_left_alone(lib, make_dialog
     empty = lib.create_disc("Empty")
     dialog, burner = make_dialog(disc=empty)
     assert "the disc is empty" in dialog.problems_label.text()
-    assert "isn't checked until" in dialog.drive_label.text()
-    assert not dialog.check_button.isEnabled()
-    dialog.confirm_check.setChecked(True)
+    assert not dialog.drive_label.isVisibleTo(
+        dialog
+    )  # (no drive line: it isn't looked at)
+    assert not dialog.check_button.isVisibleTo(dialog)
     assert not dialog.burn_button.isEnabled()
     assert burner.media_calls == 0
 
@@ -596,7 +557,7 @@ def test_the_drive_line_describes_what_is_known():
     text, level = describe_media(
         MediaInfo(present=True, blank=False, free_sectors=5), 1
     )
-    assert level == "warning" and "doesn't look blank" in text
+    assert level == "warning" and text == "The drive. This disc isn't blank"
     assert describe_media(None, 1)[0].startswith("Looking")
 
 
@@ -680,7 +641,7 @@ def test_a_genuine_bug_is_still_logged_as_an_error(
 
     dialog = BurnDialog(lib, disc_id, burner_factory=lambda: Broken())
     assert wait_for(lambda: not dialog._busy)
-    assert "a real bug" in dialog.problems_label.text()  # still shown to the user
+    assert "a real bug" in dialog.drive_label.text()  # still shown to the user
     assert any(r.levelname == "ERROR" for r in caplog.records)
     dialog.close()
 
@@ -700,23 +661,21 @@ def test_a_computer_that_cannot_burn_says_so_up_front(qapp, lib, disc_id, monkey
     monkeypatch.setattr("dubcrate.ui.burn_dialog.get_burner", no_burner)
     dialog = BurnDialog(lib, disc_id)
     try:
-        dialog.confirm_check.setChecked(True)
         assert not dialog._busy and dialog._media is None
         assert "cdrdao was not found" in dialog.problems_label.text()
         assert dialog.drive_label.property("level") == "critical"
-        assert not dialog.check_button.isEnabled()
+        assert not dialog.check_button.isVisibleTo(dialog)
         assert not dialog.burn_button.isEnabled()
-        assert (
-            dialog.export_button.isEnabled()
-        )  # the way out: files for another program
-        assert "Export" in dialog.drive_label.text()
+        assert not dialog.speed_combo.isEnabled()
+        assert "can't burn" in dialog.drive_label.text()
+        assert "Export Disc as Files" in dialog.drive_label.text()  # the way out
     finally:
         dialog.close()
         dialog.deleteLater()
 
 
 def test_export_writes_the_disc_as_files_without_a_drive(make_dialog, wait_for, tmp_path, monkeypatch):  # fmt: skip
-    dialog, burner = make_dialog()
+    dialog, burner = make_dialog(export_only=True)
     out = tmp_path / "out"
     out.mkdir()
     monkeypatch.setattr("dubcrate.ui.burn_dialog.ask_export_folder", lambda _parent: str(out))  # fmt: skip
@@ -734,14 +693,14 @@ def test_export_writes_the_disc_as_files_without_a_drive(make_dialog, wait_for, 
 
 
 def test_a_cancelled_export_does_nothing(make_dialog, monkeypatch, tmp_path):
-    dialog, _ = make_dialog()
+    dialog, _ = make_dialog(export_only=True)
     monkeypatch.setattr("dubcrate.ui.burn_dialog.ask_export_folder", lambda _parent: "")
     dialog.export_button.click()
     assert not dialog._busy and not list(tmp_path.glob("**/README.txt"))
 
 
 def test_a_failed_export_is_shown_in_the_window(make_dialog, wait_for, tmp_path, monkeypatch, caplog):  # fmt: skip
-    dialog, _ = make_dialog()
+    dialog, _ = make_dialog(export_only=True)
     monkeypatch.setattr("dubcrate.ui.burn_dialog.ask_export_folder", lambda _parent: str(tmp_path / "gone"))  # fmt: skip
     dialog.export_button.click()
     assert wait_for(lambda: not dialog._busy)
@@ -752,9 +711,18 @@ def test_a_failed_export_is_shown_in_the_window(make_dialog, wait_for, tmp_path,
     ] == []  # expected, not a crash
 
 
+def test_the_export_window_has_no_drive_speed_or_burn_button(make_dialog):
+    dialog, burner = make_dialog(export_only=True)
+    assert dialog.windowTitle() == "Export Disc"
+    assert dialog.export_button.isVisibleTo(dialog) and dialog.export_button.isEnabled()
+    for widget in (dialog.burn_button, dialog.drive_label, dialog.check_button):
+        assert not widget.isVisibleTo(dialog)
+    assert burner.media_calls == 0  # (no drive is asked about)
+
+
 def test_a_disc_that_cannot_be_burned_cannot_be_exported_either(make_dialog, lib):
     empty = lib.create_disc("Empty")
-    dialog, _ = make_dialog(disc=empty)
+    dialog, _ = make_dialog(disc=empty, export_only=True)
     assert not dialog.export_button.isEnabled()
 
 
@@ -801,19 +769,20 @@ def test_matching_measures_once_then_shows_the_gains(
     assert wait_for(lambda: not dialog._measuring)
     assert measured == [2]  # both tracks, on a worker
     assert all(t.loudness for t in lib.tracks())  # and remembered
-    assert f"Levels matched to {DEFAULT} LUFS" in dialog.levels_label.text()
-    assert dialog._plan.levels_note == dialog.levels_label.text()
+    assert dialog.levels_label.text().startswith(("Gain ", "Gains "))
+    assert dialog._plan.levels_note.startswith(f"Levels matched to {DEFAULT} LUFS")
+    assert dialog._plan.levels_short == dialog.levels_label.text()
     assert dialog.levels_combo.isEnabled()
     assert any(t.gain_db for t in dialog._plan.tracks)
 
     before = [t.gain_db for t in dialog._plan.tracks]
     choose_levels(dialog, "-14")  # a new target: new gains, nothing measured again
-    assert "-14 LUFS" in dialog.levels_label.text() and measured == [2]
+    assert "-14 LUFS" in dialog._plan.levels_note and measured == [2]
     assert [t.gain_db for t in dialog._plan.tracks] != before
     choose_levels(
         dialog, "peak"
     )  # peak normalising: its own note, still nothing measured
-    assert dialog.levels_label.text().startswith("Peak-normalised to -0.3 dBTP")
+    assert dialog._plan.levels_note.startswith("Peak-normalised to -0.3 dBTP")
     assert measured == [2]
     choose_levels(dialog, None)  # and back
     assert [t.gain_db for t in dialog._plan.tracks] == [0.0, 0.0]
@@ -836,7 +805,7 @@ def test_a_burn_with_matching_on_writes_tracks_at_the_target(make_dialog, wait_f
     dialog, _ = make_dialog(burner)
     choose_levels(dialog, str(DEFAULT))
     assert wait_for(lambda: not dialog._measuring)
-    assert not dialog.burn_button.isEnabled()  # (still needs the blank CD-R ticked)
+    assert dialog.burn_button.isEnabled()
     burn(dialog, wait_for)
     assert burner.levels == [pytest.approx(DEFAULT, abs=0.3)] * 2
     assert (
@@ -853,7 +822,8 @@ def test_the_settings_can_have_matching_on_when_the_window_opens(
     try:
         assert dialog.levels_check.isChecked() and dialog.levels_combo.currentData() == "-12"  # fmt: skip
         assert wait_for(lambda: not dialog._measuring and not dialog._busy)
-        assert "Levels matched to -12 LUFS" in dialog.levels_label.text()
+        assert dialog._plan.levels_note.startswith("Levels matched to -12 LUFS")
+        assert dialog.levels_label.text().startswith(("Gain ", "Gains "))
     finally:
         dialog.close()
         dialog.deleteLater()
@@ -870,7 +840,6 @@ def test_a_failed_measurement_blocks_the_burn_and_says_how_to_get_past_it(make_d
     dialog, _ = make_dialog()
     choose_levels(dialog, str(DEFAULT))
     assert wait_for(lambda: not dialog._measuring)
-    dialog.confirm_check.setChecked(True)
     assert not dialog.burn_button.isEnabled()
     assert "ffmpeg fell over" in dialog.problems_label.text()
     assert "untick Normalise" in dialog.problems_label.text()
@@ -936,7 +905,6 @@ def test_measuring_the_levels_can_be_cancelled_what_was_measured_is_kept_and_the
     assert next(t for t in lib.tracks() if t.id == first.id).loudness == Loudness(
         -12.0, -1.0
     )  # kept
-    dialog.confirm_check.setChecked(True)
     assert (
         not dialog.burn_button.isEnabled()
     )  # the burn waits: it was asked to match levels
@@ -972,7 +940,6 @@ def test_cancel_stops_the_preparing_and_nothing_is_written(make_dialog, lib, dis
     monkeypatch.setattr("dubcrate.ui.burn_dialog.render_plan", _slow_render(started))
     dialog, burner = make_dialog()
     assert not dialog.cancel_burn_button.isVisibleTo(dialog)  # (nothing to cancel yet)
-    dialog.confirm_check.setChecked(True)
     dialog.burn_button.click()
     assert wait_for(started.is_set)
     assert dialog.cancel_burn_button.isVisibleTo(dialog) and dialog.cancel_burn_button.isEnabled()  # fmt: skip
@@ -983,7 +950,7 @@ def test_cancel_stops_the_preparing_and_nothing_is_written(make_dialog, lib, dis
     assert "Cancelled. Nothing was written" in dialog.log.toPlainText()
     assert "cancelled before anything was written" in dialog.status_label.text()
     assert lib.disc(disc_id).last_burned_at is None  # (it was never burned)
-    assert not dialog.cancel_burn_button.isVisibleTo(dialog) and not dialog.confirm_check.isChecked()  # fmt: skip
+    assert not dialog.cancel_burn_button.isVisibleTo(dialog)  # fmt: skip
     assert not dialog.labels_button.isVisibleTo(
         dialog
     )  # (no "print labels": nothing was burned)
@@ -1005,7 +972,6 @@ def test_a_cancelled_burn_can_be_started_again(make_dialog, wait_for, monkeypatc
     monkeypatch.setattr("dubcrate.ui.burn_dialog.render_plan", first_slow_then_real)
     monkeypatch.setattr("dubcrate.ui.burn_dialog.can_read_toc", lambda: False)
     dialog, burner = make_dialog()
-    dialog.confirm_check.setChecked(True)
     dialog.burn_button.click()
     assert wait_for(started.is_set)
     dialog.cancel_burn_button.click()
@@ -1028,7 +994,6 @@ def test_once_writing_starts_cancel_is_gone_and_does_nothing(make_dialog, wait_f
             super().burn(disc, options, progress)
 
     dialog, burner = make_dialog(Holding())
-    dialog.confirm_check.setChecked(True)
     dialog.burn_button.click()
     assert wait_for(lambda: not dialog.cancel_burn_button.isVisibleTo(dialog) and dialog._busy)  # fmt: skip
     assert dialog._burn_cancel is None

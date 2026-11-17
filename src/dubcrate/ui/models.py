@@ -73,14 +73,14 @@ class TrackColumn(NamedTuple):
 TRACK_COLUMNS = (
     # the "already on the disc" marker
     TrackColumn("", None, width=24, fixed=True),
-    TrackColumn("Title", "title", width=230),
-    TrackColumn("Artist", "artist", width=130),
+    TrackColumn("Title", "title", width=200),
+    TrackColumn("Artist", "artist", width=120),
     TrackColumn("BPM", "bpm", right=True, width=50, fixed=True),
     TrackColumn("Key", "key", width=62, fixed=True),
     TrackColumn("Time", "duration", right=True, width=46, fixed=True),
     # the whole-track waveform, drawn by PreviewDelegate
     TrackColumn("Preview", None, width=120, fixed=True),
-    TrackColumn("Genre", "genre"),
+    TrackColumn("Genre", "genre", width=90),
     TrackColumn("Album", "album", shown=False, width=160),
     TrackColumn("Year", "year", right=True, shown=False, width=50, fixed=True),
     TrackColumn("Rating", "rating", shown=False, width=70, fixed=True),
