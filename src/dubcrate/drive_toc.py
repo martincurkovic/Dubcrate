@@ -208,7 +208,7 @@ def linux_entries(
         )
     try:
         fd = os_open(
-            path, os.O_RDONLY | os.O_NONBLOCK
+            path, os.O_RDONLY | getattr(os, "O_NONBLOCK", 0)
         )  # (non-blocking: an empty drive must not hang)
     except OSError as exc:
         raise _linux_error(path, exc) from exc

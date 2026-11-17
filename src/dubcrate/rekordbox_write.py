@@ -43,6 +43,7 @@ from dubcrate.library.paths import default_library_path
 from dubcrate.library.rekordbox import (
     RekordboxError,
     _snapshot,
+    close_database,
     default_master_db,
     hot_slot,
 )
@@ -388,7 +389,7 @@ def plan_write(
         except Exception as exc:
             raise WriteError(f"could not read the cues in {master_db}: {exc}") from exc
         finally:
-            db.close()
+            close_database(db)
 
 
 def _now() -> datetime:
@@ -607,7 +608,7 @@ def _verify(
             if _others(db, touched) != before_others:
                 raise WriteError("the cues of a track that was not edited have changed")
         finally:
-            db.close()
+            close_database(db)
 
 
 def apply_write(
@@ -662,9 +663,9 @@ def apply_write(
             try:
                 db.session.rollback()
             finally:
-                db.close()
+                close_database(db)
             raise
-        db.close()
+        close_database(db)
         _verify(
             master_db,
             plan,

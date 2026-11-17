@@ -43,6 +43,18 @@ class RekordboxLibrary:
     notes: list[str] = field(default_factory=list)
 
 
+def close_database(db: Any) -> None:
+    """Close a pyrekordbox database all the way. Its own `close()` only ends the session, and the engine keeps
+    the file open: harmless on a Mac, but on Windows a file that is still open can't be deleted, so the snapshot
+    folder this is read from could not be cleaned up (and a failed write could not put its backup back)."""
+    engine = getattr(db, "engine", None)
+    try:
+        db.close()
+    finally:
+        if engine is not None:
+            engine.dispose()
+
+
 def default_master_db() -> Path | None:
     """Locate the installed rekordbox library, if there is one."""
     if sys.platform == "darwin":
@@ -226,7 +238,7 @@ def read_master_db(
             )
             library.notes += notes
         finally:
-            db.close()
+            close_database(db)
     return library
 
 
@@ -304,4 +316,4 @@ def read_cues(path: Path | None = None) -> dict[str, list[Cue]]:
         except Exception as exc:  # e.g. a database with no cue table
             raise RekordboxError(f"could not read the cues in {source}: {exc}") from exc
         finally:
-            db.close()
+            close_database(db)

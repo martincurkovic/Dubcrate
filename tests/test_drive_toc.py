@@ -216,9 +216,9 @@ def test_linux_reads_the_header_then_each_track_and_the_lead_out(monkeypatch):
     found = drive_toc.linux_entries("/dev/sr0", os_open=drive.open, ioctl=drive.ioctl)
     assert found == audio_entries()
     opened = drive.calls[0]
-    assert (
-        opened[:2] == ("open", "/dev/sr0") and opened[2] & __import__("os").O_NONBLOCK
-    )
+    assert opened[:2] == ("open", "/dev/sr0") and opened[2] & getattr(
+        __import__("os"), "O_NONBLOCK", 0
+    ) == getattr(__import__("os"), "O_NONBLOCK", 0)
     assert [c[1] for c in drive.calls[1:]] == [drive_toc.CDROMREADTOCHDR] + [drive_toc.CDROMREADTOCENTRY] * 4  # fmt: skip
 
 

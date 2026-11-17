@@ -717,3 +717,27 @@ def test_cli_deletes_loops_only_with_the_loops_option(library, tmp_path, monkeyp
     assert "1 deleted" in capsys.readouterr().out
     assert loops_of(library, "1") == []
     assert lib.memory_loop_removal_sets() == {}  # (dropped: rekordbox has it gone)
+
+
+def test_a_database_is_closed_all_the_way_so_windows_can_delete_its_folder():
+    from dubcrate.library.rekordbox import close_database
+
+    calls = []
+
+    class Engine:
+        def dispose(self):
+            calls.append("dispose")
+
+    class Db:
+        engine = Engine()
+
+        def close(self):
+            calls.append("close")
+            raise RuntimeError("the session was already gone")
+
+    with pytest.raises(RuntimeError):
+        close_database(Db())
+    assert calls == [
+        "close",
+        "dispose",
+    ]  # (the engine, which holds the file open, is let go even then)
