@@ -978,3 +978,26 @@ def test_all_three_side_columns_print_in_one_and_in_several_columns(
         )
         dialog.save_pdf()
         assert target.read_bytes().startswith(b"%PDF")
+
+
+def test_landscape_sets_the_printers_page_the_limits_the_preview_and_is_remembered(
+    qapp, lib, discs
+):
+    layout = label_paint.page_layout(labels.LabelOptions(landscape=True))
+    mm = layout.pageSize().size(layout.pageSize().Unit.Millimeter)
+    assert layout.orientation() == layout.Orientation.Landscape
+    assert round(layout.fullRect(layout.Unit.Millimeter).width()) == 297
+    assert (round(mm.width()), round(mm.height())) == (210, 297)  # (the paper itself)
+    dialog = LabelDialog(lib)
+    dialog.resize(900, 700)
+    dialog.show()
+    tick(dialog, discs[0])
+    assert dialog.width_spin.maximum() == 210
+    dialog.landscape_check.setChecked(True)
+    assert dialog.width_spin.maximum() == 297 and dialog.height_spin.maximum() == 210
+    assert abs(aspect(dialog.preview) - 297 / 210) < 0.01
+    assert dialog.options().landscape
+    settings.set_label_options(dialog.options())
+    assert settings.get_label_options().landscape
+    dialog.close()
+    assert LabelDialog(lib).landscape_check.isChecked()  # comes back as it was left

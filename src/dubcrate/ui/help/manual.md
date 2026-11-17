@@ -228,7 +228,7 @@ Old players have no screen for a track list, so Dubcrate can print one for the c
 ![The label window: two discs on one sheet, with the settings on the left](screenshots/labels.png "The label window")
 
 1. **Tick the discs** to print (ticking a folder ticks its discs; **All** and **None** help). Each label is headed with the disc's name and its folders.
-2. Choose the **Paper** (A3, A4, A5, A6, US Letter or US Legal) and type the **Label width** and **Label height**, in the unit set under **Settings > Appearance > Units**. 100 × 50 mm is a good start for a case.
+2. Choose the **Paper** (A3, A4, A5, A6, US Letter or US Legal), tick **Landscape** to turn it on its side (wide labels then fit more to a sheet, which saves paper), and type the **Label width** and **Label height**, in the unit set under **Settings > Appearance > Units**. 100 × 50 mm is a good start for a case.
 3. **Font size** is **Auto** (as large as fits) unless you pick a size. **Spread each disc over** says how many labels one disc is divided between (**Auto** uses the fewest that stay readable). **Columns (up to)** lets a long list run in columns. **Copies of each** repeats every label.
 4. **Page margin** keeps clear of the edge your printer can't reach; **Gap between labels** leaves room to cut. **Draw a thin outline to cut along** can be turned off.
 5. Press **Print…** or **Save PDF…**.

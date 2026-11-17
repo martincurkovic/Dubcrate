@@ -531,3 +531,16 @@ def test_the_side_columns_are_the_ones_with_something_in_them_in_a_fixed_order()
     assert time_only.side_columns == (("Time", "length"),)
     [none] = labels.build_labels("N", es, LabelOptions(show_bpm=False, show_key=False))
     assert none.side_columns == ()
+
+
+def test_landscape_turns_the_paper_so_a_wide_label_fits_more_to_a_sheet():
+    base = LabelOptions(width_mm=100, height_mm=50)
+    assert labels.sheet_for(base).per_page == 5  # 1 across, 5 down on portrait A4
+    sideways = replace(base, landscape=True)
+    assert sideways.page_mm == (297.0, 210.0)
+    sheet = labels.sheet_for(sideways)
+    assert (sheet.columns, sheet.rows) == (2, 3)  # 277 x 190 mm of room
+    # a label wider than portrait paper is allowed once it is turned
+    wide = LabelOptions(width_mm=250, height_mm=50, landscape=True).clamped()
+    assert wide.width_mm == 250
+    assert LabelOptions(width_mm=250, height_mm=50).clamped().width_mm == 210

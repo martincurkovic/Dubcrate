@@ -130,6 +130,11 @@ class LabelDialog(QDialog):
             self.page_combo.addItem(units.page_text(name, w, h, self._unit), name)
         self.page_combo.setCurrentIndex(max(self.page_combo.findData(o.page), 0))
         self.page_combo.setToolTip("The paper in the printer.")
+        self.landscape_check = QCheckBox("Landscape")
+        self.landscape_check.setChecked(o.landscape)
+        self.landscape_check.setToolTip(
+            "Turn the paper on its side: wide labels fit more to a sheet, so less paper is used."
+        )
         page_w, page_h = o.page_mm
         self.width_spin = LengthSpin(
             o.width_mm, labels.MIN_LABEL_MM, page_w, self._unit.key
@@ -200,6 +205,7 @@ class LabelDialog(QDialog):
 
         form = QFormLayout()
         form.addRow("Paper", self.page_combo)
+        form.addRow(self.landscape_check)
         form.addRow("Label width", self.width_spin)
         form.addRow("Label height", self.height_spin)
         form.addRow("Font size", self.font_spin)
@@ -297,6 +303,7 @@ class LabelDialog(QDialog):
             spin.valueChanged.connect(self.refresh)
         self.columns_combo.currentIndexChanged.connect(self.refresh)
         self.page_combo.currentIndexChanged.connect(self._page_size_changed)
+        self.landscape_check.toggled.connect(self._page_size_changed)
         self.bpm_check.toggled.connect(self.refresh)
         self.key_check.toggled.connect(self.refresh)
         self.year_check.toggled.connect(self.refresh)
@@ -342,7 +349,7 @@ class LabelDialog(QDialog):
 
     def _page_size_changed(self, *_args) -> None:
         """Labels can't be bigger than the paper: the width and height limits follow it."""
-        page_w, page_h = labels.PAGE_SIZES[self.page_combo.currentData()]
+        page_w, page_h = self.options().page_mm
         # (a value above the new limit is lowered)
         self.width_spin.set_range_mm(labels.MIN_LABEL_MM, page_w)
         self.height_spin.set_range_mm(labels.MIN_LABEL_MM, page_h)
@@ -503,6 +510,7 @@ class LabelDialog(QDialog):
     def options(self) -> labels.LabelOptions:
         return labels.LabelOptions(
             page=self.page_combo.currentData(),
+            landscape=self.landscape_check.isChecked(),
             font_pt=self.font_spin.value(),
             width_mm=self.width_spin.mm,
             height_mm=self.height_spin.mm,

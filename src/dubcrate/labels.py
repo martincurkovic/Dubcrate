@@ -51,6 +51,9 @@ class LabelOptions:
     """What the user chooses in the print window (and what is remembered between runs)."""
 
     page: str = DEFAULT_PAGE  # a key of PAGE_SIZES
+    landscape: bool = (
+        False  # the paper turned on its side (more labels across a short label)
+    )
     font_pt: float = (
         0.0  # text size in points; 0: as large as fits (see `font_size_mm`)
     )
@@ -73,14 +76,15 @@ class LabelOptions:
 
     @property
     def page_mm(self) -> tuple[float, float]:
-        """(width, height) of the paper in millimetres."""
-        return PAGE_SIZES.get(self.page, PAGE_SIZES[DEFAULT_PAGE])
+        """(width, height) of the paper in millimetres, as it is held: swapped when landscape."""
+        width, height = PAGE_SIZES.get(self.page, PAGE_SIZES[DEFAULT_PAGE])
+        return (height, width) if self.landscape else (width, height)
 
     def clamped(self) -> "LabelOptions":
         """The same options with every number put inside what makes sense: a label is never
         bigger than the page, and an unknown paper is A4."""
         page = self.page if self.page in PAGE_SIZES else DEFAULT_PAGE
-        page_w, page_h = PAGE_SIZES[page]
+        page_w, page_h = replace(self, page=page).page_mm
         return replace(
             self,
             page=page,

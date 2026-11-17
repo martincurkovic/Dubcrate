@@ -264,6 +264,7 @@ def get_label_options() -> labels.LabelOptions:
 
     return labels.LabelOptions(
         page=str(qs.value("labels/page", default.page)),
+        landscape=_as_bool(qs.value("labels/landscape"), default.landscape),
         font_pt=number("font_pt", default.font_pt),
         width_mm=number("width_mm", default.width_mm),
         height_mm=number("height_mm", default.height_mm),

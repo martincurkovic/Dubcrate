@@ -53,10 +53,12 @@ PAGE_IDS = {
 
 
 def page_layout(options: LabelOptions) -> QPageLayout:
-    """The chosen paper, portrait, with no margins: the options place everything themselves."""
+    """The chosen paper, portrait or landscape, with no margins: the options place everything themselves."""
     return QPageLayout(
         QPageSize(PAGE_IDS[options.page]),
-        QPageLayout.Orientation.Portrait,
+        QPageLayout.Orientation.Landscape
+        if options.landscape
+        else QPageLayout.Orientation.Portrait,
         QMarginsF(0, 0, 0, 0),
     )
 
