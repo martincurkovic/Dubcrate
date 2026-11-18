@@ -152,6 +152,7 @@ def parse_lsblk(data: str, sysfs: Path = SYSFS_BLOCK) -> list[CardDisk]:
                 virtual=False,
                 system=_holds_system(_mountpoints(node)),
                 writable=not _flag(node.get("ro")),
+                mounts=tuple(_mountpoints(node)),
             )
         )
     return disks

@@ -73,8 +73,12 @@ class FormatCardDialog(QDialog):
         parent: QWidget | None = None,
         list_disks: DiskLister | None = None,
         formatter: Formatter | None = None,
+        device: str | None = None,
     ):
         super().__init__(parent)
+        self._preferred = (
+            device  # the card to pick if it is there (the list's Format… button)
+        )
         self._list_disks = list_disks or _real_lister
         self._formatter = formatter or _real_formatter
         self._disks: list[CardDisk] = []
@@ -197,7 +201,10 @@ class FormatCardDialog(QDialog):
             self.list.addItem(item)
         usable = [i for i, d in enumerate(disks) if not card_format.problems(d)]
         if usable:
-            self.list.setCurrentRow(usable[0])
+            wanted = next(
+                (i for i in usable if disks[i].device == self._preferred), usable[0]
+            )
+            self.list.setCurrentRow(wanted)
         if problem:
             self.status.setText(problem)
         elif not disks:

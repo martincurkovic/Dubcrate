@@ -287,3 +287,75 @@ def test_a_card_swapped_since_it_was_listed_is_not_erased(tmp_path, on_a_mac):
     assert cf.format_card(
         "disk4", run, expect=listed
     ).volume  # the same card goes ahead
+
+
+# -- cards that are plugged in but not set up for the CDJ ----------------------------------------
+
+
+def listing(**mounts):
+    """A `diskutil list -plist` answer: disk4 with a partition mounted at `disk4s1`'s path, if given."""
+    parts = [
+        {"DeviceIdentifier": f"{name}s1", **({"MountPoint": path} if path else {})}
+        for name, path in mounts.items()
+    ]
+    return {
+        "WholeDisks": list(mounts),
+        "AllDisksAndPartitions": [
+            {"DeviceIdentifier": name, "Partitions": [p]}
+            for name, p in zip(mounts, parts)
+        ],
+    }
+
+
+def runner(table, **mounts):
+    def run(command, **kw):
+        match command[1:]:
+            case ["list", "-plist"]:
+                return finished(plistlib.dumps(listing(**mounts)).decode())
+            case ["info", "-plist", node]:
+                return finished(table[node.removeprefix("/dev/")])
+        raise AssertionError(command)
+
+    return run
+
+
+def test_a_disks_mount_points_come_from_the_diskutil_listing(on_a_mac, tmp_path):
+    run = runner({"disk4": info()}, disk4=str(tmp_path))
+    assert cf.list_disks(run)[0].mounts == (str(tmp_path),)
+    run = runner({"disk4": info()}, disk4="")
+    assert cf.list_disks(run)[0].mounts == ()
+
+
+def test_a_blank_card_with_only_system_clutter_is_listed_as_not_set_up(on_a_mac, tmp_path):  # fmt: skip
+    (tmp_path / ".Spotlight-V100").mkdir()
+    (tmp_path / "System Volume Information").mkdir()
+    found = cf.unset_cards(runner({"disk4": info()}, disk4=str(tmp_path)))
+    assert [(c.disk.device, c.has_files) for c in found] == [("disk4", False)]
+
+
+def test_a_card_with_the_users_files_is_listed_and_says_so(on_a_mac, tmp_path):
+    (tmp_path / "DCIM").mkdir()
+    found = cf.unset_cards(runner({"disk4": info()}, disk4=str(tmp_path)))
+    assert [(c.disk.device, c.has_files) for c in found] == [("disk4", True)]
+
+
+def test_a_card_that_is_not_mounted_is_listed_with_its_contents_unknown(on_a_mac):
+    found = cf.unset_cards(runner({"disk4": info()}, disk4=""))
+    assert [(c.disk.device, c.has_files) for c in found] == [("disk4", None)]
+
+
+def test_a_card_that_is_set_up_is_not_listed(on_a_mac, tmp_path):
+    cc.make_card_folders(tmp_path)
+    assert cf.unset_cards(runner({"disk4": info()}, disk4=str(tmp_path))) == []
+
+
+def test_a_disk_that_could_not_be_formatted_is_not_offered(on_a_mac, tmp_path):
+    big = info(size=4 * GB)
+    assert cf.unset_cards(runner({"disk4": big}, disk4=str(tmp_path))) == []
+
+
+def test_a_system_that_does_not_say_where_a_disk_is_mounted_offers_nothing(monkeypatch):  # fmt: skip
+    unknown = cf.CardDisk("disk3", "x", GB, "USB", True, True, False, False, True)
+    assert unknown.mounts is None
+    monkeypatch.setattr(cf, "list_disks", lambda run=None: [unknown])
+    assert cf.unset_cards() == []

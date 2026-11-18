@@ -135,6 +135,9 @@ CARD_SETTLE_MS = (
     800  # after a change in /Volumes, a moment for the card to finish mounting
 )
 ROW_HEIGHT = 62
+# A card not set up: its note wraps (two lines for "Has other files…"), and the Format… button has a line.
+UNSET_ROW_HEIGHT = 104
+UNSET_FILES_ROW_HEIGHT = 136
 
 
 def card_capacity(path: Path) -> int | None:
@@ -147,6 +150,21 @@ def card_capacity(path: Path) -> int | None:
 
 def _size_text(size: int) -> str:
     return f"{size / 1e9:.1f} GB" if size >= 1e9 else f"{size / 1e6:.0f} MB"
+
+
+def _real_unset() -> list[card_format.UnsetCard]:
+    """The plugged-in cards with no PIONEER folder (on a worker). Tests stand it in: a real one asks the system."""
+    return card_format.unset_cards()
+
+
+def unset_detail(card: card_format.UnsetCard) -> str:
+    """A card that is not set up for the CDJ, in two lines: its size, and what formatting would cost."""
+    note = (
+        "Has other files: formatting erases them"
+        if card.has_files
+        else "Not set up for the CDJ"
+    )
+    return f"{card_format.size_text(card.disk.size)}\n{note}"
 
 
 class _ElidedLabel(QLabel):
@@ -182,42 +200,74 @@ class CardRow(QWidget):
 
     eject_requested = Signal(object)  # the card's path
     remove_requested = Signal(object)
+    format_requested = Signal(str)  # a card not set up yet: its disk ("disk4")
 
     def __init__(
-        self, path: Path, by_hand: bool, detail: str, parent: QWidget | None = None
+        self,
+        path: Path,
+        by_hand: bool,
+        detail: str,
+        parent: QWidget | None = None,
+        unset: card_format.UnsetCard | None = None,
     ):
         super().__init__(parent)
-        self.path, self.by_hand = path, by_hand
+        self.path, self.by_hand, self.unset = path, by_hand, unset
         self._selected = False
-        name = path.name or str(path)
+        name = unset.disk.name or unset.disk.device if unset else path.name or str(path)
         self.icon = GlyphIcon(explorer_glyph if by_hand else sd_card_glyph, 36)
         self.title = _ElidedLabel(name)
         font = self.title.font()
         font.setBold(True)
         self.title.setFont(font)
         self.detail = _ElidedLabel(detail)
+        if unset is not None:  # (a sentence, not a size: it is shown whole)
+            self.detail = QLabel(detail)
+            self.detail.setWordWrap(True)
         words = QVBoxLayout()
         words.setSpacing(1)
         words.addStretch(1)
         words.addWidget(self.title)
         words.addWidget(self.detail)
         words.addStretch(1)
-        self.button = GlyphButton(
-            close_glyph if by_hand else eject_glyph,
-            "Take this folder off the list" if by_hand else f"Eject “{name}”",
-        )
-        self.button.clicked.connect(
-            lambda: (self.remove_requested if by_hand else self.eject_requested).emit(
-                path
+        if unset is not None:
+            self.button = QPushButton("Format…")
+            self.button.setToolTip(
+                f"Set up “{name}” for the CDJ-1000MK3: it asks before erasing anything"
             )
+            self.button.clicked.connect(
+                lambda: self.format_requested.emit(unset.disk.device)
+            )
+            layout = QVBoxLayout(self)
+            layout.setContentsMargins(10, 6, 8, 6)
+            layout.setSpacing(4)
+            top = QHBoxLayout()
+            top.setSpacing(10)
+            top.addWidget(self.icon, 0, Qt.AlignmentFlag.AlignTop)
+            top.addLayout(words, 1)
+            layout.addLayout(top, 1)
+            bottom = QHBoxLayout()
+            bottom.addStretch(1)
+            bottom.addWidget(self.button)
+            layout.addLayout(bottom)
+        else:
+            self.button = GlyphButton(
+                close_glyph if by_hand else eject_glyph,
+                "Take this folder off the list" if by_hand else f"Eject “{name}”",
+            )
+            self.button.clicked.connect(
+                lambda: (
+                    self.remove_requested if by_hand else self.eject_requested
+                ).emit(path)
+            )
+            layout = QHBoxLayout(self)
+            layout.setContentsMargins(10, 6, 8, 6)
+            layout.setSpacing(10)
+            layout.addWidget(self.icon)
+            layout.addLayout(words, 1)
+            layout.addWidget(self.button)
+        self.setToolTip(
+            f"{unset.disk.node}: not set up for the CDJ" if unset else str(path)
         )
-        layout = QHBoxLayout(self)
-        layout.setContentsMargins(10, 6, 8, 6)
-        layout.setSpacing(10)
-        layout.addWidget(self.icon)
-        layout.addLayout(words, 1)
-        layout.addWidget(self.button)
-        self.setToolTip(str(path))
         theme.notifier.changed.connect(self._restyle)
         self._restyle()
 
@@ -225,7 +275,8 @@ class CardRow(QWidget):
         """A picked row has the list's selection colour behind it: text and glyphs follow."""
         self._selected = selected
         self.icon.set_selected(selected)
-        self.button.set_selected(selected)
+        if isinstance(self.button, GlyphButton):
+            self.button.set_selected(selected)
         self._restyle()
 
     def _restyle(self) -> None:
@@ -255,11 +306,15 @@ class CardPanel(QWidget):
         parent: QWidget | None = None,
         watch: Sequence[Path] = (),
         poll: bool = False,
+        unset: Callable[[], list[card_format.UnsetCard]] | None = None,
     ):
         super().__init__(parent)
         self._volumes = volumes  # None: the drives that are plugged in
         self._chosen: list[Path] = []  # folders picked by hand, kept for the session
         self._found: list[Path] = []  # the cards plugged in, as last looked for
+        self._find_unset = unset or _real_unset
+        self._unset: list[card_format.UnsetCard] = []  # plugged in, not set up yet
+        self._unset_serial = 0  # a newer look makes an older one's answer stale
         self._busy = False  # a sync is writing: nothing is ejected under it
         self._ejecting = False
         layout = QVBoxLayout(self)
@@ -368,10 +423,18 @@ class CardPanel(QWidget):
 
     def refresh(self, announce: bool = True) -> None:
         """Look again for cards. `card_changed` is emitted if the picked card changed (and only
-        then), unless `announce` is False and the caller asks `current_card()` itself."""
+        then), unless `announce` is False and the caller asks `current_card()` itself. Cards that are
+        plugged in but not set up are looked for on a worker and join the list when it answers."""
         before = self.current_card()
-        found = cc.find_cards((self._volumes or mounted_volumes)())
-        self._found = found
+        self._found = cc.find_cards((self._volumes or mounted_volumes)())
+        self._populate(before)
+        self._look_for_unset()
+        if announce and self.current_card() != before:
+            self.card_changed.emit(self.current_card())
+
+    def _populate(self, before: Path | None) -> None:
+        """Fill the list: the cards, folders chosen by hand, then the cards not set up (not pickable)."""
+        found = self._found
         shown = [*found, *(p for p in self._chosen if p not in found)]
         self.cards.blockSignals(True)
         self.cards.clear()
@@ -389,14 +452,51 @@ class CardPanel(QWidget):
                 self.cards.setCurrentItem(item)
         if self.cards.currentItem() is None and shown:
             self.cards.setCurrentRow(0)
+        for card in self._unset:
+            row = CardRow(Path(card.disk.node), False, unset_detail(card), unset=card)
+            row.format_requested.connect(self.format_card)
+            item = QListWidgetItem()
+            item.setData(Qt.ItemDataRole.UserRole, card.disk.node)
+            item.setFlags(
+                Qt.ItemFlag.NoItemFlags
+            )  # shown, never picked: nothing to sync to yet
+            item.setSizeHint(
+                QSize(0, UNSET_FILES_ROW_HEIGHT if card.has_files else UNSET_ROW_HEIGHT)
+            )
+            self.cards.addItem(item)
+            self.cards.setItemWidget(item, row)
         self.cards.blockSignals(False)
         self._restyle_rows()
-        n = len(found)
-        self.subtitle.setText(
-            "No card found" if not n else f"{n} card{'s' if n != 1 else ''} found"
-        )
-        if announce and self.current_card() != before:
-            self.card_changed.emit(self.current_card())
+        n, blank = len(found), len(self._unset)
+        said = []
+        if n or not blank:
+            said.append(
+                "No card found" if not n else f"{n} card{'s' if n != 1 else ''} found"
+            )
+        if blank:
+            said.append(f"{blank} to set up")
+        self.subtitle.setText(" · ".join(said))
+
+    def _look_for_unset(self) -> None:
+        """Ask the system (on a worker: it is slow) which plugged-in cards are not set up for the CDJ."""
+        self._unset_serial += 1
+        serial = self._unset_serial
+
+        def work() -> list[card_format.UnsetCard]:
+            try:
+                return self._find_unset()
+            except card_format.FormatError as exc:
+                raise TaskError(str(exc)) from exc
+
+        def done(found: list[card_format.UnsetCard]) -> None:
+            if serial == self._unset_serial and found != self._unset:
+                self._unset = found
+                self._populate(self.current_card())
+
+        def failed(text: str) -> None:
+            log.info("couldn't list cards that are not set up: %s", text)
+
+        run_async(work, done, failed)
 
     def _restyle_rows(self) -> None:
         for number in range(self.cards.count()):
@@ -444,7 +544,7 @@ class CardPanel(QWidget):
             "Set up a blank SD card from scratch: erase it, make it FAT16 and add the PIONEER "
             "folder, so cues and waveforms can go on it before it has been in a player"
         )
-        fmt.triggered.connect(self.format_card)
+        fmt.triggered.connect(lambda: self.format_card())
         return menu
 
     def _pick_quietly(self, path: Path) -> None:
@@ -468,7 +568,13 @@ class CardPanel(QWidget):
 
     def _on_context_menu(self, where) -> None:
         item = self.cards.itemAt(where)
-        path = Path(item.data(Qt.ItemDataRole.UserRole)) if item is not None else None
+        row = self.cards.itemWidget(item) if item is not None else None
+        # (a card not set up has nothing to sync to or eject: it gets the empty list's menu)
+        path = (
+            Path(item.data(Qt.ItemDataRole.UserRole))
+            if item is not None and not (row is not None and row.unset)
+            else None
+        )
         self.card_menu(path).exec(self.cards.viewport().mapToGlobal(where))
 
     # -- ejecting and removing -----------------------------------------------------
@@ -519,16 +625,20 @@ class CardPanel(QWidget):
 
     # -- formatting a blank card ---------------------------------------------------
 
-    def format_card(self) -> None:
-        """Open the Format a Card window; a card it makes is listed and picked at once."""
+    def format_card(self, device: str | None = None) -> None:
+        """Open the Format a Card window (with `device` picked, from a card's own button); a card it
+        makes is listed and picked at once."""
         if self._busy or self._ejecting:
             return
-        dialog = FormatCardDialog(self)
+        dialog = (
+            FormatCardDialog(self, device=device) if device else FormatCardDialog(self)
+        )
         dialog.formatted.connect(self._formatted)
         dialog.exec()
 
     def _formatted(self, volume: Path) -> None:
         """A card was just formatted (and is mounted): look again, and pick it."""
+        self._unset = []  # (the card just formatted is one of them, and is a card now)
         self.cards.blockSignals(True)
         self.refresh(announce=False)
         for row in range(self.cards.count()):

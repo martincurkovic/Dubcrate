@@ -158,6 +158,9 @@ class Context:
         patches.enter_context(
             mock.patch("dubcrate.ui.explorer.mounted_volumes", return_value=[])
         )
+        patches.enter_context(  # (no real disk is asked about: the card list shows only what a scene stages)
+            mock.patch("dubcrate.ui.sync_view._real_unset", return_value=[])
+        )
         self.on_cleanup(patches.close)
         window = MainWindow(
             self.lib,

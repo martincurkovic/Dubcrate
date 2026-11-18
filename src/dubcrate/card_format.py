@@ -57,6 +57,8 @@ class CardDisk:
     virtual: bool  # a mounted disk image
     system: bool  # holds the running system
     writable: bool
+    # where its file systems are mounted; None = this system's listing doesn't say (Windows)
+    mounts: tuple[str, ...] | None = None
 
     @property
     def node(self) -> str:
@@ -81,8 +83,8 @@ def describe(disk: CardDisk) -> str:
     )
 
 
-def parse_disk_info(data: bytes) -> CardDisk:
-    """A `diskutil info -plist` answer as a `CardDisk`."""
+def parse_disk_info(data: bytes, mounts: tuple[str, ...] | None = None) -> CardDisk:
+    """A `diskutil info -plist` answer as a `CardDisk` (`mounts` from `diskutil list`, if known)."""
     try:
         info = plistlib.loads(data)
     except (plistlib.InvalidFileException, ValueError, TypeError) as exc:
@@ -100,7 +102,19 @@ def parse_disk_info(data: bytes) -> CardDisk:
         or info.get("BusProtocol") == "Disk Image",
         system=bool(info.get("OSInternalMedia") or info.get("SystemImage")),
         writable=bool(info.get("WritableMedia", True)),
+        mounts=mounts,
     )
+
+
+def mac_mounts(listing: dict) -> dict[str, tuple[str, ...]]:
+    """Where each whole disk's partitions are mounted, from a `diskutil list -plist` answer."""
+    found: dict[str, tuple[str, ...]] = {}
+    for disk in listing.get("AllDisksAndPartitions", []):
+        parts = [*disk.get("Partitions", []), *disk.get("APFSVolumes", [])]
+        found[str(disk.get("DeviceIdentifier"))] = tuple(
+            str(p["MountPoint"]) for p in parts if p.get("MountPoint")
+        )
+    return found
 
 
 def problems(disk: CardDisk, *, allow_images: bool = False) -> list[str]:
@@ -213,14 +227,66 @@ def list_disks(run: Runner = subprocess.run) -> list[CardDisk]:
     if (backend := _backend()) is not None:
         return backend.list_disks(run)
     listing = plistlib.loads(_plist(run, "list", "-plist"))
+    mounts = mac_mounts(listing)
     found = []
     for name in listing.get("WholeDisks", []):
         try:
-            disk = inspect(name, run)
+            disk = parse_disk_info(
+                _plist(run, "info", "-plist", f"/dev/{device_name(name)}"),
+                mounts.get(name, ()),
+            )
         except FormatError:
             continue  # a disk that went away while we looked
         if disk.removable and not disk.system:
             found.append(disk)
+    return found
+
+
+# Names a system puts on a volume by itself: a card holding only these is as good as blank.
+SYSTEM_NAMES = {
+    "system volume information",
+    "$recycle.bin",
+    "lost.dir",
+    "found.000",
+    "desktop.ini",
+    "thumbs.db",
+}
+
+
+def has_files(volume: Path) -> bool:
+    """Whether a mounted card holds anything of the user's (hidden and system clutter does not count)."""
+    try:
+        return any(
+            not e.name.startswith(".") and e.name.lower() not in SYSTEM_NAMES
+            for e in volume.iterdir()
+        )
+    except OSError:
+        return True  # can't tell: say there may be something
+
+
+@dataclass(frozen=True)
+class UnsetCard:
+    """A card that could be formatted for the CDJ and has no `PIONEER/CDJ` folder yet."""
+
+    disk: CardDisk
+    has_files: bool | None  # None: not mounted, so unknown
+
+
+def unset_cards(run: Runner = subprocess.run) -> list[UnsetCard]:
+    """The plain SD cards that are plugged in but not set up for the player, for the Sync tab's list.
+
+    A disk whose listing doesn't say where it is mounted (Windows) is left out: it can't be told from
+    a card that is set up. Raises `FormatError` if the disks can't be listed."""
+    found = []
+    for disk in list_disks(run):
+        if disk.mounts is None or problems(disk):
+            continue
+        volumes = [Path(m) for m in disk.mounts]
+        if cc.find_cards(volumes):
+            continue
+        found.append(
+            UnsetCard(disk, any(has_files(v) for v in volumes) if volumes else None)
+        )
     return found
 
 

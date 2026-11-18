@@ -247,7 +247,7 @@ The CDJ-1000MK3 keeps the cues you set on the player on its **SD card**, one fil
 
 ![The Sync tab: the card on the left, the picked disc's tracks in the middle, and the discs to tick on the right](screenshots/sync.png "The Sync tab")
 
-1. **The card** (left). A plugged-in card appears by itself, found by its **PIONEER** folder, with an **eject** button. Right-click a card to **Sync** to it, **Import Cues** from it, eject it, or **Format a Card…**. **Refresh** looks again, and **Choose Folder…** adds a copy of a card's folder.
+1. **The card** (left). A plugged-in card appears by itself, found by its **PIONEER** folder, with an **eject** button. A plugged-in SD card with no **PIONEER** folder yet is listed under the cards, greyed out, with a **Format…** button (it says if the card has other files on it). Right-click a card to **Sync** to it, **Import Cues** from it, eject it, or **Format a Card…**. **Refresh** looks again, and **Choose Folder…** adds a copy of a card's folder.
 2. **Discs to sync** (right). Your **audio** discs, with a tick box on each that has something to write (a folder ticks its discs; the header box ticks all). A disc's first tooltip line says what a sync would do: **Not on the card**, **N cues to add**, **In sync**, **No rekordbox cues** or **Can't sync** (the reason is in the middle). Under the list are **Import Cues…**, **Eject after syncing** and **Sync** (also above the card list). Right-click the list for **Measure Lengths** and **Clear Selection**.
 3. **The middle** lists the picked disc's tracks. Click a track to see its waveform **as the player's display draws it** (100 columns by 7 rows). White will be written, dimmer is already on the card, dashed is not analysed yet, and small red dashes are the track's memory cues.
 
@@ -272,7 +272,7 @@ For a disc burned earlier or elsewhere, right-click it in the Discs list (or in 
 
 ### Setting up a blank card
 
-**Format a Card…** (right-click the card list) erases a blank SD card, makes it the FAT16 card the player expects (named `DISK_IMG`) and adds the **PIONEER** folder, so you can sync at home before the card has been in a player.
+A card that has no **PIONEER** folder yet appears in the card list, greyed out, with a **Format…** button that opens the window below with that card picked. **Format a Card…** (right-click the card list) does the same for any card, and it erases a blank SD card, makes it the FAT16 card the player expects (named `DISK_IMG`) and adds the **PIONEER** folder, so you can sync at home before the card has been in a player.
 
 ![The Format a Card window: the removable disks, a card that can be used and one that can't](screenshots/format-card.png "Format a Card")
 

@@ -280,3 +280,119 @@ def test_import_cues_in_the_menu_asks_for_that_card_and_waits_while_one_writes(q
     assert told == []  # (the Sync view is told once, by the request)
     panel.set_busy(True)
     assert not menu_action(panel.card_menu(second), "Import Cues from “B”…").isEnabled()  # fmt: skip
+
+
+# -- cards that are plugged in but not set up -----------------------------------------------------
+
+
+def unset(device="disk4", has_files=False, **kw):
+    return cf.UnsetCard(disk(device=device, **kw), has_files)
+
+
+def test_a_card_not_set_up_is_listed_after_the_cards_and_cannot_be_picked(
+    qapp, tmp_path, wait_for
+):
+    card = tmp_path / "DISK_IMG"
+    cc.make_card_folders(card)
+    panel = CardPanel(volumes=lambda: [card], unset=lambda: [unset("disk5")])
+    panel.refresh(announce=False)
+    assert wait_for(lambda: panel.cards.count() == 2)
+    assert panel.current_card() == card
+    row = panel.cards.itemWidget(panel.cards.item(1))
+    assert row.unset.disk.device == "disk5"
+    assert "Not set up for the CDJ" in row.detail.text()
+    assert not (panel.cards.item(1).flags() & Qt.ItemFlag.ItemIsSelectable)
+    assert panel.subtitle.text() == "1 card found · 1 to set up"
+    assert panel.is_volume(card) and not panel.is_volume(Path("/dev/disk5"))
+
+
+def test_with_only_a_card_not_set_up_nothing_is_picked_and_sync_stays_off(
+    qapp, wait_for
+):
+    panel = CardPanel(volumes=list, unset=lambda: [unset()])
+    panel.refresh(announce=False)
+    assert wait_for(lambda: panel.cards.count() == 1)
+    assert panel.current_card() is None
+    assert not panel.sync_button.isEnabled()
+    assert panel.subtitle.text() == "1 to set up"
+
+
+def test_a_card_with_other_files_warns_that_formatting_erases_them(qapp, wait_for):
+    panel = CardPanel(volumes=list, unset=lambda: [unset(has_files=True)])
+    panel.refresh(announce=False)
+    assert wait_for(lambda: panel.cards.count() == 1)
+    row = panel.cards.itemWidget(panel.cards.item(0))
+    assert "Has other files: formatting erases them" in row.detail.text()
+
+
+def test_the_format_button_opens_the_window_with_that_card_picked(
+    qapp, monkeypatch, wait_for
+):
+    panel = CardPanel(volumes=list, unset=lambda: [unset("disk5")])
+    panel.refresh(announce=False)
+    assert wait_for(lambda: panel.cards.count() == 1)
+    opened = []
+
+    class Fake:
+        def __init__(self, parent, device=None):
+            opened.append(device)
+            self.formatted = type("S", (), {"connect": lambda _s, f: None})()
+
+        def exec(self):
+            pass
+
+    monkeypatch.setattr(sync_view, "FormatCardDialog", Fake)
+    panel.cards.itemWidget(panel.cards.item(0)).button.click()
+    assert opened == ["disk5"]
+    # the right-click menu of the empty list is still there, and opens it with no card picked
+    menu_action(panel.card_menu(None), "Format a Card…").trigger()
+    assert opened == ["disk5", None]
+
+
+def test_a_card_listed_as_not_set_up_has_no_sync_or_eject_in_its_menu(
+    qapp, monkeypatch, wait_for
+):
+    panel = CardPanel(volumes=list, unset=lambda: [unset()])
+    panel.refresh(announce=False)
+    assert wait_for(lambda: panel.cards.count() == 1)
+    asked = []
+
+    class Menu:
+        def exec(self, *_a):
+            pass
+
+    monkeypatch.setattr(panel, "card_menu", lambda path: asked.append(path) or Menu())
+    panel._on_context_menu(panel.cards.visualItemRect(panel.cards.item(0)).center())
+    assert asked == [
+        None
+    ]  # the empty list's menu: Format a Card… and nothing to sync or eject
+
+
+def test_a_failed_look_for_unset_cards_leaves_the_list_as_it_was(qapp, tmp_path, wait_for):  # fmt: skip
+    card = tmp_path / "DISK_IMG"
+    cc.make_card_folders(card)
+
+    asked = []
+
+    def broken():
+        asked.append(1)
+        raise cf.FormatError("diskutil failed")
+
+    panel = CardPanel(volumes=lambda: [card], unset=broken)
+    panel.refresh(announce=False)
+    assert wait_for(lambda: asked)
+    wait_for(lambda: False, timeout=0.2)  # (let the failure be delivered)
+    assert panel.cards.count() == 1 and panel.subtitle.text() == "1 card found"
+
+
+def test_a_card_just_formatted_is_not_listed_twice(qapp, tmp_path, monkeypatch, wait_for):  # fmt: skip
+    card = tmp_path / "DISK_IMG"
+    cc.make_card_folders(card)
+    panel = CardPanel(volumes=list, unset=lambda: [unset()])
+    panel.refresh(announce=False)
+    assert wait_for(lambda: panel.cards.count() == 1)
+    panel._find_unset = list  # (the system now sees it as a card)
+    panel._volumes = lambda: [card]
+    panel._formatted(card)
+    assert wait_for(lambda: panel.cards.count() == 1)
+    assert panel.current_card() == card and panel.subtitle.text() == "1 card found"

@@ -1166,6 +1166,28 @@ def _sync_card_menu(ctx):
     return window
 
 
+@scene("sync-card-unset", "Sync tab", "Sync: cards that are not set up yet", sizes=(LAPTOP,),
+       about="A card with no PIONEER folder is listed under the cards, greyed, with a Format… button; one with files on it warns.")  # fmt: skip
+def _sync_unset(ctx):
+    from dubcrate import card_format as cf
+
+    window = _sync_window(ctx)
+    panel = window.card_panel
+
+    def disk(device, name, size):
+        return cf.CardDisk(device, name, size, "USB", True, True, False, False, True)
+
+    staged = [
+        cf.UnsetCard(disk("disk5", "STORAGE DEVICE", 2_013_265_920), False),
+        cf.UnsetCard(disk("disk6", "Generic Card Reader", 1_900_000_000), True),
+    ]
+    panel._find_unset = lambda: staged  # (every look the tab makes finds the same two)
+    panel._unset = staged
+    panel._populate(panel.current_card())
+    ctx.settle(8)
+    return window
+
+
 @scene("sync-confirm", "Sync tab", "Sync: asking before it writes", kind="message", sizes=(LAPTOP,),
        about="The question the Sync button asks, from the real text for the ticked disc.")  # fmt: skip
 def _sync_confirm(ctx):
