@@ -281,6 +281,18 @@ def _no_real_export_chooser(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _no_real_track_finder_chooser(monkeypatch):
+    """No test may open the file chooser of Export Track Finder: patch track_finder_ui.ask_save_file."""
+
+    def refuse(*_a, **_k):
+        raise AssertionError(
+            "a test opened the Export Track Finder chooser; patch track_finder_ui.ask_save_file"
+        )
+
+    monkeypatch.setattr("dubcrate.ui.track_finder_ui.ask_save_file", refuse)
+
+
+@pytest.fixture(autouse=True)
 def _no_real_playlist_choosers(monkeypatch):
     """No test may open the file or folder chooser of Export Playlists: patch playlist_export_ui.ask_save_file / ask_save_folder."""
 

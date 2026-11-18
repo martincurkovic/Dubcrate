@@ -88,6 +88,7 @@ from .splitter import Splitter
 from .status_bar import AppStatusBar
 from .sync_view import CardPanel, SyncView
 from .tasks import TaskError, run_async
+from .track_finder_ui import export_track_finder as run_track_finder_export
 from .track_table import (
     ROW_HEIGHT,
     PreviewDelegate,
@@ -605,6 +606,13 @@ class MainWindow(QMainWindow):
             "&Export Playlists", all_discs=True
         )
         disc_menu.addMenu(self.export_playlists_menu)
+        self.act_track_finder = disc_menu.addAction(
+            "Export Track Finder…", self.export_track_finder
+        )
+        self.act_track_finder.setToolTip(
+            "Save a web page that finds which disc a track is on: for your phone at a gig, with the"
+            " discs' labels and no signal."
+        )
         disc_menu.addSeparator()
         self.act_add_selected = disc_menu.addAction(
             "&Add Selected Tracks", self.add_selected_to_disc
@@ -860,6 +868,10 @@ class MainWindow(QMainWindow):
         """Disc > Export Playlists, and right-click > Export Playlist: every disc, one disc or a disc folder
         as a rekordbox XML file or M3U files."""
         run_playlist_export(self, self._lib, fmt, disc_id=disc_id, folder_id=folder_id)
+
+    def export_track_finder(self) -> None:
+        """Disc > Export Track Finder: every disc as one HTML page that says which disc a track is on."""
+        run_track_finder_export(self, self._lib)
 
     def print_labels(self, disc_id: int | None = None) -> None:
         """Open the label printing window with a disc ticked: the one given, else the open one."""

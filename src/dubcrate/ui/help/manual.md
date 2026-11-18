@@ -18,6 +18,7 @@ Dubcrate helps you put music from your rekordbox library (or any folder) onto au
 - [Burning a disc](#burning-a-disc)
 - [Printing labels](#printing-labels)
 - [Exporting playlists](#exporting-playlists)
+- [Finding a track at a gig](#finding-a-track-at-a-gig)
 - [Syncing cues to the card](#syncing-cues-to-the-card)
 - [Settings](#settings)
 - [Updates, and what Dubcrate sends](#updates-and-what-dubcrate-sends)
@@ -258,6 +259,27 @@ dubcrate export-playlist 1 ~/Desktop/night.xml                     # one disc
 dubcrate export-playlist 1 ~/Desktop/night.m3u8 --format m3u
 dubcrate export-playlists ~/Desktop/discs.xml                      # every disc
 dubcrate export-playlists ~/Desktop --format m3u                   # a new folder of M3U files in ~/Desktop
+```
+
+---
+
+## Finding a track at a gig
+
+With only the CDs, their printed labels and your phone, **which disc is that track on?** **Disc > Export Track Finder…** saves one web page with every disc and track in it. Open it on your phone, type part of a title or artist, and it lists each disc that has the track, with the **track number** (an MP3 disc also shows the folder), and under the artist the track's **BPM, key, year, genre and length** when known.
+
+- The page is **one file that works offline**: it needs no signal and sends nothing anywhere. It is a snapshot, so **save a new one after you change your discs** (the page says on its first screen when it was made).
+- Search ignores capital letters, accents and apostrophes ("dont stop" finds "Don't Stop"), and every word you type has to match. Tracks that start with what you typed come first.
+- The title and artist are **what is written on the disc** (including anything you edited for the CD), so they match the printed label. BPM, key, year and genre are the library's. Keys follow **Settings > Appearance > Key notation**. Every disc is included, whether or not it has been burned.
+- The page follows your phone's light or dark setting and gives each disc its own colour.
+
+**Getting it onto an iPhone.** Send the file to the phone (AirDrop, or iCloud Drive). **The Files app and Safari won't run it**: they only show a plain preview. Open it in an app that runs local web pages (Sitecase is one; look for one that says it runs HTML and JavaScript). **This hasn't been tried on a phone yet.**
+
+**Command line:**
+
+```
+dubcrate export-finder ~/Desktop/finder.html            # every disc (never overwrites)
+dubcrate export-finder ~/Desktop/one.html --disc 3      # one disc
+dubcrate export-finder ~/Desktop/f.html --keys musical  # keys as A min instead of 8A
 ```
 
 ---
