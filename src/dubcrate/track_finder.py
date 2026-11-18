@@ -205,34 +205,60 @@ PAGE = """<!DOCTYPE html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="theme-color" content="#101114">
+<meta name="theme-color" content="#17171c" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#ece7f5" media="(prefers-color-scheme: light)">
 <title>Dubcrate Track Finder</title>
 <style>
-  :root { color-scheme: dark; }
+  /* The colours are the app's own (ui/theme.py): its dark palette, and its light one when the phone
+     asks for light. The disc stripes are the capacity bar's eight track colours. */
+  :root { color-scheme: dark light;
+          --bg: #1e1e24; --panel: #202028; --bar: #17171c; --input: #2a2a35; --card: #2a2a35;
+          --border: #40404c; --edge: #33333e; --text: #e4e4ea; --bright: #f0f0f4; --muted: #8e8e9c;
+          --accent: #4a90d9; --mark: #e8922b; }
+  @media (prefers-color-scheme: light) {
+    :root { --bg: #f5f3fa; --panel: #ffffff; --bar: #ece7f5; --input: #ffffff; --card: #ffffff;
+            --border: #d6cce8; --edge: #ddd0ee; --text: #2a2438; --bright: #191320; --muted: #7a7290;
+            --accent: #8b5cf6; --mark: #d9651c; }
+  }
   * { box-sizing: border-box; }
-  body { margin: 0; background: #101114; color: #eceef2;
+  body { margin: 0; background: var(--bg); color: var(--text);
          font: 17px/1.3 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
          padding: 0 max(12px, env(safe-area-inset-right)) env(safe-area-inset-bottom)
                   max(12px, env(safe-area-inset-left)); }
-  header { position: sticky; top: 0; background: #101114; padding: 12px 0 10px;
-           padding-top: max(12px, env(safe-area-inset-top)); z-index: 1; }
-  input { width: 100%; font-size: 20px; padding: 12px 14px; border-radius: 12px;
-          border: 1px solid #3a3d46; background: #1b1d23; color: inherit; outline: none; }
-  input:focus { border-color: #ff9f1a; }
-  .note { color: #8b90a0; font-size: 14px; padding: 6px 2px; }
-  .hit { background: #1b1d23; border-radius: 12px; padding: 12px 14px; margin: 0 0 8px;
+  header { position: sticky; top: 0; z-index: 1; background: var(--bg);
+           margin: 0 calc(-1 * max(12px, env(safe-area-inset-right))) 0
+                   calc(-1 * max(12px, env(safe-area-inset-left)));
+           padding: 0 max(12px, env(safe-area-inset-right)) 8px
+                    max(12px, env(safe-area-inset-left)); }
+  .brand { display: flex; align-items: baseline; gap: 8px; background: var(--bar);
+           border-bottom: 1px solid var(--edge); padding: 8px 0 8px;
+           padding-top: max(8px, env(safe-area-inset-top));
+           margin: 0 calc(-1 * max(12px, env(safe-area-inset-right))) 10px
+                   calc(-1 * max(12px, env(safe-area-inset-left)));
+           padding-left: max(12px, env(safe-area-inset-left)); }
+  .brand b { color: var(--bright); letter-spacing: .02em; }
+  .brand span { color: var(--muted); font-size: 14px; }
+  input { width: 100%; font-size: 20px; padding: 11px 14px; border-radius: 6px;
+          border: 1px solid var(--border); background: var(--input); color: var(--bright);
+          outline: none; }
+  input:focus { border-color: var(--accent); }
+  .note { color: var(--muted); font-size: 14px; padding: 6px 2px 0; }
+  main { padding-top: 4px; }
+  .hit { background: var(--card); border: 1px solid var(--edge); border-left: 5px solid var(--stripe);
+         border-radius: 6px; padding: 11px 14px; margin: 0 0 8px;
          display: flex; gap: 12px; align-items: center; }
   .what { flex: 1; min-width: 0; }
-  .title { font-weight: 600; overflow-wrap: anywhere; }
-  .artist { color: #aab0c0; font-size: 15px; overflow-wrap: anywhere; }
+  .title { color: var(--bright); font-weight: 600; overflow-wrap: anywhere; }
+  .artist { color: var(--muted); font-size: 15px; overflow-wrap: anywhere; }
   .where { text-align: right; max-width: 45%; }
-  .disc { color: #ff9f1a; font-weight: 700; font-size: 18px; overflow-wrap: anywhere; }
-  .num { font-size: 15px; color: #eceef2; }
-  .sub { color: #8b90a0; font-size: 13px; overflow-wrap: anywhere; }
+  .disc { color: var(--bright); font-weight: 700; font-size: 18px; overflow-wrap: anywhere; }
+  .num { color: var(--mark); font-size: 15px; font-weight: 600; }
+  .sub { color: var(--muted); font-size: 13px; overflow-wrap: anywhere; }
 </style>
 </head>
 <body>
 <header>
+  <div class="brand"><b>Dubcrate</b><span>Track Finder</span></div>
   <input id="q" type="search" placeholder="Title or artist" autocomplete="off"
          autocorrect="off" autocapitalize="off" spellcheck="false" enterkeyhint="search">
   <div class="note" id="status"></div>
@@ -251,11 +277,15 @@ function norm(s) {
           .replace(/[^\\p{L}\\p{N}]+/gu, " ").trim();
 }
 
+const STRIPES = ["#3987e5", "#d95926", "#199e70", "#c98500",
+                 "#d55181", "#008300", "#9085e9", "#e66767"];
 const rows = [];
-for (const disc of data.discs)
+data.discs.forEach((disc, i) => {
+  disc.stripe = STRIPES[i % STRIPES.length];
   for (const [number, title, artist, folder] of disc.tracks)
     rows.push({ disc, number, title, artist, folder,
                 key: " " + norm(title + " " + artist) });
+});
 
 const q = document.getElementById("q");
 const status = document.getElementById("status");
@@ -295,6 +325,7 @@ function show() {
     : found.length + (found.length === 1 ? " track" : " tracks");
   for (const r of found.slice(0, LIMIT)) {
     const hit = el("div", "hit");
+    hit.style.setProperty("--stripe", r.disc.stripe);
     const what = el("div", "what");
     what.append(el("div", "title", r.title));
     if (r.artist) what.append(el("div", "artist", r.artist));

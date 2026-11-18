@@ -194,6 +194,7 @@ const data = html.match(/<script id="data"[^>]*>([\s\S]*?)<\/script>/)[1];
 const code = html.match(/<script>\n([\s\S]*?)<\/script>/)[1];
 function node(tag) {
   return { tag, className: "", textContent: "", children: [], handlers: {},
+    style: { setProperty() {} },
     append(...c) { this.children.push(...c); },
     replaceChildren(...c) { this.children = c; },
     addEventListener(name, fn) { this.handlers[name] = fn; },
