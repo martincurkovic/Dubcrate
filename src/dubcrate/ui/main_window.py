@@ -72,6 +72,8 @@ from .models import (
     find_selection,
 )
 from .player_strip import PlayerStrip
+from .playlist_export_ui import FORMAT_NAMES, Format
+from .playlist_export_ui import export_playlists as run_playlist_export
 from .preview import PreviewController
 from .settings_dialog import SettingsDialog
 from .shortcuts_dialog import ShortcutsDialog
@@ -599,6 +601,10 @@ class MainWindow(QMainWindow):
         self.act_print_labels.setToolTip(
             "Print the track lists of discs on sticker paper (A4, Letter, ...), as labels for the case."
         )
+        self.export_playlists_menu = self.playlist_menu(
+            "&Export Playlists", all_discs=True
+        )
+        disc_menu.addMenu(self.export_playlists_menu)
         disc_menu.addSeparator()
         self.act_add_selected = disc_menu.addAction(
             "&Add Selected Tracks", self.add_selected_to_disc
@@ -817,6 +823,43 @@ class MainWindow(QMainWindow):
         )
         self.burn_dialog.finished.connect(lambda _r: self.disc_view.reload())
         self.burn_dialog.open()
+
+    def playlist_menu(
+        self,
+        title: str,
+        *,
+        all_discs: bool = False,
+        disc_id: int | None = None,
+        folder_id: int | None = None,
+    ) -> QMenu:
+        """A submenu that exports discs as a playlist for another program: a rekordbox XML file or M3U
+        (every disc, one disc, or a disc folder; see `playlist_export`). Nothing is written to rekordbox."""
+        menu = QMenu(title, self)
+        menu.setToolTipsVisible(True)
+        what = "All Discs" if all_discs else "Playlist"
+        for fmt in ("xml", "m3u"):
+            action = menu.addAction(
+                f"{what} as {FORMAT_NAMES[fmt]}…"
+                if all_discs
+                else f"{FORMAT_NAMES[fmt]}…",
+                lambda _checked=False, fmt=fmt: self.export_playlists(
+                    fmt, disc_id=disc_id, folder_id=folder_id
+                ),
+            )
+            action.setToolTip(
+                "Write the discs' track lists as a file for rekordbox's own XML import; "
+                "nothing in rekordbox is changed."
+                if fmt == "xml"
+                else "Write each disc's track list as an M3U playlist file for other players."
+            )
+        return menu
+
+    def export_playlists(
+        self, fmt: Format, *, disc_id: int | None = None, folder_id: int | None = None
+    ) -> None:
+        """Disc > Export Playlists, and right-click > Export Playlist: every disc, one disc or a disc folder
+        as a rekordbox XML file or M3U files."""
+        run_playlist_export(self, self._lib, fmt, disc_id=disc_id, folder_id=folder_id)
 
     def print_labels(self, disc_id: int | None = None) -> None:
         """Open the label printing window with a disc ticked: the one given, else the open one."""
@@ -1395,6 +1438,7 @@ class MainWindow(QMainWindow):
             menu.addSeparator()
             menu.addAction("Burn…", lambda: self._open_and_burn(disc_id))
             menu.addAction("Print Labels…", lambda: self.print_labels(disc_id))
+            menu.addMenu(self.playlist_menu("Export Playlist", disc_id=disc_id))
             if self._lib.disc(disc_id).kind == "audio":
                 menu.addAction(
                     "TOC Manager…", lambda: self.sync_view.open_toc_manager(disc_id)
@@ -1421,6 +1465,7 @@ class MainWindow(QMainWindow):
                 "New MP3 Disc Here", lambda: self.new_disc(folder_id, kind="mp3")
             )
             menu.addAction("New Folder Here", lambda: self.new_disc_folder(folder_id))
+            menu.addMenu(self.playlist_menu("Export Playlists", folder_id=folder_id))
             menu.addSeparator()
             menu.addAction(
                 "Rename", lambda: self.edit_in_tree(("disc_folder", folder_id))

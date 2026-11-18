@@ -73,6 +73,18 @@ beside it. Nothing is overwritten (a second export is `... export 2`), the disc 
 burned, and no drive is needed. Exit status 2 if the disc can't be exported (as `burn`), 1 if the
 export failed.
 
+## Exporting playlists
+
+```sh
+dubcrate export-playlist 1 ~/Desktop/night.xml                # one disc as a rekordbox XML file (never overwrites)
+dubcrate export-playlist 1 ~/Desktop/night.m3u8 --format m3u  # or an M3U file
+dubcrate export-playlists ~/Desktop/discs.xml                 # every disc in one XML (disc folders become folders)
+dubcrate export-playlists ~/Desktop --format m3u              # a NEW folder "Dubcrate Playlists" of .m3u8 files
+```
+
+The window's **Disc > Export Playlists** and the Discs list's right-click do the same. Nothing is read from or written to
+rekordbox; the XML is for rekordbox's own "rekordbox xml" import. Exit status 1 if nothing could be exported.
+
 ## Burning
 
 `dubcrate doctor` says what Dubcrate finds on this machine (ffmpeg and ffprobe, the burners and drive, the disc in the drive) and is the first thing to run when a burn misbehaves.

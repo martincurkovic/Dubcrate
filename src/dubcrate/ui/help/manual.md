@@ -17,6 +17,7 @@ Dubcrate helps you put music from your rekordbox library (or any folder) onto au
 - [Your discs](#your-discs)
 - [Burning a disc](#burning-a-disc)
 - [Printing labels](#printing-labels)
+- [Exporting playlists](#exporting-playlists)
 - [Syncing cues to the card](#syncing-cues-to-the-card)
 - [Settings](#settings)
 - [Updates, and what Dubcrate sends](#updates-and-what-dubcrate-sends)
@@ -236,6 +237,28 @@ Old players have no screen for a track list, so Dubcrate can print one for the c
 Each track shows its **number**, **title** and **artist** (as written on the CD, including your edits), and optionally **BPM**, **key**, **year** and **duration** (BPM and key start ticked; BPM, key and year come from rekordbox or the file's tags, so a plain-folder track may have none). On an MP3 disc, **folders are headings**; a folder is kept together on one label where readable, else continued under the same heading with *(cont.)*.
 
 Labels from every ticked disc are laid out one after another, so **several discs share a page**. The preview has **◀** and **▶** to turn pages, and a **Zoom** box (also **pinching** on a trackpad, or Ctrl and the wheel). If a list is too long for the label, a red note says which disc and what to change. Your choices are remembered.
+
+---
+
+## Exporting playlists
+
+Your discs are playlists, and you can hand them to other programs as **playlist files**, for example to see a burn list in rekordbox. This only writes new files you choose: **nothing in rekordbox is read back or changed**, and no music file is touched.
+
+- **All discs:** **Disc > Export Playlists > All Discs as rekordbox XML…** writes one `.xml` file with every disc as a playlist, your disc folders as playlist folders. **All Discs as M3U…** makes a new folder, **Dubcrate Playlists**, inside one you choose, with one `.m3u8` file per disc (and a folder for each of your disc folders), since M3U has neither folders nor several playlists in one file.
+- **One disc or one folder:** right-click it in the Discs list > **Export Playlist** (a disc) or **Export Playlists** (a folder) > **rekordbox XML…** or **M3U…**.
+
+Each playlist lists the tracks in the order the disc plays. An MP3 disc becomes one flat list: the files in the root first, then each folder in turn. The titles and artists are the **library's own**, not the ones you edited for the CD, and each file is named by its full path so rekordbox can match a track it already has. A track whose file is missing is left out, and a message says which. A disc with nothing left to list is skipped.
+
+**Getting it into rekordbox.** Use rekordbox's own XML import: in its **Preferences > Advanced > Database**, choose the file saved here as the **rekordbox xml** library, then open the **rekordbox xml** tree in the browser: the playlists are listed there and can be dragged into your own playlists. **This hasn't been tried with rekordbox yet**, and its menu names may differ between versions. If tracks you already have show up twice, please say so.
+
+**Command line:**
+
+```
+dubcrate export-playlist 1 ~/Desktop/night.xml                     # one disc
+dubcrate export-playlist 1 ~/Desktop/night.m3u8 --format m3u
+dubcrate export-playlists ~/Desktop/discs.xml                      # every disc
+dubcrate export-playlists ~/Desktop --format m3u                   # a new folder of M3U files in ~/Desktop
+```
 
 ---
 

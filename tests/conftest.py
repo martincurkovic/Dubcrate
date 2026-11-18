@@ -278,3 +278,16 @@ def _no_real_export_chooser(monkeypatch):
         )
 
     monkeypatch.setattr("dubcrate.ui.burn_dialog.ask_export_folder", refuse)
+
+
+@pytest.fixture(autouse=True)
+def _no_real_playlist_choosers(monkeypatch):
+    """No test may open the file or folder chooser of Export Playlists: patch playlist_export_ui.ask_save_file / ask_save_folder."""
+
+    def refuse(*_a, **_k):
+        raise AssertionError(
+            "a test opened an Export Playlists chooser; patch playlist_export_ui.ask_save_file / ask_save_folder"
+        )
+
+    monkeypatch.setattr("dubcrate.ui.playlist_export_ui.ask_save_file", refuse)
+    monkeypatch.setattr("dubcrate.ui.playlist_export_ui.ask_save_folder", refuse)

@@ -5,7 +5,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-from dubcrate import loudness, mp3
+from dubcrate import loudness, mp3, playlist_export
 from dubcrate.build import (
     BuildError,
     build_burn_disc,
@@ -34,6 +34,7 @@ from dubcrate.library import Library
 from dubcrate.library.lengths import measure_tracks
 from dubcrate.library.models import DiscSummary
 from dubcrate.library.store import LibraryError
+from dubcrate.playlist_export import PlaylistError
 
 _CAPACITY = {74: DISC_74_SECTORS, 80: DISC_80_SECTORS}
 
@@ -338,6 +339,43 @@ def cmd_export(lib: Library, args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_export_playlist(lib: Library, args: argparse.Namespace) -> int:
+    """Write one disc as a rekordbox XML file or an M3U file: nothing in rekordbox is touched."""
+    return _export_playlists(lib, args, disc_id=args.disc)
+
+
+def cmd_export_playlists(lib: Library, args: argparse.Namespace) -> int:
+    """Write every disc as one rekordbox XML file, or as a new folder of M3U files."""
+    return _export_playlists(lib, args, disc_id=None)
+
+
+def _export_playlists(
+    lib: Library, args: argparse.Namespace, *, disc_id: int | None
+) -> int:
+    path = Path(args.path).expanduser()
+    single_file = args.format == "xml" or disc_id is not None
+    try:
+        if single_file and path.exists():
+            raise PlaylistError(f"{path} already exists; nothing was overwritten")
+        if not single_file and not path.is_dir():
+            raise PlaylistError(f"{path} is not an existing folder")
+        collected = playlist_export.collect(lib, disc_id=disc_id)
+        if args.format == "xml":
+            written = playlist_export.write_xml(collected, path)
+        elif single_file:
+            written = playlist_export.write_m3u(collected, path)
+        else:
+            written = playlist_export.write_m3u_folder(collected, path)
+    except PlaylistError as exc:
+        print(f"export failed: {exc}", file=sys.stderr)
+        return 1
+    note = playlist_export.summary(collected)
+    if note:
+        print(note, file=sys.stderr)
+    print(f"exported {written.playlists} playlist(s), {written.tracks} track(s) to {written.path}")  # fmt: skip
+    return 0
+
+
 def _target(args: argparse.Namespace) -> loudness.Target | None:
     """What to bring an audio CD's tracks to (--levels match or peak), or None to leave them as they are."""
     if args.levels == "peak":
@@ -478,6 +516,23 @@ def add_parsers(sub: argparse._SubParsersAction) -> None:
     p.add_argument("dir", help="an existing folder: the export is made in a new folder inside it")  # fmt: skip
     _levels_flags(p)
     p.set_defaults(fn=cmd_export)
+
+    p = sub.add_parser(
+        "export-playlist",
+        help="write one disc as a rekordbox XML file or an M3U file (nothing in rekordbox is touched)",
+    )
+    p.add_argument("disc", type=int)
+    p.add_argument("path", help="the file to write; it must not exist yet")
+    p.add_argument("--format", choices=["xml", "m3u"], default="xml")
+    p.set_defaults(fn=cmd_export_playlist)
+
+    p = sub.add_parser(
+        "export-playlists",
+        help="write every disc as one rekordbox XML file, or as a new folder of M3U files",
+    )
+    p.add_argument("path", help="XML: the file to write (it must not exist yet); M3U: an existing folder, in which a new folder is made")  # fmt: skip
+    p.add_argument("--format", choices=["xml", "m3u"], default="xml")
+    p.set_defaults(fn=cmd_export_playlists)
 
     p = sub.add_parser("burn", help="burn a disc (dry run unless --yes)")
     p.add_argument("disc", type=int)

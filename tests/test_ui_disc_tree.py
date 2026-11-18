@@ -676,6 +676,7 @@ def test_a_discs_menu_opens_renames_duplicates_burns_and_deletes(window):
         "Make MP3 CD",
         "Burn…",
         "Print Labels…",
+        "Export Playlist",
         "TOC Manager…",
         "Delete…",
     ]
@@ -692,6 +693,7 @@ def test_a_folders_menu_makes_things_inside_it_renames_and_deletes(window):
         "New Disc Here",
         "New MP3 Disc Here",
         "New Folder Here",
+        "Export Playlists",
         "Rename",
         "Delete Folder…",
     ]
