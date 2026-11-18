@@ -5,7 +5,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-from dubcrate import loudness, mp3, playlist_export, track_finder
+from dubcrate import keys, loudness, mp3, playlist_export, track_finder
 from dubcrate.build import (
     BuildError,
     build_burn_disc,
@@ -383,7 +383,7 @@ def cmd_export_finder(lib: Library, args: argparse.Namespace) -> int:
     try:
         if path.exists():
             raise FinderError(f"{path} already exists; nothing was overwritten")
-        found = track_finder.collect(lib, disc_id=args.disc)
+        found = track_finder.collect(lib, disc_id=args.disc, notation=args.keys)
         written = track_finder.write_html(found, path)
     except FinderError as exc:
         print(f"export failed: {exc}", file=sys.stderr)
@@ -559,6 +559,7 @@ def add_parsers(sub: argparse._SubParsersAction) -> None:
     )
     p.add_argument("path", help="the file to write; it must not exist yet")
     p.add_argument("--disc", type=int, help="only this disc (default: every disc)")
+    p.add_argument("--keys", choices=keys.NOTATIONS, default=keys.CAMELOT, help="how keys are written (default: camelot, 8A)")  # fmt: skip
     p.set_defaults(fn=cmd_export_finder)
 
     p = sub.add_parser("burn", help="burn a disc (dry run unless --yes)")

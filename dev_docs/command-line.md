@@ -90,10 +90,11 @@ rekordbox; the XML is for rekordbox's own "rekordbox xml" import. Exit status 1 
 ```sh
 dubcrate export-finder ~/Desktop/finder.html            # every disc, one HTML page (never overwrites)
 dubcrate export-finder ~/Desktop/one.html --disc 3      # only disc 3
+dubcrate export-finder ~/Desktop/f.html --keys musical # keys as A min, not 8A (default: camelot)
 ```
 
 One self-contained page with the data inside and no network use: type part of a title or artist, get the disc and the
-track number (an MP3 disc also its folder). Case, accents and apostrophes don't matter. The text is what is written on
+track number (an MP3 disc also its folder), and under the artist the track's BPM, key, year, genre and length when known. Case, accents and apostrophes don't matter. The text is what is written on
 the disc, so it matches the printed label. **A phone has to open it in something that runs local HTML**: an iPhone's
 Files app and Safari don't run its script (a viewer app such as Sitecase does; not yet tried). No window menu item yet.
 

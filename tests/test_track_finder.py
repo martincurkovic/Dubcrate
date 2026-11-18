@@ -130,6 +130,49 @@ def test_nothing_to_list_is_an_expected_error(lib):
         tf.collect(lib)
 
 
+def test_bpm_key_year_genre_and_length_come_from_the_library_track(lib):
+    lib.replace_source(
+        "folder",
+        "/m",
+        "M",
+        [
+            TrackRecord(
+                ext_id="t",
+                path="/m/t.mp3",
+                title="T",
+                artist="A",
+                bpm=127.6,
+                key="Am",
+                year=2020,
+                genre="  Deep   House ",
+                duration=372.9,
+            )
+        ],
+    )
+    disc = lib.create_disc("D")
+    lib.add_to_disc(disc, [lib.tracks(sort="path")[0].id])
+    lib.set_entry_text(
+        disc, 0, "title", "Edited"
+    )  # the CD's own text changes only the name
+    [track] = tf.collect(lib).discs[0].tracks
+    assert track.title == "Edited"
+    assert track.info == ["128 BPM", "8A", "2020", "Deep House", "6:12"]
+    [musical] = tf.collect(lib, notation="musical").discs[0].tracks
+    assert musical.info[1] == "A min"
+
+
+def test_what_is_not_known_is_left_out_rather_than_shown_as_zero(lib):
+    lib.replace_source(
+        "folder",
+        "/m",
+        "M",
+        [TrackRecord(ext_id="t", path="/m/t.mp3", title="T", artist="A", year=0)],
+    )
+    lib.add_to_disc(lib.create_disc("D"), [lib.tracks(sort="path")[0].id])
+    [track] = tf.collect(lib).discs[0].tracks
+    assert track.info == []
+
+
 # -- the page ------------------------------------------------------------------------
 
 
@@ -154,7 +197,7 @@ def test_the_page_holds_the_data_and_no_network_reference(lib):
     page = tf.html_text(finder_with(lib, "Ünïcode ✓", "Bjørk"), MADE)
     data = embedded_data(page)
     assert data["made"] == "2026-11-18"
-    assert data["discs"][0]["tracks"] == [[1, "Ünïcode ✓", "Bjørk", ""]]
+    assert data["discs"][0]["tracks"] == [[1, "Ünïcode ✓", "Bjørk", "", []]]
     assert "http" not in page.replace("http-equiv", "")
 
 
@@ -212,7 +255,9 @@ for (const query of JSON.parse(process.argv[3])) {
   out[query] = { status: els.status.textContent,
     hits: els.results.children.map(hit => {
       const [what, where] = hit.children;
-      return [what.children[0].textContent, ...where.children.map(c => c.textContent)];
+      const info = what.children.find(c => c.className === "info");
+      return [what.children[0].textContent, ...where.children.map(c => c.textContent),
+              "info:" + (info ? info.textContent : "")];
     }) };
 }
 console.log(JSON.stringify(out));
@@ -226,7 +271,17 @@ def test_the_search_in_the_page(lib, tmp_path):
         "/m",
         "M",
         [
-            TrackRecord(ext_id=str(i), path=f"/m/{i}.mp3", title=t, artist=a)
+            TrackRecord(
+                ext_id=str(i),
+                path=f"/m/{i}.mp3",
+                title=t,
+                artist=a,
+                **(
+                    {"bpm": 90.0, "key": "8A", "year": 1995}
+                    if t == "Hyperballad"
+                    else {}
+                ),
+            )
             for i, (t, a) in enumerate(
                 [
                     ("Hyperballad", "Björk"),
@@ -257,10 +312,12 @@ def test_the_search_in_the_page(lib, tmp_path):
     )
     got = json.loads(run.stdout)
     assert got["bjork"]["hits"] == [
-        ["Hyperballad", "Warm Up", "Track 1"]
+        ["Hyperballad", "Warm Up", "Track 1", "info:90 BPM · 8A · 1995"]
     ]  # accents ignored
-    assert got["DONT stop"]["hits"] == [["Don't Stop", "Warm Up", "Track 2"]]
-    assert got["me now queen"]["hits"] == [["Stop Me Now", "Peak", "Track 1", "Sets"]]
+    assert got["DONT stop"]["hits"] == [["Don't Stop", "Warm Up", "Track 2", "info:"]]
+    assert got["me now queen"]["hits"] == [
+        ["Stop Me Now", "Peak", "Track 1", "Sets", "info:"]
+    ]
     # Word starts rank above a match inside a word: "Unstoppable" comes last.
     assert [h[0] for h in got["stop"]["hits"]] == ["Don't Stop", "Stop Me Now", "Unstoppable"]  # fmt: skip
     assert got["zzz"]["status"] == "Not on any disc"

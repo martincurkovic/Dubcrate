@@ -7,6 +7,9 @@ runs local HTML (Safari and the Files app won't run its script).
 
 **Read-only on every library.** This only reads Dubcrate's own discs and writes a NEW file you choose.
 
+Each result also shows the track's BPM, key, year, genre and length, which are the **library track's own** (a disc
+only edits the title and artist); the key is in the notation asked for (Camelot unless told otherwise).
+
 The text is what is **written on the disc** (`DiscEntry.title` / `.artist`: the disc's own edit if any),
 because it is the label you are looking at, unlike `playlist_export`, which sends the library's own text to
 another program. Nothing is left out for a missing file: the CD is already burned. A track's number is its
@@ -20,6 +23,7 @@ from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
 
+from dubcrate import keys, labels
 from dubcrate.library import Library
 from dubcrate.library.models import DiscDir
 from dubcrate.playlist_export import ordered
@@ -37,6 +41,26 @@ class FinderTrack:
     title: str
     artist: str
     folder: str  # the folder on an MP3 disc, "A / B"; empty for the root and for an audio disc
+    bpm: str = ""  # whole number, "" when unknown (as are the rest)
+    key: str = ""
+    year: str = ""
+    genre: str = ""
+    length: str = ""  # M:SS
+
+    @property
+    def info(self) -> list[str]:
+        """What is known besides the name, as the page shows it: "128 BPM", "8A", "2020", "House", "6:12"."""
+        return [
+            text
+            for text in (
+                f"{self.bpm} BPM" if self.bpm else "",
+                self.key,
+                self.year,
+                self.genre,
+                self.length,
+            )
+            if text
+        ]
 
 
 @dataclass(frozen=True)
@@ -103,7 +127,7 @@ def _dir_paths(dirs: list[DiscDir]) -> dict[int | None, str]:
 
 
 def _disc(
-    lib: Library, disc_id: int, where: dict[int | None, str]
+    lib: Library, disc_id: int, where: dict[int | None, str], notation: str
 ) -> FinderDisc | None:
     disc = lib.disc(disc_id)
     entries = lib.disc_entries(disc_id)
@@ -116,12 +140,18 @@ def _disc(
     tracks = []
     for entry in entries:
         number = numbers[entry.dir_id] = numbers.get(entry.dir_id, 0) + 1
+        track = entry.track
         tracks.append(
             FinderTrack(
                 number,
-                entry.title or Path(entry.track.path).stem,
+                entry.title or Path(track.path).stem,
                 entry.artist,
                 folder_names.get(entry.dir_id, ""),
+                bpm=labels.bpm_text(track.bpm),
+                key=keys.display(track.key, notation),
+                year=labels.year_text(track.year),
+                genre=" ".join(track.genre.split()),
+                length=labels.clock_text(track.duration),
             )
         )
     if not tracks:
@@ -131,13 +161,16 @@ def _disc(
     )
 
 
-def collect(lib: Library, *, disc_id: int | None = None) -> Finder:
-    """One disc, or (the default) every disc. Raises `FinderError` if no disc has a track."""
+def collect(
+    lib: Library, *, disc_id: int | None = None, notation: str = keys.CAMELOT
+) -> Finder:
+    """One disc, or (the default) every disc, with keys in `notation`. Raises `FinderError` if no disc
+    has a track."""
     where = _disc_where(lib)
     ids = [disc_id] if disc_id is not None else [d.id for d in lib.discs()]
     found = Finder()
     for i in ids:
-        disc = _disc(lib, i, where)
+        disc = _disc(lib, i, where, notation)
         if disc is None:
             found.empty_discs.append(lib.disc(i).name)
         else:
@@ -167,7 +200,9 @@ def page_data(found: Finder, made: date) -> str:
                 "name": d.name,
                 "where": d.where,
                 "kind": d.kind,
-                "tracks": [[t.number, t.title, t.artist, t.folder] for t in d.tracks],
+                "tracks": [
+                    [t.number, t.title, t.artist, t.folder, t.info] for t in d.tracks
+                ],
             }
             for d in found.discs
         ],
@@ -250,6 +285,7 @@ PAGE = """<!DOCTYPE html>
   .what { flex: 1; min-width: 0; }
   .title { color: var(--bright); font-weight: 600; overflow-wrap: anywhere; }
   .artist { color: var(--muted); font-size: 15px; overflow-wrap: anywhere; }
+  .info { color: var(--muted); font-size: 13px; margin-top: 3px; overflow-wrap: anywhere; }
   .where { text-align: right; max-width: 45%; }
   .disc { color: var(--bright); font-weight: 700; font-size: 18px; overflow-wrap: anywhere; }
   .num { color: var(--mark); font-size: 15px; font-weight: 600; }
@@ -282,8 +318,8 @@ const STRIPES = ["#3987e5", "#d95926", "#199e70", "#c98500",
 const rows = [];
 data.discs.forEach((disc, i) => {
   disc.stripe = STRIPES[i % STRIPES.length];
-  for (const [number, title, artist, folder] of disc.tracks)
-    rows.push({ disc, number, title, artist, folder,
+  for (const [number, title, artist, folder, info] of disc.tracks)
+    rows.push({ disc, number, title, artist, folder, info,
                 key: " " + norm(title + " " + artist) });
 });
 
@@ -329,6 +365,7 @@ function show() {
     const what = el("div", "what");
     what.append(el("div", "title", r.title));
     if (r.artist) what.append(el("div", "artist", r.artist));
+    if (r.info.length) what.append(el("div", "info", r.info.join(" \u00b7 ")));
     const where = el("div", "where");
     where.append(el("div", "disc", r.disc.name));
     where.append(el("div", "num", "Track " + r.number));
