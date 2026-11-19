@@ -39,6 +39,7 @@ Open items by area; finished work is under **Completed** at the bottom (same hea
 
 ### Features and app polish
 
+- [ ] Finder page: try **Tagged** in the iPhone viewer app (do the tags survive closing the app? the line under the buttons says "kept on this device" or "NOT kept"), then add the played tick, move up / down, by-disc grouping and share / copy list.
 - [ ] Try the drive picker with two real drives (the check after a burn is skipped for any but the first).
 - [ ] Cancel the writing of a burn itself (not built: the backends have no abort; DiscRecording's `DRBurn.abort()` exists and `cdrdao` can be terminated, but a stopped write ruins the disc, so it needs a confirmation and a try on a drive).
 - [ ] Try dragging an MP3 folder in the Discs list by hand (the feel, and dropping on a collapsed disc).

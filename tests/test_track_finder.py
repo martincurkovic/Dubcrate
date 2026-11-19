@@ -1,6 +1,7 @@
 """The track finder: which disc is this track on (read-only, one HTML file)."""
 
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -246,14 +247,20 @@ function node(tag) {
     focus() {}, remove() {}, setAttribute() {} };
 }
 const els = { data: { textContent: data }, q: node("input"), status: node("div"),
-              results: node("main"), all: node("button"), sortrow: node("span"),
+              results: node("main"), all: node("button"), tagged: node("button"), sortrow: node("span"),
               sort: node("select"), dir: node("button") };
 els.q.value = "";
 const document = { getElementById: id => els[id], createElement: node };
 // A browser's global scope has protected names (window.top can't be redeclared): a script that
 // declares one at the top level fails to load at all, which node's `new Function` would never show.
 const vm = require("vm");
-const sandbox = { document, scrolled: 0 };
+// A phone's local storage, kept between runs of the page in a file when asked.
+const stored = process.env.FINDER_STORAGE && fs.existsSync(process.env.FINDER_STORAGE)
+  ? JSON.parse(fs.readFileSync(process.env.FINDER_STORAGE, "utf8")) : {};
+const localStorage = { getItem: k => (k in stored ? stored[k] : null), setItem: (k, v) => { stored[k] = v; } };
+if (process.env.FINDER_NO_STORAGE) localStorage.setItem = () => { throw new Error("blocked"); };
+process.on("exit", () => process.env.FINDER_STORAGE && fs.writeFileSync(process.env.FINDER_STORAGE, JSON.stringify(stored)));
+const sandbox = { document, localStorage, scrolled: 0 };
 sandbox.window = { scrollTo() { sandbox.scrolled++; } };
 for (const name of ["top", "parent", "self", "location", "name", "status", "length"])
   Object.defineProperty(sandbox, name, { value: undefined, writable: false, configurable: false });
@@ -416,6 +423,90 @@ def test_all_tracks_sorted_in_the_page(lib, tmp_path):
     assert "# House" in got[8]["rows"]
     # A search narrows the list and keeps the order.
     assert titles(9) == ["Zeta"] and got[9]["status"].startswith("1 of 4 tracks")
+
+
+# The same stand-in again: tagging tracks to play later.
+TAG_TAIL = r"""
+const mode = process.argv[3];
+const cards = () => els.results.children.filter(c => c.className.startsWith("hit"));
+const titleOf = c => c.children[0].children[0].textContent;
+const starOf = t => cards().find(c => titleOf(c) === t).children[2];
+els.sortrow.hidden = true;
+if (mode === "tag") {
+  els.all.handlers.click();
+  for (const t of ["Nothing", "Alpha"]) starOf(t).handlers.click();
+}
+els.tagged.handlers.click();
+const out = { button: els.tagged.textContent, status: els.status.textContent, titles: cards().map(titleOf) };
+if (mode === "untag") {
+  starOf("Alpha").handlers.click();
+  out.afterUntag = cards().map(c => [titleOf(c), c.className]);
+  out.statusAfter = els.status.textContent;
+  starOf("Alpha").handlers.click();  // a slip is undone with one tap
+  out.afterRetag = cards().map(c => [titleOf(c), c.className]);
+  starOf("Alpha").handlers.click();
+}
+if (mode === "type") {
+  els.q.value = "alpha";
+  els.q.handlers.input();  // typing leaves the Tagged list for the search
+  out.pressed = els.tagged.textContent;
+  out.titles = cards().map(titleOf);
+}
+console.log(JSON.stringify(out));
+"""
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="needs node")
+def test_tagging_tracks_to_play_later(lib, tmp_path):
+    lib.replace_source(
+        "folder",
+        "/m",
+        "M",
+        [
+            TrackRecord(ext_id=str(i), path=f"/m/{i}.mp3", title=t, artist="X")
+            for i, t in enumerate(["Alpha", "Mid", "Nothing"])
+        ],
+    )
+    lib.add_to_disc(lib.create_disc("D"), [t.id for t in lib.tracks(sort="path")])
+    page = tmp_path / "finder.html"
+    tf.write_html(tf.collect(lib), page, MADE)
+    harness = tmp_path / "harness.js"
+    harness.write_text(NODE_HARNESS.split("const out = {};")[0] + TAG_TAIL, encoding="utf-8")  # fmt: skip
+    storage = tmp_path / "storage.json"
+
+    def run(mode, *, kept=True):
+        env = {**os.environ, "FINDER_STORAGE": str(storage)}
+        if not kept:
+            env["FINDER_NO_STORAGE"] = "1"
+        done = subprocess.run(
+            ["node", str(harness), str(page), mode],
+            check=True,
+            capture_output=True,
+            encoding="utf-8",
+            errors="replace",
+            env=env,
+        )
+        return json.loads(done.stdout)
+
+    first = run("tag")
+    assert first["titles"] == ["Nothing", "Alpha"]  # in the order tagged
+    assert first["button"] == "Tagged 2" and "kept on this device" in first["status"]
+    # Closing and opening the page again: still there.
+    again = run("untag")
+    assert again["titles"] == ["Nothing", "Alpha"] and again["button"] == "Tagged 2"
+    # Untagging dims the card until the list is shown again; one more tap brings it back.
+    assert again["afterUntag"] == [["Nothing", "hit"], ["Alpha", "hit off"]]
+    assert "1 tagged" in again["statusAfter"]
+    assert again["afterRetag"] == [["Nothing", "hit"], ["Alpha", "hit"]]
+    # (the run ended by untagging it for good)
+    last = run("show")
+    assert last["titles"] == ["Nothing"] and last["button"] == "Tagged 1"
+    assert run("type")["titles"] == ["Alpha"]
+    # A viewer that cannot keep storage says so, rather than pretending.
+    storage.unlink()
+    blocked = run("tag", kept=False)
+    assert blocked["titles"] == ["Nothing", "Alpha"]
+    assert "NOT kept" in blocked["status"]
 
 
 # -- the command line ------------------------------------------------------------------

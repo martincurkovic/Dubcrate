@@ -292,14 +292,18 @@ PAGE = """<!DOCTYPE html>
   input:focus { border-color: var(--accent); }
   .note { color: var(--muted); font-size: 14px; padding: 6px 2px 0; }
   [hidden] { display: none !important; }
-  .bar { display: flex; gap: 8px; align-items: center; margin-top: 8px; }
+  .bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 8px; }
   .bar button, .bar select { font: inherit; font-size: 16px; color: var(--bright);
          background: var(--input); border: 1px solid var(--border); border-radius: 6px;
          padding: 8px 12px; min-height: 40px; }
   .bar button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent);
          color: #fff; }
-  .sortrow { display: flex; gap: 8px; flex: 1; min-width: 0; }
+  .sortrow { display: flex; gap: 8px; flex: 1 1 100%; min-width: 0; }
   .sortrow select { flex: 1; min-width: 0; }
+  .star { background: none; border: 0; padding: 2px 4px; margin: -2px -6px -2px 0;
+          font-size: 30px; line-height: 1; color: var(--muted); }
+  .star.on { color: var(--mark); }
+  .hit.off { opacity: .45; }
   .group { position: sticky; top: var(--head, 0px); z-index: 0; background: var(--bg);
            color: var(--accent); font-weight: 700; font-size: 14px; letter-spacing: .04em;
            padding: 10px 2px 4px; }
@@ -324,6 +328,7 @@ PAGE = """<!DOCTYPE html>
          autocorrect="off" autocapitalize="off" spellcheck="false" enterkeyhint="search">
   <div class="bar">
     <button id="all" type="button" aria-pressed="false">All tracks</button>
+    <button id="tagged" type="button" aria-pressed="false">Tagged</button>
     <span class="sortrow" id="sortrow" hidden>
       <select id="sort" aria-label="Sort by"></select>
       <button id="dir" type="button" aria-label="Reverse the order">\u2191</button>
@@ -357,6 +362,7 @@ data.discs.forEach((disc, i) => {
   for (const [number, title, artist, folder, info, bpm, key, year, genre, length] of disc.tracks) {
     const clock = /^([0-9]+):([0-9]{2})$/.exec(length);
     rows.push({ disc, number, title, artist, folder, info, genre, key, order: rows.length,
+                id: JSON.stringify([disc.name, folder, number, title]),
                 text: " " + norm(title + " " + artist),
                 titleKey: norm(title), artistKey: norm(artist),
                 bpmN: parseInt(bpm, 10) || 0, yearN: parseInt(year, 10) || 0,
@@ -394,7 +400,40 @@ const allButton = document.getElementById("all");
 const sortRow = document.getElementById("sortrow");
 const sortSelect = document.getElementById("sort");
 const dirButton = document.getElementById("dir");
-let browse = false, sortKey = "title", descending = false;
+const tagButton = document.getElementById("tagged");
+let browse = false, tagView = false, sortKey = "title", descending = false;
+
+// Tagged: tracks to play later, in the order they were tagged. They are kept in the browser's storage
+// on this device, keyed by disc, folder, track number and title, so a newer export keeps them. Some
+// viewer apps can't keep storage between visits: `storageOk` says whether this one did.
+const TAGS_KEY = "dubcrate-finder-tags";
+const byId = new Map(rows.map(r => [r.id, r]));
+let storageOk = false;
+let tags = [];
+try {
+  const saved = JSON.parse(localStorage.getItem(TAGS_KEY) || "[]");
+  if (Array.isArray(saved)) tags = saved.filter(id => byId.has(id));
+} catch (e) { tags = []; }
+
+function saveTags() {
+  try {
+    const text = JSON.stringify(tags);
+    localStorage.setItem(TAGS_KEY, text);
+    storageOk = localStorage.getItem(TAGS_KEY) === text;
+  } catch (e) { storageOk = false; }
+}
+
+function showTagCount() {
+  tagButton.textContent = tags.length ? "Tagged " + tags.length : "Tagged";
+}
+
+function toggleTag(r) {
+  const i = tags.indexOf(r.id);
+  if (i < 0) tags.push(r.id); else tags.splice(i, 1);
+  saveTags();
+  showTagCount();
+  if (tagView) showStatus();
+}
 
 function el(tag, cls, text) {
   const e = document.createElement(tag);
@@ -452,7 +491,19 @@ function card(r) {
   where.append(el("div", "num", "Track " + r.number));
   if (r.folder) where.append(el("div", "sub", r.folder));
   if (r.disc.where) where.append(el("div", "sub", r.disc.where));
-  hit.append(what, where);
+  // In the Tagged list an untagged track stays, dimmed, until the list is shown again, so a slip is undone with one tap.
+  const star = el("button", "star");
+  star.type = "button";
+  const paint = () => {
+    const on = tags.includes(r.id);
+    star.textContent = on ? "★" : "☆";
+    star.className = "star" + (on ? " on" : "");
+    star.setAttribute("aria-label", on ? "Remove from Tagged" : "Tag this track");
+    hit.className = "hit" + (tagView && !on ? " off" : "");
+  };
+  star.addEventListener("click", () => { toggleTag(r); paint(); });
+  paint();
+  hit.append(what, where, star);
   return hit;
 }
 
@@ -481,40 +532,56 @@ function draw() {
   if (shown < pending.length) { results.append(sentinel); watcher.observe(sentinel); }
 }
 
-function show() {
+function showStatus() {
   const text = q.value.trim();
-  let found;
-  if (browse) found = text ? sorted(matching(text)) : sorted(rows.slice());
-  else found = text ? search(text) : [];
-  results.replaceChildren();
-  const limited = !browse && found.length > LIMIT;
-  pending = limited ? found.slice(0, LIMIT) : found;
-  heading = null; shown = 0;
-  if (browse) {
-    status.textContent = (text ? found.length + " of " + rows.length : rows.length) + " tracks · by " +
+  if (tagView) {
+    const note = storageOk ? "kept on this device" : "NOT kept: this app can't save them";
+    status.textContent = tags.length
+      ? tags.length + " tagged · " + note
+      : "Nothing tagged yet: tap the star on a track · " + note;
+  } else if (browse) {
+    status.textContent = (text ? shownCount + " of " + rows.length : rows.length) + " tracks · by " +
       SORTS[sortKey].label + (descending ? ", reversed" : "");
   } else if (!text) {
     status.textContent = rows.length + " tracks on " + data.discs.length +
                          " discs · made " + data.made;
-  } else if (!found.length) {
+  } else if (!shownCount) {
     status.textContent = "Not on any disc";
   } else {
-    status.textContent = limited
-      ? "Showing " + LIMIT + " of " + found.length + ": type more to narrow it down"
-      : found.length + (found.length === 1 ? " track" : " tracks");
+    status.textContent = shownCount > LIMIT
+      ? "Showing " + LIMIT + " of " + shownCount + ": type more to narrow it down"
+      : shownCount + (shownCount === 1 ? " track" : " tracks");
   }
+}
+
+let shownCount = 0;
+function show() {
+  const text = q.value.trim();
+  let found;
+  if (tagView) found = tags.map(id => byId.get(id));
+  else if (browse) found = text ? sorted(matching(text)) : sorted(rows.slice());
+  else found = text ? search(text) : [];
+  results.replaceChildren();
+  shownCount = found.length;
+  pending = !browse && !tagView && found.length > LIMIT ? found.slice(0, LIMIT) : found;
+  heading = null; shown = 0;
+  showStatus();
   draw();
 }
 
 function scrollUp() { if (typeof window !== "undefined") window.scrollTo(0, 0); }
 
-allButton.addEventListener("click", () => {
-  browse = !browse;
+function setMode(mode) {  // "search", "all" or "tagged"
+  browse = mode === "all";
+  tagView = mode === "tagged";
   allButton.setAttribute("aria-pressed", String(browse));
+  tagButton.setAttribute("aria-pressed", String(tagView));
   sortRow.hidden = !browse;
   scrollUp();
   show();
-});
+}
+allButton.addEventListener("click", () => setMode(browse ? "search" : "all"));
+tagButton.addEventListener("click", () => setMode(tagView ? "search" : "tagged"));
 sortSelect.addEventListener("change", () => { sortKey = sortSelect.value; scrollUp(); show(); });
 dirButton.addEventListener("click", () => {
   descending = !descending;
@@ -523,7 +590,9 @@ dirButton.addEventListener("click", () => {
   show();
 });
 
-q.addEventListener("input", show);
+q.addEventListener("input", () => { if (tagView) setMode("search"); else show(); });
+saveTags();  // finds out whether storage works here, and drops tags for tracks no longer on a disc
+showTagCount();
 show();
 q.focus();
 })();
