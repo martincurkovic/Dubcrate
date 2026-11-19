@@ -273,32 +273,39 @@ PAGE = """<!DOCTYPE html>
          font: 17px/1.3 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
          padding: 0 max(12px, env(safe-area-inset-right)) env(safe-area-inset-bottom)
                   max(12px, env(safe-area-inset-left)); }
-  header { position: sticky; top: 0; z-index: 1; background: var(--bg);
+  /* The brand bar scrolls away; the search and button rows stay, and slide out of the way while you
+     scroll down (back on scroll up). On a phone with a notch the strip under the status bar is
+     painted so the list never shows through it. */
+  body::before { content: ""; position: fixed; top: 0; left: 0; right: 0; z-index: 5;
+                 height: env(safe-area-inset-top, 0px); background: var(--bar); }
+  header { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 1; background: var(--bg);
            margin: 0 calc(-1 * max(12px, env(safe-area-inset-right))) 0
                    calc(-1 * max(12px, env(safe-area-inset-left)));
-           padding: 0 max(12px, env(safe-area-inset-right)) 8px
-                    max(12px, env(safe-area-inset-left)); }
+           padding: 8px max(12px, env(safe-area-inset-right)) 6px
+                    max(12px, env(safe-area-inset-left));
+           transition: transform .2s ease; }
   .brand { display: flex; align-items: baseline; gap: 8px; background: var(--bar);
-           border-bottom: 1px solid var(--edge); padding: 8px 0 8px;
-           padding-top: max(8px, env(safe-area-inset-top));
-           margin: 0 calc(-1 * max(12px, env(safe-area-inset-right))) 10px
+           border-bottom: 1px solid var(--edge); padding: 6px 0 6px;
+           padding-top: max(6px, env(safe-area-inset-top));
+           margin: 0 calc(-1 * max(12px, env(safe-area-inset-right))) 0
                    calc(-1 * max(12px, env(safe-area-inset-left)));
            padding-left: max(12px, env(safe-area-inset-left)); }
   .brand b { color: var(--bright); letter-spacing: .02em; }
   .brand span { color: var(--muted); font-size: 14px; }
-  input { width: 100%; font-size: 20px; padding: 11px 14px; border-radius: 6px;
+  .searchrow { display: flex; gap: 8px; align-items: center; }
+  input { width: 100%; font-size: 18px; padding: 9px 12px; border-radius: 6px;
           border: 1px solid var(--border); background: var(--input); color: var(--bright);
           outline: none; }
   input:focus { border-color: var(--accent); }
-  .note { color: var(--muted); font-size: 14px; padding: 6px 2px 0; }
+  .note { color: var(--muted); font-size: 14px; padding: 8px 2px 0; }
   [hidden] { display: none !important; }
-  .bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 8px; }
-  .bar button, .bar select, .frow select, .frow button { font: inherit; font-size: 16px; color: var(--bright);
-         background: var(--input); border: 1px solid var(--border); border-radius: 6px;
-         padding: 8px 12px; min-height: 40px; }
-  .bar button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent);
+  .bar { display: flex; gap: 8px; align-items: center; margin-top: 8px; }
+  .bar button, .bar select, .frow select, .frow button, .searchrow button { font: inherit; font-size: 15px;
+         color: var(--bright); background: var(--input); border: 1px solid var(--border);
+         border-radius: 6px; padding: 6px 10px; min-height: 38px; white-space: nowrap; }
+  .searchrow button[aria-pressed="true"], .frow button[aria-pressed="true"], .bar button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent);
          color: #fff; }
-  .sortrow { display: flex; gap: 8px; flex: 1 1 100%; min-width: 0; }
+  .sortrow { display: flex; gap: 8px; flex: 1; min-width: 0; }
   .sortrow select { flex: 1; min-width: 0; }
   #filters { padding: 10px 0 2px; }
   .frow { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
@@ -319,34 +326,55 @@ PAGE = """<!DOCTYPE html>
            padding: 10px 2px 4px; }
   main { padding-top: 4px; }
   .hit { background: var(--card); border: 1px solid var(--edge); border-left: 5px solid var(--stripe);
-         border-radius: 6px; padding: 11px 14px; margin: 0 0 8px;
-         display: flex; gap: 12px; align-items: center; }
+         border-radius: 6px; padding: 9px 12px; margin: 0 0 8px;
+         display: flex; gap: 10px; align-items: center; }
   .what { flex: 1; min-width: 0; }
-  .title { color: var(--bright); font-weight: 600; overflow-wrap: anywhere; }
-  .artist { color: var(--muted); font-size: 15px; overflow-wrap: anywhere; }
-  .info { color: var(--muted); font-size: 13px; margin-top: 3px; overflow-wrap: anywhere; }
-  .where { text-align: right; max-width: 45%; }
-  .disc { color: var(--bright); font-weight: 700; font-size: 18px; overflow-wrap: anywhere; }
+  /* A long title shows two lines and the artist and info one each; tap the card for the rest. */
+  .title { color: var(--bright); font-weight: 600; font-size: 17px; overflow-wrap: anywhere;
+           display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
+  .artist { color: var(--muted); font-size: 15px; white-space: nowrap; overflow: hidden;
+            text-overflow: ellipsis; }
+  .info { color: var(--muted); font-size: 13px; margin-top: 2px; white-space: nowrap; overflow: hidden;
+          text-overflow: ellipsis; }
+  .hit.open .title { display: block; }
+  .hit.open .artist, .hit.open .info { white-space: normal; overflow-wrap: anywhere; }
+  /* Which disc, and where on it: one line at the bottom of the card. */
+  .where { display: flex; flex-wrap: wrap; align-items: baseline; margin-top: 4px; }
+  .where > * { margin-right: 6px; }
+  .where > *:not(:last-child)::after { content: " ·"; margin-left: 6px; color: var(--muted); font-weight: 400; }
+  .disc { color: var(--bright); font-weight: 700; font-size: 16px; overflow-wrap: anywhere; }
   .num { color: var(--mark); font-size: 15px; font-weight: 600; }
   .sub { color: var(--muted); font-size: 13px; overflow-wrap: anywhere; }
+  /* Compact cards: "Title – Artist" run together, no info line (tap the card to see it). */
+  .compact .hit { padding: 6px 10px; margin-bottom: 5px; }
+  .compact .title, .compact .artist { display: inline; white-space: normal; font-size: 15px; }
+  .compact .title { font-size: 16px; }
+  .compact .artist::before { content: " – "; }
+  .compact .info { display: none; }
+  .compact .hit.open .info { display: block; }
+  .compact .hit.open .title, .compact .hit.open .artist { display: inline; }
+  .compact .where { margin-top: 2px; }
+  .compact .disc { font-size: 15px; }
 </style>
 </head>
 <body>
+<div class="brand"><b>Dubcrate</b><span>Track Finder</span></div>
 <header>
-  <div class="brand"><b>Dubcrate</b><span>Track Finder</span></div>
-  <input id="q" type="search" placeholder="Title or artist" autocomplete="off"
-         autocorrect="off" autocapitalize="off" spellcheck="false" enterkeyhint="search">
+  <div class="searchrow">
+    <input id="q" type="search" placeholder="Title or artist" autocomplete="off"
+           autocorrect="off" autocapitalize="off" spellcheck="false" enterkeyhint="search">
+    <button id="filter" type="button" aria-pressed="false">Filter</button>
+  </div>
   <div class="bar">
     <button id="all" type="button" aria-pressed="false">All tracks</button>
     <button id="tagged" type="button" aria-pressed="false">Tagged</button>
-    <button id="filter" type="button" aria-pressed="false">Filter</button>
     <span class="sortrow" id="sortrow">
       <select id="sort" aria-label="Sort by"></select>
       <button id="dir" type="button" aria-label="Reverse the order">\u2191</button>
     </span>
   </div>
-  <div class="note" id="status"></div>
 </header>
+<div class="note" id="status"></div>
 <section id="filters" hidden>
   <div class="frow"><span class="l">BPM</span>
     <input id="bpmMin" type="number" inputmode="numeric" placeholder="from" aria-label="BPM from">
@@ -357,6 +385,8 @@ PAGE = """<!DOCTYPE html>
   <div class="frow"><span class="l">Key</span><select id="fkey" aria-label="Key"></select></div>
   <div class="frow"><span class="l">Genre</span><select id="fgenre" aria-label="Genre"></select>
     <button id="fclear" type="button">Clear</button></div>
+  <div class="frow"><span class="l">Cards</span>
+    <button id="compact" type="button" aria-pressed="false">Compact</button></div>
 </section>
 <main id="results"></main>
 <script id="data" type="application/json">__DATA__</script>
@@ -565,17 +595,25 @@ function card(r) {
   where.append(el("div", "num", "Track " + r.number));
   if (r.folder) where.append(el("div", "sub", r.folder));
   if (r.disc.where) where.append(el("div", "sub", r.disc.where));
+  what.append(where);
   // In the Tagged list an untagged track stays, dimmed, until the list is shown again, so a slip is undone with one tap.
   const star = el("button", "star");
   star.type = "button";
+  let open = false;
   const paint = () => {
     const on = tags.includes(r.id);
     star.textContent = on ? "★" : "☆";
     star.className = "star" + (on ? " on" : "");
     star.setAttribute("aria-label", on ? "Remove from Tagged" : "Tag this track");
-    hit.className = "hit" + (tagView && !on ? " off" : "");
+    hit.className = "hit" + (tagView && !on ? " off" : "") + (open ? " open" : "");
   };
   star.addEventListener("click", () => { toggleTag(r); paint(); });
+  // A tap on the card (not on the star or the handle) shows or hides the rest of a long title.
+  hit.addEventListener("click", e => {
+    if (e.target && e.target.closest && e.target.closest(".star, .grip")) return;
+    open = !open;
+    paint();
+  });
   paint();
   hit._rid = r.id;
   if (tagView) {
@@ -586,8 +624,8 @@ function card(r) {
     grip.addEventListener("pointermove", e => moveDrag(e, hit));
     grip.addEventListener("pointerup", () => endDrag(hit));
     grip.addEventListener("pointercancel", () => endDrag(hit));
-    hit.append(grip, what, where, star);
-  } else hit.append(what, where, star);
+    hit.append(grip, what, star);
+  } else hit.append(what, star);
   return hit;
 }
 
@@ -761,6 +799,42 @@ dirButton.addEventListener("click", () => {
 
 // Typing is a search: it leaves All tracks and Tagged.
 q.addEventListener("input", () => { if (tagView || browse) setMode("search"); else show(); });
+// Compact cards: a switch in the filter panel, kept on this device like the tags.
+const COMPACT_KEY = "dubcrate-finder-compact";
+const compactButton = document.getElementById("compact");
+function setCompact(on, save) {
+  document.body.className = on ? "compact" : "";
+  compactButton.setAttribute("aria-pressed", String(on));
+  if (save) try { localStorage.setItem(COMPACT_KEY, on ? "1" : "0"); } catch (e) { /* not kept */ }
+}
+try { setCompact(localStorage.getItem(COMPACT_KEY) === "1", false); } catch (e) { setCompact(false, false); }
+compactButton.addEventListener("click", () => setCompact(document.body.className !== "compact", true));
+
+// The search and button rows slide away while scrolling down and come back on scrolling up (always shown
+// near the top, and while typing). `--head` is how far down the sticky letter headings stick.
+const header = document.querySelector("header");
+let hiddenHeader = false, lastY = window.scrollY;
+function stickTop() { return parseFloat(getComputedStyle(header).top) || 0; }
+function syncHead() {
+  document.documentElement.style.setProperty("--head",
+    (hiddenHeader ? stickTop() : stickTop() + header.offsetHeight) + "px");
+}
+function hideHeader(hide) {
+  if (hide === hiddenHeader) return;
+  hiddenHeader = hide;
+  header.style.transform = hide ? "translateY(" + -(header.offsetHeight + stickTop() + 4) + "px)" : "";
+  syncHead();
+}
+window.addEventListener("scroll", () => {
+  const y = window.scrollY;
+  if (y < 80 || document.activeElement === q) { hideHeader(false); lastY = y; return; }
+  if (Math.abs(y - lastY) < 8) return;  // slow movement adds up until it counts
+  hideHeader(y > lastY);
+  lastY = y;
+}, { passive: true });
+window.addEventListener("resize", syncHead);
+syncHead();
+
 saveTags();  // finds out whether storage works here, and drops tags for tracks no longer on a disc
 showTagCount();
 show();

@@ -251,9 +251,12 @@ const els = { data: { textContent: data }, q: node("input"), status: node("div")
               filter: node("button"), filters: node("section"), bpmMin: node("input"),
               bpmMax: node("input"), yearMin: node("input"), yearMax: node("input"),
               fkey: node("select"), fgenre: node("select"), fclear: node("button"),
+              compact: node("button"),
               sort: node("select"), dir: node("button") };
 els.q.value = "";
-const document = { getElementById: id => els[id], createElement: node };
+const header = Object.assign(node("header"), { offsetHeight: 90 });
+const document = { getElementById: id => els[id], createElement: node, querySelector: () => header,
+                   documentElement: node("html"), body: node("body") };
 // A browser's global scope has protected names (window.top can't be redeclared): a script that
 // declares one at the top level fails to load at all, which node's `new Function` would never show.
 const vm = require("vm");
@@ -264,7 +267,8 @@ const localStorage = { getItem: k => (k in stored ? stored[k] : null), setItem: 
 if (process.env.FINDER_NO_STORAGE) localStorage.setItem = () => { throw new Error("blocked"); };
 process.on("exit", () => process.env.FINDER_STORAGE && fs.writeFileSync(process.env.FINDER_STORAGE, JSON.stringify(stored)));
 const sandbox = { document, localStorage, scrolled: 0 };
-sandbox.window = { scrollTo() { sandbox.scrolled++; } };
+sandbox.window = { scrollTo() { sandbox.scrolled++; }, scrollY: 0, addEventListener() {} };
+sandbox.getComputedStyle = () => ({ top: "0px" });
 for (const name of ["top", "parent", "self", "location", "name", "status", "length"])
   Object.defineProperty(sandbox, name, { value: undefined, writable: false, configurable: false });
 vm.runInNewContext(code, sandbox);
@@ -274,7 +278,8 @@ for (const query of JSON.parse(process.argv[3])) {
   els.q.handlers.input();
   out[query] = { status: els.status.textContent,
     hits: els.results.children.map(hit => {
-      const [what, where] = hit.children;
+      const what = hit.children[0];
+      const where = what.children.find(c => c.className === "where");
       const info = what.children.find(c => c.className === "info");
       return [what.children[0].textContent, ...where.children.map(c => c.textContent),
               "info:" + (info ? info.textContent : "")];
