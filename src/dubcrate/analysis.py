@@ -104,6 +104,21 @@ def read_preview(root: Path, analysis_path: str) -> Waveform | None:
     return None
 
 
+def read_beat_grid(
+    root: Path, analysis_path: str
+) -> tuple[np.ndarray, np.ndarray] | None:
+    """A track's beat grid, (beat times in seconds, beat numbers 1 to 4), read from its `.DAT` file alone
+    (about 4 ms: the rest of `read_analysis` is not needed). None if it has no grid."""
+    dat = _parse(root, analysis_path, ".DAT")
+    pqtz = _tag(dat, "PQTZ") if dat else None
+    if pqtz is None:
+        return None
+    numbers, _tempos, times = pqtz.get()
+    if len(times) == 0:
+        return None
+    return np.asarray(times, dtype=np.float64), np.asarray(numbers, dtype=np.int8)
+
+
 def phrase_label(mood: int, kind: int) -> str:
     return _PHRASES.get(mood, {}).get(kind, f"PART {kind}")
 

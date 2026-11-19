@@ -845,7 +845,76 @@ def test_hot_cues_travel_in_the_page_data(lib):
     lib.add_to_disc(lib.create_disc("D"), [lib.tracks(sort="path")[0].id])
     tables = {"/rb/master.db": {"1": [Cue("hot", 12.0, slot=3, label="Go")]}}
     page = tf.html_text(tf.collect(lib, cue_tables=tables), MADE)
-    assert embedded_data(page)["discs"][0]["tracks"][0][12] == [[12.0, "Go", "C"]]
+    assert embedded_data(page)["discs"][0]["tracks"][0][12] == [
+        [12.0, "Go", "C", 0, 0, 0]
+    ]
+
+
+def _grid_track(lib):
+    lib.replace_source("folder", "/m", "M", [TrackRecord(ext_id="t", path="/m/t.mp3", title="T", file_size=10, duration=100.0)])  # fmt: skip
+    t = lib.tracks(sort="path")[0]
+    lib.add_to_disc(lib.create_disc("D"), [t.id])
+    return t
+
+
+def test_each_cue_is_placed_on_its_nearest_beat(lib):
+    t = _grid_track(lib)
+    # 120 bpm from 1.0 s: beat 1 of bar 1 at 1.0, bar 2 at 3.0, bar 3 at 5.0
+    times = 1.0 + 0.5 * np.arange(40)
+    numbers = (np.arange(40) % 4 + 1).astype(np.int8)
+    lib.set_memory_cues(t.path, [(1000, ""), (3010, "Drop"), (5230, ""), (0, "")])
+    [track] = tf.collect(lib, grids={t.id: (times, numbers)}).discs[0].tracks
+    assert [c[0] for c in track.cues] == [0.0, 1.0, 3.01, 5.23]
+    assert track.beats == (
+        (1, 1, -1000),  # before the first beat: measured from it
+        (1, 1, 0),
+        (2, 1, 10),  # 10 ms after bar 2
+        (3, 1, 230),  # 230 ms after bar 3 beat 1: nearer that than beat 2 (250 ms away)
+    )
+
+
+def test_a_track_with_no_beat_grid_has_times_only(lib):
+    t = _grid_track(lib)
+    lib.set_memory_cues(t.path, [(5000, "")])
+    [track] = tf.collect(lib, grids={}).discs[0].tracks
+    assert track.cues == ((5.0, "", ""),) and track.beats == ()
+    page = embedded_data(tf.html_text(tf.collect(lib, grids={}), MADE))
+    assert page["discs"][0]["tracks"][0][12] == [[5.0, "", "", 0, 0, 0]]
+
+
+def test_the_page_carries_the_bar_and_beat_with_the_time(lib):
+    t = _grid_track(lib)
+    lib.set_memory_cues(t.path, [(3000, "Drop")])
+    times, numbers = 1.0 + 0.5 * np.arange(40), (np.arange(40) % 4 + 1).astype(np.int8)
+    page = embedded_data(tf.html_text(tf.collect(lib, grids={t.id: (times, numbers)}), MADE))  # fmt: skip
+    assert page["discs"][0]["tracks"][0][12] == [[3.0, "Drop", "", 2, 1, 0]]
+
+
+def test_beat_grids_are_read_for_the_tracks_that_have_rekordbox_analysis(
+    lib, tmp_path, monkeypatch
+):
+    lib.replace_source(
+        "rekordbox",
+        str(tmp_path / "master.db"),
+        "RB",
+        [
+            TrackRecord(ext_id="1", path="/m/a.mp3", title="A", file_size=10, analysis_path="/PIONEER/a/ANLZ0000.DAT"),
+            TrackRecord(ext_id="2", path="/m/b.mp3", title="B", file_size=10),
+        ],
+    )  # fmt: skip
+    lib.add_to_disc(lib.create_disc("D"), [t.id for t in lib.tracks(sort="path")])
+    sources = tf.beat_sources(lib)
+    assert len(sources) == 1  # B has no analysis, so no grid
+    [(root, path)] = sources.values()
+    assert root == tmp_path / "share" and path == "/PIONEER/a/ANLZ0000.DAT"
+    grid = (np.array([0.0, 0.5]), np.array([1, 2], dtype=np.int8))
+    monkeypatch.setattr(
+        tf,
+        "read_beat_grid",
+        lambda r, p: grid if p.endswith("a/ANLZ0000.DAT") else None,
+    )
+    grids = tf.read_beat_grids(sources)
+    assert list(grids.values()) == [grid]
 
 
 def test_unreadable_cues_do_not_stop_the_export(lib):
@@ -1016,3 +1085,38 @@ def test_a_hot_cue_chip_names_its_letter(tmp_path):
     got = json.loads(run.stdout)["T"]
     assert got["chips"] == ["1 0:32 A Drop", "2 1:45"]
     assert got["chipReadout"] == "Cue 1 · 0:32 · hot cue A · Drop"
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="needs node")
+def test_each_cue_shows_its_time_and_its_bar_and_beat(tmp_path):
+    track = tf.FinderTrack(
+        1,
+        "T",
+        "A",
+        "",
+        seconds=275.0,
+        cues=((32.0, "Drop", "A"), (105.5, "", ""), (150.0, "", "")),
+        beats=(
+            (17, 1, 0),
+            (53, 3, 80),
+            (76, 2, -5),
+        ),  # the second is clearly off the beat
+    )
+    page = tmp_path / "finder.html"
+    tf.write_html(
+        tf.Finder(discs=[tf.FinderDisc("D", "", "audio", (track,))]), page, MADE
+    )
+    harness = tmp_path / "harness.js"
+    harness.write_text(NODE_HARNESS.split("const out = {};")[0] + WAVE_TAIL, encoding="utf-8")  # fmt: skip
+    run = subprocess.run(
+        ["node", str(harness), str(page)],
+        check=True,
+        capture_output=True,
+        encoding="utf-8",
+        errors="replace",
+    )
+    got = json.loads(run.stdout)["T"]
+    # number, time, the hot cue letter, then the bar and beat (≈ when more than 40 ms off the beat), then the name
+    assert got["chips"] == ["1 0:32 A 17.1 Drop", "2 1:45 ≈53.3", "3 2:30 76.2"]
+    assert got["chipReadout"] == "Cue 1 · 0:32 · hot cue A · bar 17.1 · Drop"
+    assert got["tapNearCue"] == "Cue 2 · 1:45 · bar 53.3 (+80 ms)"

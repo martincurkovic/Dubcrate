@@ -3,7 +3,7 @@
 import numpy as np
 import pytest
 
-from dubcrate.barcount import bar_and_beat, bars_text
+from dubcrate.barcount import bar_and_beat, bars_text, nearest_beat
 from dubcrate.ui.waveform_view import DetailView
 from dubcrate.waveform import Waveform
 
@@ -95,3 +95,53 @@ def test_the_counter_is_drawn_left_of_the_playhead_in_every_look(qapp, scheme):
     ]
     assert any(differs)
     detail.close()
+
+
+# -- the beat nearest a position (cue positions in the track finder) -----------------------
+
+
+def _grid(beats=16, start=1.0, step=0.5):
+    times = start + step * np.arange(beats)
+    numbers = (np.arange(beats) % 4 + 1).astype(np.int8)
+    return times, numbers
+
+
+def test_nearest_beat_on_the_beat():
+    times, numbers = _grid()
+    assert nearest_beat(times, numbers, 1.0) == (1, 1, 0.0)
+    bar, beat, off = nearest_beat(times, numbers, 3.0)  # the fifth beat: bar 2, beat 1
+    assert (bar, beat) == (2, 1) and abs(off) < 1e-9
+
+
+def test_nearest_beat_rounds_to_the_closer_one_and_says_by_how_much():
+    times, numbers = _grid()
+    bar, beat, off = nearest_beat(times, numbers, 2.1)  # 0.1 s after beat 3 of bar 1
+    assert (bar, beat) == (1, 3) and abs(off - 0.1) < 1e-9
+    bar, beat, off = nearest_beat(
+        times, numbers, 2.4
+    )  # closer to beat 4 (2.5): 0.1 s before it
+    assert (bar, beat) == (1, 4) and abs(off + 0.1) < 1e-9
+
+
+def test_nearest_beat_before_the_first_and_past_the_last():
+    times, numbers = _grid()
+    assert nearest_beat(times, numbers, 0.0)[:2] == (
+        1,
+        1,
+    )  # measured from the first beat
+    last = nearest_beat(times, numbers, 99.0)
+    assert last[:2] == (4, 4) and last[2] > 90
+
+
+def test_nearest_beat_without_a_usable_grid():
+    assert nearest_beat(np.zeros(0), np.zeros(0, dtype=np.int8), 5.0) is None
+    assert nearest_beat(np.array([1.0, 2.0]), np.array([1], dtype=np.int8), 1.0) is None
+
+
+def test_nearest_beat_counts_a_part_bar_at_the_start_as_bar_one():
+    times = np.array([1.0, 1.5, 2.0, 2.5, 3.0])
+    numbers = np.array(
+        [3, 4, 1, 2, 3], dtype=np.int8
+    )  # the grid starts at beat 3 of a bar
+    assert nearest_beat(times, numbers, 1.0)[:2] == (1, 3)
+    assert nearest_beat(times, numbers, 2.0)[:2] == (2, 1)

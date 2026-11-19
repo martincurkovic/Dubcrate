@@ -34,3 +34,23 @@ def bars_text(
     """`13.3 Bars` (bar 13, beat 3), or None when there is nothing to say."""
     found = bar_and_beat(beat_times, beat_numbers, position)
     return None if found is None else f"{found[0]}.{found[1]} Bars"
+
+
+def nearest_beat(
+    beat_times: np.ndarray, beat_numbers: np.ndarray, position: float
+) -> tuple[int, int, float] | None:
+    """The beat of the grid nearest `position`, as (bar, beat, offset): bar and beat counted as `bar_and_beat`
+    does, and `offset` how far `position` is from that beat in seconds (positive: after it). None with no
+    usable grid. A position past the last beat is measured from the last beat."""
+    n = len(beat_times)
+    if n == 0 or len(beat_numbers) != n:
+        return None
+    after = int(np.searchsorted(beat_times, position))
+    index = min(
+        (j for j in (after - 1, after) if 0 <= j < n),
+        key=lambda j: abs(beat_times[j] - position),
+    )
+    found = bar_and_beat(beat_times, beat_numbers, float(beat_times[index]))
+    if found is None:
+        return None
+    return found[0], found[1], position - float(beat_times[index])

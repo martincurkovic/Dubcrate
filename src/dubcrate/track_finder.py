@@ -28,8 +28,9 @@ from pathlib import Path
 import numpy as np
 
 from dubcrate import card_sync, cdj_card, keys, labels
-from dubcrate.analysis import Cue, read_preview, share_root
+from dubcrate.analysis import Cue, read_beat_grid, read_preview, share_root
 from dubcrate.audio.decode import DecodeError, decode_file
+from dubcrate.barcount import nearest_beat
 from dubcrate.cancel import Cancelled, CancelToken, cancellable_map
 from dubcrate.card_discs import RekordboxCues
 from dubcrate.library import Library
@@ -64,6 +65,8 @@ class FinderTrack:
     cues: tuple[
         tuple[float, str, str], ...
     ] = ()  # (seconds, label, hot cue letter or ""), in time order
+    # each cue's nearest beat: (bar, beat, milliseconds after it, negative if before); () = no beat grid
+    beats: tuple[tuple[int, int, int], ...] = ()
 
     @property
     def info(self) -> list[str]:
@@ -307,6 +310,57 @@ class _Cues:
             return ()
 
 
+BeatGrid = tuple[np.ndarray, np.ndarray]  # (beat times in seconds, beat numbers 1 to 4)
+
+
+def beat_sources(
+    lib: Library, *, disc_id: int | None = None
+) -> dict[int, tuple[Path, str]]:
+    """Where each listed track's rekordbox beat grid is: {track id: (analysis folder, analysis path)}, through
+    the rekordbox twin for a file that is also a folder track. A track with no rekordbox analysis is not in
+    it, and has no bars and beats (a tempo alone can't say where the first beat is). Library thread only."""
+    roots = {s.id: share_root(s.path) for s in lib.sources() if s.kind == "rekordbox"}
+    found: dict[int, tuple[Path, str]] = {}
+    for track in _disc_tracks(lib, disc_id):
+        analysed = track if track.analysis_path else lib.rekordbox_twin(track)
+        if (
+            analysed is not None
+            and analysed.analysis_path
+            and analysed.source_id in roots
+        ):
+            found[track.id] = (roots[analysed.source_id], analysed.analysis_path)
+    return found
+
+
+def read_beat_grids(sources: Mapping[int, tuple[Path, str]]) -> dict[int, BeatGrid]:
+    """The beat grid of each track in `sources` that has one (about 4 ms a track). Reads files only, so it is
+    safe on a worker thread."""
+    grids: dict[int, BeatGrid] = {}
+    for track_id, (root, analysis_path) in sources.items():
+        grid = read_beat_grid(root, analysis_path)
+        if grid is not None:
+            grids[track_id] = grid
+    return grids
+
+
+def cue_beats(
+    cues: Sequence[tuple[float, str, str]], grid: BeatGrid | None
+) -> tuple[tuple[int, int, int], ...]:
+    """Each cue's nearest beat as (bar, beat, milliseconds after that beat, negative if before); () when there
+    is no grid. Bars are counted as the player counts them (`barcount`)."""
+    if grid is None:
+        return ()
+    found = []
+    for time, _label, _hot in cues:
+        nearest = nearest_beat(grid[0], grid[1], time)
+        found.append(
+            (0, 0, 0)
+            if nearest is None
+            else (nearest[0], nearest[1], round(nearest[2] * 1000))
+        )
+    return tuple(found)
+
+
 def _disc_where(lib: Library) -> dict[int | None, str]:
     """Each disc folder's id and its name with the folders above it; None (the top level) is empty."""
     folders = {f.id: f for f in lib.disc_folders()}
@@ -349,6 +403,7 @@ def _disc(
     found: "Finder",
     waves: _Waves | None,
     cues: _Cues | None,
+    grids: Mapping[int, BeatGrid],
 ) -> FinderDisc | None:
     disc = lib.disc(disc_id)
     entries = lib.disc_entries(disc_id)
@@ -367,6 +422,7 @@ def _disc(
         if waves and not wave:
             found.without_wave += 1
         found.coarse_wave += coarse
+        on_card = cues.on_card(track) if cues else ()
         tracks.append(
             FinderTrack(
                 number,
@@ -380,7 +436,8 @@ def _disc(
                 length=labels.clock_text(track.duration),
                 seconds=track.cd_sectors / 75 if track.cd_sectors else track.duration,
                 wave=wave,
-                cues=cues.on_card(track) if cues else (),
+                cues=on_card,
+                beats=cue_beats(on_card, grids.get(track.id)),
             )
         )
     if not tracks:
@@ -399,6 +456,7 @@ def collect(
     memory_cues: bool = True,
     cue_tables: CueTables | None = None,
     cue_problem: str = "",
+    grids: Mapping[int, BeatGrid] | None = None,
 ) -> Finder:
     """One disc, or (the default) every disc, with keys in `notation`. Raises `FinderError` if no disc
     has a track.
@@ -406,14 +464,19 @@ def collect(
     Each track also gets its waveform (`waveforms`: see `_Waves`; `needs_analysis` and `analyse_waves`
     make the missing ones first) and its cues as they will be on the card (`memory_cues`: memory cues and hot cues). The cues come from rekordbox's
     database read once here, or from `cue_tables` that a worker already read (`read_cue_tables`, with
-    `cue_problem` if that failed). Both are only read: nothing is written to rekordbox."""
+    `cue_problem` if that failed). Each cue is also placed on its nearest beat from rekordbox's beat grids
+    (`grids`, which a worker can read first with `read_beat_grids`; read here if not given). Both are only read: nothing is written to rekordbox."""
     where = _disc_where(lib)
     ids = [disc_id] if disc_id is not None else [d.id for d in lib.discs()]
     found = Finder()
     wave_source = _Waves(lib) if waveforms else None
     cue_source = _Cues(lib, cue_tables, cue_problem) if memory_cues else None
+    if grids is None:
+        grids = (
+            read_beat_grids(beat_sources(lib, disc_id=disc_id)) if memory_cues else {}
+        )
     for i in ids:
-        disc = _disc(lib, i, where, notation, found, wave_source, cue_source)
+        disc = _disc(lib, i, where, notation, found, wave_source, cue_source, grids)
         if disc is None:
             found.empty_discs.append(lib.disc(i).name)
         else:
@@ -469,7 +532,11 @@ def page_data(found: Finder, made: date) -> str:
                         t.length,
                         round(t.seconds, 2),
                         t.wave,
-                        [list(c) for c in t.cues],
+                        # each cue: seconds, label, hot cue letter, then its nearest beat (bar, beat, ms after)
+                        [
+                            [*cue, *(t.beats[i] if t.beats else (0, 0, 0))]
+                            for i, cue in enumerate(t.cues)
+                        ],
                     ]
                     for t in d.tracks
                 ],
@@ -618,6 +685,7 @@ PAGE = """<!DOCTYPE html>
   .chip i { font-style: normal; font-size: 12px; font-weight: 700; color: #fff; background: var(--cue);
             border-radius: 50%; width: 20px; height: 20px; display: inline-flex;
             align-items: center; justify-content: center; }
+  .chip .bb { font-size: 13px; color: var(--accent); font-weight: 600; }
   .chip b { font-size: 12px; font-weight: 700; color: var(--mark); border: 1px solid var(--mark);
             border-radius: 4px; padding: 0 4px; }
   .chip small { color: var(--muted); font-size: 13px; }
@@ -966,9 +1034,18 @@ function paintWave(canvas, wave, dur, cues, cursor) {
 
 // The waveform and the memory cues for an open card; `redraw` paints it at the card's current width.
 // What a tap says about a cue: "Cue 2 · 1:45 · hot cue A · Drop" (a hot cue is a memory cue on the card).
+// "17.1" is bar 17, beat 1 on the nearest beat of rekordbox's grid; "≈" when the cue is clearly off the beat
+// (more than 40 ms), and the readout then says by how much. Nothing for a track with no beat grid.
+const OFF_BEAT_MS = 40;
+function barBeat(cue) {
+  const [, , , bar, beat, off] = cue;
+  return bar ? (Math.abs(off) > OFF_BEAT_MS ? "≈" : "") + bar + "." + beat : "";
+}
+
 function cueText(i, cue) {
-  const [t, label, hot] = cue;
-  return "Cue " + (i + 1) + " · " + fmtTime(t) + (hot ? " · hot cue " + hot : "") + (label ? " · " + label : "");
+  const [t, label, hot, bar, beat, off] = cue;
+  const where = bar ? " · bar " + bar + "." + beat + (Math.abs(off) > OFF_BEAT_MS ? " (" + (off > 0 ? "+" : "-") + Math.abs(off) + " ms)" : "") : "";
+  return "Cue " + (i + 1) + " · " + fmtTime(t) + (hot ? " · hot cue " + hot : "") + where + (label ? " · " + label : "");
 }
 
 function waveBox(r) {
@@ -1009,6 +1086,7 @@ function waveBox(r) {
       const n = el("i", "", String(i + 1));
       chip.append(n, document.createTextNode(fmtTime(t)));
       if (hot) chip.append(el("b", "", hot));
+      if (barBeat(cue)) chip.append(el("span", "bb", barBeat(cue)));
       if (label) chip.append(el("small", "", label));
       chip.addEventListener("click", () => show(t, cueText(i, cue)));
       chips.append(chip);

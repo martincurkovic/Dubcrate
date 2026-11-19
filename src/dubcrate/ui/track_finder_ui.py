@@ -51,6 +51,7 @@ def export_track_finder(parent: QWidget, lib: Library) -> Written | None:
         return None
     todo = track_finder.needs_analysis(lib)
     databases = track_finder.rekordbox_databases(lib)
+    beats = track_finder.beat_sources(lib)
     if not todo and not databases:
         return _write(parent, lib, Path(path), notation)
 
@@ -61,13 +62,13 @@ def export_track_finder(parent: QWidget, lib: Library) -> Written | None:
             track_finder.analyse_waves(todo, report, token) if todo else ({}, [])
         )
         tables, cue_problem = track_finder.read_cue_tables(databases)
-        return found, problems, tables, cue_problem
+        return found, problems, tables, cue_problem, track_finder.read_beat_grids(beats)
 
     def done(result) -> None:
-        found, problems, tables, cue_problem = result
+        found, problems, tables, cue_problem, grids = result
         parent._set_busy(False)
         track_finder.store_waves(lib, todo, found)
-        _write(parent, lib, Path(path), notation, tables, cue_problem, problems)
+        _write(parent, lib, Path(path), notation, tables, cue_problem, problems, grids)
 
     def cancelled(partial) -> None:
         parent._set_busy(False)
@@ -84,7 +85,7 @@ def export_track_finder(parent: QWidget, lib: Library) -> Written | None:
 
     parent._set_busy(
         True,
-        "Analysing waveforms…" if todo else "Reading memory cues…",
+        "Analysing waveforms…" if todo else "Reading cues…",
         cancel=token,
     )
     run_async(job, done, failed, parent._on_progress, cancelled)
@@ -99,10 +100,15 @@ def _write(
     tables=None,
     cue_problem: str = "",
     problems: Sequence[str] = (),
+    grids=None,
 ) -> Written | None:
     try:
         found = track_finder.collect(
-            lib, notation=notation, cue_tables=tables, cue_problem=cue_problem
+            lib,
+            notation=notation,
+            cue_tables=tables,
+            cue_problem=cue_problem,
+            grids=grids,
         )
         written = track_finder.write_html(found, path)
     except FinderError as exc:
