@@ -293,13 +293,23 @@ PAGE = """<!DOCTYPE html>
   .note { color: var(--muted); font-size: 14px; padding: 6px 2px 0; }
   [hidden] { display: none !important; }
   .bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 8px; }
-  .bar button, .bar select { font: inherit; font-size: 16px; color: var(--bright);
+  .bar button, .bar select, .frow select, .frow button { font: inherit; font-size: 16px; color: var(--bright);
          background: var(--input); border: 1px solid var(--border); border-radius: 6px;
          padding: 8px 12px; min-height: 40px; }
   .bar button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent);
          color: #fff; }
   .sortrow { display: flex; gap: 8px; flex: 1 1 100%; min-width: 0; }
   .sortrow select { flex: 1; min-width: 0; }
+  #filters { padding: 10px 0 2px; }
+  .frow { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
+  .frow .l { width: 50px; color: var(--muted); font-size: 15px; }
+  .frow input { font-size: 17px; padding: 8px 10px; flex: 1; min-width: 0; }
+  .frow select { flex: 1; min-width: 0; }
+  .grip { flex: none; align-self: stretch; display: flex; align-items: center; margin: -11px 0 -11px -8px;
+          padding: 0 8px; font-size: 26px; color: var(--muted); cursor: grab; user-select: none;
+          -webkit-user-select: none; -webkit-touch-callout: none; touch-action: none; }
+  .hit.lift { position: relative; z-index: 3; box-shadow: 0 6px 18px rgba(0,0,0,.45);
+              border-color: var(--accent); }
   .star { background: none; border: 0; padding: 2px 4px; margin: -2px -6px -2px 0;
           font-size: 30px; line-height: 1; color: var(--muted); }
   .star.on { color: var(--mark); }
@@ -329,6 +339,7 @@ PAGE = """<!DOCTYPE html>
   <div class="bar">
     <button id="all" type="button" aria-pressed="false">All tracks</button>
     <button id="tagged" type="button" aria-pressed="false">Tagged</button>
+    <button id="filter" type="button" aria-pressed="false">Filter</button>
     <span class="sortrow" id="sortrow" hidden>
       <select id="sort" aria-label="Sort by"></select>
       <button id="dir" type="button" aria-label="Reverse the order">\u2191</button>
@@ -336,6 +347,17 @@ PAGE = """<!DOCTYPE html>
   </div>
   <div class="note" id="status"></div>
 </header>
+<section id="filters" hidden>
+  <div class="frow"><span class="l">BPM</span>
+    <input id="bpmMin" type="number" inputmode="numeric" placeholder="from" aria-label="BPM from">
+    <input id="bpmMax" type="number" inputmode="numeric" placeholder="to" aria-label="BPM to"></div>
+  <div class="frow"><span class="l">Year</span>
+    <input id="yearMin" type="number" inputmode="numeric" placeholder="from" aria-label="Year from">
+    <input id="yearMax" type="number" inputmode="numeric" placeholder="to" aria-label="Year to"></div>
+  <div class="frow"><span class="l">Key</span><select id="fkey" aria-label="Key"></select></div>
+  <div class="frow"><span class="l">Genre</span><select id="fgenre" aria-label="Genre"></select>
+    <button id="fclear" type="button">Clear</button></div>
+</section>
 <main id="results"></main>
 <script id="data" type="application/json">__DATA__</script>
 <script>
@@ -427,6 +449,60 @@ function showTagCount() {
   tagButton.textContent = tags.length ? "Tagged " + tags.length : "Tagged";
 }
 
+// Filters: BPM and year ranges (a track with no BPM or year is left out while that range is set),
+// one key and one genre. They narrow search and All tracks together, never the Tagged list.
+const filterButton = document.getElementById("filter");
+const filterPanel = document.getElementById("filters");
+const fields = { bpmMin: "bpmMin", bpmMax: "bpmMax", yearMin: "yearMin", yearMax: "yearMax" };
+const inputs = {};
+for (const k of Object.keys(fields)) inputs[k] = document.getElementById(fields[k]);
+const keySelect = document.getElementById("fkey");
+const genreSelect = document.getElementById("fgenre");
+function fill(select, any, options) {
+  const o = el("option", "", any);
+  o.value = "";
+  select.append(o);
+  for (const [value, label] of options) {
+    const e = el("option", "", label);
+    e.value = value;
+    select.append(e);
+  }
+}
+
+function number(input) {
+  const v = parseFloat(input.value);
+  return Number.isNaN(v) ? null : v;
+}
+
+function filterState() {
+  const f = { bpmMin: number(inputs.bpmMin), bpmMax: number(inputs.bpmMax),
+              yearMin: number(inputs.yearMin), yearMax: number(inputs.yearMax),
+              key: keySelect.value, genre: genreSelect.value };
+  f.count = (f.bpmMin !== null || f.bpmMax !== null) + (f.yearMin !== null || f.yearMax !== null) +
+            (f.key !== "") + (f.genre !== "");
+  return f;
+}
+
+function passes(r, f) {
+  if (f.bpmMin !== null && !(r.bpmN && r.bpmN >= f.bpmMin)) return false;
+  if (f.bpmMax !== null && !(r.bpmN && r.bpmN <= f.bpmMax)) return false;
+  if (f.yearMin !== null && !(r.yearN && r.yearN >= f.yearMin)) return false;
+  if (f.yearMax !== null && !(r.yearN && r.yearN <= f.yearMax)) return false;
+  if (f.key && r.key !== f.key) return false;
+  if (f.genre && r.genre.toLowerCase() !== f.genre) return false;
+  return true;
+}
+
+{
+  const keysHere = [...new Set(rows.map(r => r.key).filter(Boolean))];
+  keysHere.sort((a, b) => { const x = keyRank(a), y = keyRank(b);
+    return x === y ? a.localeCompare(b) : x === null ? 1 : y === null ? -1 : x - y; });
+  fill(keySelect, "Any key", keysHere.map(k => [k, k]));
+  const genres = new Map();
+  for (const r of rows) if (r.genre && !genres.has(r.genre.toLowerCase())) genres.set(r.genre.toLowerCase(), r.genre);
+  fill(genreSelect, "Any genre", [...genres].sort((a, b) => a[0].localeCompare(b[0])));
+}
+
 function toggleTag(r) {
   const i = tags.indexOf(r.id);
   if (i < 0) tags.push(r.id); else tags.splice(i, 1);
@@ -448,11 +524,11 @@ for (const [key, s] of Object.entries(SORTS)) {
   sortSelect.append(o);
 }
 
-function matching(text) {
+function matching(text, pool = rows) {
   const words = norm(text).split(" ").filter(Boolean);
   if (!words.length) return [];
   const found = [];
-  for (const r of rows) {
+  for (const r of pool) {
     if (!words.every(w => r.text.includes(w))) continue;
     // Words that start a word in the title or artist rank above ones found inside a word.
     r.rank = words.every(w => r.text.includes(" " + w)) ? 0 : 1;
@@ -503,8 +579,83 @@ function card(r) {
   };
   star.addEventListener("click", () => { toggleTag(r); paint(); });
   paint();
-  hit.append(what, where, star);
+  hit._rid = r.id;
+  if (tagView) {
+    // Hold the handle and move: the card follows the finger and the others make room.
+    const grip = el("div", "grip", "≡");
+    grip.setAttribute("aria-label", "Drag to move");
+    grip.addEventListener("pointerdown", e => startDrag(e, hit, grip));
+    grip.addEventListener("pointermove", e => moveDrag(e, hit));
+    grip.addEventListener("pointerup", () => endDrag(hit));
+    grip.addEventListener("pointercancel", () => endDrag(hit));
+    hit.append(grip, what, where, star);
+  } else hit.append(what, where, star);
   return hit;
+}
+
+// -- moving a tagged track up or down. Positions are kept in the page's own coordinates so the card
+// stays under the finger while the page scrolls (it scrolls by itself near the top and bottom edge).
+let drag = null;
+const isCard = e => e && typeof e.className === "string" && e.className.startsWith("hit");
+
+function startDrag(e, hit, grip) {
+  e.preventDefault();
+  try { grip.setPointerCapture(e.pointerId); } catch (err) { /* a synthetic event has no pointer */ }
+  drag = { hit, y: e.clientY + window.scrollY, last: e.clientY, frame: 0 };
+  hit.className += " lift";
+  autoScroll();
+}
+
+function moveDrag(e, hit) {
+  if (!drag || drag.hit !== hit) return;
+  drag.last = e.clientY;
+  followFinger();
+}
+
+function followFinger() {
+  const d = drag, hit = d.hit;
+  hit.style.transform = "translateY(" + (d.last + window.scrollY - d.y) + "px)";
+  // Swap places with a neighbour once the card's middle passes the neighbour's middle.
+  for (let n = 0; n < 5; n++) {
+    const box = hit.getBoundingClientRect(), mid = box.top + box.height / 2;
+    const prev = hit.previousElementSibling, next = hit.nextElementSibling;
+    let other = null, below = false;
+    if (isCard(next)) {
+      const b = next.getBoundingClientRect();
+      if (mid > b.top + b.height / 2) { other = next; below = true; }
+    }
+    if (!other && isCard(prev)) {
+      const b = prev.getBoundingClientRect();
+      if (mid < b.top + b.height / 2) other = prev;
+    }
+    if (!other) break;
+    if (below) results.insertBefore(other, hit); else results.insertBefore(hit, other);
+    hit.style.transform = "";
+    const shift = box.top - hit.getBoundingClientRect().top;
+    d.y = d.last + window.scrollY - shift;
+    hit.style.transform = "translateY(" + shift + "px)";
+  }
+}
+
+function autoScroll() {
+  if (!drag) return;
+  const edge = document.querySelector("header").getBoundingClientRect().bottom + 50;
+  const low = window.innerHeight - 60, y = drag.last;
+  const speed = y < edge ? -Math.min(18, (edge - y) / 4 + 2) : y > low ? Math.min(18, (y - low) / 4 + 2) : 0;
+  if (speed) { window.scrollBy(0, speed); followFinger(); }
+  drag.frame = requestAnimationFrame(autoScroll);
+}
+
+function endDrag(hit) {
+  if (!drag || drag.hit !== hit) return;
+  cancelAnimationFrame(drag.frame);
+  drag = null;
+  hit.style.transform = "";
+  hit.className = hit.className.replace(" lift", "");
+  // The new order is the cards' order on screen; a track not drawn yet keeps its place after them.
+  const shownIds = [...results.children].filter(c => c._rid).map(c => c._rid);
+  tags = shownIds.filter(id => tags.includes(id)).concat(tags.filter(id => !shownIds.includes(id)));
+  saveTags();
 }
 
 // A long list is drawn a screenful at a time: the next lot when the end comes into view.
@@ -519,7 +670,7 @@ let pending = [], heading = null, shown = 0;
 function draw() {
   if (watcher) watcher.unobserve(sentinel);
   sentinel.remove();
-  const group = browse ? SORTS[sortKey].group : null;
+  const group = listing ? SORTS[sortKey].group : null;
   const end = watcher ? Math.min(pending.length, shown + CHUNK) : pending.length;
   for (; shown < end; shown++) {
     const r = pending[shown];
@@ -539,8 +690,8 @@ function showStatus() {
     status.textContent = tags.length
       ? tags.length + " tagged · " + note
       : "Nothing tagged yet: tap the star on a track · " + note;
-  } else if (browse) {
-    status.textContent = (text ? shownCount + " of " + rows.length : rows.length) + " tracks · by " +
+  } else if (listing) {
+    status.textContent = (text || filtering ? shownCount + " of " + rows.length : rows.length) + " tracks · by " +
       SORTS[sortKey].label + (descending ? ", reversed" : "");
   } else if (!text) {
     status.textContent = rows.length + " tracks on " + data.discs.length +
@@ -554,16 +705,24 @@ function showStatus() {
   }
 }
 
-let shownCount = 0;
+// The list is "sorted" (with headings and the sort menu) in All tracks, and whenever a filter is set.
+let shownCount = 0, listing = false, filtering = false;
 function show() {
   const text = q.value.trim();
+  const f = filterState();
+  filtering = f.count > 0 && !tagView;
+  listing = browse || filtering;
+  filterButton.textContent = f.count ? "Filter · " + f.count : "Filter";
+  sortRow.hidden = tagView || !listing;
   let found;
   if (tagView) found = tags.map(id => byId.get(id));
-  else if (browse) found = text ? sorted(matching(text)) : sorted(rows.slice());
-  else found = text ? search(text) : [];
+  else if (listing) {
+    const pool = filtering ? rows.filter(r => passes(r, f)) : rows;
+    found = sorted(text ? matching(text, pool) : pool.slice());
+  } else found = text ? search(text) : [];
   results.replaceChildren();
   shownCount = found.length;
-  pending = !browse && !tagView && found.length > LIMIT ? found.slice(0, LIMIT) : found;
+  pending = !listing && !tagView && found.length > LIMIT ? found.slice(0, LIMIT) : found;
   heading = null; shown = 0;
   showStatus();
   draw();
@@ -576,12 +735,25 @@ function setMode(mode) {  // "search", "all" or "tagged"
   tagView = mode === "tagged";
   allButton.setAttribute("aria-pressed", String(browse));
   tagButton.setAttribute("aria-pressed", String(tagView));
-  sortRow.hidden = !browse;
   scrollUp();
   show();
 }
 allButton.addEventListener("click", () => setMode(browse ? "search" : "all"));
 tagButton.addEventListener("click", () => setMode(tagView ? "search" : "tagged"));
+filterButton.addEventListener("click", () => {
+  const open = filterPanel.hidden;
+  filterPanel.hidden = !open;
+  filterButton.setAttribute("aria-pressed", String(open));
+  if (open) scrollUp();
+});
+for (const input of Object.values(inputs)) input.addEventListener("input", show);
+keySelect.addEventListener("change", show);
+genreSelect.addEventListener("change", show);
+document.getElementById("fclear").addEventListener("click", () => {
+  for (const input of Object.values(inputs)) input.value = "";
+  keySelect.value = genreSelect.value = "";
+  show();
+});
 sortSelect.addEventListener("change", () => { sortKey = sortSelect.value; scrollUp(); show(); });
 dirButton.addEventListener("click", () => {
   descending = !descending;

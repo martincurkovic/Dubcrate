@@ -239,7 +239,7 @@ const html = fs.readFileSync(process.argv[2], "utf8");
 const data = html.match(/<script id="data"[^>]*>([\s\S]*?)<\/script>/)[1];
 const code = html.match(/<script>\n([\s\S]*?)<\/script>/)[1];
 function node(tag) {
-  return { tag, className: "", textContent: "", children: [], handlers: {},
+  return { tag, className: "", textContent: "", value: "", children: [], handlers: {},
     style: { setProperty() {} },
     append(...c) { this.children.push(...c); },
     replaceChildren(...c) { this.children = c; },
@@ -248,6 +248,9 @@ function node(tag) {
 }
 const els = { data: { textContent: data }, q: node("input"), status: node("div"),
               results: node("main"), all: node("button"), tagged: node("button"), sortrow: node("span"),
+              filter: node("button"), filters: node("section"), bpmMin: node("input"),
+              bpmMax: node("input"), yearMin: node("input"), yearMax: node("input"),
+              fkey: node("select"), fgenre: node("select"), fclear: node("button"),
               sort: node("select"), dir: node("button") };
 els.q.value = "";
 const document = { getElementById: id => els[id], createElement: node };
@@ -425,12 +428,102 @@ def test_all_tracks_sorted_in_the_page(lib, tmp_path):
     assert titles(9) == ["Zeta"] and got[9]["status"].startswith("1 of 4 tracks")
 
 
+# The same stand-in again: the filters (BPM and year ranges, key, genre) with and without a search.
+FILTER_TAIL = r"""
+const part = (c, cls) => c.children.find(x => x.className.split(" ")[0] === cls);
+const titles = () => els.results.children.filter(c => c.className.startsWith("hit"))
+                                         .map(c => part(c, "what").children[0].textContent);
+const out = {};
+const snap = name => { out[name] = { titles: titles(), status: els.status.textContent,
+                                      button: els.filter.textContent, sortHidden: els.sortrow.hidden }; };
+els.sortrow.hidden = true;
+const set = (el, v, ev = "input") => { el.value = v; el.handlers[ev](); };
+set(els.q, "jackson");
+snap("search");
+set(els.bpmMin, "130");
+snap("bpm130");
+set(els.bpmMax, "140");
+snap("bpm130to140");
+set(els.bpmMin, ""); set(els.bpmMax, "");
+set(els.yearMin, "1990");
+snap("year1990");
+set(els.yearMin, "");
+set(els.fgenre, "pop", "change");
+snap("pop");
+set(els.q, "");
+set(els.fgenre, "", "change");
+set(els.fkey, "8A", "change");
+snap("key8A_nosearch");
+out.keyOptions = els.fkey.children.map(o => o.value);
+out.genreOptions = els.fgenre.children.map(o => o.textContent);
+els.fclear.handlers.click();
+snap("cleared");
+console.log(JSON.stringify(out));
+"""
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="needs node")
+def test_filters_in_the_page(lib, tmp_path):
+    def more(**kw):
+        return kw
+
+    rows = [
+        ("Beat It", "Michael Jackson", more(bpm=139.0, key="8A", year=1982, genre="Pop")),
+        ("Billie Jean", "Michael Jackson", more(bpm=117.0, key="8A", year=1982, genre="Pop")),
+        ("Thriller", "Michael Jackson", more(bpm=118.0, key="3B", year=1982, genre="Disco")),
+        ("Rock With You", "Michael Jackson", more(year=1979, genre="pop")),
+        ("Jackson 5 Medley", "Other Jackson", more(bpm=135.0, key="9A", year=1995)),
+        ("Fast One", "Someone", more(bpm=150.0, key="12B", year=2020, genre="Techno")),
+    ]  # fmt: skip
+    lib.replace_source(
+        "folder",
+        "/m",
+        "M",
+        [
+            TrackRecord(ext_id=str(i), path=f"/m/{i}.mp3", title=t, artist=a, **extra)
+            for i, (t, a, extra) in enumerate(rows)
+        ],
+    )
+    lib.add_to_disc(lib.create_disc("D"), [t.id for t in lib.tracks(sort="path")])
+    page = tmp_path / "finder.html"
+    tf.write_html(tf.collect(lib), page, MADE)
+    harness = tmp_path / "harness.js"
+    harness.write_text(NODE_HARNESS.split("const out = {};")[0] + FILTER_TAIL, encoding="utf-8")  # fmt: skip
+    run = subprocess.run(
+        ["node", str(harness), str(page)],
+        check=True,
+        capture_output=True,
+        encoding="utf-8",
+        errors="replace",
+    )
+    got = json.loads(run.stdout)
+    # No filter: the search as before (ranked, no sort menu).
+    assert got["search"]["sortHidden"] is True and got["search"]["button"] == "Filter"
+    assert len(got["search"]["titles"]) == 5
+    # BPM from 130: only those with a BPM at or above it ("Rock With You" has none).
+    assert got["bpm130"]["titles"] == ["Beat It", "Jackson 5 Medley"]
+    assert (
+        got["bpm130"]["button"] == "Filter · 1" and got["bpm130"]["sortHidden"] is False
+    )
+    assert "2 of 6 tracks" in got["bpm130"]["status"]
+    assert got["bpm130to140"]["titles"] == ["Beat It", "Jackson 5 Medley"]
+    assert got["year1990"]["titles"] == ["Jackson 5 Medley"]
+    # A genre ignores capitals ("Pop" and "pop" are one genre).
+    assert got["pop"]["titles"] == ["Beat It", "Billie Jean", "Rock With You"]
+    # A filter alone, no search text, lists the matching tracks.
+    assert got["key8A_nosearch"]["titles"] == ["Beat It", "Billie Jean"]
+    assert got["keyOptions"] == ["", "3B", "8A", "9A", "12B"]
+    assert got["genreOptions"] == ["Any genre", "Disco", "Pop", "Techno"]
+    assert got["cleared"]["button"] == "Filter" and got["cleared"]["titles"] == []
+
+
 # The same stand-in again: tagging tracks to play later.
 TAG_TAIL = r"""
 const mode = process.argv[3];
 const cards = () => els.results.children.filter(c => c.className.startsWith("hit"));
-const titleOf = c => c.children[0].children[0].textContent;
-const starOf = t => cards().find(c => titleOf(c) === t).children[2];
+const part = (c, cls) => c.children.find(x => x.className.split(" ")[0] === cls);
+const titleOf = c => part(c, "what").children[0].textContent;
+const starOf = t => part(cards().find(c => titleOf(c) === t), "star");
 els.sortrow.hidden = true;
 if (mode === "tag") {
   els.all.handlers.click();
