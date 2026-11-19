@@ -16,17 +16,28 @@ another program. Nothing is left out for a missing file: the CD is already burne
 place on an audio disc, and on an MP3 disc its number in its folder (as the files are numbered when burned).
 """
 
+import base64
 import json
 import logging
 import os
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
 
+import numpy as np
+
 from dubcrate import keys, labels
+from dubcrate.analysis import Cue, read_preview, share_root
+from dubcrate.audio.decode import DecodeError, decode_file
+from dubcrate.cancel import Cancelled, CancelToken, cancellable_map
+from dubcrate.card_discs import RekordboxCues
 from dubcrate.library import Library
-from dubcrate.library.models import DiscDir
+from dubcrate.library.cue_edits import is_memory
+from dubcrate.library.models import DiscDir, Track
+from dubcrate.library.rekordbox import read_cues
 from dubcrate.playlist_export import ordered
+from dubcrate.waveform import PREVIEW_COLUMNS, Waveform, compute_waveform
 
 log = logging.getLogger(__name__)
 
@@ -46,6 +57,13 @@ class FinderTrack:
     year: str = ""
     genre: str = ""
     length: str = ""  # M:SS
+    seconds: float = (
+        0.0  # the length the waveform and the cues are placed against, 0 = not known
+    )
+    wave: str = ""  # the waveform, see `encode_wave`; "" when there is none
+    cues: tuple[
+        tuple[float, str], ...
+    ] = ()  # memory cues: (seconds, label), in time order
 
     @property
     def info(self) -> list[str]:
@@ -79,6 +97,9 @@ class Finder:
     empty_discs: list[str] = field(
         default_factory=list
     )  # discs with no tracks, left out
+    without_wave: int = 0  # tracks listed with no waveform at all
+    coarse_wave: int = 0  # tracks that only have the CDJ's 100-column waveform
+    cue_problem: str = ""  # why memory cues could not be read, "" when they could
 
     @property
     def tracks(self) -> int:
@@ -90,6 +111,180 @@ class Written:
     path: Path
     discs: int
     tracks: int
+
+
+WAVE_COLUMNS = 400  # a whole track across a phone: about 1.2 KB a track as bytes
+CueTables = Mapping[
+    str, Mapping[str, Sequence[Cue]]
+]  # rekordbox database path -> its cues by track
+
+
+def encode_wave(wave: Waveform) -> str:
+    """A whole-track waveform for the page: "3:" and base64 of `WAVE_COLUMNS` columns of (low, mid, high)
+    bytes. Scaled like the player's strip, so the loud parts fill the height (the 98th percentile of the
+    loudest band reaches the top; a stray peak may clip)."""
+    bands = wave.resampled(WAVE_COLUMNS, how="mean").bands
+    if not len(bands):
+        return ""
+    loudest = float(np.percentile(bands.max(axis=1), 98))
+    if loudest > 0.05:
+        bands = np.clip(bands / loudest, 0.0, 1.0)
+    raw = np.clip(np.rint(bands * 255.0), 0, 255).astype(np.uint8).tobytes()
+    return "3:" + base64.b64encode(raw).decode("ascii")
+
+
+def encode_cdj_wave(values: bytes) -> str:
+    """The CDJ's own waveform (100 values from 1 to 15): "1:" and base64, one byte a column. It is much
+    coarser and only follows the bass, so it is what a track shows only when nothing better is stored."""
+    return "1:" + base64.b64encode(bytes(values)).decode("ascii") if values else ""
+
+
+class _Waves:
+    """Where a track's whole-track waveform comes from, best first: rekordbox's own analysis (the track's,
+    or its twin's when the same file is in rekordbox), the preview Dubcrate kept for the file (from the
+    player, or from an earlier export), and last the CDJ's 100-column record written when the track went
+    on an audio disc. Reads only."""
+
+    def __init__(self, lib: Library) -> None:
+        self._lib = lib
+        self._roots = {
+            s.id: share_root(s.path) for s in lib.sources() if s.kind == "rekordbox"
+        }
+
+    def detailed(self, track: Track, kept: dict[int, Waveform]) -> Waveform | None:
+        analysed = track if track.analysis_path else self._lib.rekordbox_twin(track)
+        if analysed is not None and analysed.analysis_path:
+            root = self._roots.get(analysed.source_id)
+            wave = read_preview(root, analysed.analysis_path) if root else None
+            if wave is not None:
+                return wave
+        return kept.get(track.id)
+
+    def encoded(self, track: Track, kept: dict[int, Waveform]) -> tuple[str, bool]:
+        """(the waveform as the page takes it, whether it is only the coarse CDJ one); ("", False) if none."""
+        wave = self.detailed(track, kept)
+        if wave is not None:
+            return encode_wave(wave), False
+        if track.waveform:
+            return encode_cdj_wave(track.waveform), True
+        return "", False
+
+
+def _disc_tracks(lib: Library, disc_id: int | None) -> list[Track]:
+    ids = [disc_id] if disc_id is not None else [d.id for d in lib.discs()]
+    seen: dict[int, Track] = {}
+    for i in ids:
+        for entry in lib.disc_entries(i):
+            seen.setdefault(entry.track.id, entry.track)
+    return list(seen.values())
+
+
+def needs_analysis(lib: Library, *, disc_id: int | None = None) -> list[Track]:
+    """The tracks on the discs that have no detailed waveform yet (no rekordbox analysis, nothing kept) and
+    whose file can be read: `analyse_waves` makes theirs. Library thread only."""
+    tracks = _disc_tracks(lib, disc_id)
+    waves = _Waves(lib)
+    kept = lib.previews_for(tracks)
+    return [
+        t
+        for t in tracks
+        if not t.missing and Path(t.path).is_file() and waves.detailed(t, kept) is None
+    ]
+
+
+def analyse_waves(
+    tracks: Sequence[Track],
+    progress: Callable[[int, int], None] | None = None,
+    cancel: CancelToken | None = None,
+    workers: int = 2,
+) -> tuple[dict[int, Waveform], list[str]]:
+    """Each track's whole-track waveform worked out from its audio, a couple at a time: ({track id: waveform},
+    problems in plain words). Touches no database, so it is safe on a worker thread (`store_waves` keeps
+    the result on the library's thread). If `cancel` is set it raises `Cancelled` whose `partial` is what
+    was done so far (still good)."""
+
+    def one(track: Track) -> tuple[Track, Waveform | str]:
+        try:
+            wave = compute_waveform(decode_file(track.path).mono())
+            return track, wave.resampled(PREVIEW_COLUMNS, how="mean")
+        except (DecodeError, OSError, ValueError) as exc:
+            return track, f"{track.title or track.path}: {exc}"
+
+    found: dict[int, Waveform] = {}
+    problems: list[str] = []
+    try:
+        for done, (track, result) in enumerate(
+            cancellable_map(one, list(tracks), workers, cancel), start=1
+        ):
+            if isinstance(result, str):
+                problems.append(result)
+            else:
+                found[track.id] = result
+            if progress:
+                progress(done, len(tracks))
+    except Cancelled:
+        raise Cancelled((found, problems)) from None
+    return found, problems
+
+
+def store_waves(
+    lib: Library, tracks: Sequence[Track], found: dict[int, Waveform]
+) -> None:
+    """Keep what `analyse_waves` found, as the player keeps a folder track's strip, so the next export (and
+    the track list) has it at once."""
+    for track in tracks:
+        if track.id in found:
+            lib.set_preview(track.path, track.file_size, found[track.id])
+
+
+def rekordbox_databases(lib: Library) -> list[str]:
+    """The paths of the imported rekordbox databases (their memory cues are read from a snapshot)."""
+    return [s.path for s in lib.sources() if s.kind == "rekordbox"]
+
+
+def read_cue_tables(paths: Sequence[str]) -> tuple[CueTables, str]:
+    """rekordbox's cues for each database in `paths`: (tables, "" or why one could not be read). Reads a
+    snapshot, never the live file, and touches no library, so it is safe on a worker thread."""
+    tables: dict[str, Mapping[str, Sequence[Cue]]] = {}
+    for path in paths:
+        try:
+            tables[str(Path(path))] = read_cues(Path(path))
+        except Exception as exc:  # a database we can't read must not stop the export
+            log.warning(
+                "track finder: could not read cues from %s", path, exc_info=True
+            )
+            return tables, str(exc) or type(exc).__name__
+    return tables, ""
+
+
+class _Cues:
+    """A track's memory cues as the player shows them (rekordbox's, with any edited in Dubcrate laid over).
+    A failure to read the database is reported once and the tracks go without cues, rather than the
+    export failing."""
+
+    def __init__(
+        self, lib: Library, tables: CueTables | None = None, problem: str = ""
+    ) -> None:
+        load = None if tables is None else (lambda path: tables.get(str(path), {}))
+        self._provider = RekordboxCues(lib, load).for_track
+        self.problem = problem
+
+    def memory(self, track: Track) -> tuple[tuple[float, str], ...]:
+        if self.problem:
+            return ()
+        try:
+            cues = self._provider(track)
+        except Exception as exc:  # (as above)
+            log.warning("track finder: could not read memory cues", exc_info=True)
+            self.problem = str(exc) or type(exc).__name__
+            return ()
+        return tuple(
+            sorted(
+                (round(c.time, 2), c.label)
+                for c in cues
+                if is_memory(c) and c.time >= 0
+            )
+        )
 
 
 def _disc_where(lib: Library) -> dict[int | None, str]:
@@ -127,7 +322,13 @@ def _dir_paths(dirs: list[DiscDir]) -> dict[int | None, str]:
 
 
 def _disc(
-    lib: Library, disc_id: int, where: dict[int | None, str], notation: str
+    lib: Library,
+    disc_id: int,
+    where: dict[int | None, str],
+    notation: str,
+    found: "Finder",
+    waves: _Waves | None,
+    cues: _Cues | None,
 ) -> FinderDisc | None:
     disc = lib.disc(disc_id)
     entries = lib.disc_entries(disc_id)
@@ -138,9 +339,14 @@ def _disc(
         folder_names = _dir_paths(dirs)
     numbers: dict[int | None, int] = {}
     tracks = []
+    kept = lib.previews_for([e.track for e in entries]) if waves else {}
     for entry in entries:
         number = numbers[entry.dir_id] = numbers.get(entry.dir_id, 0) + 1
         track = entry.track
+        wave, coarse = waves.encoded(track, kept) if waves else ("", False)
+        if waves and not wave:
+            found.without_wave += 1
+        found.coarse_wave += coarse
         tracks.append(
             FinderTrack(
                 number,
@@ -152,6 +358,9 @@ def _disc(
                 year=labels.year_text(track.year),
                 genre=" ".join(track.genre.split()),
                 length=labels.clock_text(track.duration),
+                seconds=track.cd_sectors / 75 if track.cd_sectors else track.duration,
+                wave=wave,
+                cues=cues.memory(track) if cues else (),
             )
         )
     if not tracks:
@@ -162,30 +371,55 @@ def _disc(
 
 
 def collect(
-    lib: Library, *, disc_id: int | None = None, notation: str = keys.CAMELOT
+    lib: Library,
+    *,
+    disc_id: int | None = None,
+    notation: str = keys.CAMELOT,
+    waveforms: bool = True,
+    memory_cues: bool = True,
+    cue_tables: CueTables | None = None,
+    cue_problem: str = "",
 ) -> Finder:
     """One disc, or (the default) every disc, with keys in `notation`. Raises `FinderError` if no disc
-    has a track."""
+    has a track.
+
+    Each track also gets its waveform (`waveforms`: see `_Waves`; `needs_analysis` and `analyse_waves`
+    make the missing ones first) and its memory cues (`memory_cues`). The cues come from rekordbox's
+    database read once here, or from `cue_tables` that a worker already read (`read_cue_tables`, with
+    `cue_problem` if that failed). Both are only read: nothing is written to rekordbox."""
     where = _disc_where(lib)
     ids = [disc_id] if disc_id is not None else [d.id for d in lib.discs()]
     found = Finder()
+    wave_source = _Waves(lib) if waveforms else None
+    cue_source = _Cues(lib, cue_tables, cue_problem) if memory_cues else None
     for i in ids:
-        disc = _disc(lib, i, where, notation)
+        disc = _disc(lib, i, where, notation, found, wave_source, cue_source)
         if disc is None:
             found.empty_discs.append(lib.disc(i).name)
         else:
             found.discs.append(disc)
     found.discs.sort(key=lambda d: (d.where.casefold(), d.name.casefold()))
+    if cue_source is not None:
+        found.cue_problem = cue_source.problem
     if not found.discs:
         raise FinderError("There is nothing to list: no disc has a track on it.")
     return found
 
 
 def summary(found: Finder) -> str:
-    """What was left out, for a message after an export; empty when nothing was."""
-    if not found.empty_discs:
-        return ""
-    return "Discs left out (no tracks): " + ", ".join(found.empty_discs)
+    """What was left out or is missing, for a message after an export; empty when nothing is."""
+    lines = []
+    if found.empty_discs:
+        lines.append("Discs left out (no tracks): " + ", ".join(found.empty_discs))
+    if found.without_wave:
+        lines.append(f"{found.without_wave} track(s) have no waveform.")
+    if found.coarse_wave:
+        lines.append(
+            f"{found.coarse_wave} track(s) only have the CDJ's coarse waveform (their audio could not be read)."
+        )
+    if found.cue_problem:
+        lines.append(f"Memory cues could not be read: {found.cue_problem}")
+    return "\n".join(lines)
 
 
 # -- the page ------------------------------------------------------------------------
@@ -213,6 +447,9 @@ def page_data(found: Finder, made: date) -> str:
                         t.year,
                         t.genre,
                         t.length,
+                        round(t.seconds, 2),
+                        t.wave,
+                        [list(c) for c in t.cues],
                     ]
                     for t in d.tracks
                 ],
@@ -262,11 +499,13 @@ PAGE = """<!DOCTYPE html>
   :root { color-scheme: dark light;
           --bg: #1e1e24; --panel: #202028; --bar: #17171c; --input: #2a2a35; --card: #2a2a35;
           --border: #40404c; --edge: #33333e; --text: #e4e4ea; --bright: #f0f0f4; --muted: #8e8e9c;
-          --accent: #4a90d9; --mark: #e8922b; }
+          --accent: #4a90d9; --mark: #e8922b;
+          --wave-bg: #0b0b0f; --w-low: #2f62ff; --w-mid: #e8922b; --w-high: #f4f4f4; --cue: #ff4d4d; }
   @media (prefers-color-scheme: light) {
     :root { --bg: #f5f3fa; --panel: #ffffff; --bar: #ece7f5; --input: #ffffff; --card: #ffffff;
             --border: #d6cce8; --edge: #ddd0ee; --text: #2a2438; --bright: #191320; --muted: #7a7290;
-            --accent: #8b5cf6; --mark: #d9651c; }
+            --accent: #8b5cf6; --mark: #d9651c;
+            --wave-bg: #ffffff; --w-high: #4b4b5e; }
   }
   * { box-sizing: border-box; }
   body { margin: 0; background: var(--bg); color: var(--text);
@@ -292,6 +531,7 @@ PAGE = """<!DOCTYPE html>
            padding-left: max(12px, env(safe-area-inset-left)); }
   .brand b { color: var(--bright); letter-spacing: .02em; }
   .brand span { color: var(--muted); font-size: 14px; }
+  .bar button.danger { background: #c0392b; border-color: #c0392b; color: #fff; }
   .searchrow { display: flex; gap: 8px; align-items: center; }
   input { width: 100%; font-size: 18px; padding: 9px 12px; border-radius: 6px;
           border: 1px solid var(--border); background: var(--input); color: var(--bright);
@@ -327,7 +567,7 @@ PAGE = """<!DOCTYPE html>
   main { padding-top: 4px; }
   .hit { background: var(--card); border: 1px solid var(--edge); border-left: 5px solid var(--stripe);
          border-radius: 6px; padding: 9px 12px; margin: 0 0 8px;
-         display: flex; gap: 10px; align-items: center; }
+         display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; }
   .what { flex: 1; min-width: 0; }
   /* A long title shows two lines and the artist and info one each; tap the card for the rest. */
   .title { color: var(--bright); font-weight: 600; font-size: 17px; overflow-wrap: anywhere;
@@ -345,6 +585,21 @@ PAGE = """<!DOCTYPE html>
   .disc { color: var(--bright); font-weight: 700; font-size: 16px; overflow-wrap: anywhere; }
   .num { color: var(--mark); font-size: 15px; font-weight: 600; }
   .sub { color: var(--muted); font-size: 13px; overflow-wrap: anywhere; }
+  /* The waveform shows when a card is open: the whole track, a faint line and a label at each minute, a
+     numbered flag at each memory cue; tap it for the time at that spot. */
+  .wavebox { flex: 0 0 100%; display: none; }
+  .hit.open .wavebox { display: block; }
+  .wave { display: block; width: 100%; height: 68px; border-radius: 4px; border: 1px solid var(--edge); }
+  .readout { color: var(--muted); font-size: 13px; padding: 5px 2px 0; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; padding-top: 6px; }
+  .chip { font: inherit; font-size: 14px; color: var(--bright); background: var(--input);
+          border: 1px solid var(--border); border-radius: 14px; padding: 2px 10px 2px 3px;
+          display: flex; align-items: center; gap: 6px; }
+  .chip i { font-style: normal; font-size: 12px; font-weight: 700; color: #fff; background: var(--cue);
+            border-radius: 50%; width: 20px; height: 20px; display: inline-flex;
+            align-items: center; justify-content: center; }
+  .chip small { color: var(--muted); font-size: 13px; }
+  .none { color: var(--muted); font-size: 13px; padding: 2px; }
   /* Compact cards: "Title – Artist" run together, no info line (tap the card to see it). */
   .compact .hit { padding: 6px 10px; margin-bottom: 5px; }
   .compact .title, .compact .artist { display: inline; white-space: normal; font-size: 15px; }
@@ -368,6 +623,7 @@ PAGE = """<!DOCTYPE html>
   <div class="bar">
     <button id="all" type="button" aria-pressed="false">All tracks</button>
     <button id="tagged" type="button" aria-pressed="false">Tagged</button>
+    <button id="clear" type="button" hidden>Clear</button>
     <span class="sortrow" id="sortrow">
       <select id="sort" aria-label="Sort by"></select>
       <button id="dir" type="button" aria-label="Reverse the order">\u2191</button>
@@ -410,14 +666,15 @@ const rows = [];
 data.discs.forEach((disc, i) => {
   disc.stripe = STRIPES[i % STRIPES.length];
   disc.index = i;
-  for (const [number, title, artist, folder, info, bpm, key, year, genre, length] of disc.tracks) {
+  for (const [number, title, artist, folder, info, bpm, key, year, genre, length, seconds, wave, cues] of disc.tracks) {
     const clock = /^([0-9]+):([0-9]{2})$/.exec(length);
     rows.push({ disc, number, title, artist, folder, info, genre, key, order: rows.length,
                 id: JSON.stringify([disc.name, folder, number, title]),
                 text: " " + norm(title + " " + artist),
                 titleKey: norm(title), artistKey: norm(artist),
                 bpmN: parseInt(bpm, 10) || 0, yearN: parseInt(year, 10) || 0,
-                secs: clock ? +clock[1] * 60 + +clock[2] : 0, keyN: keyRank(key) });
+                secs: clock ? +clock[1] * 60 + +clock[2] : 0, keyN: keyRank(key),
+                dur: seconds || (clock ? +clock[1] * 60 + +clock[2] : 0), wave, cues });
   }
 });
 
@@ -534,6 +791,31 @@ function passes(r, f) {
   fill(genreSelect, "Any genre", [...genres].sort((a, b) => a[0].localeCompare(b[0])));
 }
 
+// Clear the Tagged list: two taps, so a slip of the thumb can't wipe a set (the first one asks, and
+// goes back to Clear after a few seconds; some viewer apps have no confirm box, so this makes its own).
+const clearButton = document.getElementById("clear");
+let clearArmed = false, clearTimer = 0;
+function resetClear() {
+  clearArmed = false;
+  clearTimeout(clearTimer);
+  clearButton.textContent = "Clear";
+  clearButton.className = "";
+}
+clearButton.addEventListener("click", () => {
+  if (!clearArmed) {
+    clearArmed = true;
+    clearButton.textContent = "Tap again to clear " + tags.length;
+    clearButton.className = "danger";
+    clearTimer = setTimeout(resetClear, 4000);
+    return;
+  }
+  resetClear();
+  tags = [];
+  saveTags();
+  showTagCount();
+  show();
+});
+
 function toggleTag(r) {
   const i = tags.indexOf(r.id);
   if (i < 0) tags.push(r.id); else tags.splice(i, 1);
@@ -583,6 +865,132 @@ function sorted(list, key) {
   });
 }
 
+// -- the waveform: "3:" + base64 of (low, mid, high) bytes a column, or "1:" + one 0-15 byte a column
+// (the CDJ's coarse one). Drawn in the app's own colours; the cues are red, as rekordbox's memory cues.
+const WAVE_HEIGHT = 68;
+const redraws = [];
+
+function fmtTime(t) {
+  t = Math.max(0, Math.floor(t));
+  return Math.floor(t / 60) + ":" + String(t % 60).padStart(2, "0");
+}
+
+function decodeWave(text) {
+  if (!text) return null;
+  const bytes = Uint8Array.from(atob(text.slice(2)), c => c.charCodeAt(0));
+  return { bands: text.charAt(0) === "3" ? 3 : 1, bytes };
+}
+
+function paintWave(canvas, wave, dur, cues, cursor) {
+  const dpr = window.devicePixelRatio || 1;
+  const w = Math.round((canvas.clientWidth || 300) * dpr), h = Math.round(WAVE_HEIGHT * dpr);
+  canvas.width = w;
+  canvas.height = h;
+  const g = canvas.getContext("2d");
+  const css = getComputedStyle(document.documentElement);
+  const colour = name => css.getPropertyValue(name).trim() || "#888";
+  g.fillStyle = colour("--wave-bg");
+  g.fillRect(0, 0, w, h);
+  const axis = 13 * dpr, mid = (h - axis) / 2, reach = mid - 3 * dpr;
+  const x = t => Math.min(w - 1, Math.max(0, t / dur * w));
+  // a faint line at every minute, behind the waveform
+  if (dur >= 60) {
+    g.fillStyle = "rgba(128,128,140,.28)";
+    for (let t = 60; t < dur; t += 60) g.fillRect(Math.round(x(t)), 0, Math.max(1, Math.round(dpr * .7)), h - axis);
+  }
+  if (wave) {
+    const n = wave.bytes.length / wave.bands, step = w / n;
+    const bandColours = [colour("--w-low"), colour("--w-mid"), colour("--w-high")];
+    for (let band = 0; band < wave.bands; band++) {  // low first, high last, each covering the one before
+      g.fillStyle = wave.bands === 1 ? bandColours[0] : bandColours[band];
+      for (let i = 0; i < n; i++) {
+        const v = wave.bands === 1 ? wave.bytes[i] / 15 : wave.bytes[i * 3 + band] / 255;
+        const half = Math.max(dpr, v * reach);
+        g.fillRect(i * step, mid - half, step + .6, half * 2);
+      }
+    }
+  }
+  if (dur > 0) {
+    // the minute scale under the waveform: a tick each minute, a label as often as there is room
+    g.fillStyle = "rgba(128,128,140,.8)";
+    g.font = Math.round(10 * dpr) + "px -apple-system, sans-serif";
+    g.textBaseline = "bottom";
+    const every = [1, 2, 5, 10, 15, 30].find(m => 60 * m / dur * w >= 40 * dpr) || 60;
+    for (let t = 60, m = 1; t < dur; t += 60, m++) {
+      const px = Math.round(x(t));
+      g.fillRect(px, h - axis, Math.max(1, Math.round(dpr * .7)), 4 * dpr);
+      if (m % every === 0) {
+        const label = fmtTime(t), tw = g.measureText(label).width;
+        if (px + tw / 2 < w) g.fillText(label, Math.max(0, px - tw / 2), h - 1);
+      }
+    }
+    cues.forEach(([t], i) => {  // numbered flags at the memory cues
+      const px = Math.round(x(t)), label = String(i + 1);
+      g.fillStyle = colour("--cue");
+      g.fillRect(px, 0, Math.max(1.5, 1.5 * dpr), h - axis);
+      g.font = "bold " + Math.round(9 * dpr) + "px -apple-system, sans-serif";
+      g.textBaseline = "middle";
+      const fw = g.measureText(label).width + 6 * dpr, fx = px + fw > w ? px - fw : px;
+      g.fillRect(fx, 0, fw, 12 * dpr);
+      g.fillStyle = "#fff";
+      g.fillText(label, fx + 3 * dpr, 6.5 * dpr);
+    });
+    if (cursor !== null) {
+      g.fillStyle = colour("--bright");
+      g.fillRect(Math.round(x(cursor)), 0, Math.max(1, Math.round(dpr)), h - axis);
+    }
+  }
+}
+
+// The waveform and the memory cues for an open card; `redraw` paints it at the card's current width.
+function waveBox(r) {
+  const wave = decodeWave(r.wave), cues = r.cues, dur = r.dur;
+  if (!wave && !cues.length) {
+    const none = el("div", "wavebox none", "No waveform for this track");
+    none.redraw = () => {};
+    return none;
+  }
+  const box = el("div", "wavebox");
+  let cursor = null;
+  const canvas = el("canvas", "wave");
+  const readout = el("div", "readout");
+  const show = (t, text) => {
+    cursor = t;
+    readout.textContent = text;
+    paintWave(canvas, wave, dur, cues, cursor);
+  };
+  const shown = () => paintWave(canvas, wave, dur, cues, cursor);
+  readout.textContent = (dur ? "Length " + fmtTime(dur) : "") + (cues.length ? " · tap a cue or the waveform for a time" : "");
+  box.append(canvas, readout);
+  if (dur > 0) {
+    canvas.addEventListener("click", e => {
+      const rect = canvas.getBoundingClientRect();
+      let t = Math.min(dur, Math.max(0, (e.clientX - rect.left) / rect.width * dur));
+      // close to a cue (a finger is wide): jump to that cue
+      const near = cues.findIndex(([c]) => Math.abs(c - t) / dur * rect.width < 14);
+      if (near >= 0) { t = cues[near][0]; show(t, "Cue " + (near + 1) + " · " + fmtTime(t) + (cues[near][1] ? " · " + cues[near][1] : "")); }
+      else show(t, fmtTime(t) + " of " + fmtTime(dur));
+    });
+  }
+  if (cues.length) {
+    const chips = el("div", "chips");
+    cues.forEach(([t, label], i) => {
+      const chip = el("button", "chip");
+      chip.type = "button";
+      const n = el("i", "", String(i + 1));
+      chip.append(n, document.createTextNode(fmtTime(t)));
+      if (label) chip.append(el("small", "", label));
+      chip.addEventListener("click", () => show(t, "Cue " + (i + 1) + " · " + fmtTime(t) + (label ? " · " + label : "")));
+      chips.append(chip);
+    });
+    box.append(chips);
+  }
+  box.redraw = shown;
+  redraws.push(box);
+  return box;
+}
+window.addEventListener("resize", () => { for (const b of redraws) if (b.isConnected) b.redraw(); });
+
 function card(r) {
   const hit = el("div", "hit");
   hit.style.setProperty("--stripe", r.disc.stripe);
@@ -609,10 +1017,15 @@ function card(r) {
   };
   star.addEventListener("click", () => { toggleTag(r); paint(); });
   // A tap on the card (not on the star or the handle) shows or hides the rest of a long title.
+  let box = null;
   hit.addEventListener("click", e => {
-    if (e.target && e.target.closest && e.target.closest(".star, .grip")) return;
+    if (e.target && e.target.closest && e.target.closest(".star, .grip, .wavebox")) return;
     open = !open;
     paint();
+    if (open) {
+      if (!box) { box = waveBox(r); hit.append(box); }
+      box.redraw();  // (the width is known once the card is open)
+    }
   });
   paint();
   hit._rid = r.id;
@@ -747,6 +1160,8 @@ function show() {
   listing = !tagView && (text !== "" || filtering || browse);
   filterButton.textContent = f.count ? "Filter · " + f.count : "Filter";
   sortRow.hidden = tagView;
+  clearButton.hidden = !(tagView && tags.length);
+  if (clearButton.hidden) resetClear();
   activeSort = sortKey === "match" && !text ? "title" : sortKey;
   let found;
   if (tagView) found = tags.map(id => byId.get(id));
@@ -768,6 +1183,7 @@ function setMode(mode) {  // "search", "all" or "tagged"
   browse = mode === "all";
   tagView = mode === "tagged";
   if (browse) q.value = "";  // All tracks shows everything, whatever was typed
+  resetClear();
   allButton.setAttribute("aria-pressed", String(browse));
   tagButton.setAttribute("aria-pressed", String(tagView));
   scrollUp();

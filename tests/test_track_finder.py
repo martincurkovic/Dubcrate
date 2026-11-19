@@ -1,5 +1,6 @@
 """The track finder: which disc is this track on (read-only, one HTML file)."""
 
+import base64
 import json
 import os
 import re
@@ -8,11 +9,13 @@ import subprocess
 from datetime import date
 from pathlib import Path
 
+import numpy as np
 import pytest
 
 from dubcrate import track_finder as tf
 from dubcrate.library import Library, TrackRecord
 from dubcrate.track_finder import FinderError
+from dubcrate.waveform import Waveform
 
 MADE = date(2026, 11, 18)
 
@@ -199,7 +202,7 @@ def test_the_page_holds_the_data_and_no_network_reference(lib):
     data = embedded_data(page)
     assert data["made"] == "2026-11-18"
     assert data["discs"][0]["tracks"] == [
-        [1, "Ünïcode ✓", "Bjørk", "", [], "", "", "", "", ""]
+        [1, "Ünïcode ✓", "Bjørk", "", [], "", "", "", "", "", 0.0, "", []]
     ]
     assert "http" not in page.replace("http-equiv", "")
 
@@ -239,7 +242,9 @@ const html = fs.readFileSync(process.argv[2], "utf8");
 const data = html.match(/<script id="data"[^>]*>([\s\S]*?)<\/script>/)[1];
 const code = html.match(/<script>\n([\s\S]*?)<\/script>/)[1];
 function node(tag) {
-  return { tag, className: "", textContent: "", value: "", children: [], handlers: {},
+  return { tag, className: "", textContent: "", value: "", children: [], isConnected: true,
+    getContext() { return new Proxy({}, { get: (t, k) => k === "measureText" ? () => ({ width: 10 }) : () => {}, set: () => true }); },
+    getBoundingClientRect() { return { left: 0, width: 300 }; }, handlers: {},
     style: { setProperty() {} },
     append(...c) { this.children.push(...c); },
     replaceChildren(...c) { this.children = c; },
@@ -251,12 +256,13 @@ const els = { data: { textContent: data }, q: node("input"), status: node("div")
               filter: node("button"), filters: node("section"), bpmMin: node("input"),
               bpmMax: node("input"), yearMin: node("input"), yearMax: node("input"),
               fkey: node("select"), fgenre: node("select"), fclear: node("button"),
-              compact: node("button"),
+              compact: node("button"), clear: node("button"),
               sort: node("select"), dir: node("button") };
 els.q.value = "";
 const header = Object.assign(node("header"), { offsetHeight: 90 });
 const document = { getElementById: id => els[id], createElement: node, querySelector: () => header,
-                   documentElement: node("html"), body: node("body") };
+                   documentElement: node("html"), body: node("body"),
+                   createTextNode: text => Object.assign(node("#text"), { textContent: text }) };
 // A browser's global scope has protected names (window.top can't be redeclared): a script that
 // declares one at the top level fails to load at all, which node's `new Function` would never show.
 const vm = require("vm");
@@ -268,7 +274,11 @@ if (process.env.FINDER_NO_STORAGE) localStorage.setItem = () => { throw new Erro
 process.on("exit", () => process.env.FINDER_STORAGE && fs.writeFileSync(process.env.FINDER_STORAGE, JSON.stringify(stored)));
 const sandbox = { document, localStorage, scrolled: 0 };
 sandbox.window = { scrollTo() { sandbox.scrolled++; }, scrollY: 0, addEventListener() {} };
-sandbox.getComputedStyle = () => ({ top: "0px" });
+sandbox.getComputedStyle = () => ({ top: "0px", getPropertyValue: () => "" });
+sandbox.atob = atob;
+sandbox.timers = [];
+sandbox.setTimeout = fn => { sandbox.timers.push(fn); return sandbox.timers.length; };
+sandbox.clearTimeout = () => {};
 for (const name of ["top", "parent", "self", "location", "name", "status", "length"])
   Object.defineProperty(sandbox, name, { value: undefined, writable: false, configurable: false });
 vm.runInNewContext(code, sandbox);
@@ -545,6 +555,77 @@ def test_filters_in_the_page(lib, tmp_path):
     assert got["cleared"]["button"] == "Filter" and got["cleared"]["titles"] == []
 
 
+# The same stand-in again: opening a card shows its memory cues and a time for each.
+WAVE_TAIL = r"""
+const open = { target: { closest: () => null } };
+const cards = () => els.results.children.filter(c => c.className.startsWith("hit"));
+const part = (c, cls) => c.children.find(x => x.className.split(" ")[0] === cls);
+const titleOf = c => part(c, "what").children[0].textContent;
+els.all.handlers.click();
+const out = {};
+for (const card of cards()) {
+  card.handlers.click(open);
+  const box = card.children.find(x => x.className.startsWith("wavebox"));
+  const chips = box.children.find(x => x.className === "chips");
+  const readout = box.children.find(x => x.className === "readout");
+  const canvas = box.children.find(x => x.className === "wave");
+  const entry = { box: box.className, readout: readout ? readout.textContent : null,
+    chips: chips ? chips.children.map(c => c.children.map(k => k.textContent).join(" ")) : [] };
+  if (canvas) {
+    canvas.handlers.click({ clientX: 150 });
+    entry.tapMiddle = readout.textContent;
+    canvas.handlers.click({ clientX: 120 });  // 5 px from the second cue: jumps to it
+    entry.tapNearCue = readout.textContent;
+    chips.children[0].handlers.click();
+    entry.chipReadout = readout.textContent;
+  }
+  out[titleOf(card)] = entry;
+}
+console.log(JSON.stringify(out));
+"""
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="needs node")
+def test_opening_a_card_shows_its_memory_cues_and_times(lib, tmp_path):
+    lib.replace_source(
+        "folder",
+        "/m",
+        "M",
+        [
+            TrackRecord(ext_id="1", path="/m/1.mp3", title="With Cues", duration=275.0, file_size=10),
+            TrackRecord(ext_id="2", path="/m/2.mp3", title="Plain", duration=100.0, file_size=10),
+        ],
+    )  # fmt: skip
+    ids = {t.title: t for t in lib.tracks(sort="path")}
+    lib.set_memory_cues(ids["With Cues"].path, [(32000, "Drop"), (105500, "")])
+    lib.set_preview(
+        ids["With Cues"].path, 10, Waveform(np.full((50, 3), 0.5, np.float32), 0.0)
+    )
+    lib.add_to_disc(lib.create_disc("D"), [t.id for t in ids.values()])
+    page = tmp_path / "finder.html"
+    tf.write_html(tf.collect(lib), page, MADE)
+    harness = tmp_path / "harness.js"
+    harness.write_text(NODE_HARNESS.split("const out = {};")[0] + WAVE_TAIL, encoding="utf-8")  # fmt: skip
+    run = subprocess.run(
+        ["node", str(harness), str(page)],
+        check=True,
+        capture_output=True,
+        encoding="utf-8",
+        errors="replace",
+    )
+    got = json.loads(run.stdout)
+    cued = got["With Cues"]
+    assert cued["chips"] == ["1 0:32 Drop", "2 1:45"]
+    assert cued["readout"].startswith("Length 4:35")
+    assert cued["tapMiddle"] == "2:17 of 4:35"
+    assert cued["tapNearCue"] == "Cue 2 · 1:45"
+    assert cued["chipReadout"] == "Cue 1 · 0:32 · Drop"
+    # No waveform and no cue: it says so, and draws nothing.
+    assert (
+        got["Plain"]["box"].startswith("wavebox none") and got["Plain"]["chips"] == []
+    )
+
+
 # The same stand-in again: tagging tracks to play later.
 TAG_TAIL = r"""
 const mode = process.argv[3];
@@ -566,6 +647,21 @@ if (mode === "untag") {
   starOf("Alpha").handlers.click();  // a slip is undone with one tap
   out.afterRetag = cards().map(c => [titleOf(c), c.className]);
   starOf("Alpha").handlers.click();
+}
+if (mode === "clear") {
+  const text = () => [els.clear.textContent, els.clear.className, els.clear.hidden];
+  out.before = text();
+  els.clear.handlers.click();          // the first tap only asks
+  out.asked = text();
+  out.stillTagged = els.tagged.textContent;
+  sandbox.timers[0]();                  // ... and the question lapses
+  out.lapsed = text();
+  els.clear.handlers.click();
+  els.clear.handlers.click();          // asked again, then confirmed
+  out.after = text();
+  out.button = els.tagged.textContent;
+  out.titles = cards().map(titleOf);
+  out.status = els.status.textContent;
 }
 if (mode === "type") {
   els.q.value = "alpha";
@@ -623,11 +719,182 @@ def test_tagging_tracks_to_play_later(lib, tmp_path):
     last = run("show")
     assert last["titles"] == ["Nothing"] and last["button"] == "Tagged 1"
     assert run("type")["titles"] == ["Alpha"]
+    # Clear: two taps; the first only asks, and the question lapses.
+    storage.unlink()
+    run("tag")  # (two tagged again: Nothing, Alpha)
+    cleared = run("clear")
+    assert cleared["before"][0] == "Clear" and cleared["before"][2] is False
+    assert cleared["asked"][:2] == ["Tap again to clear 2", "danger"]
+    assert cleared["stillTagged"] == "Tagged 2"
+    assert cleared["lapsed"][:2] == ["Clear", ""]
+    assert cleared["button"] == "Tagged" and cleared["titles"] == []
+    assert cleared["after"][2] is True  # nothing left to clear: the button goes
+    assert "Nothing tagged yet" in cleared["status"]
+    assert run("show")["button"] == "Tagged"  # and it stays cleared
     # A viewer that cannot keep storage says so, rather than pretending.
     storage.unlink()
     blocked = run("tag", kept=False)
     assert blocked["titles"] == ["Nothing", "Alpha"]
     assert "NOT kept" in blocked["status"]
+
+
+# -- waveforms and memory cues in the page data ----------------------------------------
+
+
+def one_track_disc(lib, **track):
+    lib.replace_source(
+        "folder",
+        "/m",
+        "M",
+        [TrackRecord(ext_id="t", path="/m/t.mp3", title="T", file_size=10, duration=200.0, **track)],
+    )  # fmt: skip
+    t = lib.tracks(sort="path")[0]
+    lib.add_to_disc(lib.create_disc("D"), [t.id])
+    return t
+
+
+def test_a_kept_preview_becomes_a_400_column_waveform(lib):
+    t = one_track_disc(lib)
+    bands = np.zeros((1200, 3), np.float32)
+    bands[:, 0] = (
+        0.25  # steady low band: scaled up so the loudest part fills the height
+    )
+    lib.set_preview(t.path, 10, Waveform(bands, 0.0))
+    [track] = tf.collect(lib).discs[0].tracks
+    kind, raw = track.wave.split(":", 1)
+    data = np.frombuffer(base64.b64decode(raw), np.uint8).reshape(-1, 3)
+    assert kind == "3" and data.shape == (tf.WAVE_COLUMNS, 3)
+    assert data[:, 0].min() == 255 and data[:, 1].max() == 0
+    assert track.seconds == 200.0
+
+
+def test_the_cdj_record_is_the_last_resort_and_is_reported(lib):
+    t = one_track_disc(lib)
+    lib.set_waveform(t.id, [1 + i % 15 for i in range(100)])
+    found = tf.collect(lib)
+    [track] = found.discs[0].tracks
+    assert track.wave.startswith("1:") and found.coarse_wave == 1
+    assert "coarse waveform" in tf.summary(found)
+
+
+def test_no_waveform_at_all_is_counted(lib):
+    one_track_disc(lib)
+    found = tf.collect(lib)
+    assert found.without_wave == 1 and found.discs[0].tracks[0].wave == ""
+    assert "1 track(s) have no waveform" in tf.summary(found)
+    assert tf.collect(lib, waveforms=False).without_wave == 0
+
+
+def test_a_cd_length_is_the_exact_length(lib):
+    t = one_track_disc(lib)
+    lib.set_cd_sectors(t.id, 75 * 201)
+    assert tf.collect(lib).discs[0].tracks[0].seconds == 201.0
+
+
+def test_memory_cues_are_in_time_order_and_nothing_else(lib):
+    t = one_track_disc(lib)
+    lib.set_memory_cues(t.path, [(90500, "Break"), (1000, "")])
+    lib.set_memory_loops(t.path, [(5000, 9000, "Loop")])
+    [track] = tf.collect(lib).discs[0].tracks
+    assert track.cues == ((1.0, ""), (90.5, "Break"))  # the loop is not a cue here
+
+
+def test_unreadable_cues_do_not_stop_the_export(lib):
+    one_track_disc(lib)
+    found = tf.collect(lib, cue_tables={}, cue_problem="database is locked")
+    assert found.cue_problem == "database is locked"
+    assert found.discs[0].tracks[0].cues == ()
+    assert "Memory cues could not be read: database is locked" in tf.summary(found)
+
+
+def test_cue_tables_read_once_are_used(lib):
+    one_track_disc(lib)
+    tables, problem = tf.read_cue_tables([])
+    assert (tables, problem) == ({}, "")
+    assert tf.collect(lib, cue_tables=tables).discs[0].tracks[0].cues == ()
+
+
+def test_a_database_that_cannot_be_read_is_a_message(tmp_path):
+    tables, problem = tf.read_cue_tables([str(tmp_path / "nope" / "master.db")])
+    assert tables == {} and problem
+
+
+class FakeAudio:
+    def __init__(self, seconds):
+        self._n = int(44100 * seconds)
+
+    def mono(self):
+        return (0.5 * np.sin(np.arange(self._n) * 0.05)).astype(np.float32)
+
+
+def test_analysing_the_missing_waveforms_from_the_audio(lib, tmp_path, monkeypatch):
+    real = tmp_path / "a.mp3"
+    real.write_bytes(b"x")
+    lib.replace_source(
+        "folder",
+        str(tmp_path),
+        "M",
+        [
+            TrackRecord(ext_id="a", path=str(real), title="Real", file_size=1),
+            TrackRecord(ext_id="b", path=str(tmp_path / "gone.mp3"), title="Gone", file_size=1),
+        ],
+    )  # fmt: skip
+    tracks = lib.tracks(sort="path")
+    lib.add_to_disc(lib.create_disc("D"), [t.id for t in tracks])
+    # only the file that can be read, and has no waveform yet, needs analysing
+    [todo] = tf.needs_analysis(lib)
+    assert todo.title == "Real"
+    monkeypatch.setattr(tf, "decode_file", lambda path: FakeAudio(3))
+    seen = []
+    found, problems = tf.analyse_waves(
+        [todo], lambda done, total: seen.append((done, total))
+    )
+    assert problems == [] and seen == [(1, 1)]
+    assert found[todo.id].columns == tf.PREVIEW_COLUMNS
+    tf.store_waves(lib, [todo], found)
+    assert tf.needs_analysis(lib) == []  # kept: the next export is quick
+    wave = {t.title: t.wave for t in tf.collect(lib).discs[0].tracks}
+    assert wave["Real"].startswith("3:") and wave["Gone"] == ""
+
+
+def test_a_file_that_cannot_be_decoded_is_a_message_not_a_failure(
+    lib, tmp_path, monkeypatch
+):
+    from dubcrate.audio.decode import DecodeError
+
+    real = tmp_path / "a.mp3"
+    real.write_bytes(b"x")
+    lib.replace_source("folder", str(tmp_path), "M", [TrackRecord(ext_id="a", path=str(real), title="Bad", file_size=1)])  # fmt: skip
+    [track] = lib.tracks(sort="path")
+
+    def broken(path):
+        raise DecodeError("not audio")
+
+    monkeypatch.setattr(tf, "decode_file", broken)
+    found, problems = tf.analyse_waves([track])
+    assert found == {} and problems == ["Bad: not audio"]
+
+
+def test_cancelling_the_analysis_keeps_what_was_done(lib, tmp_path, monkeypatch):
+    from dubcrate.cancel import Cancelled, CancelToken
+
+    files = []
+    for n in range(3):
+        f = tmp_path / f"{n}.mp3"
+        f.write_bytes(b"x")
+        files.append(TrackRecord(ext_id=str(n), path=str(f), title=str(n), file_size=1))
+    lib.replace_source("folder", str(tmp_path), "M", files)
+    tracks = lib.tracks(sort="path")
+    token = CancelToken()
+    monkeypatch.setattr(tf, "decode_file", lambda path: FakeAudio(1))
+
+    def stop_after_first(done, total):
+        token.cancel()
+
+    with pytest.raises(Cancelled) as raised:
+        tf.analyse_waves(tracks, stop_after_first, token, workers=1)
+    found, problems = raised.value.partial
+    assert 1 <= len(found) < 3 and problems == []
 
 
 # -- the command line ------------------------------------------------------------------
@@ -654,3 +921,26 @@ def test_cli_export_finder(tmp_path, capsys):
     only = tmp_path / "one.html"
     assert run_cli(tmp_path, "export-finder", only, "--disc", one) == 0
     assert [d["name"] for d in embedded_data(only.read_text(encoding="utf-8"))["discs"]] == ["Night"]  # fmt: skip
+
+
+def test_cli_analyses_missing_waveforms_unless_told_not_to(
+    tmp_path, capsys, monkeypatch
+):
+    music = tmp_path / "m"
+    music.mkdir()
+    f = music / "a.mp3"
+    f.write_bytes(b"x")
+    with Library.open(tmp_path / "lib.db") as library:
+        library.replace_source("folder", str(music), "M", [TrackRecord(ext_id="a", path=str(f), title="A", file_size=1)])  # fmt: skip
+        library.add_to_disc(
+            library.create_disc("D"), [t.id for t in library.tracks(sort="path")]
+        )
+    monkeypatch.setattr(tf, "decode_file", lambda path: FakeAudio(2))
+    skipped = tmp_path / "skipped.html"
+    assert run_cli(tmp_path, "export-finder", skipped, "--no-analyse") == 0
+    assert embedded_data(skipped.read_text(encoding="utf-8"))["discs"][0]["tracks"][0][11] == ""  # fmt: skip
+    assert "no waveform" in capsys.readouterr().err
+    out = tmp_path / "finder.html"
+    assert run_cli(tmp_path, "export-finder", out) == 0
+    assert embedded_data(out.read_text(encoding="utf-8"))["discs"][0]["tracks"][0][11].startswith("3:")  # fmt: skip
+    assert "analysing waveforms: 1 of 1" in capsys.readouterr().err

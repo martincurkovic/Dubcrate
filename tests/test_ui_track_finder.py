@@ -3,6 +3,7 @@
 import json
 import re
 
+import numpy as np
 import pytest
 from PySide6.QtWidgets import QMessageBox
 
@@ -78,7 +79,8 @@ def test_it_asks_for_a_file_and_writes_every_disc(window, tmp_path, monkeypatch)
     data = page_data(out)
     assert [d["name"] for d in data["discs"]] == ["Day", "Night"]
     assert "Saved a finder for 4 track(s) on 2 disc(s)" in win.statusBar().currentMessage()  # fmt: skip
-    assert win.shown == []
+    [(_kind, _title, text)] = win.shown  # (these songs have no file, so no waveform)
+    assert "4 track(s) have no waveform" in text
 
 
 def test_keys_follow_the_notation_chosen_in_settings(window, tmp_path, monkeypatch):
@@ -129,3 +131,86 @@ def test_an_unwritable_place_is_a_warning_not_a_crash(window, tmp_path, monkeypa
     win.act_track_finder.trigger()
     [(kind, _title, text)] = win.shown
     assert kind == "warning" and "Could not write" in text
+
+
+# -- analysing waveforms on the way (a worker, with progress and Cancel) ----------------------
+
+
+@pytest.fixture
+def real_files(window, tmp_path):
+    """The window's library with files that exist, so their waveforms can be analysed."""
+    win, lib = window
+    music = tmp_path / "music"
+    music.mkdir()
+    records = []
+    for i in range(2):
+        f = music / f"s{i}.mp3"
+        f.write_bytes(b"x")
+        records.append(
+            TrackRecord(
+                ext_id=f"r{i}",
+                path=str(f),
+                title=f"Real {i}",
+                duration=66.0,
+                file_size=1,
+            )
+        )
+    lib.replace_source("folder", str(music), "Real", records)
+    disc = lib.create_disc("Night")
+    lib.add_to_disc(
+        disc, [t.id for t in lib.tracks(sort="path") if t.title.startswith("Real")]
+    )
+    win.refresh_discs()
+    return win, lib
+
+
+def test_missing_waveforms_are_analysed_then_the_page_is_written(
+    real_files, tmp_path, monkeypatch, wait_for
+):
+    from dubcrate import track_finder as tf
+
+    win, lib = real_files
+
+    class Tone:
+        def mono(self):
+            return (0.4 * np.sin(np.arange(44100 * 2) * 0.05)).astype(np.float32)
+
+    monkeypatch.setattr(tf, "decode_file", lambda path: Tone())
+    out = tmp_path / "finder.html"
+    monkeypatch.setattr(track_finder_ui, "ask_save_file", lambda _p: str(out))
+    win.act_track_finder.trigger()
+    assert wait_for(out.exists)
+    tracks = page_data(out)["discs"][0]["tracks"]
+    assert all(t[11].startswith("3:") for t in tracks)  # a detailed waveform for each
+    # and kept: the next export has nothing to analyse
+    assert tf.needs_analysis(lib) == []
+    assert wait_for(lambda: not win._busy)
+    assert win.shown == []  # nothing was missing
+
+
+def test_cancelling_keeps_the_waveforms_done_and_writes_nothing(
+    real_files, tmp_path, monkeypatch, wait_for
+):
+    from dubcrate import track_finder as tf
+    from dubcrate.cancel import Cancelled
+    from dubcrate.waveform import Waveform
+
+    win, lib = real_files
+    first = tf.needs_analysis(lib)[0]
+
+    def stopped(tracks, report=None, cancel=None, workers=2):
+        raise Cancelled(
+            ({first.id: Waveform(np.full((10, 3), 0.5, np.float32), 0.0)}, [])
+        )
+
+    monkeypatch.setattr(tf, "analyse_waves", stopped)
+    out = tmp_path / "finder.html"
+    monkeypatch.setattr(track_finder_ui, "ask_save_file", lambda _p: str(out))
+    win.act_track_finder.trigger()
+    assert wait_for(lambda: "cancelled" in win.statusBar().currentMessage())
+    assert not out.exists()
+    assert [t.id for t in tf.needs_analysis(lib)] != [
+        first.id
+    ]  # the one that was done is kept
+    assert len(tf.needs_analysis(lib)) == 1
+    assert not win._busy
