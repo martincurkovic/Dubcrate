@@ -340,7 +340,7 @@ PAGE = """<!DOCTYPE html>
     <button id="all" type="button" aria-pressed="false">All tracks</button>
     <button id="tagged" type="button" aria-pressed="false">Tagged</button>
     <button id="filter" type="button" aria-pressed="false">Filter</button>
-    <span class="sortrow" id="sortrow" hidden>
+    <span class="sortrow" id="sortrow">
       <select id="sort" aria-label="Sort by"></select>
       <button id="dir" type="button" aria-label="Reverse the order">\u2191</button>
     </span>
@@ -366,7 +366,6 @@ PAGE = """<!DOCTYPE html>
 (() => {
 "use strict";
 const data = JSON.parse(document.getElementById("data").textContent);
-const LIMIT = 100;
 
 // Case, accents and punctuation don't matter: "Bjork" finds "Bj\\u00f6rk", "dont" finds "Don't" (an apostrophe is dropped, not a word break).
 function norm(s) {
@@ -405,6 +404,8 @@ function keyRank(k) {
 // value: what is sorted on (null = not known, always last); group: the heading above a run.
 const initial = k => { const c = k.charAt(0).toUpperCase(); return !c ? "#" : /[0-9]/.test(c) ? "0–9" : c; };
 const SORTS = {
+  // Best match: words that start a word of the title or artist first (see `matching`); with nothing typed it is the title.
+  match:  { label: "Best match", value: r => r.rank, group: null },
   title:  { label: "Title",  value: r => r.titleKey || null,  group: r => initial(r.titleKey) },
   artist: { label: "Artist", value: r => r.artistKey || null, group: r => r.artistKey ? initial(r.artistKey) : "No artist" },
   genre:  { label: "Genre",  value: r => r.genre.toLowerCase() || null, group: r => r.genre || "No genre" },
@@ -423,7 +424,7 @@ const sortRow = document.getElementById("sortrow");
 const sortSelect = document.getElementById("sort");
 const dirButton = document.getElementById("dir");
 const tagButton = document.getElementById("tagged");
-let browse = false, tagView = false, sortKey = "title", descending = false;
+let browse = false, tagView = false, sortKey = "match", descending = false;
 
 // Tagged: tracks to play later, in the order they were tagged. They are kept in the browser's storage
 // on this device, keyed by disc, folder, track number and title, so a newer export keeps them. Some
@@ -537,15 +538,12 @@ function matching(text, pool = rows) {
   return found;
 }
 
-function search(text) {
-  return matching(text).sort((a, b) => a.rank - b.rank || a.text.localeCompare(b.text));
-}
-
-// All tracks (or those matching the search) in the chosen order. A track with nothing for the
+// The tracks being listed (all, or those matching the search and filters) in the chosen order. A track with nothing for the
 // chosen column goes last whichever way it runs; ties fall back to the title, then the disc.
-function sorted(list) {
-  const s = SORTS[sortKey], dir = descending ? -1 : 1;
-  const tie = (a, b) => sortKey === "disc" ? a.order - b.order
+function sorted(list, key) {
+  const s = SORTS[key], dir = descending ? -1 : 1;
+  const tie = (a, b) => key === "disc" ? a.order - b.order
+    : key === "match" ? a.text.localeCompare(b.text)
     : a.titleKey.localeCompare(b.titleKey) || a.order - b.order;
   return list.sort((a, b) => {
     const x = s.value(a), y = s.value(b);
@@ -670,7 +668,7 @@ let pending = [], heading = null, shown = 0;
 function draw() {
   if (watcher) watcher.unobserve(sentinel);
   sentinel.remove();
-  const group = listing ? SORTS[sortKey].group : null;
+  const group = listing ? SORTS[activeSort].group : null;
   const end = watcher ? Math.min(pending.length, shown + CHUNK) : pending.length;
   for (; shown < end; shown++) {
     const r = pending[shown];
@@ -690,39 +688,37 @@ function showStatus() {
     status.textContent = tags.length
       ? tags.length + " tagged · " + note
       : "Nothing tagged yet: tap the star on a track · " + note;
-  } else if (listing) {
-    status.textContent = (text || filtering ? shownCount + " of " + rows.length : rows.length) + " tracks · by " +
-      SORTS[sortKey].label + (descending ? ", reversed" : "");
-  } else if (!text) {
+  } else if (!listing) {
     status.textContent = rows.length + " tracks on " + data.discs.length +
                          " discs · made " + data.made;
   } else if (!shownCount) {
-    status.textContent = "Not on any disc";
+    status.textContent = filtering ? "No track matches the filters" : "Not on any disc";
   } else {
-    status.textContent = shownCount > LIMIT
-      ? "Showing " + LIMIT + " of " + shownCount + ": type more to narrow it down"
-      : shownCount + (shownCount === 1 ? " track" : " tracks");
+    status.textContent = (text || filtering ? shownCount + " of " + rows.length : rows.length) +
+      " tracks · by " + SORTS[activeSort].label + (descending ? ", reversed" : "");
   }
 }
 
-// The list is "sorted" (with headings and the sort menu) in All tracks, and whenever a filter is set.
-let shownCount = 0, listing = false, filtering = false;
+// Something is listed when there is a search, a filter, or All tracks; the sort menu orders it. Best
+// match only means something while there is text to match: without any it is the title.
+let shownCount = 0, listing = false, filtering = false, activeSort = "title";
 function show() {
   const text = q.value.trim();
   const f = filterState();
   filtering = f.count > 0 && !tagView;
-  listing = browse || filtering;
+  listing = !tagView && (text !== "" || filtering || browse);
   filterButton.textContent = f.count ? "Filter · " + f.count : "Filter";
-  sortRow.hidden = tagView || !listing;
+  sortRow.hidden = tagView;
+  activeSort = sortKey === "match" && !text ? "title" : sortKey;
   let found;
   if (tagView) found = tags.map(id => byId.get(id));
   else if (listing) {
     const pool = filtering ? rows.filter(r => passes(r, f)) : rows;
-    found = sorted(text ? matching(text, pool) : pool.slice());
-  } else found = text ? search(text) : [];
+    found = sorted(text ? matching(text, pool) : pool.slice(), activeSort);
+  } else found = [];
   results.replaceChildren();
   shownCount = found.length;
-  pending = !listing && !tagView && found.length > LIMIT ? found.slice(0, LIMIT) : found;
+  pending = found;
   heading = null; shown = 0;
   showStatus();
   draw();
@@ -733,6 +729,7 @@ function scrollUp() { if (typeof window !== "undefined") window.scrollTo(0, 0); 
 function setMode(mode) {  // "search", "all" or "tagged"
   browse = mode === "all";
   tagView = mode === "tagged";
+  if (browse) q.value = "";  // All tracks shows everything, whatever was typed
   allButton.setAttribute("aria-pressed", String(browse));
   tagButton.setAttribute("aria-pressed", String(tagView));
   scrollUp();
@@ -762,7 +759,8 @@ dirButton.addEventListener("click", () => {
   show();
 });
 
-q.addEventListener("input", () => { if (tagView) setMode("search"); else show(); });
+// Typing is a search: it leaves All tracks and Tagged.
+q.addEventListener("input", () => { if (tagView || browse) setMode("search"); else show(); });
 saveTags();  // finds out whether storage works here, and drops tags for tracks no longer on a disc
 showTagCount();
 show();

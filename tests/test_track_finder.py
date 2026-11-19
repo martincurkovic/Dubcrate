@@ -348,9 +348,8 @@ def test_the_search_in_the_page(lib, tmp_path):
 # The same stand-in, driven by clicks: the "All tracks" list and its sorting.
 BROWSE_TAIL = r"""
 const out = [];
-els.sortrow.hidden = true;  // as the page's HTML starts it
 function list() {
-  return { status: els.status.textContent, sortHidden: els.sortrow.hidden,
+  return { status: els.status.textContent, sortHidden: els.sortrow.hidden, q: els.q.value,
     rows: els.results.children.map(c => c.className === "group" ? "# " + c.textContent
                                                                    : c.children[0].children[0].textContent) };
 }
@@ -367,6 +366,16 @@ for (const [sort, reverse] of JSON.parse(process.argv[3])) {
 els.sort.value = "title";
 els.sort.handlers.change();
 els.q.value = "zeta";
+els.q.handlers.input();
+out.push(list());
+// All tracks replaces whatever was typed; typing again is a search (best match first by default).
+els.q.value = "zeta";
+els.q.handlers.input();
+els.all.handlers.click();
+out.push(list());
+els.sort.value = "match";
+els.sort.handlers.change();
+els.q.value = "mid";
 els.q.handlers.input();
 out.push(list());
 console.log(JSON.stringify(out));
@@ -411,7 +420,8 @@ def test_all_tracks_sorted_in_the_page(lib, tmp_path):
     def titles(i):
         return [r for r in got[i]["rows"] if not r.startswith("# ")]
 
-    assert got[0]["rows"] == [] and got[0]["sortHidden"] is True
+    # The sort menu is there from the start, for a search as much as for All tracks.
+    assert got[0]["rows"] == [] and got[0]["sortHidden"] is False
     assert got[1]["sortHidden"] is False and got[1]["status"].startswith("4 tracks")
     # By title, with a heading per first letter.
     assert got[1]["rows"] == ["# A", "Alpha", "# M", "Mid", "# N", "Nothing", "# Z", "Zeta"]  # fmt: skip
@@ -426,6 +436,13 @@ def test_all_tracks_sorted_in_the_page(lib, tmp_path):
     assert "# House" in got[8]["rows"]
     # A search narrows the list and keeps the order.
     assert titles(9) == ["Zeta"] and got[9]["status"].startswith("1 of 4 tracks")
+    # Pressing All tracks with a search typed clears it and lists everything.
+    assert got[10]["q"] == "" and len(titles(10)) == 4
+    assert got[10]["status"].startswith("4 tracks")
+    # Typing after that searches again, ordered by best match.
+    assert (
+        titles(11) == ["Mid"] and "1 of 4 tracks · by Best match" in got[11]["status"]
+    )
 
 
 # The same stand-in again: the filters (BPM and year ranges, key, genre) with and without a search.
@@ -440,6 +457,9 @@ els.sortrow.hidden = true;
 const set = (el, v, ev = "input") => { el.value = v; el.handlers[ev](); };
 set(els.q, "jackson");
 snap("search");
+set(els.sort, "bpm", "change");
+snap("searchByBpm");
+set(els.sort, "match", "change");
 set(els.bpmMin, "130");
 snap("bpm130");
 set(els.bpmMax, "140");
@@ -498,8 +518,11 @@ def test_filters_in_the_page(lib, tmp_path):
     )
     got = json.loads(run.stdout)
     # No filter: the search as before (ranked, no sort menu).
-    assert got["search"]["sortHidden"] is True and got["search"]["button"] == "Filter"
+    assert got["search"]["sortHidden"] is False and got["search"]["button"] == "Filter"
     assert len(got["search"]["titles"]) == 5
+    # The same search ordered by BPM: a track with no BPM goes last.
+    assert got["searchByBpm"]["titles"] == ["Billie Jean", "Thriller", "Jackson 5 Medley", "Beat It", "Rock With You"]  # fmt: skip
+    assert "by BPM" in got["searchByBpm"]["status"]
     # BPM from 130: only those with a BPM at or above it ("Rock With You" has none).
     assert got["bpm130"]["titles"] == ["Beat It", "Jackson 5 Medley"]
     assert (
