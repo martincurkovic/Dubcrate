@@ -256,7 +256,8 @@ const els = { data: { textContent: data }, q: node("input"), status: node("div")
               filter: node("button"), filters: node("section"), bpmMin: node("input"),
               bpmMax: node("input"), yearMin: node("input"), yearMax: node("input"),
               fkey: node("select"), fgenre: node("select"), fclear: node("button"),
-              compact: node("button"), clear: node("button"),
+              compact: node("button"), clear: node("button"), index: node("nav"),
+              indexbtn: node("button"), bubble: node("div"),
               sort: node("select"), dir: node("button") };
 els.q.value = "";
 const header = Object.assign(node("header"), { offsetHeight: 90 });
@@ -1120,3 +1121,126 @@ def test_each_cue_shows_its_time_and_its_bar_and_beat(tmp_path):
     assert got["chips"] == ["1 0:32 A 17.1 Drop", "2 1:45 ≈53.3", "3 2:30 76.2"]
     assert got["chipReadout"] == "Cue 1 · 0:32 · hot cue A · bar 17.1 · Drop"
     assert got["tapNearCue"] == "Cue 2 · 1:45 · bar 53.3 (+80 ms)"
+
+
+def test_rekordboxs_bar_labels_are_dropped_where_the_page_has_its_own_bar_beat():
+    from dubcrate.track_finder import without_bar_labels
+
+    cues = ((0.0, "1.1Bars", "A"), (29.0, "", "B"), (60.0, "Drop", ""))
+    beats = ((1, 1, 0), (17, 1, 0), (33, 1, 0))
+    assert without_bar_labels(cues, beats) == (
+        (0.0, "", "A"),
+        (29.0, "", "B"),
+        (60.0, "Drop", ""),
+    )
+    # no beat grid: the label is all there is
+    assert without_bar_labels(cues, ()) == cues
+
+
+# The same stand-in again: the letter strip down the right edge. A watcher that never fires keeps the list
+# drawn 120 at a time, as on a phone, so a jump has to draw ahead of itself.
+STRIP_TAIL = r"""
+const groups = () => els.results.children.filter(c => c.className === "group").map(c => c.textContent);
+const out = {};
+els.all.handlers.click();
+const stops = () => els.index.children.map(c => c.textContent);
+out.stops = stops();
+out.shown = els.results.children.filter(c => c.className.startsWith("hit")).length;
+out.visible = !els.index.hidden;
+out.padding = els.results.style.paddingRight;
+out.heightPx = els.index.style.height;
+els.index.getBoundingClientRect = () => ({ top: 0, height: stops().length * 20 });
+const scrolledBefore = sandbox.scrolled;
+els.index.handlers.pointerdown({ clientY: stops().length * 20 - 5, pointerId: 1 });  // the last stop
+out.bubble = els.bubble.textContent;
+out.bubbleShown = !els.bubble.hidden;
+out.groupsAfter = groups();
+out.shownAfter = els.results.children.filter(c => c.className.startsWith("hit")).length;
+out.scrolled = sandbox.scrolled - scrolledBefore;
+els.index.handlers.pointermove({ clientY: 2, pointerId: 1 });  // back to the first
+out.scrolledAgain = sandbox.scrolled - scrolledBefore;
+els.index.handlers.pointerup({});
+out.bubbleGone = els.bubble.hidden;
+// a sort whose headings are long has no strip
+els.sort.value = "genre"; els.sort.handlers.change();
+out.genreHidden = els.index.hidden;
+els.sort.value = "title"; els.sort.handlers.change();
+out.backOn = !els.index.hidden;
+// switched off: gone, and remembered
+els.indexbtn.handlers.click();
+out.offHidden = els.index.hidden;
+out.offPadding = els.results.style.paddingRight;
+out.pressed = els.indexbtn.attrs && els.indexbtn.attrs["aria-pressed"];
+out.saved = stored["dubcrate-finder-index"];
+// Tagged has no strip either
+els.indexbtn.handlers.click();
+els.tagged.handlers.click();
+out.taggedHidden = els.index.hidden;
+console.log(JSON.stringify(out));
+"""
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="needs node")
+def test_the_letter_strip_jumps_through_a_long_list(lib, tmp_path):
+    letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+    lib.replace_source(
+        "folder",
+        "/m",
+        "M",
+        [
+            TrackRecord(
+                ext_id=f"{c}{i}",
+                path=f"/m/{c}{i}.mp3",
+                title=f"{c}ta {i:02d}",
+                artist="X",
+            )
+            for c in letters
+            for i in range(12)
+        ],
+    )
+    ids = [t.id for t in lib.tracks(sort="path")]
+    for n in range(0, len(ids), 78):  # an audio disc holds at most 99 tracks
+        lib.add_to_disc(lib.create_disc(f"D{n}"), ids[n : n + 78])
+    page = tmp_path / "finder.html"
+    tf.write_html(tf.collect(lib), page, MADE)
+    head = NODE_HARNESS.split("const out = {};")[0]
+    head = head.replace(
+        "vm.runInNewContext(code, sandbox);",
+        "sandbox.IntersectionObserver = class { observe() {} unobserve() {} };\n"
+        "sandbox.Date = Date;\n"
+        "vm.runInNewContext(code, sandbox);",
+    )
+    head = head.replace(
+        "scrollY: 0,", "scrollY: 0, innerHeight: 800,"
+    )  # a phone's height
+    # setAttribute keeps what it was given, for the pressed state
+    head = head.replace(
+        "focus() {}, remove() {}, setAttribute() {} };",
+        "focus() {}, remove() {}, attrs: {}, setAttribute(k, v) { this.attrs[k] = v; } };",
+    )
+    harness = tmp_path / "harness.js"
+    harness.write_text(head + STRIP_TAIL, encoding="utf-8")
+    env = {**os.environ, "FINDER_STORAGE": str(tmp_path / "store.json")}
+    run = subprocess.run(
+        ["node", str(harness), str(page)],
+        check=True,
+        capture_output=True,
+        encoding="utf-8",
+        errors="replace",
+        env=env,
+    )
+    got = json.loads(run.stdout)
+    assert got["stops"] == list(letters)
+    assert got["visible"] and got["padding"] == "30px" and got["heightPx"] == "520px"
+    assert got["shown"] == 120  # drawn a screenful at a time
+    # Pressing on the last stop draws ahead to Z, shows its letter and scrolls there.
+    assert got["bubble"] == "Z" and got["bubbleShown"]
+    assert got["groupsAfter"][-1] == "Z" and got["shownAfter"] >= 312 - 12
+    assert got["scrolled"] == 1
+    # Sliding back to the first stop scrolls again, to a heading already drawn.
+    assert got["scrolledAgain"] == 2
+    assert got["bubbleGone"]
+    assert got["genreHidden"] and got["backOn"]
+    assert got["offHidden"] and got["offPadding"] == ""
+    assert got["pressed"] == "false" and got["saved"] == "0"
+    assert got["taggedHidden"]

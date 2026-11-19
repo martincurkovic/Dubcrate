@@ -20,6 +20,7 @@ import base64
 import json
 import logging
 import os
+import re
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import date
@@ -361,6 +362,22 @@ def cue_beats(
     return tuple(found)
 
 
+_BAR_LABEL = re.compile(r"\s*\d+(\.\d+)?\s*bars?\s*", re.IGNORECASE)
+
+
+def without_bar_labels(
+    cues: Sequence[tuple[float, str, str]],
+    beats: Sequence[tuple[int, int, int]],
+) -> tuple[tuple[float, str, str], ...]:
+    """`cues` with a label that is only a bar position ("1.1Bars", which rekordbox puts on some cues) blanked
+    where the page shows its own bar.beat for that cue, so every cue reads alike. Without a beat grid the
+    label is all there is, so it stays."""
+    return tuple(
+        (t, "" if beats and _BAR_LABEL.fullmatch(label) else label, hot)
+        for t, label, hot in cues
+    )
+
+
 def _disc_where(lib: Library) -> dict[int | None, str]:
     """Each disc folder's id and its name with the folders above it; None (the top level) is empty."""
     folders = {f.id: f for f in lib.disc_folders()}
@@ -423,6 +440,8 @@ def _disc(
             found.without_wave += 1
         found.coarse_wave += coarse
         on_card = cues.on_card(track) if cues else ()
+        beats = cue_beats(on_card, grids.get(track.id))
+        on_card = without_bar_labels(on_card, beats)
         tracks.append(
             FinderTrack(
                 number,
@@ -437,7 +456,7 @@ def _disc(
                 seconds=track.cd_sectors / 75 if track.cd_sectors else track.duration,
                 wave=wave,
                 cues=on_card,
-                beats=cue_beats(on_card, grids.get(track.id)),
+                beats=beats,
             )
         )
     if not tracks:
@@ -652,6 +671,18 @@ PAGE = """<!DOCTYPE html>
            color: var(--accent); font-weight: 700; font-size: 14px; letter-spacing: .04em;
            padding: 10px 2px 4px; }
   main { padding-top: 4px; }
+  /* The letter strip: a column down the right edge you drag a finger along to jump through a long list. */
+  #index { position: fixed; right: env(safe-area-inset-right, 0px); top: 50%; transform: translateY(-50%);
+           width: 26px; box-sizing: border-box; z-index: 5; display: flex; flex-direction: column;
+           border-radius: 13px 0 0 13px; background: var(--bar); opacity: .92; color: var(--accent);
+           font-size: 12px; font-weight: 700; touch-action: none; user-select: none;
+           -webkit-user-select: none; -webkit-touch-callout: none; }
+  #index span { height: 20px; line-height: 20px; text-align: center; pointer-events: none; }
+  #bubble { position: fixed; right: 44px; top: 50%; transform: translateY(-50%); z-index: 6;
+            min-width: 64px; height: 64px; padding: 0 14px; box-sizing: border-box; border-radius: 14px;
+            display: flex; align-items: center; justify-content: center; pointer-events: none;
+            background: var(--accent); color: #fff; font-size: 34px; font-weight: 700; }
+  #index[hidden], #bubble[hidden] { display: none; }
   .hit { background: var(--card); border: 1px solid var(--edge); border-left: 5px solid var(--stripe);
          border-radius: 6px; padding: 9px 12px; margin: 0 0 8px;
          display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; }
@@ -733,8 +764,12 @@ PAGE = """<!DOCTYPE html>
     <button id="fclear" type="button">Clear</button></div>
   <div class="frow"><span class="l">Cards</span>
     <button id="compact" type="button" aria-pressed="false">Compact</button></div>
+  <div class="frow"><span class="l">Jump</span>
+    <button id="indexbtn" type="button" aria-pressed="true">Letter strip</button></div>
 </section>
 <main id="results"></main>
+<nav id="index" hidden aria-label="Jump through the list"></nav>
+<div id="bubble" hidden></div>
 <script id="data" type="application/json">__DATA__</script>
 <script>
 // Inside a function so no name here can clash with a browser global (window.top is one: a
@@ -783,12 +818,12 @@ const initial = k => { const c = k.charAt(0).toUpperCase(); return !c ? "#" : /[
 const SORTS = {
   // Best match: words that start a word of the title or artist first (see `matching`); with nothing typed it is the title.
   match:  { label: "Best match", value: r => r.rank, group: null },
-  title:  { label: "Title",  value: r => r.titleKey || null,  group: r => initial(r.titleKey) },
-  artist: { label: "Artist", value: r => r.artistKey || null, group: r => r.artistKey ? initial(r.artistKey) : "No artist" },
+  title:  { label: "Title",  value: r => r.titleKey || null,  group: r => initial(r.titleKey), index: true },
+  artist: { label: "Artist", value: r => r.artistKey || null, group: r => r.artistKey ? initial(r.artistKey) : "No artist", index: true },
   genre:  { label: "Genre",  value: r => r.genre.toLowerCase() || null, group: r => r.genre || "No genre" },
-  bpm:    { label: "BPM",    value: r => r.bpmN || null,  group: r => r.bpmN ? Math.floor(r.bpmN / 10) * 10 + "s" : "No BPM" },
-  key:    { label: "Key",    value: r => r.keyN,          group: r => r.key || "No key" },
-  year:   { label: "Year",   value: r => r.yearN || null, group: r => r.yearN || "No year" },
+  bpm:    { label: "BPM",    value: r => r.bpmN || null,  group: r => r.bpmN ? Math.floor(r.bpmN / 10) * 10 + "s" : "No BPM", index: true },
+  key:    { label: "Key",    value: r => r.keyN,          group: r => r.key || "No key", index: true },
+  year:   { label: "Year",   value: r => r.yearN || null, group: r => r.yearN || "No year", index: true },
   length: { label: "Length", value: r => r.secs || null,  group: null },
   disc:   { label: "Disc",   value: r => r.disc.index,    group: r => r.disc.name },
 };
@@ -1224,16 +1259,22 @@ const watcher = typeof IntersectionObserver === "undefined" ? null :
   }, { rootMargin: "800px" });
 let pending = [], heading = null, shown = 0;
 
-function draw() {
+// `upTo`: draw at least as far as that place in the list (a jump from the letter strip).
+function draw(upTo = 0) {
   if (watcher) watcher.unobserve(sentinel);
   sentinel.remove();
   const group = listing ? SORTS[activeSort].group : null;
-  const end = watcher ? Math.min(pending.length, shown + CHUNK) : pending.length;
+  const end = watcher ? Math.min(pending.length, Math.max(shown + CHUNK, upTo + 1)) : pending.length;
   for (; shown < end; shown++) {
     const r = pending[shown];
     if (group) {
       const g = String(group(r));
-      if (g !== heading) { results.append(el("div", "group", g)); heading = g; }
+      if (g !== heading) {
+        const h = el("div", "group", g);
+        h._at = shown;  // where in the list this heading is, for the letter strip
+        results.append(h);
+        heading = g;
+      }
     }
     results.append(card(r));
   }
@@ -1282,6 +1323,7 @@ function show() {
   pending = found;
   heading = null; shown = 0;
   showStatus();
+  buildIndex(found);
   draw();
 }
 
@@ -1337,7 +1379,7 @@ compactButton.addEventListener("click", () => setCompact(document.body.className
 // The search and button rows slide away while scrolling down and come back on scrolling up (always shown
 // near the top, and while typing). `--head` is how far down the sticky letter headings stick.
 const header = document.querySelector("header");
-let hiddenHeader = false, lastY = window.scrollY;
+let hiddenHeader = false, lastY = window.scrollY, holdUntil = 0, pressed = false;  // pressed: a finger on the letter strip
 function stickTop() { return parseFloat(getComputedStyle(header).top) || 0; }
 function syncHead() {
   document.documentElement.style.setProperty("--head",
@@ -1351,6 +1393,7 @@ function hideHeader(hide) {
 }
 window.addEventListener("scroll", () => {
   const y = window.scrollY;
+  if (pressed || Date.now() < holdUntil) { hideHeader(y >= 80); lastY = y; return; }  // a jump from the letter strip
   if (y < 80 || document.activeElement === q) { hideHeader(false); lastY = y; return; }
   if (Math.abs(y - lastY) < 8) return;  // slow movement adds up until it counts
   hideHeader(y > lastY);
@@ -1358,6 +1401,86 @@ window.addEventListener("scroll", () => {
 }, { passive: true });
 window.addEventListener("resize", syncHead);
 syncHead();
+
+// The letter strip: one stop per heading of the current sort (a letter, a BPM decade, a key, a year),
+// thinned to fit the screen's height. Dragging a finger along it jumps to the stop under it, drawing the
+// list as far as that first if need be. Only for sorts with short headings, only while something is
+// listed, and it can be switched off (kept on this device like Compact).
+const INDEX_KEY = "dubcrate-finder-index";
+const indexNav = document.getElementById("index");
+const bubble = document.getElementById("bubble");
+const indexButton = document.getElementById("indexbtn");
+const STOP_HEIGHT = 20;
+let indexOn = true, stops = [], lastStop = null;
+
+const stopLabel = g => g === "0–9" ? "#" : g.length > 4 ? "?" : g;
+
+function buildIndex(found) {
+  stops = [];
+  const sort = SORTS[activeSort];
+  if (listing && sort.index) {
+    let last = null;
+    found.forEach((r, i) => {
+      const g = String(sort.group(r));
+      if (g !== last) { stops.push({ group: g, at: i }); last = g; }
+    });
+    const room = Math.max(5, Math.floor((window.innerHeight || 600) * 0.7 / STOP_HEIGHT));
+    if (stops.length > room)
+      stops = Array.from({ length: room }, (_, k) => stops[Math.round(k * (stops.length - 1) / (room - 1))]);
+  }
+  const on = indexOn && stops.length > 1;
+  indexNav.hidden = !on;
+  results.style.paddingRight = on ? "30px" : "";  // room, so the strip never covers a card
+  indexNav.style.height = stops.length * STOP_HEIGHT + "px";
+  indexNav.replaceChildren(...stops.map(s => el("span", "", stopLabel(s.group))));
+}
+
+function jumpTo(stop) {
+  if (shown <= stop.at) draw(stop.at);
+  const kids = [...results.children];
+  const at = kids.findIndex(c => c._at === stop.at);
+  if (at < 0) return;
+  holdUntil = Date.now() + 500;  // the top rows stay out of the way while the finger is down
+  hideHeader(true);
+  // A heading sticks to the top, so its own position says nothing: it starts where the card after it
+  // starts, less its own height.
+  const top = kids[at + 1].getBoundingClientRect().top - kids[at].offsetHeight;
+  window.scrollTo(0, top + window.scrollY - stickTop());
+}
+
+function touchIndex(e) {
+  if (!stops.length) return;
+  const r = indexNav.getBoundingClientRect();
+  const k = Math.floor((e.clientY - r.top) / (r.height / stops.length));
+  const stop = stops[Math.min(stops.length - 1, Math.max(0, k))];
+  if (stop === lastStop) return;
+  lastStop = stop;
+  bubble.textContent = stop.group;
+  bubble.hidden = false;
+  jumpTo(stop);
+}
+indexNav.addEventListener("pointerdown", e => {
+  pressed = true; lastStop = null;
+  if (document.activeElement === q) q.blur();  // the keyboard away, so the header can slide off
+  try { indexNav.setPointerCapture(e.pointerId); } catch (x) { /* a mouse or an old browser */ }
+  touchIndex(e);
+  if (e.preventDefault) e.preventDefault();
+});
+indexNav.addEventListener("pointermove", e => { if (pressed) touchIndex(e); });
+const letGo = () => { pressed = false; lastStop = null; bubble.hidden = true; };
+indexNav.addEventListener("pointerup", letGo);
+indexNav.addEventListener("pointercancel", letGo);
+window.addEventListener("resize", () => buildIndex(pending));
+
+function setIndexOn(on, save) {
+  indexOn = on;
+  indexButton.setAttribute("aria-pressed", String(on));
+  buildIndex(pending);
+  if (save) try { localStorage.setItem(INDEX_KEY, on ? "1" : "0"); } catch (e) { /* not kept */ }
+}
+indexButton.addEventListener("click", () => setIndexOn(!indexOn, true));
+try { indexOn = localStorage.getItem(INDEX_KEY) !== "0"; } catch (e) { indexOn = true; }
+indexButton.setAttribute("aria-pressed", String(indexOn));
 
 saveTags();  // finds out whether storage works here, and drops tags for tracks no longer on a disc
 showTagCount();
