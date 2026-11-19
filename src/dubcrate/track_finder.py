@@ -201,7 +201,20 @@ def page_data(found: Finder, made: date) -> str:
                 "where": d.where,
                 "kind": d.kind,
                 "tracks": [
-                    [t.number, t.title, t.artist, t.folder, t.info] for t in d.tracks
+                    # info is the line shown; the rest is what "All tracks" sorts on.
+                    [
+                        t.number,
+                        t.title,
+                        t.artist,
+                        t.folder,
+                        t.info,
+                        t.bpm,
+                        t.key,
+                        t.year,
+                        t.genre,
+                        t.length,
+                    ]
+                    for t in d.tracks
                 ],
             }
             for d in found.discs
@@ -278,6 +291,18 @@ PAGE = """<!DOCTYPE html>
           outline: none; }
   input:focus { border-color: var(--accent); }
   .note { color: var(--muted); font-size: 14px; padding: 6px 2px 0; }
+  [hidden] { display: none !important; }
+  .bar { display: flex; gap: 8px; align-items: center; margin-top: 8px; }
+  .bar button, .bar select { font: inherit; font-size: 16px; color: var(--bright);
+         background: var(--input); border: 1px solid var(--border); border-radius: 6px;
+         padding: 8px 12px; min-height: 40px; }
+  .bar button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent);
+         color: #fff; }
+  .sortrow { display: flex; gap: 8px; flex: 1; min-width: 0; }
+  .sortrow select { flex: 1; min-width: 0; }
+  .group { position: sticky; top: var(--head, 0px); z-index: 0; background: var(--bg);
+           color: var(--accent); font-weight: 700; font-size: 14px; letter-spacing: .04em;
+           padding: 10px 2px 4px; }
   main { padding-top: 4px; }
   .hit { background: var(--card); border: 1px solid var(--edge); border-left: 5px solid var(--stripe);
          border-radius: 6px; padding: 11px 14px; margin: 0 0 8px;
@@ -297,11 +322,21 @@ PAGE = """<!DOCTYPE html>
   <div class="brand"><b>Dubcrate</b><span>Track Finder</span></div>
   <input id="q" type="search" placeholder="Title or artist" autocomplete="off"
          autocorrect="off" autocapitalize="off" spellcheck="false" enterkeyhint="search">
+  <div class="bar">
+    <button id="all" type="button" aria-pressed="false">All tracks</button>
+    <span class="sortrow" id="sortrow" hidden>
+      <select id="sort" aria-label="Sort by"></select>
+      <button id="dir" type="button" aria-label="Reverse the order">\u2191</button>
+    </span>
+  </div>
   <div class="note" id="status"></div>
 </header>
 <main id="results"></main>
 <script id="data" type="application/json">__DATA__</script>
 <script>
+// Inside a function so no name here can clash with a browser global (window.top is one: a
+// top-level `function top` stops the whole script from loading).
+(() => {
 "use strict";
 const data = JSON.parse(document.getElementById("data").textContent);
 const LIMIT = 100;
@@ -318,14 +353,48 @@ const STRIPES = ["#3987e5", "#d95926", "#199e70", "#c98500",
 const rows = [];
 data.discs.forEach((disc, i) => {
   disc.stripe = STRIPES[i % STRIPES.length];
-  for (const [number, title, artist, folder, info] of disc.tracks)
-    rows.push({ disc, number, title, artist, folder, info,
-                key: " " + norm(title + " " + artist) });
+  disc.index = i;
+  for (const [number, title, artist, folder, info, bpm, key, year, genre, length] of disc.tracks) {
+    const clock = /^([0-9]+):([0-9]{2})$/.exec(length);
+    rows.push({ disc, number, title, artist, folder, info, genre, key, order: rows.length,
+                text: " " + norm(title + " " + artist),
+                titleKey: norm(title), artistKey: norm(artist),
+                bpmN: parseInt(bpm, 10) || 0, yearN: parseInt(year, 10) || 0,
+                secs: clock ? +clock[1] * 60 + +clock[2] : 0, keyN: keyRank(key) });
+  }
 });
+
+// Camelot 1A, 1B, 2A ... or musical "A min", "C# maj" (by pitch, minor first); anything else is unsorted.
+function keyRank(k) {
+  let m = /^([0-9]{1,2})([AB])$/.exec(k);
+  if (m) return +m[1] * 2 + (m[2] === "B" ? 1 : 0);
+  m = /^([A-G])(#?) (min|maj)$/.exec(k);
+  if (m) return ({ C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 }[m[1]] + (m[2] ? 1 : 0)) * 2 +
+                (m[3] === "maj" ? 1 : 0);
+  return null;
+}
+
+// value: what is sorted on (null = not known, always last); group: the heading above a run.
+const initial = k => { const c = k.charAt(0).toUpperCase(); return !c ? "#" : /[0-9]/.test(c) ? "0–9" : c; };
+const SORTS = {
+  title:  { label: "Title",  value: r => r.titleKey || null,  group: r => initial(r.titleKey) },
+  artist: { label: "Artist", value: r => r.artistKey || null, group: r => r.artistKey ? initial(r.artistKey) : "No artist" },
+  genre:  { label: "Genre",  value: r => r.genre.toLowerCase() || null, group: r => r.genre || "No genre" },
+  bpm:    { label: "BPM",    value: r => r.bpmN || null,  group: r => r.bpmN ? Math.floor(r.bpmN / 10) * 10 + "s" : "No BPM" },
+  key:    { label: "Key",    value: r => r.keyN,          group: r => r.key || "No key" },
+  year:   { label: "Year",   value: r => r.yearN || null, group: r => r.yearN || "No year" },
+  length: { label: "Length", value: r => r.secs || null,  group: null },
+  disc:   { label: "Disc",   value: r => r.disc.index,    group: r => r.disc.name },
+};
 
 const q = document.getElementById("q");
 const status = document.getElementById("status");
 const results = document.getElementById("results");
+const allButton = document.getElementById("all");
+const sortRow = document.getElementById("sortrow");
+const sortSelect = document.getElementById("sort");
+const dirButton = document.getElementById("dir");
+let browse = false, sortKey = "title", descending = false;
 
 function el(tag, cls, text) {
   const e = document.createElement(tag);
@@ -334,51 +403,130 @@ function el(tag, cls, text) {
   return e;
 }
 
-function search(text) {
+for (const [key, s] of Object.entries(SORTS)) {
+  const o = el("option", "", s.label);
+  o.value = key;
+  sortSelect.append(o);
+}
+
+function matching(text) {
   const words = norm(text).split(" ").filter(Boolean);
   if (!words.length) return [];
   const found = [];
   for (const r of rows) {
-    if (!words.every(w => r.key.includes(w))) continue;
+    if (!words.every(w => r.text.includes(w))) continue;
     // Words that start a word in the title or artist rank above ones found inside a word.
-    r.rank = words.every(w => r.key.includes(" " + w)) ? 0 : 1;
+    r.rank = words.every(w => r.text.includes(" " + w)) ? 0 : 1;
     found.push(r);
   }
-  return found.sort((a, b) => a.rank - b.rank || a.key.localeCompare(b.key));
+  return found;
+}
+
+function search(text) {
+  return matching(text).sort((a, b) => a.rank - b.rank || a.text.localeCompare(b.text));
+}
+
+// All tracks (or those matching the search) in the chosen order. A track with nothing for the
+// chosen column goes last whichever way it runs; ties fall back to the title, then the disc.
+function sorted(list) {
+  const s = SORTS[sortKey], dir = descending ? -1 : 1;
+  const tie = (a, b) => sortKey === "disc" ? a.order - b.order
+    : a.titleKey.localeCompare(b.titleKey) || a.order - b.order;
+  return list.sort((a, b) => {
+    const x = s.value(a), y = s.value(b);
+    if (x === null || y === null) return x === y ? tie(a, b) : x === null ? 1 : -1;
+    const c = typeof x === "string" ? x.localeCompare(y) : x - y;
+    return c ? c * dir : tie(a, b);
+  });
+}
+
+function card(r) {
+  const hit = el("div", "hit");
+  hit.style.setProperty("--stripe", r.disc.stripe);
+  const what = el("div", "what");
+  what.append(el("div", "title", r.title));
+  if (r.artist) what.append(el("div", "artist", r.artist));
+  if (r.info.length) what.append(el("div", "info", r.info.join(" · ")));
+  const where = el("div", "where");
+  where.append(el("div", "disc", r.disc.name));
+  where.append(el("div", "num", "Track " + r.number));
+  if (r.folder) where.append(el("div", "sub", r.folder));
+  if (r.disc.where) where.append(el("div", "sub", r.disc.where));
+  hit.append(what, where);
+  return hit;
+}
+
+// A long list is drawn a screenful at a time: the next lot when the end comes into view.
+const CHUNK = 120;
+const sentinel = el("div", "");
+const watcher = typeof IntersectionObserver === "undefined" ? null :
+  new IntersectionObserver(entries => {
+    if (entries.some(e => e.isIntersecting)) draw();
+  }, { rootMargin: "800px" });
+let pending = [], heading = null, shown = 0;
+
+function draw() {
+  if (watcher) watcher.unobserve(sentinel);
+  sentinel.remove();
+  const group = browse ? SORTS[sortKey].group : null;
+  const end = watcher ? Math.min(pending.length, shown + CHUNK) : pending.length;
+  for (; shown < end; shown++) {
+    const r = pending[shown];
+    if (group) {
+      const g = String(group(r));
+      if (g !== heading) { results.append(el("div", "group", g)); heading = g; }
+    }
+    results.append(card(r));
+  }
+  if (shown < pending.length) { results.append(sentinel); watcher.observe(sentinel); }
 }
 
 function show() {
-  const found = search(q.value);
+  const text = q.value.trim();
+  let found;
+  if (browse) found = text ? sorted(matching(text)) : sorted(rows.slice());
+  else found = text ? search(text) : [];
   results.replaceChildren();
-  if (!q.value.trim()) {
+  const limited = !browse && found.length > LIMIT;
+  pending = limited ? found.slice(0, LIMIT) : found;
+  heading = null; shown = 0;
+  if (browse) {
+    status.textContent = (text ? found.length + " of " + rows.length : rows.length) + " tracks · by " +
+      SORTS[sortKey].label + (descending ? ", reversed" : "");
+  } else if (!text) {
     status.textContent = rows.length + " tracks on " + data.discs.length +
-                         " discs \\u00b7 made " + data.made;
-    return;
+                         " discs · made " + data.made;
+  } else if (!found.length) {
+    status.textContent = "Not on any disc";
+  } else {
+    status.textContent = limited
+      ? "Showing " + LIMIT + " of " + found.length + ": type more to narrow it down"
+      : found.length + (found.length === 1 ? " track" : " tracks");
   }
-  if (!found.length) { status.textContent = "Not on any disc"; return; }
-  status.textContent = found.length > LIMIT
-    ? "Showing " + LIMIT + " of " + found.length + ": type more to narrow it down"
-    : found.length + (found.length === 1 ? " track" : " tracks");
-  for (const r of found.slice(0, LIMIT)) {
-    const hit = el("div", "hit");
-    hit.style.setProperty("--stripe", r.disc.stripe);
-    const what = el("div", "what");
-    what.append(el("div", "title", r.title));
-    if (r.artist) what.append(el("div", "artist", r.artist));
-    if (r.info.length) what.append(el("div", "info", r.info.join(" \u00b7 ")));
-    const where = el("div", "where");
-    where.append(el("div", "disc", r.disc.name));
-    where.append(el("div", "num", "Track " + r.number));
-    if (r.folder) where.append(el("div", "sub", r.folder));
-    if (r.disc.where) where.append(el("div", "sub", r.disc.where));
-    hit.append(what, where);
-    results.append(hit);
-  }
+  draw();
 }
+
+function scrollUp() { if (typeof window !== "undefined") window.scrollTo(0, 0); }
+
+allButton.addEventListener("click", () => {
+  browse = !browse;
+  allButton.setAttribute("aria-pressed", String(browse));
+  sortRow.hidden = !browse;
+  scrollUp();
+  show();
+});
+sortSelect.addEventListener("change", () => { sortKey = sortSelect.value; scrollUp(); show(); });
+dirButton.addEventListener("click", () => {
+  descending = !descending;
+  dirButton.textContent = descending ? "↓" : "↑";
+  scrollUp();
+  show();
+});
 
 q.addEventListener("input", show);
 show();
 q.focus();
+})();
 </script>
 </body>
 </html>

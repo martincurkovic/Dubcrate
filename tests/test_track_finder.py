@@ -197,7 +197,9 @@ def test_the_page_holds_the_data_and_no_network_reference(lib):
     page = tf.html_text(finder_with(lib, "Ünïcode ✓", "Bjørk"), MADE)
     data = embedded_data(page)
     assert data["made"] == "2026-11-18"
-    assert data["discs"][0]["tracks"] == [[1, "Ünïcode ✓", "Bjørk", "", []]]
+    assert data["discs"][0]["tracks"] == [
+        [1, "Ünïcode ✓", "Bjørk", "", [], "", "", "", "", ""]
+    ]
     assert "http" not in page.replace("http-equiv", "")
 
 
@@ -241,13 +243,21 @@ function node(tag) {
     append(...c) { this.children.push(...c); },
     replaceChildren(...c) { this.children = c; },
     addEventListener(name, fn) { this.handlers[name] = fn; },
-    focus() {} };
+    focus() {}, remove() {}, setAttribute() {} };
 }
 const els = { data: { textContent: data }, q: node("input"), status: node("div"),
-              results: node("main") };
+              results: node("main"), all: node("button"), sortrow: node("span"),
+              sort: node("select"), dir: node("button") };
 els.q.value = "";
 const document = { getElementById: id => els[id], createElement: node };
-new Function("document", code)(document);
+// A browser's global scope has protected names (window.top can't be redeclared): a script that
+// declares one at the top level fails to load at all, which node's `new Function` would never show.
+const vm = require("vm");
+const sandbox = { document, scrolled: 0 };
+sandbox.window = { scrollTo() { sandbox.scrolled++; } };
+for (const name of ["top", "parent", "self", "location", "name", "status", "length"])
+  Object.defineProperty(sandbox, name, { value: undefined, writable: false, configurable: false });
+vm.runInNewContext(code, sandbox);
 const out = {};
 for (const query of JSON.parse(process.argv[3])) {
   els.q.value = query;
@@ -323,6 +333,89 @@ def test_the_search_in_the_page(lib, tmp_path):
     assert got["zzz"]["status"] == "Not on any disc"
     assert got[""]["hits"] == [] and "4 tracks on 2 discs" in got[""]["status"]
     assert "made 2026-11-18" in got[""]["status"]
+
+
+# The same stand-in, driven by clicks: the "All tracks" list and its sorting.
+BROWSE_TAIL = r"""
+const out = [];
+els.sortrow.hidden = true;  // as the page's HTML starts it
+function list() {
+  return { status: els.status.textContent, sortHidden: els.sortrow.hidden,
+    rows: els.results.children.map(c => c.className === "group" ? "# " + c.textContent
+                                                                   : c.children[0].children[0].textContent) };
+}
+out.push(list());
+els.all.handlers.click();
+out.push(list());
+for (const [sort, reverse] of JSON.parse(process.argv[3])) {
+  els.sort.value = sort;
+  els.sort.handlers.change();
+  if (reverse) els.dir.handlers.click();
+  out.push(list());
+  if (reverse) els.dir.handlers.click();
+}
+els.sort.value = "title";
+els.sort.handlers.change();
+els.q.value = "zeta";
+els.q.handlers.input();
+out.push(list());
+console.log(JSON.stringify(out));
+"""
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="needs node")
+def test_all_tracks_sorted_in_the_page(lib, tmp_path):
+    def extra(**kw):
+        return kw
+
+    rows = [
+        ("Zeta", "Bee", extra(bpm=130.0, key="8A", year=2001, genre="House", duration=125)),
+        ("Alpha", "Cee", extra(bpm=95.0, key="1B", year=1999, genre="Dub", duration=300)),
+        ("Mid", "Ay", extra(bpm=124.0, key="8B", year=2010, genre="House", duration=61)),
+        ("Nothing", "", {}),
+    ]  # fmt: skip
+    lib.replace_source(
+        "folder",
+        "/m",
+        "M",
+        [
+            TrackRecord(ext_id=str(i), path=f"/m/{i}.mp3", title=t, artist=a, **more)
+            for i, (t, a, more) in enumerate(rows)
+        ],
+    )
+    lib.add_to_disc(lib.create_disc("D"), [t.id for t in lib.tracks(sort="path")])
+    page = tmp_path / "finder.html"
+    tf.write_html(tf.collect(lib), page, MADE)
+    harness = tmp_path / "harness.js"
+    harness.write_text(NODE_HARNESS.split("const out = {};")[0] + BROWSE_TAIL, encoding="utf-8")  # fmt: skip
+    steps = [["artist", False], ["bpm", False], ["bpm", True], ["key", False], ["length", False], ["year", True], ["genre", False]]  # fmt: skip
+    run = subprocess.run(
+        ["node", str(harness), str(page), json.dumps(steps)],
+        check=True,
+        capture_output=True,
+        encoding="utf-8",
+        errors="replace",
+    )
+    got = json.loads(run.stdout)
+
+    def titles(i):
+        return [r for r in got[i]["rows"] if not r.startswith("# ")]
+
+    assert got[0]["rows"] == [] and got[0]["sortHidden"] is True
+    assert got[1]["sortHidden"] is False and got[1]["status"].startswith("4 tracks")
+    # By title, with a heading per first letter.
+    assert got[1]["rows"] == ["# A", "Alpha", "# M", "Mid", "# N", "Nothing", "# Z", "Zeta"]  # fmt: skip
+    # A track with nothing for the column is last, in either direction.
+    assert titles(2) == ["Mid", "Zeta", "Alpha", "Nothing"]  # artist
+    assert titles(3) == ["Alpha", "Mid", "Zeta", "Nothing"]  # bpm
+    assert titles(4) == ["Zeta", "Mid", "Alpha", "Nothing"]  # bpm, reversed
+    assert titles(5) == ["Alpha", "Zeta", "Mid", "Nothing"]  # key: 1B, 8A, 8B
+    assert titles(6) == ["Mid", "Zeta", "Alpha", "Nothing"]  # length
+    assert titles(7) == ["Mid", "Zeta", "Alpha", "Nothing"]  # year, newest first
+    assert titles(8) == ["Alpha", "Mid", "Zeta", "Nothing"]  # genre
+    assert "# House" in got[8]["rows"]
+    # A search narrows the list and keeps the order.
+    assert titles(9) == ["Zeta"] and got[9]["status"].startswith("1 of 4 tracks")
 
 
 # -- the command line ------------------------------------------------------------------
