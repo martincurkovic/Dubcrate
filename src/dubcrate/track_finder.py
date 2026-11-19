@@ -27,7 +27,7 @@ from pathlib import Path
 
 import numpy as np
 
-from dubcrate import keys, labels
+from dubcrate import card_sync, cdj_card, keys, labels
 from dubcrate.analysis import Cue, read_preview, share_root
 from dubcrate.audio.decode import DecodeError, decode_file
 from dubcrate.cancel import Cancelled, CancelToken, cancellable_map
@@ -62,8 +62,8 @@ class FinderTrack:
     )
     wave: str = ""  # the waveform, see `encode_wave`; "" when there is none
     cues: tuple[
-        tuple[float, str], ...
-    ] = ()  # memory cues: (seconds, label), in time order
+        tuple[float, str, str], ...
+    ] = ()  # (seconds, label, hot cue letter or ""), in time order
 
     @property
     def info(self) -> list[str]:
@@ -257,10 +257,37 @@ def read_cue_tables(paths: Sequence[str]) -> tuple[CueTables, str]:
     return tables, ""
 
 
+DUPLICATE_SECONDS = card_sync.DUPLICATE_FRAMES / cdj_card.FRAMES_PER_SECOND
+
+
+def card_cues(cues: Sequence[Cue]) -> tuple[tuple[float, str, str], ...]:
+    """The cues a track's memory cues and hot cues become on the CDJ's card, as (seconds, label, hot cue
+    letter): every hot cue (any slot) is kept as a plain memory cue there, and a hot cue and a memory cue at
+    the same place (within `card_sync.DUPLICATE_FRAMES`) are one cue, as `card_sync.map_cues` makes them. The
+    label and the letter are only for this page (the card has neither). Loops, and a hot cue saved as a
+    loop, are not shown: they stay loops on the card."""
+    found: list[list] = []
+    for cue in sorted(cues, key=lambda c: c.time):
+        if cue.time < 0:
+            continue
+        if is_memory(cue):
+            hot = ""
+        elif cue.kind == "hot" and cue.slot is not None and 1 <= cue.slot <= 26:
+            hot = chr(ord("A") + cue.slot - 1)
+        else:
+            continue
+        if found and cue.time - found[-1][0] <= DUPLICATE_SECONDS:
+            found[-1][1] = found[-1][1] or cue.label
+            found[-1][2] = found[-1][2] or hot
+            continue
+        found.append([round(cue.time, 2), cue.label, hot])
+    return tuple((t, label, hot) for t, label, hot in found)
+
+
 class _Cues:
-    """A track's memory cues as the player shows them (rekordbox's, with any edited in Dubcrate laid over).
-    A failure to read the database is reported once and the tracks go without cues, rather than the
-    export failing."""
+    """A track's cues as they will be on the card (`card_cues`): rekordbox's, with the memory cues edited in
+    Dubcrate laid over, as the player shows them. A failure to read the database is reported once and the
+    tracks go without cues, rather than the export failing."""
 
     def __init__(
         self, lib: Library, tables: CueTables | None = None, problem: str = ""
@@ -269,22 +296,15 @@ class _Cues:
         self._provider = RekordboxCues(lib, load).for_track
         self.problem = problem
 
-    def memory(self, track: Track) -> tuple[tuple[float, str], ...]:
+    def on_card(self, track: Track) -> tuple[tuple[float, str, str], ...]:
         if self.problem:
             return ()
         try:
-            cues = self._provider(track)
+            return card_cues(self._provider(track))
         except Exception as exc:  # (as above)
-            log.warning("track finder: could not read memory cues", exc_info=True)
+            log.warning("track finder: could not read cues", exc_info=True)
             self.problem = str(exc) or type(exc).__name__
             return ()
-        return tuple(
-            sorted(
-                (round(c.time, 2), c.label)
-                for c in cues
-                if is_memory(c) and c.time >= 0
-            )
-        )
 
 
 def _disc_where(lib: Library) -> dict[int | None, str]:
@@ -360,7 +380,7 @@ def _disc(
                 length=labels.clock_text(track.duration),
                 seconds=track.cd_sectors / 75 if track.cd_sectors else track.duration,
                 wave=wave,
-                cues=cues.memory(track) if cues else (),
+                cues=cues.on_card(track) if cues else (),
             )
         )
     if not tracks:
@@ -384,7 +404,7 @@ def collect(
     has a track.
 
     Each track also gets its waveform (`waveforms`: see `_Waves`; `needs_analysis` and `analyse_waves`
-    make the missing ones first) and its memory cues (`memory_cues`). The cues come from rekordbox's
+    make the missing ones first) and its cues as they will be on the card (`memory_cues`: memory cues and hot cues). The cues come from rekordbox's
     database read once here, or from `cue_tables` that a worker already read (`read_cue_tables`, with
     `cue_problem` if that failed). Both are only read: nothing is written to rekordbox."""
     where = _disc_where(lib)
@@ -418,7 +438,7 @@ def summary(found: Finder) -> str:
             f"{found.coarse_wave} track(s) only have the CDJ's coarse waveform (their audio could not be read)."
         )
     if found.cue_problem:
-        lines.append(f"Memory cues could not be read: {found.cue_problem}")
+        lines.append(f"Cues could not be read: {found.cue_problem}")
     return "\n".join(lines)
 
 
@@ -598,6 +618,8 @@ PAGE = """<!DOCTYPE html>
   .chip i { font-style: normal; font-size: 12px; font-weight: 700; color: #fff; background: var(--cue);
             border-radius: 50%; width: 20px; height: 20px; display: inline-flex;
             align-items: center; justify-content: center; }
+  .chip b { font-size: 12px; font-weight: 700; color: var(--mark); border: 1px solid var(--mark);
+            border-radius: 4px; padding: 0 4px; }
   .chip small { color: var(--muted); font-size: 13px; }
   .none { color: var(--muted); font-size: 13px; padding: 2px; }
   /* Compact cards: "Title – Artist" run together, no info line (tap the card to see it). */
@@ -943,6 +965,12 @@ function paintWave(canvas, wave, dur, cues, cursor) {
 }
 
 // The waveform and the memory cues for an open card; `redraw` paints it at the card's current width.
+// What a tap says about a cue: "Cue 2 · 1:45 · hot cue A · Drop" (a hot cue is a memory cue on the card).
+function cueText(i, cue) {
+  const [t, label, hot] = cue;
+  return "Cue " + (i + 1) + " · " + fmtTime(t) + (hot ? " · hot cue " + hot : "") + (label ? " · " + label : "");
+}
+
 function waveBox(r) {
   const wave = decodeWave(r.wave), cues = r.cues, dur = r.dur;
   if (!wave && !cues.length) {
@@ -968,19 +996,21 @@ function waveBox(r) {
       let t = Math.min(dur, Math.max(0, (e.clientX - rect.left) / rect.width * dur));
       // close to a cue (a finger is wide): jump to that cue
       const near = cues.findIndex(([c]) => Math.abs(c - t) / dur * rect.width < 14);
-      if (near >= 0) { t = cues[near][0]; show(t, "Cue " + (near + 1) + " · " + fmtTime(t) + (cues[near][1] ? " · " + cues[near][1] : "")); }
+      if (near >= 0) { t = cues[near][0]; show(t, cueText(near, cues[near])); }
       else show(t, fmtTime(t) + " of " + fmtTime(dur));
     });
   }
   if (cues.length) {
     const chips = el("div", "chips");
-    cues.forEach(([t, label], i) => {
+    cues.forEach((cue, i) => {
+      const [t, label, hot] = cue;
       const chip = el("button", "chip");
       chip.type = "button";
       const n = el("i", "", String(i + 1));
       chip.append(n, document.createTextNode(fmtTime(t)));
+      if (hot) chip.append(el("b", "", hot));
       if (label) chip.append(el("small", "", label));
-      chip.addEventListener("click", () => show(t, "Cue " + (i + 1) + " · " + fmtTime(t) + (label ? " · " + label : "")));
+      chip.addEventListener("click", () => show(t, cueText(i, cue)));
       chips.append(chip);
     });
     box.append(chips);

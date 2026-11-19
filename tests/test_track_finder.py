@@ -796,7 +796,56 @@ def test_memory_cues_are_in_time_order_and_nothing_else(lib):
     lib.set_memory_cues(t.path, [(90500, "Break"), (1000, "")])
     lib.set_memory_loops(t.path, [(5000, 9000, "Loop")])
     [track] = tf.collect(lib).discs[0].tracks
-    assert track.cues == ((1.0, ""), (90.5, "Break"))  # the loop is not a cue here
+    assert track.cues == (
+        (1.0, "", ""),
+        (90.5, "Break", ""),
+    )  # the loop is not a cue here
+
+
+def test_hot_cues_are_shown_as_the_memory_cues_they_become_on_the_card(lib):
+    from dubcrate.analysis import Cue
+
+    lib.replace_source(
+        "rekordbox",
+        "/rb/master.db",
+        "RB",
+        [
+            TrackRecord(
+                ext_id="42", path="/m/t.mp3", title="T", file_size=10, duration=300.0
+            )
+        ],
+    )
+    track = lib.tracks(sort="path")[0]
+    lib.add_to_disc(lib.create_disc("D"), [track.id])
+    cues = [
+        Cue("memory", 60.0, label="Build"),
+        Cue("hot", 32.0, slot=1, label="Drop"),  # a hot cue: a memory cue on the card
+        Cue("hot", 200.0, slot=4),  # hot cue D
+        Cue("memory", 32.01),  # at the same place as hot A: one cue on the card
+        Cue("hot", 100.0, slot=2),
+        Cue("memory", 100.0),
+        Cue("loop", 150.0, end=154.0),  # a loop stays a loop: not shown here
+        Cue("loop", 170.0, end=174.0, slot=3),  # a hot cue saved as a loop: neither
+        Cue("memory", -1.0),  # before the track starts
+    ]
+    tables = {"/rb/master.db": {"42": cues}}
+    [shown] = tf.collect(lib, cue_tables=tables).discs[0].tracks
+    assert shown.cues == (
+        (32.0, "Drop", "A"),
+        (60.0, "Build", ""),
+        (100.0, "", "B"),  # a hot cue and a memory cue together
+        (200.0, "", "D"),
+    )
+
+
+def test_hot_cues_travel_in_the_page_data(lib):
+    from dubcrate.analysis import Cue
+
+    lib.replace_source("rekordbox", "/rb/master.db", "RB", [TrackRecord(ext_id="1", path="/m/t.mp3", title="T", file_size=10, duration=100.0)])  # fmt: skip
+    lib.add_to_disc(lib.create_disc("D"), [lib.tracks(sort="path")[0].id])
+    tables = {"/rb/master.db": {"1": [Cue("hot", 12.0, slot=3, label="Go")]}}
+    page = tf.html_text(tf.collect(lib, cue_tables=tables), MADE)
+    assert embedded_data(page)["discs"][0]["tracks"][0][12] == [[12.0, "Go", "C"]]
 
 
 def test_unreadable_cues_do_not_stop_the_export(lib):
@@ -804,7 +853,7 @@ def test_unreadable_cues_do_not_stop_the_export(lib):
     found = tf.collect(lib, cue_tables={}, cue_problem="database is locked")
     assert found.cue_problem == "database is locked"
     assert found.discs[0].tracks[0].cues == ()
-    assert "Memory cues could not be read: database is locked" in tf.summary(found)
+    assert "Cues could not be read: database is locked" in tf.summary(found)
 
 
 def test_cue_tables_read_once_are_used(lib):
@@ -944,3 +993,26 @@ def test_cli_analyses_missing_waveforms_unless_told_not_to(
     assert run_cli(tmp_path, "export-finder", out) == 0
     assert embedded_data(out.read_text(encoding="utf-8"))["discs"][0]["tracks"][0][11].startswith("3:")  # fmt: skip
     assert "analysing waveforms: 1 of 1" in capsys.readouterr().err
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="needs node")
+def test_a_hot_cue_chip_names_its_letter(tmp_path):
+    track = tf.FinderTrack(
+        1, "T", "A", "", seconds=275.0, cues=((32.0, "Drop", "A"), (105.5, "", ""))
+    )
+    page = tmp_path / "finder.html"
+    tf.write_html(
+        tf.Finder(discs=[tf.FinderDisc("D", "", "audio", (track,))]), page, MADE
+    )
+    harness = tmp_path / "harness.js"
+    harness.write_text(NODE_HARNESS.split("const out = {};")[0] + WAVE_TAIL, encoding="utf-8")  # fmt: skip
+    run = subprocess.run(
+        ["node", str(harness), str(page)],
+        check=True,
+        capture_output=True,
+        encoding="utf-8",
+        errors="replace",
+    )
+    got = json.loads(run.stdout)["T"]
+    assert got["chips"] == ["1 0:32 A Drop", "2 1:45"]
+    assert got["chipReadout"] == "Cue 1 · 0:32 · hot cue A · Drop"
