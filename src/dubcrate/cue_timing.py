@@ -17,8 +17,9 @@ rekordbox's on the way in, and `rekordbox_ms` the way out (`rekordbox_write`).
 import logging
 import os
 from collections.abc import Sequence
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from pathlib import Path
+from typing import NamedTuple
 
 from dubcrate.analysis import Analysis, Cue, Phrase
 from dubcrate.waveform import Waveform
@@ -35,41 +36,60 @@ _DECODER_DELAY = (
 )
 
 
-def lead_samples(head: bytes) -> tuple[int, int]:
-    """(samples, sample rate) rekordbox's timeline is ahead of ffmpeg's for an MP3 starting `head` (its first
-    bytes after any ID3v2 tag). (0, 0): no Info / Xing frame, so no lead."""
+class _Tag(NamedTuple):
+    rate: int
+    frame: int  # samples in a frame: the size of the Info frame itself
+    maker: bytes  # "LAME", "Lavc", "Lavf" or what else the tag says (4 bytes, empty if it has none)
+    delay: (
+        int | None
+    )  # the encoder delay it records, None when the tag has no extension to read it from
+
+
+def _tag(head: bytes) -> _Tag | None:
+    """What the first frame says about itself, or None if it is not an MP3 frame with an Info / Xing tag."""
     if len(head) < 4 or head[0] != 0xFF or head[1] & 0xE0 != 0xE0:
-        return 0, 0
+        return None
     version = (head[1] >> 3) & 3
     if version == 1 or (head[1] >> 1) & 3 != 1:  # reserved version, or not Layer III
-        return 0, 0
+        return None
     rate_index = (head[2] >> 2) & 3
     if rate_index == 3:
-        return 0, 0
+        return None
     rate = _MPEG1_RATES[rate_index] // _RATE_DIVISOR[version]
     mono = (head[3] >> 6) == 3
     side = (17 if mono else 32) if version == 3 else (9 if mono else 17)
     tag = 4 + (2 if not head[1] & 1 else 0) + side  # (a CRC adds two bytes)
     if head[tag : tag + 4] not in (b"Xing", b"Info"):
-        return 0, 0
+        return None
     frame = 1152 if version == 3 else 576
     flags = int.from_bytes(head[tag + 4 : tag + 8], "big")
     lame = tag + 8 + 4 * (flags & 1) + 4 * bool(flags & 2) + 100 * bool(flags & 4) + 4 * bool(flags & 8)  # fmt: skip
     maker = head[lame : lame + 4]
-    if maker not in (b"LAME", b"Lavc", b"Lavf") or len(head) < lame + 24:
+    if len(head) < lame + 24:
+        return _Tag(rate, frame, maker, None)
+    packed = head[lame + 21 : lame + 24]
+    return _Tag(rate, frame, maker, (packed[0] << 4) | (packed[1] >> 4))
+
+
+_KNOWN_MAKERS = (b"LAME", b"Lavc", b"Lavf")
+
+
+def lead_samples(head: bytes) -> tuple[int, int]:
+    """(samples, sample rate) rekordbox's timeline is ahead of ffmpeg's for an MP3 starting `head` (its first
+    bytes after any ID3v2 tag). (0, 0): no Info / Xing frame, so no lead."""
+    found = _tag(head)
+    if found is None or found.maker not in _KNOWN_MAKERS or found.delay is None:
         return (
             0,
             0,
-        )  # an Info frame with no delay we can read, or by an encoder we haven't measured: leave it
-    packed = head[lame + 21 : lame + 24]
-    delay = (packed[0] << 4) | (packed[1] >> 4)
+        )  # no Info frame, or one with no delay we can read or by an encoder we haven't measured: leave it
     if (
-        not delay
+        not found.delay
     ):  # (a handful of files, which did not agree with each other: left alone)
         return 0, 0
     # rekordbox counts a LAME file's Info frame as well (an ffmpeg file's it leaves out); both count the delay.
-    counted = frame if maker == b"LAME" else 0
-    return counted + delay + _DECODER_DELAY, rate
+    counted = found.frame if found.maker == b"LAME" else 0
+    return counted + found.delay + _DECODER_DELAY, found.rate
 
 
 def _head(path: Path) -> bytes:
@@ -164,3 +184,39 @@ def analysis_to_audio(analysis: Analysis, lead: int) -> Analysis:
 def rekordbox_ms(audio_ms: int, lead: int) -> int:
     """A time in audio time as rekordbox has it."""
     return audio_ms + lead
+
+
+@dataclass(frozen=True)
+class Timing:
+    """What `lead_ms` makes of a file and why, for `dubcrate cues timing`."""
+
+    lead_ms: int
+    group: str  # "lame", "ffmpeg", "no-info", "left-alone", "not-mp3" or "unreadable"
+    note: str
+    sure: bool  # the rule was measured on many files and matched them closely
+
+
+def describe(path: str | os.PathLike[str]) -> Timing:
+    """The offset for a file, which group of the measurements it falls in, and how far to trust it."""
+    where = Path(path)
+    if where.suffix.lower() != ".mp3":
+        return Timing(0, "not-mp3", "not an MP3: formats other than MP3 were not measured, no offset", True)  # fmt: skip
+    try:
+        head = _head(where)
+    except OSError:
+        return Timing(0, "unreadable", "the file can't be read just now", False)
+    found = _tag(head)
+    if found is None:
+        return Timing(0, "no-info", "no Info / Xing frame: rekordbox and the audio agree (measured: within 4 ms)", True)  # fmt: skip
+    maker = found.maker.decode("latin1").strip() or "?"
+    if found.maker not in _KNOWN_MAKERS or found.delay is None or not found.delay:
+        why = (
+            "encoder not measured"
+            if found.maker not in _KNOWN_MAKERS
+            else "no usable delay in its tag"
+        )
+        return Timing(0, "left-alone", f"{maker}, {why}: files like this did not agree with each other, so no offset", False)  # fmt: skip
+    ms = lead_ms(where)
+    if found.maker == b"LAME":
+        return Timing(ms, "lame", f"LAME, delay {found.delay}: Info frame and delay both count (measured on about 400 files, 90% within 6 ms)", True)  # fmt: skip
+    return Timing(ms, "ffmpeg", f"{maker}, delay {found.delay}: only the delay counts (measured: about 80% of these; the rest behave like LAME ones, about 25 ms more)", False)  # fmt: skip
