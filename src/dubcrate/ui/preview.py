@@ -31,7 +31,6 @@ from .rekordbox_editor import RekordboxEditor
 from .tasks import run_async
 
 # the arrow keys' jump for a track with no beat grid and no tempo
-FALLBACK_JUMP_SECONDS = 2.0
 SAME_MEMORY_MS = 50  # a memory cue within this of another is the same one
 NEAR_MEMORY_SECONDS = (
     1.0  # the ✕ by MEMORY deletes the memory cue this close to the playhead
@@ -220,9 +219,9 @@ class PreviewController(QObject):
     def set_quantise(self, on: bool) -> None:
         self.deck.quantise = on
         settings.set_quantise(on)  # (remembered for the next start)
-        if on and self._track is not None and self.deck.beat_length() is None:
+        if on and self._track is not None and not self.deck.has_grid:
             self.message.emit(
-                "This track has no beat grid or tempo, so there is no beat to snap to"
+                "This track has no beat grid (it isn't analysed in rekordbox), so there is no beat to snap to"
             )
 
     def auto_loop(self, beats: float) -> None:
@@ -588,10 +587,9 @@ class PreviewController(QObject):
         self._show_cues()
 
     def beat_jump(self, direction: int) -> None:
-        """Jump the set number of beats forward (`direction` 1) or back (-1), in phase.
-
-        Uses the track's beat grid; without one, its tempo (rekordbox's, else the tag's); with
-        neither, a fixed `FALLBACK_JUMP_SECONDS`.
+        """Jump forward (`direction` 1) or back (-1): the set number of beats along the track's beat
+        grid, in phase; for a track with no grid (rekordbox hasn't analysed it) a set number of
+        seconds, since a tempo from a tag can't say where the beats fall (the menu says which).
         """
         if self.player.scratching:
             return
@@ -601,18 +599,16 @@ class PreviewController(QObject):
                 "Double-click a track to load it, then use ← and → to beat jump"
             )
             return
-        beats = settings.get_beat_jump() * direction
         position = self.player.position
         target = None
         if self._analysis is not None:
-            target = jump_time(self._analysis.beat_times, position, beats)
-        if target is None:
-            bpm = (self._analysis.bpm if self._analysis else None) or self._track.bpm
-            target = (
-                position + beats * 60.0 / bpm
-                if bpm
-                else position + direction * FALLBACK_JUMP_SECONDS
+            target = jump_time(
+                self._analysis.beat_times,
+                position,
+                settings.get_beat_jump() * direction,
             )
+        if target is None:  # no beat grid: seconds
+            target = position + direction * settings.get_jump_seconds()
         self.player.seek(max(0.0, min(target, self.player.duration)))
 
     def shutdown(self) -> None:

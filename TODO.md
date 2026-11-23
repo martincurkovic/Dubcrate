@@ -42,7 +42,6 @@ Open items by area; finished work is under **Completed** at the bottom (same hea
 
 - [ ] Finder page: try **Tagged** in the iPhone viewer app (do the tags survive closing the app? the line under the buttons says "kept on this device" or "NOT kept"), and drag a tagged track up and down with a finger, and try Filter (BPM, year, key, genre), the waveform and memory cue view (tap a card) and Clear on the phone, with the owner's real library (the first export analyses waveforms: how long does it take?); then add the played tick, by-disc grouping and share / copy list.
 - [ ] Try the drive picker with two real drives (the check after a burn is skipped for any but the first).
-- [ ] In the player: when the loaded track isn't analysed by rekordbox (no beat grid), grey out Q and set the loop mode to manual, since quantise and auto loops have nothing to snap to (owner's idea, 2026-11-23, "later").
 - [ ] Read a rekordbox USB stick's own database (`.PIONEER/rekordbox/export.pdb` and `USBANLZ`) so a stick can be imported with BPM, key, cues and beat grids: today only a computer's `master.db` or a folder of audio can be (the rekordbox stick the owner brought to Linux imported as a folder, tags only).
 - [ ] Find out why one simulated burn on Linux failed with `Cannot set write parameters mode page` (2026-11-23, on a disc just loaded; five later runs, including `generic-mmc-raw`, were fine): [burning.md](dev_docs/burning.md), "Linux and `cdrdao`".
 - [ ] Ask the drive for its top write speed: the burn window offered 48x and `cdrdao` quietly wrote at 24x (the log says so, the window does not).
@@ -151,6 +150,7 @@ Open items by area; finished work is under **Completed** at the bottom (same hea
 
 ### Player (rbxport-style)
 
+- [x] Grey out Q and show manual loops for a track rekordbox hasn't analysed (no beat grid): a tag's BPM alone no longer quantises (owner's idea, 2026-11-23). Q's setting is kept for the next track with a grid; the loop mode the user chose comes back with it. The beat jump menu is in seconds for such a track (1 s to 1 min, its own setting).
 - [x] Phase 2 of the player: **CUE** (a temporary cue point), the **auto and manual loops** (AU / MA, IN, OUT, RELOOP, the loop size) and **Q** (quantise) work in the preview engine, session-only, never saved to rekordbox (`deck.py`, `audio/player.py`, `ui/preview.py`).
 - [x] Listen to the loops on a real track: the wrap has no crossfade (a hard cut at the loop's end), so a loop not on a zero crossing may click; add a few milliseconds of fade if it does (`audio/player.py: _take`). (2026-11-16: the owner heard them, "the audio works fine"; no fade added.)
 - [x] Bar and beat counter beside the zoomed waveform's playhead (`13.3 Bars`: `barcount.py`, `DetailView._paint_bar_counter`).

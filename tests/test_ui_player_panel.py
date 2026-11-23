@@ -225,6 +225,31 @@ def test_the_beat_jump_menu_says_beats_then_bars_and_keeps_the_saved_size(strip)
     assert strip.jump_combo.currentText() == "4 Beats" and settings.get_beat_jump() == 32  # (shown, not saved)  # fmt: skip
 
 
+def test_a_track_with_no_grid_shows_a_jump_menu_in_seconds_with_its_own_saved_size(
+    strip,
+):
+    strip.show_grid(False)
+    labels = [strip.jump_combo.itemText(i) for i in range(strip.jump_combo.count())]
+    assert labels == ["1 s", "2 s", "5 s", "10 s", "30 s", "1 min"]
+    assert strip.jump_combo.currentData() == settings.get_jump_seconds() == 5
+    assert "seconds" in strip.jump_combo.toolTip() and "beat grid" in strip.jump_combo.toolTip()  # fmt: skip
+    beats_before = settings.get_beat_jump()
+    next(a for a in strip.jump_combo.menu().actions() if a.text() == "30 s").trigger()
+    assert settings.get_jump_seconds() == 30 and settings.get_beat_jump() == beats_before  # fmt: skip
+    strip.set_beat_jump(
+        8
+    )  # (the settings window changing the beats must not touch the seconds menu)
+    assert strip.jump_combo.currentText() == "30 s"
+    strip.show_grid(True)  # a track with a grid: beats are back, as they were
+    assert strip.jump_combo.itemText(0) == "1 Beat"
+    assert strip.jump_combo.currentData() == beats_before
+    assert (
+        settings.get_jump_seconds() == 30
+    )  # (and the seconds are kept for the next track with no grid)
+    strip.show_grid(False)
+    assert strip.jump_combo.currentText() == "30 s"
+
+
 def test_the_jump_buttons_ask_for_a_jump_either_way_and_wait_for_a_track(strip):
     heard = []
     strip.beat_jump_requested.connect(heard.append)

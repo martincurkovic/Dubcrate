@@ -556,13 +556,19 @@ and **firmware other than 2.20**.
     track played now, same start), (1,1) unchanged, and **(2,1) was new and full**. So a waveform is filled in from the
     start as the track plays (columns not yet played are 0, as on audio), `W002` gets the same keys and the fine
     columns, and the file grows by a record when a track not in it is first played. **Only the records of played tracks
-    exist** (no root file 3, no folder A files 3 and 4): whether they are kept **sorted by (folder, file) or in the order
-    they were first played** is **[unknown]**; both fit.
+    exist** (no root file 3, no folder A files 3 and 4). **Third look (`MPJ00001_seven_records.PDJ`): they are appended in
+    the order the tracks were first touched, not sorted**: after the owner played root file 3 (Summertime Blues, to the
+    end) and folder C's last file (Safe and Sound, stopped about a minute from the end), the file had gained (2,2) with
+    **0 columns** (the player started the next track of folder B when Rather Be ended: a track that only starts gets a
+    record) and then (0,3) with 49 columns, so (0,3) sits **after** (2,2). The index was unchanged and the checksum still
+    validates. **Safe and Sound, (3,4), has no record at all**, although most of it was played: either a record is only
+    written when the player moves on (the track ends, another is loaded, or the disc is ejected) and this one was not
+    flushed before the card came out, or something else: **[unknown]**, asked of the owner (what was done after
+    stopping, and how the card was removed).
   - **The disc has `HC11` of 396 bytes, so hot cues A, B, C are 132-byte entries**, and a played track with no cue has
     all of it zero. `Dubcrate`'s audio parser still refuses the file (it reads a 60-byte `HC11` block and takes the first `u16`
     of a waveform record as a track number); the layout is otherwise the same code path.
-  - **Next, in this order**: play a root file 3 and folder C's last file (sorted or in play order? Then which of the
-    new records comes first); set one memory cue and one hot cue on a played track (the 132-byte entry layout); a loop;
+  - **Next, in this order**: find out when the player writes a record (Safe and Sound is missing); set one memory cue and one hot cue on a played track (the 132-byte entry layout); a loop;
     then a second image to pull the rest of the ID apart (`05 2c 06`, `33 87 45 e7`, `00 00`). Then `card_sync` could
     write MP3 waveforms and cues: **no code reads or writes `MPJ` yet.**
 - **`INTERNAL MEMORY` / `CARD MEMORY`, `CARDCOPY_MODE`, `CUE FOLDER00`, `.BAK`, `THUM`** appear in

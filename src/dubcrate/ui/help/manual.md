@@ -125,7 +125,7 @@ For rekordbox tracks the waveforms, beat grid and phrases come from rekordbox's 
 
 **Scratching.** Drag the zoomed waveform as you would a jog wheel; you hear the track move with it. A playing track carries on from where you let go.
 
-**Beat jump** keeps its place within the beat and follows the beat grid. A track with no grid or tempo jumps a fixed 2 seconds.
+**Beat jump** keeps its place within the beat and follows the beat grid. A track rekordbox hasn't analysed has no grid, so its jump menu is in **seconds** instead (1 s to 1 min, remembered separately from the beats): a tempo from a tag can't say where the beats fall.
 
 ### Memory cues and loops
 
@@ -142,7 +142,7 @@ These are for finding your way round a track and **last only until another track
 - **CUE** works like a CDJ's: while playing, it goes back to the cue point and stops. Stopped on the cue point, **hold CUE** to hear it from there. Stopped anywhere else, it sets the cue point.
 - **AU**: the number is the loop length in beats (**‹** and **›** halve or double it). Press the number to loop from where the track is; press it again to leave. This needs a beat grid or tempo.
 - **MA**: **IN** marks the start, **OUT** marks the end and starts the loop. **RELOOP** leaves a loop, or returns to the last one.
-- **Q**: cue points and loop edges land on the nearest beat. It is on the first time you run Dubcrate and stays as you leave it.
+- **Q**: cue points and loop edges land on the nearest beat. It is on the first time you run Dubcrate and stays as you leave it. **It needs a beat grid, which only rekordbox's analysis gives**: for a track rekordbox hasn't analysed, Q is greyed out (your setting is kept for the next track that has a grid) and the loop buttons show **MA**, since a tempo from a tag can't say where a beat falls. The next track with a grid gets the loop mode you last chose.
 
 ### Waveform looks
 

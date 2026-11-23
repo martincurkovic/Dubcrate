@@ -321,43 +321,50 @@ def test_a_jump_while_playing_keeps_playing(jumper):
     assert jumper.player.playing and jumper.player.position == pytest.approx(4.0)
 
 
-def test_without_a_beat_grid_the_tracks_tempo_is_used(chain):
+def test_without_a_beat_grid_the_jump_is_in_seconds_and_the_tags_tempo_does_not_count(
+    chain,
+):
+    # a tempo from a tag can't say where the beats fall, so with no grid (rekordbox hasn't analysed the
+    # track) the jump is a number of seconds, as the menu says
     chain.controller._analysis = None
     chain.controller._track = _track(bpm=120.0)
     chain.player.seek(3.0)
     chain.controller.beat_jump(1)
-    assert chain.player.position == pytest.approx(5.0)  # 4 beats x 0.5 s
+    assert chain.player.position == pytest.approx(8.0)  # 5 s, not 4 beats x 0.5 s
 
 
-def test_rekordboxs_own_tempo_is_preferred_to_the_tag(chain):
+def test_a_tempo_without_a_grid_is_still_seconds(chain):
     chain.controller._analysis = Analysis(bpm=60.0)  # no grid, but a tempo
     chain.controller._track = _track(bpm=120.0)
     chain.player.seek(3.0)
     chain.controller.beat_jump(1)
-    assert chain.player.position == pytest.approx(7.0)  # 4 beats x 1 s
+    assert chain.player.position == pytest.approx(8.0)
 
 
-def test_with_no_grid_and_no_tempo_the_arrows_jump_two_seconds(chain):
+def test_with_no_grid_the_arrows_jump_the_seconds_setting_five_by_default(chain):
     messages = []
     chain.controller.message.connect(messages.append)
     chain.controller._analysis = None
-    chain.player.seek(3.0)
+    chain.player.seek(12.0)
     chain.controller.beat_jump(1)
-    assert chain.player.position == pytest.approx(5.0)
+    assert chain.player.position == pytest.approx(17.0)
     chain.controller.beat_jump(-1)
     chain.controller.beat_jump(-1)
-    assert chain.player.position == pytest.approx(1.0)
+    assert chain.player.position == pytest.approx(7.0)
+    chain.controller.beat_jump(-1)
     chain.controller.beat_jump(-1)
     assert chain.player.position == 0.0  # (clamped to the track)
     assert messages == []  # (quietly: nothing to explain)
 
 
-def test_the_fixed_jump_ignores_the_beat_count_setting(chain):
+def test_the_seconds_are_their_own_setting_apart_from_the_beat_count(chain):
     settings.set_beat_jump(16)
+    settings.set_jump_seconds(10)
     chain.controller._analysis = None
     chain.player.seek(3.0)
     chain.controller.beat_jump(1)
-    assert chain.player.position == pytest.approx(5.0)
+    assert chain.player.position == pytest.approx(13.0)
+    assert settings.get_beat_jump() == 16 and settings.get_jump_seconds() == 10
 
 
 def test_beat_jump_with_no_track_loaded_says_what_to_do_instead_of_doing_nothing(qapp):

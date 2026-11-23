@@ -64,6 +64,9 @@ def rig(qapp, tmp_path, wait_for):
         controller.player.pause()
         if tempo:  # (a folder track has no grid: give it one, as rekordbox's would be)
             controller.deck.load(SECONDS, BEATS, 120.0)
+            strip.show_grid(
+                True
+            )  # (and say so, as show_media does from rekordbox's analysis)
 
     load()
     yield SimpleNamespace(lib=lib, strip=strip, c=controller, player=controller.player, messages=messages, load=load)  # fmt: skip
@@ -153,10 +156,58 @@ def test_a_quantised_cue_puts_the_playhead_on_the_beat_and_then_cue_previews_fro
     )
 
 
-def test_quantise_on_a_track_with_no_tempo_says_there_is_nothing_to_snap_to(rig):
+def test_a_track_rekordbox_has_not_analysed_greys_q_and_shows_manual_loops(rig):
+    strip = rig.strip
+    assert strip.quantise_button.isEnabled()  # (the rig's first track has a grid)
+    strip.quantise_button.setChecked(True)
+    rig.load("b", tempo=False)  # a folder track: no beat grid
+    assert not strip.quantise_button.isEnabled()
+    assert strip.quantise_button.isChecked()  # (the choice is left alone ...)
+    assert (
+        settings.get_quantise() is True
+    )  # (... and so is what is remembered for the next start)
+    assert strip.manual_button.isChecked() and not strip.auto_button.isChecked()
+    assert strip.loop_manual_group.isVisibleTo(strip) and not strip.loop_auto_group.isVisibleTo(strip)  # fmt: skip
+    assert "beat grid" in strip.quantise_button.toolTip() and "rekordbox" in strip.quantise_button.toolTip()  # fmt: skip
+    strip.quantise_button.click()  # (greyed: nothing happens)
+    assert strip.quantise_button.isChecked()
+    at(rig, 12.3)
+    rig.strip.cue_button.click()
+    assert (
+        rig.c.deck.cue_point == 12.3
+    )  # (and the cue point is not snapped to a tempo from the file's start)
+
+
+def test_the_next_track_with_a_grid_gets_q_and_the_loop_mode_the_user_chose_back(rig):
+    strip = rig.strip
+    strip.auto_button.click()  # the user's choice: AU
     rig.load("b", tempo=False)
-    rig.strip.quantise_button.click()
-    assert "no beat grid or tempo" in rig.messages[-1]
+    assert strip.manual_button.isChecked() and not strip.quantise_button.isEnabled()
+    rig.load("a")  # a track with a grid again
+    assert strip.quantise_button.isEnabled()
+    assert strip.auto_button.isChecked() and strip.loop_auto_group.isVisibleTo(strip)
+    assert "beat grid" in strip.quantise_button.toolTip() and "hasn't been analysed" not in strip.quantise_button.toolTip()  # fmt: skip
+    strip.manual_button.click()  # now the user picks MA
+    rig.load("b", tempo=False)
+    rig.load("a")
+    assert (
+        strip.manual_button.isChecked()
+    )  # (the choice made by hand is what comes back, not the forced one)
+
+
+def test_a_strip_with_no_track_keeps_q_off_whatever_the_grid(qapp):
+    strip = PlayerStrip()
+    strip.show_grid(True)
+    assert not strip.quantise_button.isEnabled()  # (nothing loaded)
+    strip._enable(True)
+    assert strip.quantise_button.isEnabled()
+    strip.show_grid(False)
+    strip._enable(
+        True
+    )  # (enabling everything must not give Q back to a track with no grid)
+    assert not strip.quantise_button.isEnabled()
+    strip.clear()
+    strip.deleteLater()
 
 
 def test_the_size_button_loops_that_many_beats_from_here_and_again_leaves_it(rig):

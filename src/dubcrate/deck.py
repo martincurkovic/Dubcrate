@@ -68,6 +68,13 @@ class Deck:
 
     # -- the beat grid ------------------------------------------------------------------
 
+    @property
+    def has_grid(self) -> bool:
+        """Whether the track has a beat grid (rekordbox's analysis: the library analyses nothing itself).
+        Quantise needs one: a tempo alone, from a tag, can't say where a beat falls, so snapping to it would
+        put a cue or loop edge on an arbitrary multiple of the tempo from the start of the file."""
+        return len(self.beat_times) >= 2
+
     def beat_length(self) -> float | None:
         """Seconds a beat lasts: the grid's own, else the BPM's; None with neither."""
         if len(self.beat_times) >= 2:
@@ -110,10 +117,14 @@ class Deck:
         return origin + beat * length
 
     def snap(self, seconds: float) -> float:
-        """`seconds` moved to the nearest beat if quantise is on and there is a tempo, else as it is
+        """`seconds` moved to the nearest beat if quantise is on and the track has a beat grid, else as it is
         (always within the track)."""
         seconds = max(0.0, min(seconds, self.duration or seconds))
-        if self.quantise and (beat := self.beat_of(seconds)) is not None:
+        if (
+            self.quantise
+            and self.has_grid
+            and (beat := self.beat_of(seconds)) is not None
+        ):
             snapped = self.time_of(round(beat))
             if snapped is not None:
                 return max(0.0, min(snapped, self.duration or snapped))
@@ -126,7 +137,11 @@ class Deck:
         snaps to its beat (the cue point is on a beat, and the playhead need not be exactly there)."""
         if abs(position - self.cue_point) < SAME_PLACE:
             return True
-        return self.quantise and abs(self.snap(position) - self.cue_point) < SAME_PLACE
+        return (
+            self.quantise
+            and self.has_grid
+            and abs(self.snap(position) - self.cue_point) < SAME_PLACE
+        )
 
     def cue_press(self, position: float, playing: bool) -> str:
         """What pressing CUE does: `return` (back to the cue point, and stop), `preview` (play from it while

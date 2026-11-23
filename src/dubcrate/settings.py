@@ -353,6 +353,15 @@ def beat_jump_label(beats: int) -> str:
 
 DEFAULT_BEAT_JUMP = 4  # one bar
 
+# A track rekordbox hasn't analysed has no beat grid, so its jump is in seconds (its own remembered choice).
+JUMP_SECONDS_SIZES = (1, 2, 5, 10, 30, 60)
+DEFAULT_JUMP_SECONDS = 5
+
+
+def jump_seconds_label(seconds: int) -> str:
+    """A jump in seconds as the player's menu says it: `5 s`, `30 s`, `1 min`."""
+    return "1 min" if seconds == 60 else f"{seconds} s"
+
 
 def get_units() -> str:
     """The unit sizes are shown in (`units.UNITS` keys): millimetres until the user chooses. Stored sizes are
@@ -398,6 +407,19 @@ def get_beat_jump() -> int:
 
 def set_beat_jump(beats: int) -> None:
     _qs().setValue("playback/beat_jump", int(beats))
+
+
+def get_jump_seconds() -> int:
+    """How many seconds a jump goes on a track with no beat grid."""
+    try:
+        value = int(_qs().value("playback/jump_seconds", DEFAULT_JUMP_SECONDS))
+    except (TypeError, ValueError):
+        return DEFAULT_JUMP_SECONDS
+    return value if value in JUMP_SECONDS_SIZES else DEFAULT_JUMP_SECONDS
+
+
+def set_jump_seconds(seconds: int) -> None:
+    _qs().setValue("playback/jump_seconds", int(seconds))
 
 
 def get_auto_import() -> bool:

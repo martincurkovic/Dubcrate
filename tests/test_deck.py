@@ -80,15 +80,34 @@ def test_a_quantised_cue_is_set_on_the_beat(deck):
     assert deck.cue_point == pytest.approx(20.5)
 
 
-def test_quantise_uses_the_tempo_when_there_is_no_grid():
+def test_quantise_needs_a_beat_grid_a_tempo_alone_does_not_snap():
+    # a tag's BPM can't say where beat 1 is, so snapping to it would use an arbitrary origin: only rekordbox's
+    # grid counts (the owner's rule: a track it hasn't analysed gets no Q)
     deck = Deck()
     deck.load(60.0, None, 120.0)
     deck.quantise = True
-    assert deck.snap(1.3) == pytest.approx(1.5)  # (counted from the start of the track)
+    assert not deck.has_grid and deck.beat_length() == 0.5
+    assert deck.snap(1.3) == 1.3
+    deck.cue_press(1.3, playing=False)
+    assert deck.cue_point == 1.3 and deck.on_cue_point(
+        1.31
+    )  # (a hair away is always on it)
+    assert not deck.on_cue_point(1.4)  # (without a grid a spot in the same beat is not)
     none = Deck()
     none.load(60.0, None, None)
     none.quantise = True
     assert none.snap(1.3) == 1.3  # (no tempo at all: nothing to snap to)
+    gridded = Deck()
+    gridded.load(60.0, np.arange(0.0, 60.0, 0.5), 120.0)
+    gridded.quantise = True
+    assert gridded.has_grid and gridded.snap(1.3) == pytest.approx(1.5)
+    gridded.cue_press(1.3, playing=False)
+    assert gridded.cue_point == pytest.approx(1.5) and gridded.on_cue_point(
+        1.4
+    )  # (same beat: on it)
+    single = Deck()
+    single.load(60.0, [10.0], 120.0)  # (one beat is not a grid)
+    assert not single.has_grid
 
 
 def test_an_auto_loop_runs_the_chosen_beats_from_the_playhead(deck):

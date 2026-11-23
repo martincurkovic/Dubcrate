@@ -290,6 +290,12 @@ class ChoiceButton(PillButton):
         if self._index < 0:
             self.setCurrentIndex(0)
 
+    def clear(self) -> None:
+        """Take every choice away (to fill the menu with another set)."""
+        self._items.clear()
+        self._index = -1
+        self.setText("")
+
     def count(self) -> int:
         return len(self._items)
 

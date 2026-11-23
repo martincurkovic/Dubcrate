@@ -49,6 +49,11 @@ from .waveform_view import DetailView, OverviewView
 
 LEFT_WIDTH = 116
 ROW_HEIGHT = 26  # every button in the cue row
+QUANTISE_TIP = "Quantise: a cue point or loop edge lands on the nearest beat (needs the track's beat grid)"
+NO_GRID_TIP = (
+    "Quantise needs a beat grid, and this track hasn't been analysed in rekordbox, so there is no beat to"
+    " snap to. Loops are set by hand (MA)."
+)
 SIDE_WIDTH = 250
 READ_ONLY = "Cues are rekordbox's: Dubcrate shows them but never changes them."
 KEPT_HERE = "It is kept in Dubcrate (and goes to the card); rekordbox's own cues are never changed."
@@ -135,13 +140,11 @@ class PlayerStrip(QWidget):
             lambda: self.beat_jump_requested.emit(1)
         )
         self.jump_combo = ChoiceButton(width=LEFT_WIDTH)  # (as wide as the column)
-        for beats in settings.BEAT_JUMP_SIZES:
-            self.jump_combo.addItem(settings.beat_jump_label(beats), beats)
-        self.jump_combo.setToolTip("How far a beat jump goes")
-        self.jump_combo.activated.connect(
-            lambda _i: settings.set_beat_jump(self.jump_combo.currentData())
+        self._jump_in_seconds = (
+            False  # a track with no beat grid jumps by seconds, not beats
         )
-        self.set_beat_jump(settings.get_beat_jump())
+        self._fill_jump_combo()
+        self.jump_combo.activated.connect(self._jump_picked)
         self.cue_button = CueRing()
         self.cue_button.setToolTip(
             "CUE: while playing, back to the cue point and stop. Stopped on the cue point, hold it to "
@@ -291,6 +294,8 @@ class PlayerStrip(QWidget):
         self.auto_button = PillButton("AU", checkable=True, width=36, height=ROW_HEIGHT, bold=True)  # fmt: skip
         self.manual_button = PillButton("MA", checkable=True, width=36, height=ROW_HEIGHT, bold=True)  # fmt: skip
         self.auto_button.setChecked(True)
+        self._loop_choice = 0  # the mode the user last picked (a track with no grid shows MA without changing it)
+        self._has_grid = True
         self.auto_button.clicked.connect(lambda: self._loop_mode(0))
         self.manual_button.clicked.connect(lambda: self._loop_mode(1))
         self.auto_button.setToolTip("Automatic loop: a set number of beats")
@@ -346,9 +351,7 @@ class PlayerStrip(QWidget):
 
         self.quantise_button = PillButton("Q", checkable=True, width=36, height=ROW_HEIGHT, bold=True)  # fmt: skip
         self.quantise_button.setEnabled(False)
-        self.quantise_button.setToolTip(
-            "Quantise: a cue point or loop edge lands on the nearest beat (needs a beat grid or a tempo)"
-        )
+        self.quantise_button.setToolTip(QUANTISE_TIP)
         self.quantise_button.toggled.connect(self.quantise_toggled)
 
         cue_row = QHBoxLayout()
@@ -421,12 +424,56 @@ class PlayerStrip(QWidget):
     # -- the beat jump menu ---------------------------------------------------
 
     def set_beat_jump(self, beats: int) -> None:
-        """Show the saved beat jump size (without saving it again)."""
-        self.jump_combo.setCurrentIndex(max(0, self.jump_combo.findData(beats)))
+        """Show the saved beat jump size (without saving it again); a track with no grid shows seconds."""
+        if not self._jump_in_seconds:
+            self.jump_combo.setCurrentIndex(max(0, self.jump_combo.findData(beats)))
+
+    def _fill_jump_combo(self) -> None:
+        """The menu for the track on show: beats along its grid, or seconds when it has none."""
+        combo = self.jump_combo
+        combo.clear()
+        if self._jump_in_seconds:
+            for seconds in settings.JUMP_SECONDS_SIZES:
+                combo.addItem(settings.jump_seconds_label(seconds), seconds)
+            combo.setToolTip(
+                "How far a jump goes: in seconds, because this track has no beat grid (it isn't analysed in rekordbox)"
+            )
+            saved = settings.get_jump_seconds()
+        else:
+            for beats in settings.BEAT_JUMP_SIZES:
+                combo.addItem(settings.beat_jump_label(beats), beats)
+            combo.setToolTip("How far a beat jump goes")
+            saved = settings.get_beat_jump()
+        combo.setCurrentIndex(max(0, combo.findData(saved)))
+
+    def _jump_picked(self, _index: int) -> None:
+        """The user picked a size: it is remembered for the kind of menu that is showing."""
+        if self._jump_in_seconds:
+            settings.set_jump_seconds(self.jump_combo.currentData())
+        else:
+            settings.set_beat_jump(self.jump_combo.currentData())
 
     # -- cues ---------------------------------------------------------------------
 
     def _loop_mode(self, which: int) -> None:
+        """The AU / MA buttons: the user's choice (remembered for the tracks that have a grid)."""
+        self._loop_choice = which
+        self._show_loop_mode(which)
+
+    def show_grid(self, has_grid: bool) -> None:
+        """Say whether the track on show has a beat grid (rekordbox's analysis). Without one there is
+        nothing for Q to snap to and an auto loop has no beat to start on, so Q is greyed (its on / off
+        state, and the remembered setting, are left alone) and the loop buttons show manual; the next
+        track with a grid gets Q back and the mode the user last chose."""
+        self._has_grid = has_grid
+        if self._jump_in_seconds == has_grid:  # (the other kind of menu is needed)
+            self._jump_in_seconds = not has_grid
+            self._fill_jump_combo()
+        self.quantise_button.setEnabled(has_grid and self.play_button.isEnabled())
+        self.quantise_button.setToolTip(QUANTISE_TIP if has_grid else NO_GRID_TIP)
+        self._show_loop_mode(self._loop_choice if has_grid else 1)
+
+    def _show_loop_mode(self, which: int) -> None:
         self.auto_button.setChecked(which == 0)
         self.manual_button.setChecked(which == 1)
         self.loop_auto_group.setVisible(which == 0)
@@ -561,6 +608,7 @@ class PlayerStrip(QWidget):
         self._set_cues(analysis.cues)
         self.set_position(0.0)
         self._enable(True)
+        self.show_grid(len(analysis.beat_times) >= 2)
 
     def show_cues(self, cues: tuple[Cue, ...]) -> None:
         """The cues of the track on show, when they are found after it loaded."""
@@ -580,7 +628,6 @@ class PlayerStrip(QWidget):
             self.jump_back_button,
             self.jump_forward_button,
             self.cue_button,
-            self.quantise_button,
             self.loop_size_back,
             self.loop_size,
             self.loop_size_forward,
@@ -589,6 +636,7 @@ class PlayerStrip(QWidget):
             self.reloop,
         ):
             w.setEnabled(loaded)
+        self.quantise_button.setEnabled(loaded and self._has_grid)
 
     def set_position(self, seconds: float) -> None:
         if self.detail.dragging:  # a hand is on the waveform: it decides the position
