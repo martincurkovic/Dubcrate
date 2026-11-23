@@ -39,8 +39,9 @@ The first release: macOS (Apple Silicon and Intel) and, new, Linux (an AppImage)
 
 - **Disc > Export Track Finder…** saves **one web page** with every disc and track in it, to open on a phone with no signal: type part of a title or
   artist and it lists each disc that has the track, with the **disc and track number** (and the folder, for an MP3 disc) and the track's BPM, key, year, genre and length.
-  The title and artist are what is written on the disc, so they match the printed label. *The search was used at a gig on a phone and worked well. An iPhone's Files app and Safari
-  don't run the page, so it needs an app that opens local web pages; the other parts below have been tried in a desktop browser only, not yet on a phone.*
+  The title and artist are what is written on the disc, so they match the printed label. *The search was used at a gig on an iPhone and worked well. An iPhone's Files app and Safari
+  don't run the page, so it needs an app that opens local web pages: AirDrop the file and tap **Open in Sitecase** (a box after the export says so, with a Don't show this again tick; Help > Track Finder on a Phone… shows it again).
+  The other parts below have been tried in a desktop browser only, not yet on a phone.*
 - **Sort and browse**: All tracks by title, artist, genre, BPM, key, year, length or disc, with a letter strip to jump through a long list; **Filter** by BPM, year, key and genre; **Compact** cards.
 - **Tap a card** for the track's **waveform and memory cues** as they will be on the CDJ's card (hot cues included), with each cue's time and its **bar and beat**.
 - **Tagged**: star tracks to play later, drag them into order, and keep the list on the phone (the page says whether the app kept it).

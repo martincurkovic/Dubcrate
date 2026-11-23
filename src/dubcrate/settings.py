@@ -250,6 +250,16 @@ def _as_bool(value: object, default: bool) -> bool:
     return bool(value) if value is not None else default
 
 
+def get_hide_finder_howto() -> bool:
+    """Whether the box that says how to open the track finder on a phone is left out after an export (the
+    "Don't show this again" tick; Help > Track Finder on a Phone… still shows it)."""
+    return _as_bool(_qs().value("finder/hide_howto", False), False)
+
+
+def set_hide_finder_howto(hide: bool) -> None:
+    _qs().setValue("finder/hide_howto", bool(hide))
+
+
 def get_label_options() -> labels.LabelOptions:
     """The index label settings last used (see `dubcrate.labels`), each kept inside its limits."""
     default = labels.LabelOptions()

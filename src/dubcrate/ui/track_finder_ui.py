@@ -7,7 +7,9 @@ is read from or written to rekordbox, and no music file is touched.
 from collections.abc import Sequence
 from pathlib import Path
 
-from PySide6.QtWidgets import QFileDialog, QMessageBox, QWidget
+from PySide6.QtCore import QUrl
+from PySide6.QtGui import QDesktopServices
+from PySide6.QtWidgets import QCheckBox, QFileDialog, QMessageBox, QWidget
 
 from dubcrate import mp3, settings, track_finder
 from dubcrate.cancel import CancelToken
@@ -31,6 +33,52 @@ def ask_save_file(parent: QWidget | None) -> str:
     if path and not path.lower().endswith((".html", ".htm")):
         path += ".html"
     return path
+
+
+HOWTO = (
+    "To use it on an iPhone or iPad:\n"
+    "1. AirDrop the file to the device.\n"
+    "2. It opens as a plain preview, which can't run it: tap Open in Sitecase.\n"
+    "3. Sitecase loads the page and keeps it, so it works with no signal.\n\n"
+    "Sitecase is one app that opens local web pages; any app that runs HTML and JavaScript will do. "
+    "The Files app and Safari on their own won't. After you change your discs, export again and "
+    "open the new file the same way.\n\n"
+    "You can see this again under Help > Track Finder on a Phone…"
+)
+
+
+def show_how_to_open(
+    parent: QWidget | None,
+    path: Path | None = None,
+    summary: str = "",
+    notes: str = "",
+    *,
+    offer_hide: bool = False,
+) -> None:
+    """Say how to get the page onto a phone (and, after an export, where it was saved and anything that was
+    left out). With `offer_hide` it has a "Don't show this again" tick, which is remembered
+    (`settings.get_hide_finder_howto`); with a `path` a Show in Folder button. (Tests patch this: a box blocks.)"""
+    box = QMessageBox(QMessageBox.Icon.Information, TITLE, "", QMessageBox.StandardButton.Ok, parent)  # fmt: skip
+    box.setText(
+        "\n\n".join(t for t in (summary or "The track finder on a phone", notes) if t)
+    )
+    box.setInformativeText(HOWTO)
+    folder = box.addButton("Show in Folder", QMessageBox.ButtonRole.ActionRole) if path else None  # fmt: skip
+    box.setDefaultButton(QMessageBox.StandardButton.Ok)
+    tick = None
+    if offer_hide:
+        tick = QCheckBox("Don't show this again")
+        box.setCheckBox(tick)
+    box.exec()
+    if tick is not None and tick.isChecked():
+        settings.set_hide_finder_howto(True)
+    if folder is not None and path is not None and box.clickedButton() is folder:
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(path.parent)))
+
+
+_real_show_how_to_open = (
+    show_how_to_open  # (a test puts it back after the suite's refusal)
+)
 
 
 def export_track_finder(parent: QWidget, lib: Library) -> Written | None:
@@ -128,6 +176,10 @@ def _write(
         )
         notes.append(f"Could not analyse: {shown}")
     left_out = "\n".join(n for n in notes if n)
-    if left_out:
+    if (
+        not settings.get_hide_finder_howto()
+    ):  # one box: where it is, what was left out, how to open it
+        show_how_to_open(parent, written.path, message, left_out, offer_hide=True)
+    elif left_out:
         QMessageBox.information(parent, TITLE, f"{message}\n\n{left_out}")
     return written

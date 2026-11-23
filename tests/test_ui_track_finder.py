@@ -37,6 +37,7 @@ def window(qapp, tmp_path, monkeypatch):
     ]
     lib = Library.open(":memory:")
     lib.replace_source("folder", "/m", "Crate", records)
+    settings.set_hide_finder_howto(True)  # (the how-to box has its own tests below)
     win = MainWindow(lib)
     win.shown = shown
     yield win, lib
@@ -214,3 +215,94 @@ def test_cancelling_keeps_the_waveforms_done_and_writes_nothing(
     ]  # the one that was done is kept
     assert len(tf.needs_analysis(lib)) == 1
     assert not win._busy
+
+
+# -- the box that says how to open the page on a phone ----------------------------------------
+
+
+def test_after_an_export_one_box_says_where_it_is_what_was_left_out_and_how_to_open_it(
+    window, tmp_path, monkeypatch
+):
+    win, lib = window
+    make_disc(win, lib)
+    lib.create_disc("Blank")
+    win.refresh_discs()
+    settings.set_hide_finder_howto(False)
+    seen = []
+    monkeypatch.setattr(
+        track_finder_ui,
+        "show_how_to_open",
+        lambda *a, **k: seen.append((a[1:], k)),
+    )
+    out = tmp_path / "f.html"
+    monkeypatch.setattr(track_finder_ui, "ask_save_file", lambda _p: str(out))
+    win.act_track_finder.trigger()
+    [((path, summary, notes), kwargs)] = seen
+    assert path == out and "Saved a finder for" in summary
+    assert "Blank" in notes and kwargs == {"offer_hide": True}
+    assert win.shown == []  # no second box
+
+
+def test_once_hidden_the_how_to_is_left_out_but_what_was_left_out_still_shows(
+    window, tmp_path, monkeypatch
+):
+    win, lib = window
+    make_disc(win, lib)
+    lib.create_disc("Blank")
+    win.refresh_discs()
+    monkeypatch.setattr(track_finder_ui, "show_how_to_open", lambda *a, **k: pytest.fail("shown"))  # fmt: skip
+    monkeypatch.setattr(track_finder_ui, "ask_save_file", lambda _p: str(tmp_path / "f.html"))  # fmt: skip
+    win.act_track_finder.trigger()  # (the fixture has it hidden)
+    [(_kind, _title, text)] = win.shown
+    assert "Blank" in text
+
+
+def run_box(monkeypatch, tick=False, **kwargs):
+    """Build the real box and 'close' it with Ok, noting what it holds."""
+    from PySide6.QtWidgets import QMessageBox
+
+    held = {}
+
+    def fake_exec(self):
+        held["text"], held["more"] = self.text(), self.informativeText()
+        held["buttons"] = [b.text() for b in self.buttons()]
+        box = self.checkBox()
+        held["tick"] = None if box is None else box.text()
+        if box is not None:
+            box.setChecked(tick)
+        return 0
+
+    monkeypatch.setattr(QMessageBox, "exec", fake_exec)
+    monkeypatch.setattr(track_finder_ui, "show_how_to_open", track_finder_ui._real_show_how_to_open)  # fmt: skip
+    from pathlib import Path
+
+    track_finder_ui.show_how_to_open(None, Path("/x/Finder.html"), "Saved it.", "A note.", **kwargs)  # fmt: skip
+    return held
+
+
+def test_the_box_has_the_steps_the_file_and_a_way_to_show_it(qapp, monkeypatch):
+    held = run_box(monkeypatch, offer_hide=True)
+    assert held["text"] == "Saved it.\n\nA note."
+    assert "AirDrop" in held["more"] and "Open in Sitecase" in held["more"]
+    assert "Show in Folder" in held["buttons"] and "OK" in held["buttons"]
+    assert "Don't show this again" in held["tick"]
+
+
+def test_the_tick_is_remembered_only_when_it_is_ticked(qapp, monkeypatch):
+    settings.set_hide_finder_howto(False)
+    run_box(monkeypatch, tick=False, offer_hide=True)
+    assert settings.get_hide_finder_howto() is False
+    run_box(monkeypatch, tick=True, offer_hide=True)
+    assert settings.get_hide_finder_howto() is True
+
+
+def test_help_menu_shows_the_box_again_without_the_tick_or_a_file(window, monkeypatch):
+    win, _lib = window
+    seen = []
+    monkeypatch.setattr(track_finder_ui, "show_how_to_open", lambda *a, **k: seen.append((a, k)))  # fmt: skip
+    [help_menu] = [
+        a.menu() for a in win.menuBar().actions() if a.text().endswith("Help")
+    ]
+    assert "Track Finder on a Phone…" in [a.text().replace("&", "") for a in help_menu.actions()]  # fmt: skip
+    win.act_finder_howto.trigger()
+    assert seen == [((win,), {})]

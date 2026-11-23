@@ -192,6 +192,13 @@ def _no_modal_question(monkeypatch):
 
     monkeypatch.setattr("dubcrate.ui.sync_view.ask_import", refuse_import)
 
+    def refuse_howto(*_a, **_k):
+        raise AssertionError(
+            "a test opened the 'how to open the track finder' box; patch track_finder_ui.show_how_to_open"
+        )
+
+    monkeypatch.setattr("dubcrate.ui.track_finder_ui.show_how_to_open", refuse_howto)
+
 
 @pytest.fixture(autouse=True)
 def _no_real_burner(monkeypatch):

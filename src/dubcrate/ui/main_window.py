@@ -53,7 +53,7 @@ from dubcrate.library.rekordbox import (
 )
 from dubcrate.library.store import LibraryError
 
-from . import theme, wave_style
+from . import theme, track_finder_ui, wave_style
 from .about_dialog import AboutDialog, NoticesDialog
 from .burn_dialog import BurnDialog, BurnerFactory
 from .disc_tree import COLUMN_WIDTH, DiscTree
@@ -681,6 +681,12 @@ class MainWindow(QMainWindow):
         about.setMenuRole(QAction.MenuRole.AboutRole)
         self.act_notices = help_menu.addAction(
             "Third-Party &Notices…", self.show_notices
+        )
+        self.act_finder_howto = help_menu.addAction(
+            "Track &Finder on a Phone…", lambda: track_finder_ui.show_how_to_open(self)
+        )
+        self.act_finder_howto.setToolTip(
+            "How to open the exported track finder page on an iPhone or iPad."
         )
         self.act_show_log = help_menu.addAction("Show &Log File", self.show_log_file)
         self.act_show_log.setToolTip(
