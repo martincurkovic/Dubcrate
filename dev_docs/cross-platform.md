@@ -79,6 +79,57 @@ Docker on a Mac, Ubuntu 24.04, cdrdao 1.2.4: findings, all **[tests]** (not hard
   Sound, a real window manager, HiDPI, Wayland and printing are **[not tried]**.
 - The next step is [linux-test-plan.md](linux-test-plan.md), on a real Linux machine.
 
+## The first real Linux machine (2026-11-23): Omarchy (Arch), Wayland, a real drive and a CDJ card
+
+Tag **[hardware 2026-11-23]**. The rig: kernel 7.2.15, PySide6 6.12.0 / Qt 6.12.0, Python 3.13, system ffmpeg 9.0.2
+(has `libmp3lame`), cdrdao 1.2.6, libisoburn 1.5.8 (`xorriso`), the LiteOn eSAU108, a built-in SD slot (`mmcblk0`)
+and USB sticks. The burn results are in [burning.md](burning.md), "Linux and `cdrdao`".
+
+- **Tests:** 2,611 passed, 6 skipped, 2 failed on the first run, both in the tests, not the app: this platform theme puts a keyboard
+  mnemonic on standard buttons (`&Cancel`, `&OK`), and two tests compared the raw text (they strip `&` now). Later a
+  third, `test_against_a_real_local_rekordbox_analysis`, failed because **another app (rbxport) had made an empty
+  `~/Library/Pioneer/rekordbox/share` and a `master.db` there** (it uses the macOS path on Linux); the test now skips
+  unless that folder holds analysis files. `default_master_db()` is `None` on Linux, so Dubcrate ignores that folder.
+- **Start-up:** `dubcrate-gui` starts and stays up with Qt's default plugin, `xcb` and `wayland` (no platform plugin
+  error, `crash.log` has no crashes); the log is `~/.local/state/Dubcrate/log/dubcrate.log` and its first lines name
+  ffmpeg and ffprobe "found on your PATH". Owner: **audio preview works perfectly, no lag** (PipeWire), and **PDF
+  label output works**; a real printer is still **[not tried]**.
+- **Export:** an audio disc exports a `disc.toc` that `cdrdao show-toc` reads (3 tracks, each starting where the last
+  ends); an MP3 disc exports a `disc.iso` that `xorriso -indev disc.iso -toc` reads (volume id `MP3 TEST`, the three
+  files). Mounting the image and looking at the Joliet names is **[not tried]**.
+- **Disks and cards:** `card_format_linux.list_disks` sees the built-in slot as a plain SD card through sysfs
+  (`/sys/block/mmcblk0/device/type` is `SD`), refuses a 61.5 GB USB stick as SDXC, and a card from a Mac with
+  `._*` AppleDouble files, `.Spotlight-V100` and `.fseventsd` reads fine (`dubcrate card show`: 24 discs). udisks mounts
+  cards and sticks under `/run/media/$USER/NAME` (not `/media`), which `explorer._linux_volumes` already lists.
+- **Format a Card on Linux** (`pkexec` worked: the polkit prompt appeared). The layout the player wants was produced:
+  partition at sector 32, FAT16, **32,768-byte clusters**, label `DISK_IMG`. It found three real bugs, all fixed:
+  1. `lsblk` was asked for the file system straight after `mkfs.fat`, before udev had refreshed it, so a good format
+     was reported as "came out as unformatted" (the app now asks again for up to 10 s, and the script runs
+     `udevadm trigger` and `settle`).
+  2. On a retry `wipefs` failed with "Device or resource busy": the repartitioned card still had the old FAT boot
+     sector at the same start sector, so the desktop **automounted it at once**. The script now zeroes the first MiB
+     before partitioning and unmounts the new partition again before touching it.
+  3. A format on a freshly re-inserted card left a partition table and **no file system** although the script exited 0;
+     the cause is unknown (the kernel re-read the partition table as the script ran). The script now reads the
+     partition with `blkid -p` after `mkfs.fat` and fails with what it holds, and the app **logs the script's exit code
+     and output** (`format mmcblk0: script exit ...`). **Open: retry it and read that log line if it fails again.**
+- **Sync and cues:** owner: waveforms synced to the card, a loop saved on the CDJ and imported back into Dubcrate, and
+  **Eject after syncing** works (`udisksctl unmount`; a built-in slot cannot power off, `CanPowerOff` is false, so its
+  device stays: the card list now hides a disk with a file system and no mount instead of listing it as a card to set up).
+- **Noticing a card or a disc:** the card list only watched mount folders, so a blank card (no mount) never appeared
+  without Refresh; it now also looks every 2 s at which disks exist (`card_format.card_devices`: `/sys/block` on Linux,
+  `/dev/diskN` on macOS, nothing on Windows), and the burn window asks `drive_toc.disc_state` every 2 s (Linux:
+  `CDROM_DRIVE_STATUS`, 22 ms, never spins the drive; macOS: `drutil status`; Windows: can't say) and runs the full
+  drive check only when that settles on a new answer. Owner: **both work as expected on Linux.** macOS and Windows
+  **[not tried]**.
+- **HFS+ sticks:** a journaled HFS+ stick (the rekordbox stick had `.journal`) mounts **read-only** on Linux; the options
+  are turning journaling off on a Mac (`diskutil disableJournal`), `mount -o force,rw` (risky), or reformatting as FAT32.
+  The stick's database is `.PIONEER/rekordbox/export.pdb`, which **nothing in Dubcrate reads** (only a computer's
+  `master.db` or a folder of audio): the audio was copied to `~/Music/Rekordbox` (1,116 files, verified by checksum)
+  and imported as a folder.
+- **AppImages need `fuse2`** on Arch (not installed by default): `sudo pacman -S fuse2`, or run with
+  `--appimage-extract-and-run`. Dubcrate's own AppImage has still not been run on a real desktop.
+
 ## Windows: the first CI run (2026-11-13)
 
 15 of 1,242 tests failed on `windows-latest` (and the run took 26 minutes, see below). **[tests]** only; nothing
@@ -118,9 +169,9 @@ Each helper gets one function with the platform chosen in ONE place (as `card_fo
 injectable runner, an expected-error exception with plain words, tests against stand-in commands, and a
 **[not tried]** tag until it has run on the real OS.
 
-- [x] **1. Eject** (`eject.py`): Linux and Windows added, tested against stand-in commands. **[not tried]**
+- [x] **1. Eject** (`eject.py`): Linux and Windows added, tested against stand-in commands. **Linux, a card in a built-in slot: [hardware 2026-11-23]** (owner: Eject after syncing works; the slot's device stays, which the card list now hides). Disc eject on Linux and everything on Windows **[not tried]**.
 - [x] **2. Wording**: "Eject it in Finder" and the other Mac-only phrases use `card_format.eject_hint()` or say the OS neutrally.
-- [x] **3. Read the TOC** on Linux (kernel ioctls) and Windows (`IOCTL_CDROM_READ_TOC`, `ctypes`) in `drive_toc.py`, so `burn_check` runs after any burn. Tested against made-up answers only. **[not tried]**
+- [x] **3. Read the TOC** on Linux (kernel ioctls) and Windows (`IOCTL_CDROM_READ_TOC`, `ctypes`) in `drive_toc.py`, so `burn_check` runs after any burn. Tested against made-up answers only. **Linux: [hardware 2026-11-23]**, the kernel reader matched a card entry exactly and `burn_check` said "exactly as planned" after a real burn; Windows **[not tried]**.
 - [x] **4. `pycdlib`** makes the MP3 disc's ISO on every OS (`iso.py`: Joliet names, Rock Ridge, numbered 8.3 names underneath, ASCII volume label); the external-tool lookup and the `hdiutil` branch are gone. Read back with `xorriso` and `isoinfo`; the smoke test makes an image in a built app. **Not burned and played** on a real drive.
 - [x] **5. Windows reserved names and the path limit**: `mp3.dir_name` gives `CON`, `NUL`, `COM1`... an underscore; on Windows `build.path_too_long` refuses an MP3 disc whose staged paths would pass 259 characters (before anything is made), with a message that says to shorten or nest less (`build.WINDOWS_PATH_LIMIT`). Tested with a faked platform. **[not tried]** on Windows, where whether a longer path would really fail (it depends on a registry setting) is unchecked.
 - [x] **6. Notice a card on Windows**: `explorer.DrivePoller` looks at `mounted_volumes()` every 3 s while the Explorer tree or the card list is on show, only where `needs_polling()` (no folder to watch: Windows), and refreshes through the usual settle timer. Tested with fake drive lists. **[not tried]** on Windows.
@@ -202,12 +253,15 @@ injectable runner, an expected-error exception with plain words, tests against s
   on a real drive (step 6 of [linux-test-plan.md](linux-test-plan.md)).
 - [ ] Hardware checks, in the style of `burning.md`: drive detection, a simulated audio burn, a
   real audio burn on a CDJ-1000MK3 (gapless boundaries, CD-TEXT), an MP3 disc. Tag results
-  **[hardware DATE]**.
+  **[hardware DATE]**. **Done 2026-11-23** (see "Linux and `cdrdao`" in [burning.md](burning.md)): drive detection, a
+  simulated burn, a real audio burn at the drive's top speed with the TOC check; **still to do**: the disc on a CDJ
+  (CD-TEXT, gapless) and an MP3 disc.
 - [x] Device permissions: the user must be allowed to open the drive (often the `cdrom` or
   `optical` group, or a udev rule). Detected and said (2026-11-16): `cdrdao.access_problem(device)` checks the device's
   group and the user's before anything runs (`CdrdaoBurner._device`), says which group and the `usermod` line, or
   "log out and in" when the user is already listed in the group; `explain_failure` uses it for a `Permission denied`.
-  Tested with stand-ins for `os` and `grp`; **[not tried]** on a real Linux machine.
+  Tested with stand-ins for `os` and `grp`; **[not tried]** with the user outside the group. On the real machine the
+  drive was usable through a logind ACL with no group at all (`os.access` sees it, so no false warning): **[hardware 2026-11-23]**.
 - [ ] Packaging: an AppImage or Flatpak (Flatpak needs device access granted), or a plain
   `pipx`/`uv tool` install with ffmpeg and cdrdao from the package manager. Decide with the
   first Linux user.

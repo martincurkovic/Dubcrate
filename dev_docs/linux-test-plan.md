@@ -26,6 +26,14 @@ this plan is what is left, in the order to do it. Tag what you find as in [burni
   (`CD-R empty`, `Total Capacity`, ...), and the failure messages it recognises are the ones it printed
   without a drive. **Step 5 is where they meet a real one.**
 
+## Results of the first session (2026-11-23, Omarchy / Arch, a real drive and CDJ card)
+
+Ticked below where it was done; **[hardware 2026-11-23]** details are in [cross-platform.md](cross-platform.md)
+("The first real Linux machine") and [burning.md](burning.md) ("Linux and `cdrdao`"). Not run: sections 5's CDJ
+checks, 6, the wrong-case messages in 4, a real printer. Arch notes: `pacman -S cdrdao libisoburn` (add `fuse2` for
+AppImages); cdrdao there is **1.2.6**; USB sticks and cards mount under `/run/media/$USER/`; the drive is opened
+through a logind ACL, not a group.
+
 ## 1. Set up
 
 ```sh
@@ -49,37 +57,36 @@ Drive permissions: `ls -l /dev/sr0` shows the group (often `cdrom`, or `optical`
 
 ## 2. The app on a real desktop (no drive needed)
 
-- [ ] Starts, window looks right in all four looks (Settings > Appearance); note HiDPI scaling and the font.
-- [ ] Help > Show Log File opens the folder: `~/.local/state/Dubcrate/log/` **[not tried]**; the log's first
-      lines name the tools it found (`ffmpeg ... (found on your PATH)`).
+- [x] Starts (default, xcb and Wayland plugins; **[hardware 2026-11-23]**). Window looks in all four looks and HiDPI
+      scaling: **not reported**. A tiling window manager makes layout checks unrepresentative.
+- [x] The log is `~/.local/state/Dubcrate/log/dubcrate.log` and its first lines name the tools it found
+      (`ffmpeg ... (found on your PATH)`) **[hardware 2026-11-23]**; Help > Show Log File itself **[not tried]**.
 - [ ] Settings > Library lists ffmpeg and ffprobe with paths and versions. Rename `ffmpeg` away
       temporarily: the start-up notice should offer `sudo apt install ffmpeg`.
 - [ ] Import a folder of music (File > Import Folder); the Explorer tab lists your home, Music and a
       **USB stick** (`/media/$USER/...`) if one is plugged in. Pin a folder.
-- [ ] Preview: double-click a track. Sound comes out of the right device (Settings > Audio lists the
-      devices; try PulseAudio / PipeWire and the buffer size). Scrub the waveform.
+- [x] Preview: sound, no lag (owner, PipeWire) **[hardware 2026-11-23]**.
 - [ ] Space, arrows and the Ctrl shortcuts (the Shortcuts window shows them as `Ctrl+...`).
-- [ ] Print Labels: save a PDF; the CUPS print panel, if you have a printer **[not tried anywhere]**.
+- [x] Print Labels: saving a PDF works (owner) **[hardware 2026-11-23]**; the CUPS print panel with a real printer **[not tried anywhere]**.
 - [ ] Drag-to-change spin boxes and trackpad pinch in the label preview feel right.
 
 ## 3. Export (no drive needed)
 
-- [ ] Plan an audio disc, open the burn window. It should say it will burn with cdrdao, and **Export…**
-      works. Check the files, then from inside the export folder: `cdrdao show-toc disc.toc`.
-- [ ] Plan an MP3 disc, **Export…**: a `disc.iso` next to the disc's folder. `isoinfo -d -i disc.iso` (or
-      `xorriso -indev disc.iso -toc`) shows the volume name; mount it (`sudo mount -o loop,ro disc.iso /mnt`)
-      and look at the names.
-- [ ] An MP3 disc with a source that is not an MP3 (FLAC, M4A): the encode needs ffmpeg's LAME. Distro
-      ffmpegs normally have it (`ffmpeg -encoders | grep mp3lame`); if not, that is a finding.
+- [x] Audio disc export (from the command line) and `cdrdao show-toc disc.toc` read it **[hardware 2026-11-23]**.
+- [x] MP3 disc export: `xorriso -indev disc.iso -toc` shows `MP3 TEST` and the files **[hardware 2026-11-23]**;
+      mounting the image and looking at the names **[not tried]**.
+- [x] ffmpeg 9.0.2 on Arch has `libmp3lame`; a FLAC source encoded to MP3 for the export **[hardware 2026-11-23]**.
 
 ## 4. A test burn (laser off)
 
 With a blank CD-R in the drive, **Burn… > Test only** (or `dubcrate burn N --yes --simulate`).
 
-- [ ] The burn window shows the drive's name and "blank disc" and how much it holds (`disk-info`).
-      **Record what `cdrdao disk-info --device /dev/sr0` actually printed**, and whether the numbers match.
-- [ ] The log shows progress about every 10 percent, not one line per update.
-- [ ] Ends with "Test burn finished", the disc is not marked as burned.
+- [x] The burn window shows the drive and the capacity (`disk-info` printed `CD-R empty : yes`, `Total Capacity :
+      79:57:71 (359846 blocks, 702/807 MB)`; the parser matched) **[hardware 2026-11-23]**.
+- [x] The log shows progress every 10 percent in a real burn **[hardware 2026-11-23]** (a 3-track simulation printed
+      33 / 66 / 100 percent).
+- [x] A simulation finishes ("Simulation finished successfully") and the disc is not marked burned. **The first one
+      failed** with `Cannot set write parameters mode page` and could not be reproduced: see burning.md.
 - [ ] Wrong cases give plain messages: no disc in the drive; a disc that is not blank; permission denied
       (take yourself out of the group: the message should name the drive's group and the `usermod` line, and after you
       add yourself again but before logging out, say to log out and in); a speed the drive lacks.
@@ -89,9 +96,11 @@ With a blank CD-R in the drive, **Burn… > Test only** (or `dubcrate burn N --y
 
 Follow the hardware check in [burning.md](burning.md): a short disc first, 10x to 16x.
 
-- [ ] The disc plays; **CD-TEXT** shows on the CDJ-1000MK3 (title and artist).
-- [ ] Track boundaries are gapless (the `0` pregap in our TOC).
-- [ ] Note the drive, the media and the speed in `burning.md`.
+- [x] The disc was written (10 tracks, 552 MB, requested 48x, written at 24x), the TOC check said "exactly as planned",
+      and the owner says it reads fine **[hardware 2026-11-23]**.
+- [ ] **CD-TEXT** shows on the CDJ-1000MK3 (title and artist): not reported.
+- [ ] Track boundaries are gapless on the CDJ: not reported (the TOC is as planned, which has no pregap).
+- [x] Drive, media and speed are in `burning.md`.
 
 ## 6. A real MP3 disc
 

@@ -84,8 +84,8 @@ Use a blank CD-R (not a CD-RW) and a low speed.
   and `DRPreGapIsRequiredKey` set so a drive that can't do it fails the burn
   rather than silently falling back to 2 s). Expected after the fix: tracks at
   00:02.00, 00:42.00 and 01:12.00. [tests] cover the planning and capacity side.
-- **[not tried]** The `cdrdao` backend has never been run (cdrdao isn't installed on
-  the dev machine). Its TOC generation is covered by [tests].
+- **[not tried, superseded below]** The `cdrdao` backend has never been run (cdrdao isn't installed on
+  the dev machine). Its TOC generation is covered by [tests]. **It has now, on Linux: see "Linux and `cdrdao`".**
 - **[not tried]** A non-zero gap. The unit of `DRPreGapLengthKey` isn't documented;
   we treat it as sectors (its 2-second default is 150). Only 0 has been used, and
   the window offers 1, 2 and 3 s, so check the unit before relying on those.
@@ -108,6 +108,47 @@ Use a blank CD-R (not a CD-RW) and a low speed.
   the window before the first real one.
 - **[tests]** CD-TEXT cleaning (Latin-1 kept, others folded or `?`), TOC escaping,
   sector maths, and the packing algorithms.
+
+## Linux and `cdrdao` (first real run, 2026-11-23)
+
+The rig: Omarchy (Arch Linux), kernel 7.2.15, Wayland, **cdrdao 1.2.6** from pacman (the code and its tests were
+written against 1.2.4's strings), the same LiteOn eSAU108 as on the Mac (`/dev/sr0`; there is no `/dev/sg*`), CMC
+Magnetics CD-Rs. Nothing below needed a change to the burner code.
+
+- **[hardware 2026-11-23]** `cdrdao scanbus` lists the drive (`slimtype, eSAU108 3, HL09`). The user can open
+  `/dev/sr0` through a logind **ACL** (`user:martin:rw-`), not by being in the `optical` group; `access_problem` checks
+  `os.access` first, which honours ACLs, so it does not wrongly tell such a user to run `usermod`. The group message
+  itself is still **[not tried]**.
+- **[hardware 2026-11-23]** `cdrdao disk-info` on a blank disc printed exactly the labels `parse_disk_info` reads:
+  `CD-R empty : yes`, `Total Capacity : 79:57:71 (359846 blocks, 702/807 MB)`, `CD-R medium : CMC Magnetics
+  Corporation`. The burn window showed "the disc in the drive holds 79:57:71". With no disc in the drive it prints
+  `WARNING: Unit not ready, still trying...` ten times and then `ERROR: Cannot setup device /dev/sr0.` On a disc that
+  has been written: `CD-R empty : no`, `Toc Type : CD-DA or CD-ROM`, `Sessions : 1`, `Appendable : no`.
+- **[hardware 2026-11-23]** A simulated burn of a 3-track disc (`dubcrate burn 1 --yes --simulate --speed 10`)
+  **failed once**: `ERROR: Cannot set write parameters mode page.` ... `ERROR: Please try to use the
+  'generic-mmc-raw' driver.` / `Simulation failed.` Nothing was marked burned. **It could not be reproduced**: the same
+  command again (through Dubcrate and by hand), `--driver generic-mmc:0x0`, `generic-mmc:0x10000`, `generic-mmc:0x10`
+  and `generic-mmc-raw` all simulated to "Simulation finished successfully". The disc had just been loaded ("Unit not
+  ready" a minute earlier), so a drive still settling is the guess; no cause was found. If it comes back,
+  `generic-mmc-raw` is a proven way round it. **Open.**
+- **[hardware 2026-11-23]** A **real audio burn from the burn window** (10 tracks, 552 MB, 54:45:14) completed:
+  `cdrdao write --device /dev/sr0 -n --speed 48 disc.toc`. The window asked for 48x (the top of its list) and
+  **cdrdao said `Starting write at speed 24...`**: cdrdao or the drive clamps the speed, Dubcrate does not know the
+  drive's real maximum and so can't warn about it. It took 4 min 50 s; `Enabling JustSpeed`, power calibration
+  (about 15 s), `Writing CD-TEXT lead-in...`, progress lines every 10 percent (`Writing: 10% (56 of 552 MB)`),
+  `Writing finished successfully`, then **`Checked the disc's TOC: it is exactly as planned`** (the Linux ioctl TOC
+  reader and `burn_check` on a real burn). The owner reports the disc reads fine. Not reported: CD-TEXT and gapless
+  boundaries on a CDJ-1000MK3.
+- **[hardware 2026-11-23]** The kernel TOC reader (`drive_toc.linux_entries`) read a disc burned on the Mac: 18
+  tracks, lead-out 358,964, track 2 at 25,180, last track at 341,351, and the CDJ's SD card has an entry for it with
+  **exactly those four numbers** (`CDJ00001`), so the Linux reader agrees with what the player recorded. Another
+  18-track entry on the card differed by thousands of frames, so it is not a near miss.
+- **[hardware 2026-11-23]** The Mac's "one frame later than planned" TOC is **not consistent** (owner, from 48 discs
+  burned on the Mac: some read back exactly as planned, others a frame late). The one Linux disc matched exactly, which
+  proves nothing about `cdrdao` against DiscRecording either way. The TOC Manager exists for this.
+- **[not tried]** An MP3 disc on Linux (the `cdrdao` data-track path, or `xorriso -as cdrecord`); a test disc
+  with three folders is in the library ("MP3 Linux Test"). The wrong-case messages (no disc, not blank, permission
+  denied); whether a CDJ shows CD-TEXT and plays gaplessly from a disc `cdrdao` wrote.
 
 ## MP3 CDs
 

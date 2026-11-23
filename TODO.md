@@ -5,10 +5,10 @@ Open items by area; finished work is under **Completed** at the bottom (same hea
 ## General
 
 - [ ] Auto download update (maybe once code signing in place...)
-- [ ] Try on a real Linux machine + drive (dev_docs/linux-test-plan.md) (follow-up to: Linux burn support)
+- [ ] Try on a real Linux machine + drive (dev_docs/linux-test-plan.md) (follow-up to: Linux burn support) (2026-11-23: done on Omarchy/Arch except an MP3 disc and the CDJ checks of the audio disc: see Completed)
 - [ ] Windows burn support
   - [ ] Spike on a real Windows machine (cdrdao + CD-TEXT)
-- [ ] Linux build script (AppImage / Flatpak / uv tool?)
+- [ ] Linux build script (AppImage / Flatpak / uv tool?) (the owner wants the dependencies bundled for end users, 2026-11-23: ffmpeg is, `cdrdao` is not; decide whether to bundle it, it is GPL-2.0-or-later)
 - [ ] Windows build script and installer: written 2026-11-17 (`scripts/build_windows.ps1`, `build_ffmpeg_windows.sh`, `assets/windows/Dubcrate.iss`, a `build-windows` job in `build.yml`), **never run**: see "Linux and Windows" below
 - [ ] Mixxx library support
 - [ ] Engine DJ library support
@@ -41,6 +41,11 @@ Open items by area; finished work is under **Completed** at the bottom (same hea
 
 - [ ] Finder page: try **Tagged** in the iPhone viewer app (do the tags survive closing the app? the line under the buttons says "kept on this device" or "NOT kept"), and drag a tagged track up and down with a finger, and try Filter (BPM, year, key, genre), the waveform and memory cue view (tap a card) and Clear on the phone, with the owner's real library (the first export analyses waveforms: how long does it take?); then add the played tick, by-disc grouping and share / copy list.
 - [ ] Try the drive picker with two real drives (the check after a burn is skipped for any but the first).
+- [ ] Read a rekordbox USB stick's own database (`.PIONEER/rekordbox/export.pdb` and `USBANLZ`) so a stick can be imported with BPM, key, cues and beat grids: today only a computer's `master.db` or a folder of audio can be (the rekordbox stick the owner brought to Linux imported as a folder, tags only).
+- [ ] Find out why one simulated burn on Linux failed with `Cannot set write parameters mode page` (2026-11-23, on a disc just loaded; five later runs, including `generic-mmc-raw`, were fine): [burning.md](dev_docs/burning.md), "Linux and `cdrdao`".
+- [ ] Ask the drive for its top write speed: the burn window offered 48x and `cdrdao` quietly wrote at 24x (the log says so, the window does not).
+- [ ] Try the disc and card auto-detection on macOS and Windows (`card_format.card_devices`, `drive_toc.disc_state`; Linux works, macOS only has `/dev` and `drutil status` guesses, Windows can't say and still needs Refresh / Check Again for a blank card or a disc).
+- [ ] Make it clear when a Sync has finished (it is a status-bar message that the list refresh replaces within seconds): a banner in the Sync tab that stays until the next action was suggested, not decided.
 - [ ] Cancel the writing of a burn itself (not built: the backends have no abort; DiscRecording's `DRBurn.abort()` exists and `cdrdao` can be terminated, but a stopped write ruins the disc, so it needs a confirmation and a try on a drive).
 - [ ] Try dragging an MP3 folder in the Discs list by hand (the feel, and dropping on a collapsed disc).
 - [ ] Give each app library its own Library tab once a second library exists ([roadmap.md](dev_docs/roadmap.md)).
@@ -54,10 +59,10 @@ Open items by area; finished work is under **Completed** at the bottom (same hea
 - [ ] Run the Windows build again (`build.yml` by hand) and fix what it shows. The first run (2026-11-17) got through the MSYS2 ffmpeg build (about 14 minutes) and Nuitka (about 28), then stopped because Nuitka's `--include-data-dir` leaves out `.exe` files (fixed: the two tools are named one by one). Not yet seen: the smoke test (`sqlcipher3`, `miniaudio`), the installer, the icon, `--windows-console-mode=disable` ([cross-platform.md](dev_docs/cross-platform.md), Phase 5).
 - [ ] Install the built installer on a clean Windows 10 or 11 machine or VM: it installs without an administrator prompt, the app opens and plays a preview, Settings > Library shows the bundled ffmpeg, Export Disc as Files works, the uninstaller removes it, and an upgrade over the old one keeps its settings and library.
 - [ ] Run `test-windows.yml` by hand again: the 2026-11-17 run had 36 failures, all two causes now fixed (the rekordbox database stayed open after `close()`, so Windows couldn't delete its temp folder: `rekordbox.close_database`; `os.O_NONBLOCK` doesn't exist on Windows), so check it comes back clean.
-- [ ] Try eject (card and disc) and the disc's TOC reader on a real Linux and a real Windows machine (`eject.py`, `drive_toc.py`; tested against stand-in commands only) ([cross-platform.md](dev_docs/cross-platform.md)).
+- [ ] Try eject (card and disc) and the disc's TOC reader on a real Linux and a real Windows machine (`eject.py`, `drive_toc.py`; tested against stand-in commands only) ([cross-platform.md](dev_docs/cross-platform.md)). (Linux 2026-11-23: the TOC reader and card eject are done; **disc eject on Linux and all of Windows remain**.)
 - [ ] Burn an MP3 disc from a `pycdlib` image (`dubcrate export`'s `disc.iso`, in Brasero or Finder, or `cdrdao` on Linux) and play it in a CDJ and a car player; try a disc 8 folders deep ([cross-platform.md](dev_docs/cross-platform.md)).
 - [ ] Try a long path on Windows (the reserved names are guarded in folder names and in the disc's staging folder, 2026-11-16; the 259-character limit is refused up front, `build.path_too_long`: whether a longer path would really fail there is unchecked) ([cross-platform.md](dev_docs/cross-platform.md), Phase 6 step 5).
-- [ ] Try Format a Card on a spare 2 GB card on Linux and on Windows (built, tested against stand-in commands only: `card_format_linux.py`, `card_format_windows.py`; the Linux layout was checked with the real `sfdisk` and `mkfs.fat` on an image file).
+- [ ] Try Format a Card on a spare 2 GB card on Linux and on Windows (built, tested against stand-in commands only: `card_format_linux.py`, `card_format_windows.py`; the Linux layout was checked with the real `sfdisk` and `mkfs.fat` on an image file). (Linux 2026-11-23: it formatted a real card correctly after two fixes, then one format left no file system and the cause is unknown; **retry it with the new self-check and send the `format mmcblk0:` log line if it fails**. Windows remains.)
 - [ ] Try the Linux drive permission message on a real machine (take yourself out of the drive's group, then add yourself back without logging out): `cdrdao.access_problem` names the group and the `usermod` line, or says to log out and in; tested with stand-ins only ([cross-platform.md](dev_docs/cross-platform.md)).
 - [ ] Decide between `cdrdao` and `xorriso -as cdrecord` for writing MP3 discs by trying both on a real drive ([linux-test-plan.md](dev_docs/linux-test-plan.md)).
 - [ ] Check the Explorer's real drive lists on Linux and Windows, which are only tested with fake folders ([cross-platform.md](dev_docs/cross-platform.md)).
@@ -179,6 +184,10 @@ Open items by area; finished work is under **Completed** at the bottom (same hea
 
 ### Linux and Windows
 
+- [x] First real Linux session (2026-11-23, Omarchy / Arch, Wayland, a real drive and CDJ card): tests (the 2 failures were Qt's `&` mnemonics in test strings), start-up on Wayland and xcb, audio preview, PDF labels, audio and MP3 export read back by `cdrdao` and `xorriso`, the real drive's `disk-info`, a simulated and a real audio burn at 24x with the TOC check "exactly as planned", the kernel TOC reader matching the card's entry for a Mac-burned disc, the built-in SD slot, Sync with waveforms, a loop set on the CDJ and imported back, Eject after syncing ([linux-test-plan.md](dev_docs/linux-test-plan.md), [burning.md](dev_docs/burning.md), [cross-platform.md](dev_docs/cross-platform.md)).
+- [x] Fix card formatting on Linux: the false "unformatted" (udev not yet refreshed), the automounted new partition that made `wipefs` fail "busy", and the script's own check and logging (2026-11-23).
+- [x] Format a Card closes itself and shows a "Card Ready" box when it finishes (2026-11-23).
+- [x] The card list and the burn window notice a card or a disc by themselves (no Refresh / Check Again), and an ejected card in a built-in slot is hidden (2026-11-23).
 - [x] Notice an SD card being plugged in on Windows, which has no folder to watch: `explorer.DrivePoller` polls `mounted_volumes()` every 3 s while the Explorer or the card list is on show ([cross-platform.md](dev_docs/cross-platform.md), Phase 6 step 6). Tested with fake drive lists, not tried on Windows.
 - [x] Write the Windows build (2026-11-17): `build_windows.ps1`, `build_ffmpeg_windows.sh` (MSYS2), `assets/windows/Dubcrate.iss`, `make_ico.py`, a `build-windows` job, tests in `test_build_files.py` and `BUILDING.md`. Written, never run (the open items above).
 - [x] Use `pycdlib` to make the MP3 disc's ISO on every OS, so no `xorriso` is needed and Windows can make MP3 discs ([cross-platform.md](dev_docs/cross-platform.md), Phase 6 step 4).
