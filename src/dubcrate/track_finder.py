@@ -789,6 +789,8 @@ PAGE = """<!DOCTYPE html>
   <div class="frow"><span class="l">Also</span>
     <button id="relhalf" type="button" aria-pressed="false">Half / double</button>
     <button id="relenergy" type="button" aria-pressed="false">Energy moves</button></div>
+  <div class="frow"><span class="l">Genre</span>
+    <button id="relgenre" type="button" aria-pressed="false">Same genre</button></div>
 </section>
 <section id="filters" hidden>
   <div class="frow"><span class="l">BPM</span>
@@ -1059,24 +1061,61 @@ function bpmGap(from, bpm, halfDouble) {
   }
   return best;
 }
+// What to do on the pitch fader to bring the track to the BPM you are playing: a track 3% faster is
+// pitched down 3%. The CDJ's ranges are 6, 10 and 16 percent, so a bigger move says which it needs.
+const PITCH_RANGES = [6, 10, 16];
 function gapText(g) {
   const size = Math.abs(g.pct);
-  const how = size < 0.05 ? "same BPM" : size.toFixed(1) + "% " + (g.pct > 0 ? "faster" : "slower");
-  return (g.times === 2 ? "double time, " : g.times === 0.5 ? "half time, " : "") + how;
+  const prefix = g.times === 2 ? "double time, " : g.times === 0.5 ? "half time, " : "";
+  if (size < 0.05) return prefix + "same BPM";
+  const range = PITCH_RANGES.find(n => size <= n);
+  return prefix + "pitch " + (g.pct > 0 ? "\u2212" : "+") + size.toFixed(1) + "%" +
+         (range > PITCH_RANGES[0] ? " · needs \u00b1" + range + " range" : "");
 }
 const relTol = document.getElementById("reltol");
 const relHalf = document.getElementById("relhalf");
 const relEnergy = document.getElementById("relenergy");
 const relPanel = document.getElementById("related");
 const relTitle = document.getElementById("reltitle");
-let relSkipped = 0, relHidden = 0, halfOn = false, energyOn = false;
+const relGenre = document.getElementById("relgenre");
+let relSkipped = 0, relHidden = 0, relNoGenre = 0, relGenreIgnored = false;
+let halfOn = false, energyOn = false, genreOn = false;
+// "Deep House" and "Tech House" are one genre here: two genres match when they share a word (capitals,
+// accents and punctuation ignored; "and", "the", "of" and "music" don't count).
+const GENRE_SKIP = new Set(["and", "the", "of", "music"]);
+function genreWords(r) {
+  if (!r.gw) r.gw = new Set(norm(r.genre).split(" ").filter(w => w && !GENRE_SKIP.has(w)));
+  return r.gw;
+}
+const sharesGenre = (a, b) => { for (const w of genreWords(a)) if (genreWords(b).has(w)) return true; return false; };
+
+// The window, the two switches and the genre switch are kept on this device, like Compact.
+const RELATED_KEY = "dubcrate-finder-related";
+function saveRelated() {
+  try {
+    localStorage.setItem(RELATED_KEY, JSON.stringify({ tol: relTol.value, half: halfOn, energy: energyOn, genre: genreOn }));
+  } catch (e) { /* not kept */ }
+}
+try {
+  const kept = JSON.parse(localStorage.getItem(RELATED_KEY) || "{}");
+  if (["3", "6", "10", "16"].includes(kept.tol)) relTol.value = kept.tol;
+  halfOn = kept.half === true;
+  energyOn = kept.energy === true;
+  genreOn = kept.genre === true;
+} catch (e) { /* nothing kept, or unreadable */ }
+relHalf.setAttribute("aria-pressed", String(halfOn));
+relEnergy.setAttribute("aria-pressed", String(energyOn));
+relGenre.setAttribute("aria-pressed", String(genreOn));
 const canRelate = r => r.bpmX > 0 && r.camelot !== "";
 
 function relatedTo(src) {
   const tol = parseFloat(relTol.value) || 6;
   const halfDouble = halfOn, energy = energyOn;
   const found = [];
-  relSkipped = relHidden = 0;
+  relSkipped = relHidden = relNoGenre = 0;
+  // A track with no genre can't be narrowed by genre: the switch is then ignored, and the status says so.
+  relGenreIgnored = genreOn && genreWords(src).size === 0;
+  const byGenre = genreOn && !relGenreIgnored;
   for (const r of rows) {
     // the same song on another disc is not a next track
     if (r === src || (r.titleKey === src.titleKey && r.artistKey === src.artistKey)) continue;
@@ -1085,6 +1124,7 @@ function relatedTo(src) {
     if (tier < 0) continue;
     const gap = bpmGap(src.bpmX, r.bpmX, halfDouble);
     if (Math.abs(gap.pct) > tol) continue;
+    if (byGenre && !sharesGenre(src, r)) { if (genreWords(r).size === 0) relNoGenre++; continue; }
     if (tier === 2 && !energy) { relHidden++; continue; }
     r.tier = tier;
     r.gap = Math.abs(gap.pct);
@@ -1405,6 +1445,8 @@ function showStatus() {
     const parts = [shownCount + " related · within " + tol];
     if (relHidden) parts.push(relHidden + " more with energy moves hidden");
     if (relSkipped) parts.push(relSkipped + " can't be compared (no BPM or key)");
+    if (relGenreIgnored) parts.push("this track has no genre, so Same genre is ignored");
+    else if (relNoGenre) parts.push(relNoGenre + " left out (no genre)");
     status.textContent = parts.join(" · ");
   } else if (tagView) {
     const note = storageOk ? "kept on this device" : "NOT kept: this app can't save them";
@@ -1502,15 +1544,23 @@ function openRelated(r) {
   show();
 }
 document.getElementById("relback").addEventListener("click", () => { relStack.pop(); scrollUp(); show(); });
-relTol.addEventListener("change", show);
+relTol.addEventListener("change", () => { saveRelated(); show(); });
 relHalf.addEventListener("click", () => {
   halfOn = !halfOn;
   relHalf.setAttribute("aria-pressed", String(halfOn));
+  saveRelated();
   show();
 });
 relEnergy.addEventListener("click", () => {
   energyOn = !energyOn;
   relEnergy.setAttribute("aria-pressed", String(energyOn));
+  saveRelated();
+  show();
+});
+relGenre.addEventListener("click", () => {
+  genreOn = !genreOn;
+  relGenre.setAttribute("aria-pressed", String(genreOn));
+  saveRelated();
   show();
 });
 // Compact cards: a switch in the filter panel, kept on this device like the tags.

@@ -260,6 +260,7 @@ const els = { data: { textContent: data }, q: node("input"), status: node("div")
               indexbtn: node("button"), bubble: node("div"),
               related: node("section"), relback: node("button"), reltitle: node("div"),
               reltol: node("select"), relhalf: node("button"), relenergy: node("button"),
+              relgenre: node("button"),
               sort: node("select"), dir: node("button") };
 els.reltol.value = "6";
 els.q.value = "";
@@ -1369,11 +1370,11 @@ def test_related_tracks_in_the_page(lib, tmp_path):
     # Same key first, then smooth (nearest BPM first); energy moves stay hidden until asked for.
     assert got["first"]["rows"] == [
         "# Same key",
-        "Same Key (0.8% faster)",
+        "Same Key (pitch −0.8%)",
         "# Smooth: one step or relative",
-        "Relative (0.8% slower)",
-        "Smooth Down (3.1% faster)",  # level with Smooth Up: the title decides
-        "Smooth Up (3.1% slower)",
+        "Relative (pitch +0.8%)",
+        "Smooth Down (pitch −3.1%)",  # level with Smooth Up: the title decides
+        "Smooth Up (pitch +3.1%)",
     ]
     assert got["first"]["hidden"] is False
     assert got["first"]["title"] == ["Source – X", "Related to 128 BPM · 8A"]
@@ -1384,12 +1385,117 @@ def test_related_tracks_in_the_page(lib, tmp_path):
     assert got["energy"]["rows"][-3:] == ["# Energy moves: +2 or diagonal", "Diagonal (same BPM)", "Plus Two (same BPM)"]  # fmt: skip
     assert "hidden" not in got["energy"]["status"]
     # A tighter BPM window drops the 3.1% ones.
-    assert got["tight"]["rows"] == ["# Same key", "Same Key (0.8% faster)", "# Smooth: one step or relative", "Relative (0.8% slower)"]  # fmt: skip
+    assert got["tight"]["rows"] == ["# Same key", "Same Key (pitch −0.8%)", "# Smooth: one step or relative", "Relative (pitch +0.8%)"]  # fmt: skip
     # Half and double time bring the 256 BPM track in.
     assert "Double (double time, same BPM)" in got["half"]["rows"]
     # Chaining: Smooth Up (124, 9A) at 10% sees 8A, 9B, 10A, 8B ...; Back climbs out, then returns to the search.
     assert got["deeper"]["title"][0] == "Smooth Up – X"
-    assert "Source (3.2% faster)" in got["deeper"]["rows"]
+    assert "Source (pitch −3.2%)" in got["deeper"]["rows"]
     assert got["up"]["title"][0] == "Source – X"
     assert got["back"]["hidden"] is True and got["back"]["q"] == "Source"
     assert "related" not in got["back"]["status"]
+
+
+RELATED_GENRE_TAIL = r"""
+const open = { target: { closest: () => null } };
+const cards = () => els.results.children.filter(c => c.className.startsWith("hit"));
+const part = (c, cls) => c.children.find(x => x.className.split(" ")[0] === cls);
+const titleOf = c => part(c, "what").children[0].textContent;
+const noteOf = c => { const n = part(c, "what").children.find(x => x.className === "relnote"); return n ? n.textContent : ""; };
+const view = () => ({ rows: els.results.children.filter(c => c.className.startsWith("hit")).map(c => titleOf(c) + "|" + noteOf(c)),
+                      status: els.status.textContent });
+const out = { start: { tol: els.reltol.value } };
+els.q.value = "Source";
+els.q.handlers.input();
+cards()[0].handlers.click(open);
+cards()[0].children.find(x => x.className === "relbar").children[0].handlers.click();
+for (const step of JSON.parse(process.argv[3])) {
+  if (step === "tol10") { els.reltol.value = "10"; els.reltol.handlers.change(); }
+  else if (step === "genre") els.relgenre.handlers.click();
+  else if (step === "half") els.relhalf.handlers.click();
+  else if (step === "energy") els.relenergy.handlers.click();
+  out[step] = view();
+}
+out.final = view();
+console.log(JSON.stringify(out));
+"""
+
+
+def related_genre_page(lib, tmp_path, tail=RELATED_GENRE_TAIL):
+    rows = [
+        ("Source", 128.0, "8A", "Deep House"),
+        ("Tech", 128.0, "8A", "tech  HOUSE"),  # shares "house"
+        ("Techno", 128.0, "8A", "Techno"),
+        ("No Genre", 128.0, "8A", ""),
+        ("Fast", 136.5, "8A", "Deep House"),  # 6.6% faster: needs the +-10 range
+        ("Music Only", 128.0, "8A", "The Music"),  # only words that don't count
+    ]
+    lib.replace_source(
+        "folder",
+        "/m",
+        "M",
+        [
+            TrackRecord(
+                ext_id=str(i), path=f"/m/{i}.mp3", title=t, bpm=b, key=k, genre=g
+            )
+            for i, (t, b, k, g) in enumerate(rows)
+        ],
+    )
+    lib.add_to_disc(lib.create_disc("D"), [t.id for t in lib.tracks(sort="path")])
+    page = tmp_path / "finder.html"
+    tf.write_html(tf.collect(lib), page, MADE)
+    harness = tmp_path / "harness.js"
+    harness.write_text(NODE_HARNESS.split("const out = {};")[0] + tail, encoding="utf-8")  # fmt: skip
+    return page, harness
+
+
+def run_related_genre(page, harness, steps, storage=None):
+    env = {**os.environ, **({"FINDER_STORAGE": str(storage)} if storage else {})}
+    run = subprocess.run(
+        ["node", str(harness), str(page), json.dumps(steps)],
+        check=True,
+        capture_output=True,
+        encoding="utf-8",
+        errors="replace",
+        env=env,
+    )
+    return json.loads(run.stdout)
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="needs node")
+def test_related_says_what_to_do_with_the_pitch_and_narrows_by_genre(lib, tmp_path):
+    page, harness = related_genre_page(lib, tmp_path)
+    got = run_related_genre(page, harness, ["tol10", "genre", "half"])
+    # At 6% the 6.6% track is out; at 10% it is in, and the note says which pitch range it needs.
+    assert got["start"]["tol"] == "6"
+    assert got["tol10"]["rows"] == [
+        "Music Only|same BPM",  # level on BPM: the title decides
+        "No Genre|same BPM",
+        "Tech|same BPM",
+        "Techno|same BPM",
+        "Fast|pitch −6.6% · needs ±10 range",
+    ]
+    # Same genre: a shared word counts ("Deep House" / "tech  HOUSE"); no genre, or only filler words, is left out.
+    assert got["genre"]["rows"] == [
+        "Tech|same BPM",
+        "Fast|pitch −6.6% · needs ±10 range",
+    ]
+    # "No Genre" and "Music Only" (only filler words) can't be told apart from a track with no genre.
+    assert "2 left out (no genre)" in got["genre"]["status"]
+
+
+def test_the_page_script_keeps_the_related_choices():
+    assert "dubcrate-finder-related" in tf.PAGE
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="needs node")
+def test_related_choices_are_kept_for_the_next_visit(lib, tmp_path):
+    page, harness = related_genre_page(lib, tmp_path)
+    store = tmp_path / "phone.json"
+    run_related_genre(
+        page, harness, ["tol10", "genre", "half", "energy"], storage=store
+    )
+    got = run_related_genre(page, harness, [], storage=store)
+    assert got["start"]["tol"] == "10"
+    # Same genre is still on, so only the tracks that share a word are listed.
+    assert [r.split("|")[0] for r in got["final"]["rows"]] == ["Tech", "Fast"]
