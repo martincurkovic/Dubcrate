@@ -78,31 +78,86 @@ def test_two_entries_that_fit_are_ambiguous():
 # -- waveforms -------------------------------------------------------------------------------------
 
 
-def test_waveforms_are_added_only_for_tracks_the_card_has_none_for_and_nothing_there_changes():
+def test_waveforms_are_added_for_tracks_with_none_and_completed_where_the_player_only_started():
     before = card_file()
     p = plan()
     assert p.status is ms.Mp3Status.READY and p.changed
-    assert (p.waves_added, p.waves_kept, p.waves_pending) == (4, 11, 0)
+    # (the player had made records for 11 tracks: two complete, nine it only started; four tracks have none)
+    assert (p.waves_added, p.waves_filled, p.waves_kept, p.waves_pending) == (
+        4,
+        9,
+        2,
+        0,
+    )
     new = p.file
-    assert [w.pack() for w in new.coarse[: len(before.coarse)]] == [
-        w.pack() for w in before.coarse
-    ]
-    assert [w.pack() for w in new.fine[: len(before.fine)]] == [
-        w.pack() for w in before.fine
-    ]
+    assert [w.key for w in new.coarse[: len(before.coarse)]] == [
+        w.key for w in before.coarse
+    ]  # (same places)
+    for old_records, new_records, nibbles in (
+        (before.coarse, new.coarse, False),
+        (before.fine, new.fine, True),
+    ):
+        for old, now in zip(old_records, new_records, strict=False):
+            if nibbles:
+                pairs = [
+                    (a, b)
+                    for o, n in zip(old.data, now.data, strict=True)
+                    for a, b in ((o & 15, n & 15), (o >> 4, n >> 4))
+                ]
+            else:
+                pairs = list(zip(old.data, now.data, strict=True))
+            assert all(
+                a == b for a, b in pairs if a
+            )  # what the player measured is exactly as it was
+    complete = {
+        (1, 1),
+        (2, 1),
+    }  # the two the player had played through: not touched at all
+    assert all(
+        w.pack() == o.pack()
+        for w, o in zip(new.coarse, before.coarse, strict=False)
+        if w.key in complete
+    )
     added = [w.key for w in new.coarse[len(before.coarse) :]]
-    assert added == [(1, 3), (1, 4), (2, 3), (3, 1)]  # in the disc's order
-    assert added == [w.key for w in new.fine[len(before.fine) :]]
-    assert new.coarse[-1].columns_played == 50 and new.disc_id == before.disc_id
+    assert added == [
+        (1, 3),
+        (1, 4),
+        (2, 3),
+        (3, 1),
+    ]  # the new ones, in the disc's order, after the rest
+    assert all(
+        w.columns_played == 50 for w in new.coarse
+    )  # (no track is left with a blank waveform)
+    assert new.disc_id == before.disc_id
     assert [c.raw for c in new.cues] == [
         c.raw for c in before.cues
     ] and new.hot == before.hot
 
 
-def test_a_record_the_player_half_filled_is_kept_not_replaced():
-    p = plan()  # (3,3) has 1 of 50 columns on the card
-    partial = next(w for w in p.file.coarse if w.key == (3, 3))
-    assert partial.columns_played == 1
+def test_a_record_the_player_barely_started_is_completed_with_its_own_columns_kept():
+    before = card_file()
+    old = next(w for w in before.coarse if w.key == (3, 3))  # 1 of 50 columns
+    assert old.columns_played == 1
+    now = next(w for w in plan().file.coarse if w.key == (3, 3))
+    assert now.columns_played == 50
+    assert all(
+        n == o for o, n in zip(old.data, now.data, strict=True) if o
+    )  # its one column stayed
+
+
+def test_columns_and_nibbles_are_filled_where_the_player_has_nothing_and_never_where_it_has_something():
+    assert ms._fill_columns(bytes([0, 5, 0, 7]), bytes([9, 9, 9, 0])) == bytes(
+        [9, 5, 9, 7]
+    )
+    # a W002 byte holds two columns: the low nibble is the earlier one; each is decided on its own
+    assert (
+        ms._fill_nibbles(b"\x30", b"\x75") == b"\x35"
+    )  # the player had the high one: only the low is filled
+    assert ms._fill_nibbles(b"\x03", b"\x75") == b"\x73"  # the player had the low one
+    assert (
+        ms._fill_nibbles(b"\x00", b"\x75") == b"\x75"
+        and ms._fill_nibbles(b"\x42", b"\x75") == b"\x42"
+    )
 
 
 def test_a_track_not_analysed_yet_is_counted_and_gets_nothing():
@@ -114,11 +169,11 @@ def test_a_track_not_analysed_yet_is_counted_and_gets_nothing():
 def test_planning_again_on_the_merged_file_adds_nothing():
     first = plan()
     again = plan(file=m3.Mp3TrackFile.parse(first.file.to_bytes()))
-    assert (
-        again.status is ms.Mp3Status.IN_SYNC
-        and again.waves_added == 0
-        and again.waves_kept == 15
-    )
+    assert again.status is ms.Mp3Status.IN_SYNC and (
+        again.waves_added,
+        again.waves_filled,
+    ) == (0, 0)
+    assert again.waves_kept == 15
 
 
 def test_a_disc_with_an_entry_but_no_file_gets_a_new_file_with_the_cards_id():
@@ -222,9 +277,10 @@ def test_the_plan_in_words():
         ms.describe_plan(plan(disc(cues={(0, 2): [(5000, 0), (1474, 0)]})), "The Disc")
     )
     assert (
-        "to add to MPJ00001.PDJ: 4 waveforms, 1 cue" in text
-        and "11 waveforms already there stay" in text
+        "to add to MPJ00001.PDJ: 4 waveforms, 9 waveforms the player only started completed"
+        in text
     )
+    assert "1 cue and loops" in text and "2 complete waveforms stay as they are" in text
     assert "1 cue already there" in text
     assert "play the disc" in "\n".join(ms.describe_plan(plan(disc(sectors=1)))).lower()
 
@@ -245,10 +301,10 @@ def test_the_write_backs_the_files_up_writes_one_file_and_reads_it_back(tmp_path
     p = ms.plan_mp3_disc(*[disc(cues={(0, 2): [(5000, 0)]}), *m3.read_mp3_card(card)])
     out = ms.apply_mp3_plan(card, p, tmp_path / "backups")
     assert out.wrote and (out.waveforms_written, out.cues_written, out.name) == (
-        4,
+        13,
         1,
         "MPJ00001",
-    )
+    )  # (4 new, 9 completed)
     assert (
         out.backup / "MPJ00001.PDJ"
     ).read_bytes() == LAST.read_bytes()  # the old file is kept
@@ -486,3 +542,25 @@ def test_a_disc_that_is_not_an_mp3_disc_or_has_a_folder_in_a_folder_is_refused_i
 
 def test_the_constants_agree_with_the_card_module():
     assert ms.DUPLICATE_FRAMES == 2 and cc.MAX_CUES == 100
+
+
+# -- a card that cannot be read -------------------------------------------------------------------
+
+
+def test_a_card_file_that_is_too_short_for_its_own_count_or_unreadable_is_a_plain_error_not_a_crash(
+    tmp_path,
+):
+    card, mpj = make_card(tmp_path)
+    raw = bytearray((mpj / "MPJ00001.PDJ").read_bytes())
+    at = raw.index(b"CN11")
+    raw[at + 4 : at + 8] = (1).to_bytes(
+        4, "big"
+    )  # a cue list of one byte: no room for its count
+    (mpj / "MPJ00001.PDJ").write_bytes(bytes(raw))
+    with pytest.raises(m3.Mp3CardError, match="couldn't be read"):
+        m3.read_mp3_card(card)
+    (
+        mpj / "MPJINDX0.PDJ"
+    ).unlink()  # (and a card pulled before the index could be read)
+    with pytest.raises(m3.Mp3CardError, match="No MP3 disc files"):
+        m3.read_mp3_card(card)

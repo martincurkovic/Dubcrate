@@ -169,7 +169,11 @@ def prepare_disc(
             try:
                 wave = analyse(str(path))
                 analysed[planned.track_id] = wave
-            except DecodeError as exc:  # (say so and go on without it)
+            except (
+                DecodeError,
+                OSError,
+                ValueError,
+            ) as exc:  # (as `measure_waveforms`: say so, go on)
                 log.warning("no waveform for %s: %s", planned.title, exc)
                 disc.notes.append(f"“{planned.title}”: no waveform ({exc}).")
         disc.tracks.append(

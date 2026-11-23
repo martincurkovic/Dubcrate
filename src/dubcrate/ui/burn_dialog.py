@@ -150,6 +150,9 @@ class BurnDialog(QDialog):
         # (or swapped) shows up without a click on Check Again; the full check runs only when this changes.
         self._probe = probe or disc_state
         self._disc_state: str | None = None
+        self._probing = (
+            False  # a question to the drive is out (it is asked on a worker)
+        )
         self._disc_timer = QTimer(self)
         self._disc_timer.setInterval(DISC_WATCH_MS)
         self._disc_timer.timeout.connect(self._watch_disc)
@@ -600,11 +603,27 @@ class BurnDialog(QDialog):
         run_async(_expected_failures(work), done, failed)
 
     def _watch_disc(self) -> None:
-        """Look at whether a disc is in the drive; when that has settled on something new, check the drive
-        again by itself (what Check Again does). A disc still loading is waited for, not looked at."""
+        """Ask, on a worker, whether a disc is in the drive: on a Mac that is a `drutil` run that can take seconds,
+        and the GUI thread must not wait for it every couple of seconds. One question at a time."""
+        if self._export_only or self._busy or self._probing:
+            return
+        self._probing = True
+        device = self._device
+
+        def done(state: str | None) -> None:
+            self._probing = False
+            self._disc_probed(state)
+
+        def failed(_text: str) -> None:
+            self._probing = False  # (it can't say: Check Again is still there)
+
+        run_async(lambda: self._probe(device), done, failed)
+
+    def _disc_probed(self, state: str | None) -> None:
+        """The drive's answer: when it has settled on something new, check the drive again by itself (what Check
+        Again does). A disc still loading is waited for, not looked at."""
         if self._export_only or self._busy:
             return
-        state = self._probe(self._device)
         if state is None or state == "loading" or state == self._disc_state:
             return
         logger.info("the drive's disc changed: %s -> %s", self._disc_state, state)

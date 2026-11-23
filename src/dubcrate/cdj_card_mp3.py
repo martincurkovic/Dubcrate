@@ -471,16 +471,35 @@ def mpj_dir(path: Path) -> Path:
     )
 
 
+def mp3_disc_count(path: Path) -> int:
+    """How many MP3 discs the card has an entry for (0 if it has none or can't be read): the index only, a few
+    bytes. The player counts them with the audio discs."""
+    try:
+        return len(
+            Mp3Index.parse((mpj_dir(path) / "MPJINDX0.PDJ").read_bytes()).entries
+        )
+    except (Mp3CardError, OSError, struct.error):
+        return 0
+
+
 def read_mp3_card(path: Path) -> tuple[Mp3Index, dict[str, Mp3TrackFile | None]]:
     """The MP3 disc index and each disc's file (None for an entry with no file yet). Read only."""
     folder = mpj_dir(path)
-    index = Mp3Index.parse((folder / "MPJINDX0.PDJ").read_bytes())
-    files: dict[str, Mp3TrackFile | None] = {}
-    for entry in index.entries:
-        target = folder / entry.file_name
-        files[entry.name] = (
-            Mp3TrackFile.parse(target.read_bytes()) if target.is_file() else None
-        )
+    try:
+        index = Mp3Index.parse((folder / "MPJINDX0.PDJ").read_bytes())
+        files: dict[str, Mp3TrackFile | None] = {}
+        for entry in index.entries:
+            target = folder / entry.file_name
+            files[entry.name] = (
+                Mp3TrackFile.parse(target.read_bytes()) if target.is_file() else None
+            )
+    except (
+        OSError,
+        struct.error,
+    ) as exc:  # (a card pulled mid-read, or a chunk too short for its count)
+        raise Mp3CardError(
+            f"The card's MP3 disc files couldn't be read: {exc}"
+        ) from exc
     return index, files
 
 

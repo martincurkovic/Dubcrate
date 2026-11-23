@@ -469,3 +469,22 @@ waveforms were added, the 12 records the player had were byte for byte untouched
 cues are covered by tests on synthetic discs, where the byte offsets written are the rendered files' real frame offsets). **Measured
 since the plan**: the burned copy of a LAME file decodes identically to the library file (0 samples apart), so audio-time cues carry
 over; a file with no Info frame decodes about 12 ms earlier (529 samples).
+
+**First real sync (the owner's card, same day) and what it found.** The three waveforms were on the card, full, but the owner saw no
+waveform on the CDJ for most tracks: **eight of the fifteen had a record the player had made by merely starting the track** (0, 1, 17, 24 or 35
+of 50 columns) and the first version kept every record that existed, so those stayed blank. The player very likely treats a track with a
+record as already analysed and draws what is in it. **Fixed: such a record is completed column by column** (what the player measured stays,
+only the columns it has nothing for take ours; a complete record is not touched; planning again adds nothing). Checked on a copy of that
+card: ten records completed, five untouched, the player's cues and hot cues unchanged. Also fixed from this: the card row counted 25 discs
+where the player counts 26 (it left the MP3 disc out). **Confirmed by the owner after the next sync: the CDJ draws the waveforms we wrote, for MP3 discs too.** The cue half is still only tried on synthetic discs.
+
+**Why an MP3 disc has to be played once first, and the ways round it.** The player recognises a disc by a 16-byte ID. For an audio CD it is
+the TOC and fully known, so Dubcrate can make the entry and sync a disc the player has never seen. For an MP3 disc three fields are
+understood (file count, the last file's first sector, the image's size) and **eight bytes are not** (`05 2c 06`, the four bytes
+`33 87 45 e7`, `00 00`): without them an entry we made would not be matched by the player. 48 simple checksums of the image (CRCs and sums of
+its names, sizes, extents, label and header sectors) were tried against the four bytes and none matched. Ways to remove the "play it first" step,
+cheapest first: (1) find out whether merely **loading** the disc makes the entry (not played: untested); (2) read the IDs of MP3 discs
+the player has already seen, with their images, from the owner's older card copies (an `MPJINDX0.PDJ` there) and discs: every pair is a data
+point, with no burning; (3) the firmware's code for the ID (the notes have the audio ID's functions, and the MP3 ID is built from a RAM
+record elsewhere: the disassembly files are not on this machine); (4) burn variants, best on a **CD-RW** (blank it and rewrite): change one
+property of the image at a time (the volume label, the file count, one file's size, a folder) and see which bytes of the new entry move.

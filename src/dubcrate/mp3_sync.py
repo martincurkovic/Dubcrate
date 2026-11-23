@@ -70,7 +70,8 @@ class Mp3Plan:
     )
     had_file: bool = False
     waves_added: int = 0
-    waves_kept: int = 0  # a record was there already: never changed
+    waves_filled: int = 0  # a record the player had only part of: the columns it never played, filled in
+    waves_kept: int = 0  # a record that was there and complete: not touched
     waves_pending: int = 0  # not analysed yet
     cues_added: int = 0
     cues_already: int = 0  # on the card already (or a hot cue there)
@@ -80,8 +81,23 @@ class Mp3Plan:
     @property
     def changed(self) -> bool:
         return self.status is Mp3Status.READY and bool(
-            self.waves_added or self.cues_added
+            self.waves_added or self.waves_filled or self.cues_added
         )
+
+
+def _fill_columns(existing: bytes, ours: bytes) -> bytes:
+    """`existing` (a `W001` record's 50 amplitudes) with each column it has nothing for (0) taken from `ours`."""
+    return bytes(e or o for e, o in zip(existing, ours, strict=True))
+
+
+def _fill_nibbles(existing: bytes, ours: bytes) -> bytes:
+    """The same for a `W002` record, whose bytes hold two columns each (a nibble apiece)."""
+    out = bytearray()
+    for e, o in zip(existing, ours, strict=True):
+        low = (e & 0x0F) or (o & 0x0F)
+        high = (e >> 4) or (o >> 4)
+        out.append(high << 4 | low)
+    return bytes(out)
 
 
 def _near(a: int, b: int) -> bool:
@@ -123,20 +139,45 @@ def plan_mp3_disc(
         notes=list(disc.notes),
     )
 
-    have = {w.key for w in work.coarse} | {w.key for w in work.fine}
+    # A record the player made by merely starting a track (0 or a few columns) is not a waveform: drawn as it is the
+    # track shows nothing, and the player treats the track as already analysed. So a record that is there is
+    # COMPLETED, column by column, the way the player fills one as a track plays: a column it measured stays, a
+    # column it has nothing for (0) takes ours. A complete record is not touched.
+    where_coarse = {w.key: i for i, w in enumerate(work.coarse)}
+    where_fine = {w.key: i for i, w in enumerate(work.fine)}
     for track in disc.tracks:
         key = (track.folder, track.file)
-        if key in have:
-            plan.waves_kept += 1
-        elif track.wave is None:
-            plan.waves_pending += 1
-        else:
-            coarse, fine = wave_model.records(1, track.wave)
-            c, f = m3.Mp3Wave.from_audio_records(track.folder, track.file, coarse, fine)
-            work.coarse.append(c)
-            work.fine.append(f)
-            have.add(key)
+        there = key in where_coarse or key in where_fine
+        if track.wave is None:
+            if there:
+                plan.waves_kept += 1
+            else:
+                plan.waves_pending += 1
+            continue
+        coarse, fine = wave_model.records(1, track.wave)
+        changed = False
+        for records, where, made, fill in (
+            (work.coarse, where_coarse, coarse.data, _fill_columns),
+            (work.fine, where_fine, fine.data, _fill_nibbles),
+        ):
+            if key in where:
+                old = records[where[key]]
+                data = fill(old.data, made)
+                if data != old.data:
+                    records[where[key]] = m3.Mp3Wave(
+                        old.folder, old.file, data, old.third
+                    )
+                    changed = True
+            else:  # (none of this kind yet: a new record, at the end as the player appends them)
+                where[key] = len(records)
+                records.append(m3.Mp3Wave(track.folder, track.file, made))
+                changed = True
+        if not there:
             plan.waves_added += 1
+        elif changed:
+            plan.waves_filled += 1
+        else:
+            plan.waves_kept += 1
 
     for track in disc.tracks:
         here = (track.folder, track.file)
@@ -166,7 +207,9 @@ def plan_mp3_disc(
 
     # (not `plan.changed`: that asks the status, which is what is being decided here)
     plan.status = (
-        Mp3Status.READY if (plan.waves_added or plan.cues_added) else Mp3Status.IN_SYNC
+        Mp3Status.READY
+        if (plan.waves_added or plan.waves_filled or plan.cues_added)
+        else Mp3Status.IN_SYNC
     )
     return plan
 
@@ -200,6 +243,11 @@ def describe_plan(plan: Mp3Plan, name: str = "") -> list[str]:
         bits.append(
             f"{plan.waves_added} waveform{'s' if plan.waves_added != 1 else ''}"
         )
+    if plan.waves_filled:
+        bits.append(
+            f"{plan.waves_filled} waveform{'s' if plan.waves_filled != 1 else ''} the player only started "
+            "completed (what it measured stays)"
+        )
     if plan.cues_added:
         bits.append(
             f"{plan.cues_added} cue{'s' if plan.cues_added != 1 else ''} and loops"
@@ -211,7 +259,7 @@ def describe_plan(plan: Mp3Plan, name: str = "") -> list[str]:
     kept = []
     if plan.waves_kept:
         kept.append(
-            f"{plan.waves_kept} waveform{'s' if plan.waves_kept != 1 else ''} already there stay as they are"
+            f"{plan.waves_kept} complete waveform{'s' if plan.waves_kept != 1 else ''} stay as they are"
         )
     if plan.cues_already:
         kept.append(
@@ -276,4 +324,10 @@ def apply_mp3_plan(card: Path, plan: Mp3Plan, backup_dir: Path) -> Mp3Outcome:
         raise m3.Mp3CardError(f"{target.name} did not read back as it was written.")
     if hasattr(os, "sync"):
         os.sync()
-    return Mp3Outcome(True, backup, plan.waves_added, plan.cues_added, plan.entry.name)
+    return Mp3Outcome(
+        True,
+        backup,
+        plan.waves_added + plan.waves_filled,
+        plan.cues_added,
+        plan.entry.name,
+    )

@@ -238,7 +238,7 @@ def _sync_mp3(lib: Library, disc_ids: list[int], args: argparse.Namespace) -> in
             continue
         try:
             outcome = apply_mp3_plan(card, plan, _backup_dir(args))
-        except (m3.Mp3CardError, OSError) as exc:
+        except (cc.CardFormatError, OSError) as exc:  # (Mp3CardError is one)
             print(f"error: {exc}", file=sys.stderr)
             return 1
         store_waveforms(lib, prepared.analysed)  # (what was worked out stays cached)
@@ -264,14 +264,16 @@ def cmd_sync(lib: Library, args: argparse.Namespace) -> int:
     """Audio discs by their TOC and MP3 discs by their image: each kind its own way, one command."""
     mp3_ids = [d for d in args.disc if lib.disc(d).kind == "mp3"]
     audio_ids = [d for d in args.disc if d not in mp3_ids]
+    if (
+        args.from_drive and mp3_ids
+    ):  # (before anything is written: an audio disc must not go ahead of this)
+        print("error: --from-drive is for an audio disc.", file=sys.stderr)
+        return 1
     status = 0
     if audio_ids:
         args.disc = audio_ids
         status = _sync_audio(lib, args)
     if mp3_ids:
-        if args.from_drive:
-            print("error: --from-drive is for an audio disc.", file=sys.stderr)
-            return 1
         status = max(status, _sync_mp3(lib, mp3_ids, args))
     return status
 

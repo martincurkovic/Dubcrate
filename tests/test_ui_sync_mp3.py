@@ -323,3 +323,112 @@ def test_the_card_menu_offers_each_mp3_disc_and_asks_for_it(qapp, tmp_path):
     bare = CardPanel(volumes=lambda: [card])
     bare.refresh()
     assert not any(a.menu() is not None for a in bare.card_menu(card).actions())
+
+
+# -- what a code review of the first version found --------------------------------------------------
+
+
+def test_the_tick_on_an_mp3_disc_survives_the_list_being_rebuilt(view, lib, tmp_path):
+    view.look(make_card(tmp_path, lib))
+    tick(view.view)
+    view.view._look_at_discs(
+        view.view._loaded
+    )  # what a refresh, a measuring or a rekordbox re-read does
+    assert view.view.ticked_mp3_ids() == [lib.disc_id]
+    assert view.view._disc_items()[0].checkState(COL_NAME) == Qt.CheckState.Checked
+
+
+def test_the_card_row_counts_the_mp3_discs_with_the_audio_ones_as_the_player_does(
+    qapp, lib, tmp_path
+):
+    card = make_card(tmp_path, lib)  # no audio discs, one MP3 disc
+    panel = CardPanel(volumes=lambda: [card])
+    assert "1 disc" in panel._detail(card, False) and "1 discs" not in panel._detail(
+        card, False
+    )
+    index = cc.IndexFile.parse((card / "PIONEER" / "CDJ" / "CDJINDX0.PDJ").read_bytes())
+    for number in range(25):  # the owner's card: 25 audio discs and the player says 26
+        index.entries.append(
+            cc.IndexEntry(
+                f"CDJ{number + 1:05d}",
+                cc.DiscId(3 + number, 0, 9000 + number, 200, 8000),
+            )
+        )
+    (card / "PIONEER" / "CDJ" / "CDJINDX0.PDJ").write_bytes(index.to_bytes())
+    assert "26 discs" in panel._detail(card, False)
+    assert m3.mp3_disc_count(card) == 1 and m3.mp3_disc_count(tmp_path / "nothing") == 0
+
+
+def test_a_right_click_sync_on_another_card_makes_it_the_shown_card_first(
+    view, lib, tmp_path
+):
+    first = make_card(tmp_path, lib)
+    second = tmp_path / "second"
+    shutil.copytree(first, second)
+    view.look(first)
+    view.view.sync_mp3_disc(second, lib.disc_id)
+    assert view.finished()
+    assert (
+        view.view._card_path == second
+    )  # (the list, the eject box and the row states are for the card written)
+    assert m3.read_mp3_card(second)[1]["MPJ00001"].coarse
+    assert not (
+        first / "PIONEER" / "MPJ" / "MPJ00001.PDJ"
+    ).exists()  # the one shown before was left alone
+    assert len(view.asked) == 1
+
+
+def test_a_write_that_reads_back_differently_is_explained_with_the_backup_not_a_crash(
+    view, lib, tmp_path, monkeypatch
+):
+    view.look(make_card(tmp_path, lib))
+    tick(view.view)
+
+    def broken(*_args):
+        raise cc.CardFormatError(
+            "MPJ00001.PDJ read back differently from what was written."
+        )
+
+    monkeypatch.setattr(sync_view, "apply_mp3_plan", broken)
+    view.view.sync_button.click()
+    assert view.finished()
+    ((title, text),) = view.problems
+    assert (
+        title == "Couldn't Sync to the Card"
+        and "read back differently" in text
+        and "copied to" in text
+    )
+    assert not view.view._writing
+
+
+def test_the_audio_discs_ticked_with_a_blocked_mp3_disc_still_go_ahead(
+    view, lib, tmp_path
+):
+    card = make_card(tmp_path, lib, wrong=True)  # the player does not know this disc
+    view.look(card)
+    after = []
+    view.view.sync_mp3(card, [lib.disc_id], then=lambda: after.append("audio"))
+    assert view.finished()
+    assert (
+        len(view.problems) == 1
+        and "Play the disc in the player once" in view.problems[0][1]
+    )
+    assert after == ["audio"]  # (it was not dropped silently)
+
+
+def test_from_drive_is_refused_before_any_audio_disc_is_written(lib, tmp_path, capsys):
+    import argparse
+
+    from dubcrate import cli_card
+
+    audio = lib.create_disc("Audio")
+    lib.add_to_disc(audio, [lib.tracks()[0].id])
+    card = make_card(tmp_path, lib)
+    before = sorted(p.name for p in (card / "PIONEER").rglob("*"))
+    args = argparse.Namespace(disc=[audio, lib.disc_id], card=str(card), from_drive=True, yes=True, backup_dir=None, no_waveforms=True)  # fmt: skip
+    assert cli_card.cmd_sync(lib, args) == 1
+    assert "--from-drive is for an audio disc" in capsys.readouterr().err
+    assert (
+        sorted(p.name for p in (card / "PIONEER").rglob("*")) == before
+        and not (tmp_path / "bk").exists()
+    )
