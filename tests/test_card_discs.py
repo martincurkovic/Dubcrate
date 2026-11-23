@@ -400,3 +400,69 @@ def test_with_every_known_toc_off_the_plan_is_used_again(lib):
     assert card_discs.prepare_disc(lib, disc_id).request.disc_id == cc.DiscId.from_toc(
         *planned
     )
+
+
+def test_rekordboxs_cues_are_moved_into_audio_time_before_the_card_gets_them(
+    lib, monkeypatch
+):
+    disc_id = cd2_disc(lib, source="rekordbox")
+    entries = lib.disc_entries(disc_id)
+    cues = keyed(entries, {0: [Cue("memory", 10.0), Cue("memory", 0.02)]})
+    monkeypatch.setattr(
+        card_discs, "lead_ms", lambda _path: 50
+    )  # a file rekordbox times 50 ms late
+    result = card_discs.prepare_disc(
+        lib, disc_id, card_discs.RekordboxCues(lib, load=lambda _path: cues)
+    )
+    # 9.95 s is frame 746.25 (746); the cue within the lead of the start lands on the start itself
+    assert result.request.wanted == [
+        card_sync.WantedCue(1, 150),
+        card_sync.WantedCue(1, 150 + 746),
+    ]
+
+
+def test_a_cue_edited_in_dubcrate_is_already_in_audio_time(lib, monkeypatch):
+    disc_id = cd2_disc(lib, source="rekordbox")
+    entries = lib.disc_entries(disc_id)
+    cues = keyed(entries, {0: [Cue("memory", 10.0)]})
+    monkeypatch.setattr(card_discs, "lead_ms", lambda _path: 50)
+    lib.set_memory_cues(
+        entries[0].track.path, [(20000, "")]
+    )  # set at 20.000 s in the player
+    result = card_discs.prepare_disc(
+        lib, disc_id, card_discs.RekordboxCues(lib, load=lambda _path: cues)
+    )
+    assert result.request.wanted == [
+        card_sync.WantedCue(1, 150 + 1500)
+    ]  # not moved again
+
+
+def test_the_cues_the_last_sync_left_are_asked_to_move(lib):
+    disc_id = cd2_disc(lib)
+    first = card_discs.prepare_disc(lib, disc_id)
+    assert first.request.earlier == ()  # no sync recorded
+    lib.set_card_baseline(first.request.disc_id.key, [(1, 5000, 0), (2, 9000, 9100)])
+    again = card_discs.prepare_disc(lib, disc_id)
+    assert again.request.earlier == ((1, 5000, 0), (2, 9000, 9100))
+
+
+def test_a_disc_with_only_moved_cues_says_so_and_does_not_call_them_additions(lib):
+    from dubcrate import cdj_card as cc2
+
+    disc_id = cd2_disc(lib, source="rekordbox")
+    entries = lib.disc_entries(disc_id)
+    cues = keyed(entries, {0: [Cue("memory", 10.0)]})
+    first = card_discs.prepare_disc(
+        lib, disc_id, card_discs.RekordboxCues(lib, load=lambda _p: cues)
+    )
+    old = 150 + 10 * 75 + 4  # what an older sync left: four frames late
+    file = cc2.TrackFile.new(first.request.disc_id)
+    file.cues = [cc2.CueEntry.memory(0, old, 1)]
+    index = cc2.IndexFile([cc2.IndexEntry("CDJ00001", first.request.disc_id)], 1)
+    request = card_sync.DiscRequest(
+        first.request.disc_id, first.request.wanted, earlier=[(1, old, 0)]
+    )
+    plan = card_sync.plan_card(index, {"CDJ00001": file}, [request]).discs[0]
+    survey = card_discs.DiscSurvey(None, "D", first, plan)
+    assert (survey.to_add, survey.to_move) == (0, 1)
+    assert survey.status == "1 cue to move"

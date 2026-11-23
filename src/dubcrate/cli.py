@@ -5,7 +5,7 @@ import logging
 import sys
 from pathlib import Path
 
-from dubcrate import cli_card, cli_discs, cli_doctor, cli_rekordbox, logsetup
+from dubcrate import cli_card, cli_cues, cli_discs, cli_doctor, cli_rekordbox, logsetup
 from dubcrate.cd import format_msf
 from dubcrate.library import ImportSummary, Library
 from dubcrate.library.folder import scan_folder
@@ -159,6 +159,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.set_defaults(fn=cmd_tracks)
     cli_discs.add_parsers(sub)
     cli_card.add_parsers(sub)
+    cli_cues.add_parsers(sub)
     cli_doctor.add_parsers(sub)
     cli_rekordbox.add_parsers(sub)
     return parser

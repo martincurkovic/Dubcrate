@@ -53,7 +53,7 @@ from dubcrate.library.rekordbox import (
 )
 from dubcrate.library.store import LibraryError
 
-from . import theme, wave_style
+from . import theme, track_finder_ui, wave_style
 from .about_dialog import AboutDialog, NoticesDialog
 from .burn_dialog import BurnDialog, BurnerFactory
 from .disc_tree import COLUMN_WIDTH, DiscTree
@@ -88,6 +88,7 @@ from .splitter import Splitter
 from .status_bar import AppStatusBar
 from .sync_view import CardPanel, SyncView
 from .tasks import TaskError, run_async
+from .track_finder_ui import export_track_finder as run_track_finder_export
 from .track_table import (
     ROW_HEIGHT,
     PreviewDelegate,
@@ -605,6 +606,13 @@ class MainWindow(QMainWindow):
             "&Export Playlists", all_discs=True
         )
         disc_menu.addMenu(self.export_playlists_menu)
+        self.act_track_finder = disc_menu.addAction(
+            "Export Track Finder…", self.export_track_finder
+        )
+        self.act_track_finder.setToolTip(
+            "Save a web page that finds which disc a track is on: for your phone at a gig, with the"
+            " discs' labels and no signal."
+        )
         disc_menu.addSeparator()
         self.act_add_selected = disc_menu.addAction(
             "&Add Selected Tracks", self.add_selected_to_disc
@@ -673,6 +681,12 @@ class MainWindow(QMainWindow):
         about.setMenuRole(QAction.MenuRole.AboutRole)
         self.act_notices = help_menu.addAction(
             "Third-Party &Notices…", self.show_notices
+        )
+        self.act_finder_howto = help_menu.addAction(
+            "Track &Finder on a Phone…", lambda: track_finder_ui.show_how_to_open(self)
+        )
+        self.act_finder_howto.setToolTip(
+            "How to open the exported track finder page on an iPhone or iPad."
         )
         self.act_show_log = help_menu.addAction("Show &Log File", self.show_log_file)
         self.act_show_log.setToolTip(
@@ -860,6 +874,10 @@ class MainWindow(QMainWindow):
         """Disc > Export Playlists, and right-click > Export Playlist: every disc, one disc or a disc folder
         as a rekordbox XML file or M3U files."""
         run_playlist_export(self, self._lib, fmt, disc_id=disc_id, folder_id=folder_id)
+
+    def export_track_finder(self) -> None:
+        """Disc > Export Track Finder: every disc as one HTML page that says which disc a track is on."""
+        run_track_finder_export(self, self._lib)
 
     def print_labels(self, disc_id: int | None = None) -> None:
         """Open the label printing window with a disc ticked: the one given, else the open one."""

@@ -5,7 +5,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-from dubcrate import loudness, mp3, playlist_export
+from dubcrate import keys, loudness, mp3, playlist_export, track_finder
 from dubcrate.build import (
     BuildError,
     build_burn_disc,
@@ -35,6 +35,7 @@ from dubcrate.library.lengths import measure_tracks
 from dubcrate.library.models import DiscSummary
 from dubcrate.library.store import LibraryError
 from dubcrate.playlist_export import PlaylistError
+from dubcrate.track_finder import FinderError
 
 _CAPACITY = {74: DISC_74_SECTORS, 80: DISC_80_SECTORS}
 
@@ -376,6 +377,43 @@ def _export_playlists(
     return 0
 
 
+def cmd_export_finder(lib: Library, args: argparse.Namespace) -> int:
+    """Write every disc (or one) as a single HTML page that finds which disc a track is on."""
+    path = Path(args.path).expanduser()
+    try:
+        if path.exists():
+            raise FinderError(f"{path} already exists; nothing was overwritten")
+        analysed = _analyse_waves(lib, args)
+        found = track_finder.collect(lib, disc_id=args.disc, notation=args.keys)
+        written = track_finder.write_html(found, path)
+    except FinderError as exc:
+        print(f"export failed: {exc}", file=sys.stderr)
+        return 1
+    note = "\n".join(filter(None, [*analysed, track_finder.summary(found)]))
+    if note:
+        print(note, file=sys.stderr)
+    print(f"exported {written.tracks} track(s) on {written.discs} disc(s) to {written.path}")  # fmt: skip
+    return 0
+
+
+def _analyse_waves(lib: Library, args: argparse.Namespace) -> list[str]:
+    """Work out (and keep) the detailed waveform of every listed track that has none yet, so the page can
+    draw it; returns the tracks that could not be analysed, in words. `--no-analyse` skips it."""
+    if args.no_analyse:
+        return []
+    todo = track_finder.needs_analysis(lib, disc_id=args.disc)
+    if not todo:
+        return []
+
+    def report(done: int, total: int) -> None:
+        print(f"analysing waveforms: {done} of {total}", file=sys.stderr, end="\r")
+
+    found, problems = track_finder.analyse_waves(todo, report)
+    print(file=sys.stderr)
+    track_finder.store_waves(lib, todo, found)
+    return [f"Could not analyse {text}" for text in problems]
+
+
 def _target(args: argparse.Namespace) -> loudness.Target | None:
     """What to bring an audio CD's tracks to (--levels match or peak), or None to leave them as they are."""
     if args.levels == "peak":
@@ -533,6 +571,16 @@ def add_parsers(sub: argparse._SubParsersAction) -> None:
     p.add_argument("path", help="XML: the file to write (it must not exist yet); M3U: an existing folder, in which a new folder is made")  # fmt: skip
     p.add_argument("--format", choices=["xml", "m3u"], default="xml")
     p.set_defaults(fn=cmd_export_playlists)
+
+    p = sub.add_parser(
+        "export-finder",
+        help="write an HTML page (works offline on a phone) that finds which disc a track is on",
+    )
+    p.add_argument("path", help="the file to write; it must not exist yet")
+    p.add_argument("--disc", type=int, help="only this disc (default: every disc)")
+    p.add_argument("--keys", choices=keys.NOTATIONS, default=keys.CAMELOT, help="how keys are written (default: camelot, 8A)")  # fmt: skip
+    p.add_argument("--no-analyse", action="store_true", help="don't work out missing waveforms from the audio (a track with none shows none)")  # fmt: skip
+    p.set_defaults(fn=cmd_export_finder)
 
     p = sub.add_parser("burn", help="burn a disc (dry run unless --yes)")
     p.add_argument("disc", type=int)

@@ -4,7 +4,6 @@ Open items by area; finished work is under **Completed** at the bottom (same hea
 
 ## General
 
-- [ ] Review every window, dialog, message and menu in the UI gallery for layout and wording (`uv run python scripts/ui_snapshots.py`, then open `build/ui_snapshots/index.html`: mark each screen, write notes, Export notes). Each screen lists the layout flags the checker found.
 - [ ] Auto download update (maybe once code signing in place...)
 - [ ] Try on a real Linux machine + drive (dev_docs/linux-test-plan.md) (follow-up to: Linux burn support)
 - [ ] Windows burn support
@@ -12,68 +11,42 @@ Open items by area; finished work is under **Completed** at the bottom (same hea
 - [ ] Linux build script (AppImage / Flatpak / uv tool?)
 - [ ] Windows build script and installer: written 2026-11-17 (`scripts/build_windows.ps1`, `build_ffmpeg_windows.sh`, `assets/windows/Dubcrate.iss`, a `build-windows` job in `build.yml`), **never run**: see "Linux and Windows" below
 - [ ] Mixxx library support
-- [ ] Try on a real disc + CDJ (waveform height, any clipping, is -10 LUFS right?) (follow-up to: Audio normalisation setting)
 - [ ] Engine DJ library support
 - [ ] Serato library support
 - [ ] Linux / Windows (they use the system ffmpeg for now) (follow-up to: Bundle dependencies)
 - [ ] Drop `experimental` from the Windows leg in test.yml once happy (follow-up to: CI test legs for Linux, macOS, Windows)
-- [ ] Run build.yml in CI (bundled ffmpeg, smoke test, does PySide6 import on macOS 15?)
-- [ ] Hardware checks on the Mac: burn window, MP3 disc
 - [ ] Homebrew packaging once first release public
 - [ ] Maybe use some real songs, not fake ones (follow-up to: Screenshot staging)
 - [ ] Clean up user facing docs (readme, user guide)
-- [ ] Try the Sync tab itself on a real card (the command line is proven on hardware; the tab shares its write) (follow-up to: SD card sync metadata tab)
-- [ ] Try Sync's waveforms (always written now: the "Write waveforms" box is gone) on a Dubcrate-burned disc and the real card (the CDJ should load every track with its waveform drawn, none analysed) (follow-up to: SD card sync metadata tab)
-- [ ] Try `dubcrate card format` (or Sync > Format a Card…, built) on a spare 2 GB card (dev_docs/card-sync.md, "Formatting a card": does the player accept it, and cues synced straight onto it?)
 
 ### Hardware checks (Mac and the CDJ-1000MK3)
 
-- [ ] Confirm a burned disc is really gapless (tracks at 00:02.00, 00:42.00, 01:12.00 in `drutil toc`) now that the 2 s pregap fix is in ([burning.md](dev_docs/burning.md)).
 - [ ] Find out what unit `DRPreGapLengthKey` uses before trusting the 1, 2 and 3 s "Between tracks" options ([burning.md](dev_docs/burning.md)).
 - [ ] Compare the drive's reported free blocks on a 74 and an 80 minute disc (expect about 333,000 and 359,850) to confirm the capacity check ([burning.md](dev_docs/burning.md)).
 - [ ] Burn a small MP3 disc and check on the CDJ its load time, file order, what it shows (ID3 or file name) and whether ffmpeg's Info frame bothers it (`-write_xing 0` is the fallback) ([burning.md](dev_docs/burning.md)).
 - [ ] Try MP3 disc folders on the CDJ, starting with two nested folders, then the 999-file and 8-level limits and whether `MAX_DEPTH` should be 9 ([burning.md](dev_docs/burning.md)).
 - [ ] Burn a nearly full MP3 disc to check the size estimate and `FILESYSTEM_OVERHEAD_SECTORS` ([burning.md](dev_docs/burning.md)).
-- [ ] Check the new Peak to full scale preset on the CDJ for clipping at -0.3 dBTP ([roadmap.md](dev_docs/roadmap.md)).
-- [ ] Try the 60 FPS waveform by eye and ear on the Mac (smooth scroll, in step with the sound, no tearing; the Light setting; a 120 Hz display). If it judders, follow `QScreen.refreshRate()` or take the position at paint time.
-- [ ] Try the things only simulated so far by hand: the Explorer (permission prompts, slow or unplugged drives), pinned tab dragging, drag-to-change spin boxes, trackpad pinch in the label preview and mouse drag and drop ([roadmap.md](dev_docs/roadmap.md)).
-- [ ] Look at the app on a real display in all four looks, including the splash and the label window in System 6 ([roadmap.md](dev_docs/roadmap.md)).
 - [ ] Check the rekordbox bits no sample covered: rekordbox 6 libraries, cue points and the "mid" and "low" mood phrase names ([rekordbox-analysis.md](dev_docs/rekordbox-analysis.md)).
 
 ### Build and release
 
 - [ ] Add code signing and notarisation for the macOS app ([BUILDING.md](BUILDING.md)).
-- [ ] Open the built `.dmg` on a clean Mac to check Gatekeeper and quarantine on the bundled ffmpeg and ffprobe ([roadmap.md](dev_docs/roadmap.md)).
-- [ ] Check the Intel build (it needs `nasm`, so only the workflow does it) and the FFmpeg tarball's GPG signature ([roadmap.md](dev_docs/roadmap.md)).
-- [ ] Check the built app bundles QtPrintSupport and that DiscRecording can reach the drive from the bundled app ([roadmap.md](dev_docs/roadmap.md)).
 - [ ] Check the update check against a real GitHub release once the first one is published (the repo is public, so until then the check just says you're up to date) ([roadmap.md](dev_docs/roadmap.md)).
 
 ### Before the first release
 
-- [ ] Give the README real download and install steps and re-check that every claim in it has actually been tried ([roadmap.md](dev_docs/roadmap.md)). (the audit and suggested wording: dev_docs/release-readiness.md)
-- [ ] Re-read the README's trademark wording and the "not affiliated" notice ([roadmap.md](dev_docs/roadmap.md)).
 - [ ] Write a changelog (the update check reads GitHub's release notes) ([roadmap.md](dev_docs/roadmap.md)). (a draft is in CHANGELOG.md: edit it)
-- [ ] Read the third-party notices carefully, since they name each licence but don't reproduce the full texts ([roadmap.md](dev_docs/roadmap.md)).
 
 ### Features and app polish
 
+- [ ] Finder page: try **Tagged** in the iPhone viewer app (do the tags survive closing the app? the line under the buttons says "kept on this device" or "NOT kept"), and drag a tagged track up and down with a finger, and try Filter (BPM, year, key, genre), the waveform and memory cue view (tap a card) and Clear on the phone, with the owner's real library (the first export analyses waveforms: how long does it take?); then add the played tick, by-disc grouping and share / copy list.
 - [ ] Try the drive picker with two real drives (the check after a burn is skipped for any but the first).
 - [ ] Cancel the writing of a burn itself (not built: the backends have no abort; DiscRecording's `DRBurn.abort()` exists and `cdrdao` can be terminated, but a stopped write ruins the disc, so it needs a confirmation and a try on a drive).
-- [ ] Read a finished burn back and check it against the disc it was burned from ([roadmap.md](dev_docs/roadmap.md)).
 - [ ] Try dragging an MP3 folder in the Discs list by hand (the feel, and dropping on a collapsed disc).
 - [ ] Give each app library its own Library tab once a second library exists ([roadmap.md](dev_docs/roadmap.md)).
 - [ ] Try `tinytag` as a faster folder scan, since `ffprobe` per file manages about 120 files a second ([roadmap.md](dev_docs/roadmap.md)).
 - [ ] Add rekordbox XML export as an import path with no SQLCipher dependency ([roadmap.md](dev_docs/roadmap.md)).
 - [ ] Read rekordbox's `PWV3` and `PWV5` directly for exact waveform matches on rekordbox tracks ([rekordbox-analysis.md](dev_docs/rekordbox-analysis.md)).
-
-### Cues: Dubcrate, rekordbox and the card
-
-- [ ] Try that in-app path by hand with rekordbox closed (edit a cue in the player, accept the question, open rekordbox), and with it open (the edit should wait, with a status message).
-- [ ] Try Import Cues… with cues really set, deleted and moved on the player (sync a disc, change it on the player, import): what does the player do to the card's file when a cue is deleted or moved (`dev_docs/card-sync.md`, "Importing changes from the card")?
-- [ ] Try memory loops by hand: set a loop, press MEMORY, check the Memory tab row and ✕, sync to the card and see the loop on the player. (The Memory tab row, the loop mark and recalling a loop are confirmed by the owner, 2026-11-16: "loops behave exactly as expected"; syncing one to the player is not.)
-- [ ] Try the in-app loop path by hand with rekordbox closed (save a loop with MEMORY on a rekordbox track, open rekordbox: it is in the memory list), and with it open (the loop should wait, with a status message).
-- [ ] Try deleting a loop that rekordbox has, from the app (✕ on its row in the Memory tab, rekordbox closed, then open rekordbox: the loop is gone) and from the command line on a copy first (`dubcrate rekordbox write-memory-cues --loops --db COPY`; `spikes/rekordbox_loop_rows.py --db COPY` then shows no loop, since it lists live rows).
-- [ ] Hot cues and loops: edit hot cues in the player and write them to rekordbox (`dev_docs/rekordbox-cue-writes.md` has the `Kind` numbers; only memory cues are written so far).
 
 ### Linux and Windows
 
@@ -110,6 +83,13 @@ Open items by area; finished work is under **Completed** at the bottom (same hea
 - [x] Clean up long text labels in settings and add cm/in units (maybe in print dialog too) (2026-11-16: Settings > Appearance > Units, used by the label window and its paper list; the long Settings paragraphs are shorter. The checkbox titles were kept as the guide and tests quote them.)
   - [x] Check on real paper (and say if the vertical line spacing should shrink too)
   - [x] Make print dialog close when print (and resulting system print dialog is pressed)
+- [x] Review every window, dialog, message and menu in the UI gallery for layout and wording (`uv run python scripts/ui_snapshots.py`, then open `build/ui_snapshots/index.html`: mark each screen, write notes, Export notes). Each screen lists the layout flags the checker found.
+- [x] Try on a real disc + CDJ (waveform height, any clipping, is -10 LUFS right?) (follow-up to: Audio normalisation setting)
+- [x] Run build.yml in CI (bundled ffmpeg, smoke test, does PySide6 import on macOS 15?)
+- [x] Hardware checks on the Mac: burn window, MP3 disc
+- [x] Try the Sync tab itself on a real card (the command line is proven on hardware; the tab shares its write) (follow-up to: SD card sync metadata tab)
+- [x] Try Sync's waveforms (always written now: the "Write waveforms" box is gone) on a Dubcrate-burned disc and the real card (the CDJ should load every track with its waveform drawn, none analysed) (follow-up to: SD card sync metadata tab)
+- [x] Try `dubcrate card format` (or Sync > Format a Card…, built) on a spare 2 GB card (dev_docs/card-sync.md, "Formatting a card": does the player accept it, and cues synced straight onto it?)
 
 ### Hardware checks (Mac and the CDJ-1000MK3)
 
@@ -117,11 +97,25 @@ Open items by area; finished work is under **Completed** at the bottom (same hea
 - [x] Listen to previews at 256 and 128 frame buffers after the audio fixes and decide the default buffer size ([audio.md](dev_docs/audio.md)).
 - [x] Investigate 60 FPS waveform scrolling (2026-11-16, `spikes/waveform_fps.py`, everything in [waveform-60fps.md](dev_docs/waveform-60fps.md), short version in [audio.md](dev_docs/audio.md)): possible, worth doing; the 3-band look takes 16 ms a frame (the whole 60 FPS budget) because of three polygon fills, so it needs a cheaper renderer first (a numpy image: 2 to 5 ms).
 - [x] Build 60 FPS scrolling (2026-11-16): an image-based 3-band look (16 ms -> 3.4 ms a frame, checked against the polygons in dark, light and System 6), the position moving between audio blocks, a 16 ms tick, and Settings > Appearance > Waveform speed (Smooth 60 / Light 30). No late audio callbacks at 128 or 256 frames offscreen ([waveform-60fps.md](dev_docs/waveform-60fps.md), "What was built").
+- [x] Confirm a burned disc is really gapless (tracks at 00:02.00, 00:42.00, 01:12.00 in `drutil toc`) now that the 2 s pregap fix is in ([burning.md](dev_docs/burning.md)).
+- [x] Check the new Peak to full scale preset on the CDJ for clipping at -0.3 dBTP ([roadmap.md](dev_docs/roadmap.md)).
+- [x] Try the 60 FPS waveform by eye and ear on the Mac (smooth scroll, in step with the sound, no tearing; the Light setting; a 120 Hz display). If it judders, follow `QScreen.refreshRate()` or take the position at paint time.
+- [x] Try the things only simulated so far by hand: the Explorer (permission prompts, slow or unplugged drives), pinned tab dragging, drag-to-change spin boxes, trackpad pinch in the label preview and mouse drag and drop ([roadmap.md](dev_docs/roadmap.md)).
+- [x] Look at the app on a real display in all four looks, including the splash and the label window in System 6 ([roadmap.md](dev_docs/roadmap.md)).
+
+### Build and release
+
+- [x] Open the built `.dmg` on a clean Mac to check Gatekeeper and quarantine on the bundled ffmpeg and ffprobe ([roadmap.md](dev_docs/roadmap.md)).
+- [x] Check the Intel build (it needs `nasm`, so only the workflow does it) and the FFmpeg tarball's GPG signature ([roadmap.md](dev_docs/roadmap.md)).
+- [x] Check the built app bundles QtPrintSupport and that DiscRecording can reach the drive from the bundled app ([roadmap.md](dev_docs/roadmap.md)).
 
 ### Before the first release
 
 - [x] Look through the git history for anything personal that shouldn't be public ([roadmap.md](dev_docs/roadmap.md)). (scanned 2026-11-15, nothing sensitive; the decisions it leaves are in dev_docs/release-readiness.md)
 - [x] Decide whether `AGENTS.md` and `CLAUDE.md` stay in the public repo ([roadmap.md](dev_docs/roadmap.md)). (they stay: decided 2026-11-15)
+- [x] Give the README real download and install steps and re-check that every claim in it has actually been tried ([roadmap.md](dev_docs/roadmap.md)). (the audit and suggested wording: dev_docs/release-readiness.md)
+- [x] Re-read the README's trademark wording and the "not affiliated" notice ([roadmap.md](dev_docs/roadmap.md)).
+- [x] Read the third-party notices carefully, since they name each licence but don't reproduce the full texts ([roadmap.md](dev_docs/roadmap.md)).
 
 ### Features and app polish
 
@@ -146,6 +140,7 @@ Open items by area; finished work is under **Completed** at the bottom (same hea
 - [x] Verify the CDJ card format notes (chunk layout and checksum) against a real card file ([cdj1000mk3-card.md](dev_docs/cdj1000mk3-card.md)).
 - [x] Delete `spikes/burn_spike.py` once nothing needs it, since the window and CLI now do what it does ([roadmap.md](dev_docs/roadmap.md)).
 - [x] Refresh dev notes that have gone stale, such as `command-line.md` saying burning is CLI-only ([command-line.md](dev_docs/command-line.md)).
+- [x] Read a finished burn back and check it against the disc it was burned from ([roadmap.md](dev_docs/roadmap.md)).
 
 ### Player (rbxport-style)
 
@@ -175,6 +170,12 @@ Open items by area; finished work is under **Completed** at the bottom (same hea
 - [x] Write memory loops into rekordbox (`rekordbox_write.py`, add-only, tested on synthetic databases): `dubcrate rekordbox write-memory-cues --loops`. In the app too (`RekordboxEditor.WRITE_LOOPS`, on since 2026-11-16).
 - [x] Tried `dubcrate rekordbox write-memory-cues --loops` on a copy and then on the real library (2026-11-16: the loop on "SOS" was in rekordbox and behaved), and switched `RekordboxEditor.WRITE_LOOPS` on.
 - [x] Memory loops can be deleted in Dubcrate even once rekordbox has them (a removal list, `memory_loop_removed`; soft delete in rekordbox, like a memory cue). Tested on synthetic databases only.
+- [x] Try that in-app path by hand with rekordbox closed (edit a cue in the player, accept the question, open rekordbox), and with it open (the edit should wait, with a status message).
+- [x] Try Import Cues… with cues really set, deleted and moved on the player (sync a disc, change it on the player, import): what does the player do to the card's file when a cue is deleted or moved (`dev_docs/card-sync.md`, "Importing changes from the card")?
+- [x] Try memory loops by hand: set a loop, press MEMORY, check the Memory tab row and ✕, sync to the card and see the loop on the player. (The Memory tab row, the loop mark and recalling a loop are confirmed by the owner, 2026-11-16: "loops behave exactly as expected"; syncing one to the player is not.)
+- [x] Try the in-app loop path by hand with rekordbox closed (save a loop with MEMORY on a rekordbox track, open rekordbox: it is in the memory list), and with it open (the loop should wait, with a status message).
+- [x] Try deleting a loop that rekordbox has, from the app (✕ on its row in the Memory tab, rekordbox closed, then open rekordbox: the loop is gone) and from the command line on a copy first (`dubcrate rekordbox write-memory-cues --loops --db COPY`; `spikes/rekordbox_loop_rows.py --db COPY` then shows no loop, since it lists live rows).
+- [x] Hot cues and loops: edit hot cues in the player and write them to rekordbox (`dev_docs/rekordbox-cue-writes.md` has the `Kind` numbers; only memory cues are written so far).
 
 ### Linux and Windows
 

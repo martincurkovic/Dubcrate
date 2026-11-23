@@ -14,6 +14,7 @@ from pathlib import Path
 from PySide6.QtCore import QObject, Signal
 
 from dubcrate.analysis import Cue
+from dubcrate.cue_timing import lead_ms, to_audio
 from dubcrate.library import Library
 from dubcrate.library.cue_edits import with_edits
 from dubcrate.library.models import Track
@@ -60,11 +61,14 @@ class RekordboxCueCache(QObject):
         self._reading: set[Path] = set()
 
     def cues_for(self, track: Track, *, announce: bool = True) -> Sequence[Cue] | None:
-        """The track's cues: rekordbox's, with its memory cues replaced by any the user edited in Dubcrate
-        (`library.cue_edits.with_edits`). Empty: it has none; None: rekordbox's are still being read.
+        """The track's cues in audio time (rekordbox's, moved to where they fall in the audio: `cue_timing`),
+        with its memory cues replaced by any the user edited in Dubcrate (`library.cue_edits.with_edits`).
+        Empty: it has none; None: rekordbox's are still being read.
         """
         base = self._rekordbox_cues(track, announce)
-        return None if base is None else tuple(with_edits(self._lib, track, base))
+        if base is None:
+            return None
+        return tuple(with_edits(self._lib, track, to_audio(base, lead_ms(track.path))))
 
     def database_for(self, track: Track) -> Path | None:
         """The rekordbox `master.db` the track is in (itself or through its twin); None: not a rekordbox track."""

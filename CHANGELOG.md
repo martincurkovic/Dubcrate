@@ -35,6 +35,23 @@ The first release: macOS (Apple Silicon and Intel) and, new, Linux (an AppImage)
   hot cues (not ticked: you opt in), and cues you **deleted or moved** there (noticed from the sync after this feature, which records what it left on the card).
   You tick what to import. *Not tried with cues set on a real player yet.*
 
+### Finding a track at a gig
+
+- **Disc > Export Track Finder…** saves **one web page** with every disc and track in it, to open on a phone with no signal: type part of a title or
+  artist and it lists each disc that has the track, with the **disc and track number** (and the folder, for an MP3 disc) and the track's BPM, key, year, genre and length.
+  The title and artist are what is written on the disc, so they match the printed label. *The search was used at a gig on an iPhone and worked well. An iPhone's Files app and Safari
+  don't run the page, so it needs an app that opens local web pages: AirDrop the file and tap **Open in Sitecase** (a box after the export says so, with a Don't show this again tick; Help > Track Finder on a Phone… shows it again).
+  The other parts below have been tried in a desktop browser only, not yet on a phone.*
+- **Sort and browse**: All tracks by title, artist, genre, BPM, key, year, length or disc, with a letter strip to jump through a long list; **Filter** by BPM, year, key and genre; **Compact** cards.
+- **Tap a card** for the track's **waveform and memory cues** as they will be on the CDJ's card (hot cues included), with each cue's time and its **bar and beat**.
+- **Tagged**: star tracks to play later, drag them into order, and keep the list on the phone (the page says whether the app kept it).
+- **Related tracks**: on an open card, the tracks on your discs whose **BPM is close and whose key mixes** with it, in groups (same key, then one step round the Camelot wheel or the relative
+  major/minor), nearest BPM first, each saying **what to do on the pitch fader** ("pitch −3.1%", and which pitch range it needs past 6%). The BPM window (3, 6, 10 or 16 percent), **half / double time**,
+  **Energy moves** (up or down two steps, or a diagonal), **Same genre** and the order are kept on the phone; **Related to last** opens it for the track you tagged most recently. A track with no BPM or key can't be compared.
+  *Tried in a desktop browser only.*
+- **Export Playlists** (Disc menu, and right-click in the Discs list) writes discs as **rekordbox XML** or **M3U** files for other programs; it reads Dubcrate's discs and changes nothing in any library.
+  *Not yet tried by importing the XML into rekordbox.*
+
 ### Burning
 
 - **Audio CDs with CD-TEXT**, gapless by default, burned through macOS's own burning framework (a LiteOn USB burner
@@ -67,6 +84,11 @@ The first release: macOS (Apple Silicon and Intel) and, new, Linux (an AppImage)
 - **Sync** writes your **rekordbox cues** to the card as memory cues, so a disc loads in the player with them already set. Hot cues
   and anything already on the card are never touched, and the card's files are copied aside before anything is written. *Tried: a
   CDJ-1000MK3 (firmware 2.20) showed every cue written this way.*
+- **Cues land where the sound is.** rekordbox times an MP3 from the start of its file, but the CD is made without the silent frame and encoder delay at the start of most MP3s, so a rekordbox time is
+  **up to about 50 ms later** than the same place on the disc, and a cue set on a first beat could cut its start off. Dubcrate now works that out for each MP3 (from its first frame) and moves the cue earlier by it, and
+  puts it on the frame it falls in, never a later one. Cues you set in Dubcrate (with Q on, too) are placed on the sound and saved to rekordbox in rekordbox's own time. Syncing a disc again **moves the cues Dubcrate
+  wrote earlier**; one you moved on the player is left alone. `dubcrate cues timing DISC` lists what it does to each track. *Worked out and checked against 700 of the author's own MP3s; not yet checked on a burned disc.
+  Other formats (WAV, FLAC, M4A) were not measured and get no correction.*
 - **Sync also writes the player's waveform for each track**, so the player doesn't analyse a track when it loads. Dubcrate works the
   waveform out itself (from the low notes the player draws), in the background when you put a track on an audio disc and from the audio when you burn, and
   Sync does any that are left. *Tried: the player accepted, drew and kept waveforms written this way. The Sync tab's own waveform writing has not yet been tried on a card in a player.*

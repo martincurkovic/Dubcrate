@@ -18,7 +18,8 @@ Three steps, each a pure function:
 Whether the player accepts a file written this way is **not yet shown** (Phase 0 of the plan).
 """
 
-from collections.abc import Mapping, Sequence
+import math
+from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from enum import Enum
 
@@ -55,6 +56,13 @@ def _msf(seconds: float) -> str:
     return f"{whole // 60}:{whole % 60:02d}"
 
 
+def _frame(seconds: float) -> int:
+    """The frame a time falls in: rounded down, so a cue is never later than where it was set (a late cue
+    cuts the start of the sound off; an early one only adds a sliver of what comes before it). The small
+    addition keeps a time that is a whole number of frames, held as a float a hair short, in its frame."""
+    return math.floor(seconds * cc.FRAMES_PER_SECOND + 1e-6)
+
+
 def map_cues(
     cues_by_track: Mapping[int, Sequence[Cue]],
     track_starts: Sequence[int],
@@ -82,17 +90,17 @@ def map_cues(
             if cue.time < 0:
                 result.notes.append(f"The cue in {where} is before the track starts.")
                 continue
-            position = start + round(cue.time * cc.FRAMES_PER_SECOND)
+            position = start + _frame(cue.time)
             if position >= stop:
                 result.notes.append(f"The cue in {where} is past the end of the track.")
                 continue
             end = 0
             if cue.kind == "loop":
-                end = (
-                    start + round(cue.end * cc.FRAMES_PER_SECOND)
-                    if cue.end is not None
-                    else 0
-                )
+                end = start + _frame(cue.end) if cue.end is not None else 0
+                if cue.end is not None and cue.end > cue.time:
+                    end = max(
+                        end, position + 1
+                    )  # (a very short loop keeps a frame, whichever way it rounds)
                 if end <= position or end > stop:
                     result.notes.append(f"The loop in {where} has no usable end.")
                     continue
@@ -117,10 +125,25 @@ class Merge:
     added: list[cc.CueEntry]
     already_there: int  # wanted cues that were on the card already
     overflow: list[WantedCue]  # wanted, but the disc is at the player's limit
+    # cues of ours from an earlier sync, moved to where they are wanted now: (as it was, as it is)
+    moved: list[tuple[cc.CueEntry, cc.CueEntry]] = field(default_factory=list)
 
 
-def merge_cues(existing: Sequence[cc.CueEntry], wanted: Sequence[WantedCue]) -> Merge:
-    """Add `wanted` after `existing`, which is never changed, reordered or removed.
+# A cue we wrote in an earlier sync (`DiscRequest.earlier`) and have not seen changed on the player is moved to
+# a wanted cue up to this far from it: far enough for the correction of an MP3's start (`cue_timing`, up to
+# four frames) and a cue nudged in Dubcrate, near enough that two separate cues are not taken for one.
+MOVE_FRAMES = 8
+
+
+def merge_cues(
+    existing: Sequence[cc.CueEntry],
+    wanted: Sequence[WantedCue],
+    earlier: Collection[tuple[int, int, int]] = (),
+) -> Merge:
+    """Add `wanted` after `existing`, which is only changed in one way: a cue **exactly as an earlier sync left
+    it** (`earlier`: (track, position, end), the disc's baseline) is moved to the nearest wanted cue within
+    `MOVE_FRAMES`, keeping its place in the list. Anything else on the card, set or moved on the player, is
+    never changed, reordered or removed.
 
     A wanted cue within `DUPLICATE_FRAMES` of one already there (same track and kind) is skipped.
     Past `MAX_CUES` the rest is reported in `overflow`, not dropped silently. New entries are
@@ -128,9 +151,37 @@ def merge_cues(existing: Sequence[cc.CueEntry], wanted: Sequence[WantedCue]) -> 
     """
     cues = list(existing)
     result = Merge(cues, [], 0, [])
+    ours = set(earlier)
+
+    def present(c: cc.CueEntry, want: WantedCue) -> bool:
+        """Already where `want` is: within `DUPLICATE_FRAMES`, unless it is one we wrote that is not exactly there
+        (then it is moved: it may be a frame or two later than a cue is meant to be)."""
+        return _same(c.track, c.is_loop, c.position, want) and (
+            c.position == want.position or (c.track, c.position, c.end) not in ours
+        )
+
+    # a cue that is already where something is wanted is not ours to move
+    pinned = {i for i, c in enumerate(cues) if any(present(c, w) for w in wanted)}
     for want in wanted:
-        if any(_same(c.track, c.is_loop, c.position, want) for c in cues):
+        if any(present(c, want) for c in cues):
             result.already_there += 1
+            continue
+        near = [
+            (abs(c.position - want.position), i)
+            for i, c in enumerate(cues)
+            if i not in pinned
+            and (c.track, c.position, c.end) in ours
+            and c.track == want.track
+            and c.is_loop == want.is_loop
+            and abs(c.position - want.position) <= MOVE_FRAMES
+            and (not want.is_loop or abs(c.end - want.end) <= MOVE_FRAMES)
+        ]
+        if near:
+            i = min(near)[1]
+            old = cues[i]
+            cues[i] = replace(old, position=want.position, end=want.end)
+            pinned.add(i)
+            result.moved.append((old, cues[i]))
             continue
         if len(cues) >= cc.MAX_CUES:
             result.overflow.append(want)
@@ -226,6 +277,8 @@ class DiscRequest:
     wanted: Sequence[WantedCue]
     notes: Sequence[str] = ()
     waves: Mapping[int, Sequence[int] | None] = field(default_factory=dict)
+    # the cues the last sync left on the card for this disc (`Library.card_baseline`): (track, position, end)
+    earlier: Sequence[tuple[int, int, int]] = ()
 
 
 @dataclass
@@ -235,7 +288,7 @@ class DiscPlan:
     name: str | None  # the card's file name (`CDJ00001`); None when nothing is written
     file: cc.TrackFile | None  # what to write; None when nothing is
     added: list[cc.CueEntry]
-    kept: int  # cues already on the card, left exactly as they are
+    kept: int  # cues already on the card, left exactly as they are (not the ones moved)
     already_there: int
     overflow: list[WantedCue]
     notes: list[str]
@@ -244,6 +297,9 @@ class DiscPlan:
         default_factory=list
     )  # tracks that already have one: left alone
     waves_pending: list[int] = field(default_factory=list)  # wanted, not analysed yet
+    moved: list[tuple[cc.CueEntry, cc.CueEntry]] = field(
+        default_factory=list
+    )  # see `Merge.moved`
 
 
 @dataclass
@@ -285,7 +341,9 @@ def plan_card(
     for request in requests:
         entry = work.find(request.disc_id)
         existing = current.get(entry.name) if entry else None
-        merge = merge_cues(existing.cues if existing else [], request.wanted)
+        merge = merge_cues(
+            existing.cues if existing else [], request.wanted, request.earlier
+        )
         waves = merge_waveforms(
             existing.coarse if existing else [],
             existing.fine if existing else [],
@@ -316,7 +374,11 @@ def plan_card(
         elif existing is None:
             status = Status.NEW_FILE
         else:
-            status = Status.UPDATE if merge.added or waves.added else Status.IN_SYNC
+            status = (
+                Status.UPDATE
+                if merge.added or merge.moved or waves.added
+                else Status.IN_SYNC
+            )
         base = existing or cc.TrackFile.new(request.disc_id)
         file = replace(
             base,
@@ -333,13 +395,14 @@ def plan_card(
                 entry.name,
                 file,
                 merge.added,
-                len(existing.cues) if existing else 0,
+                len(existing.cues) - len(merge.moved) if existing else 0,
                 merge.already_there,
                 merge.overflow,
                 notes,
                 waves.added,
                 waves.kept,
                 waves.pending,
+                merge.moved,
             )
         )
     return CardPlan(work, plans)

@@ -1313,3 +1313,60 @@ def test_the_startup_update_can_be_switched_off_and_on_in_settings(qapp):
 def test_nonsense_saved_for_the_startup_update_means_on(qapp):
     settings._qs().setValue("import/auto_rekordbox", "maybe")
     assert settings.get_auto_import() is True
+
+
+def test_the_player_gets_rekordboxs_cues_in_audio_time(
+    qapp, tmp_path, monkeypatch, wait_for
+):
+    lib = Library.open(":memory:")
+    database = tmp_path / "master.db"
+    database.write_bytes(b"x")
+    lib.replace_source(
+        "rekordbox", str(database), "rb", [TrackRecord(ext_id="1", path="/x/1.mp3")]
+    )
+    monkeypatch.setattr(
+        cue_cache, "read_cues", lambda path: {"1": [cue_cache.Cue("memory", 10.0)]}
+    )
+    monkeypatch.setattr(
+        cue_cache, "lead_ms", lambda _path: 50
+    )  # rekordbox times this file 50 ms late
+    cache = cue_cache.RekordboxCueCache(lib)
+    changes = []
+    cache.changed.connect(lambda: changes.append(1))
+    track = lib.tracks()[0]
+    assert cache.cues_for(track, announce=False) is None
+    assert wait_for(lambda: changes)
+    [cue] = cache.cues_for(track)
+    assert round(cue.time, 3) == 9.95
+    lib.close()
+
+
+def test_a_loaded_tracks_analysis_is_in_audio_time_so_quantise_lands_on_the_sound(
+    tmp_path, monkeypatch
+):
+    from dubcrate.deck import Deck
+
+    path = write_wav(tmp_path / "a.wav", seconds=3.0)
+    rekordbox = Analysis(
+        waveform=sample_waveform(columns=450),
+        beat_times=np.array([0.55, 1.05, 1.55, 2.05]),
+        beat_numbers=np.array([1, 2, 3, 4], dtype=np.int8),
+        bpm=120.0,
+    )
+    monkeypatch.setattr(preview, "read_analysis", lambda *a: rekordbox)
+    monkeypatch.setattr(
+        preview, "lead_ms", lambda _path: 50
+    )  # rekordbox times this file 50 ms late
+    media = load_media(path, Path("/share"), "/x/ANLZ0000.DAT")
+    assert [round(float(t), 3) for t in media.analysis.beat_times] == [
+        0.5,
+        1.0,
+        1.5,
+        2.0,
+    ]
+    deck = Deck()
+    deck.load(3.0, media.analysis.beat_times, 120.0)
+    deck.quantise = True
+    assert deck.snap(1.02) == pytest.approx(
+        1.0
+    )  # on the sound, not on rekordbox's 1.05

@@ -114,6 +114,12 @@ def describe_plan(plan: DiscPlan) -> list[str]:
         end = f" to {msf(cue.end)}" if cue.end else ""
         into = into_track(plan.disc_id, cue.track, cue.position)
         out.append(f"  + {kind} track {cue.track} at {msf(cue.position)}{into}{end}")
+    for old, new in plan.moved:
+        kind = "loop" if new.is_loop else "cue "
+        into = into_track(plan.disc_id, new.track, new.position)
+        out.append(
+            f"  ~ {kind} track {new.track} moved from {msf(old.position)} to {msf(new.position)}{into}"
+        )
     if plan.status is not Status.NOTHING:
         out.append(
             f"  {plan.kept} already on the card kept, {plan.already_there} wanted "

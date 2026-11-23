@@ -192,6 +192,13 @@ def _no_modal_question(monkeypatch):
 
     monkeypatch.setattr("dubcrate.ui.sync_view.ask_import", refuse_import)
 
+    def refuse_howto(*_a, **_k):
+        raise AssertionError(
+            "a test opened the 'how to open the track finder' box; patch track_finder_ui.show_how_to_open"
+        )
+
+    monkeypatch.setattr("dubcrate.ui.track_finder_ui.show_how_to_open", refuse_howto)
+
 
 @pytest.fixture(autouse=True)
 def _no_real_burner(monkeypatch):
@@ -278,6 +285,18 @@ def _no_real_export_chooser(monkeypatch):
         )
 
     monkeypatch.setattr("dubcrate.ui.burn_dialog.ask_export_folder", refuse)
+
+
+@pytest.fixture(autouse=True)
+def _no_real_track_finder_chooser(monkeypatch):
+    """No test may open the file chooser of Export Track Finder: patch track_finder_ui.ask_save_file."""
+
+    def refuse(*_a, **_k):
+        raise AssertionError(
+            "a test opened the Export Track Finder chooser; patch track_finder_ui.ask_save_file"
+        )
+
+    monkeypatch.setattr("dubcrate.ui.track_finder_ui.ask_save_file", refuse)
 
 
 @pytest.fixture(autouse=True)

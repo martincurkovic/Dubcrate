@@ -1419,6 +1419,24 @@ def _first_disc_folder(ctx):
     return next(f for f in ctx.lib.disc_folders() if f.name == "This Weekend").id
 
 
+def _finder_howto(ctx, window):
+    from pathlib import Path
+
+    from dubcrate.ui import track_finder_ui
+
+    where = Path("/Users/dj/Desktop/Dubcrate Track Finder.html")
+    track_finder_ui.show_how_to_open(
+        window,
+        where,
+        f"Saved a finder for 612 track(s) on 14 disc(s) to {where}",
+        "3 track(s) have no waveform at all.",
+        offer_hide=True,
+    )
+
+
+_message_scene("msg-finder-howto", "Message: how to open the track finder on a phone",
+               "After Disc > Export Track Finder…: where it was saved, anything left out, the steps for an iPhone and the Don't show this again tick.",
+               _finder_howto)  # fmt: skip
 _message_scene("msg-delete-disc", "Question: delete a disc",
                "Delete Disc… on a disc.",
                lambda ctx, w: w.disc_view.delete_disc(ctx.demo.discs["warm"]))  # fmt: skip

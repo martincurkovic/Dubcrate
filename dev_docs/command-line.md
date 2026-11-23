@@ -85,6 +85,30 @@ dubcrate export-playlists ~/Desktop --format m3u              # a NEW folder "Du
 The window's **Disc > Export Playlists** and the Discs list's right-click do the same. Nothing is read from or written to
 rekordbox; the XML is for rekordbox's own "rekordbox xml" import. Exit status 1 if nothing could be exported.
 
+## Track finder (which disc is this track on)
+
+```sh
+dubcrate export-finder ~/Desktop/finder.html            # every disc, one HTML page (never overwrites)
+dubcrate export-finder ~/Desktop/one.html --disc 3      # only disc 3
+dubcrate export-finder ~/Desktop/f.html --keys musical # keys as A min, not 8A (default: camelot)
+```
+
+One self-contained page with the data inside and no network use: type part of a title or artist, get the disc and the
+track number (an MP3 disc also its folder), and under the artist the track's BPM, key, year, genre and length when known. Case, accents and apostrophes don't matter. The text is what is written on
+the disc, so it matches the printed label. **A phone has to open it in something that runs local HTML**: an iPhone's
+Files app and Safari don't run its script (Sitecase does: AirDrop the file, tap Open in Sitecase). The window's Disc > Export Track Finder… explains this in a box after saving.
+
+## Cue timing (what sync does to each track's cues)
+
+```sh
+dubcrate cues timing 3 4      # every track of discs 3 and 4: the offset, its group, how far to trust it
+```
+
+rekordbox's times on an MP3 are later than the audio on the disc (`cue_timing`, `dev_docs/cue-timing.md`): 0, about 25 or
+about 51 ms depending on the file's first frame, and sync moves each cue earlier by that. This prints it per track (`lame`,
+`ffmpeg`, `no-info`, `left-alone`, `not-mp3`; the ffmpeg and left-alone ones are marked less certain), a count per group and one
+track of each group to try on the player. It reads the first few kilobytes of each file and nothing else.
+
 ## Burning
 
 `dubcrate doctor` says what Dubcrate finds on this machine (ffmpeg and ffprobe, the burners and drive, the disc in the drive) and is the first thing to run when a burn misbehaves.

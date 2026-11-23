@@ -12,6 +12,7 @@ from dubcrate.audio.decode import DecodedAudio, decode_file
 from dubcrate.audio.player import AudioPlayer
 from dubcrate.beatjump import jump_time
 from dubcrate.card_import import ImportChoice, ImportResult
+from dubcrate.cue_timing import analysis_to_audio, lead_ms
 from dubcrate.deck import Deck
 from dubcrate.library import Library
 from dubcrate.library.cue_edits import (
@@ -58,6 +59,10 @@ def load_media(
         if analysis_root and analysis_path
         else None
     )
+    if (
+        analysis is not None
+    ):  # rekordbox's times are later than the audio for most MP3s (`cue_timing`)
+        analysis = analysis_to_audio(analysis, lead_ms(path))
     if analysis is not None and analysis.waveform is not None:
         waveform = analysis.waveform
     else:

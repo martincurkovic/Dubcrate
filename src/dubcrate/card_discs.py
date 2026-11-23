@@ -22,6 +22,7 @@ from dubcrate import cdj_card as cc
 from dubcrate.analysis import Cue
 from dubcrate.card_report import describe_plan, msf
 from dubcrate.card_sync import DiscPlan, DiscRequest, Status, map_cues, plan_card
+from dubcrate.cue_timing import lead_ms, to_audio
 from dubcrate.library import Library
 from dubcrate.library.cue_edits import with_edits
 from dubcrate.library.models import DiscEntry, DiscSummary, Track
@@ -118,8 +119,10 @@ class RekordboxCues:
         self._by_source: dict[int, Mapping[str, Sequence[Cue]]] = {}
 
     def for_track(self, track: Track) -> Sequence[Cue]:
-        """The track's cues for the card: rekordbox's, with its memory cues replaced by any edited in Dubcrate."""
-        return with_edits(self._lib, track, self._rekordbox_cues(track))
+        """The track's cues for the card, in audio time (`cue_timing`: rekordbox's are later than the audio on the
+        disc for most MP3s): rekordbox's, with its memory cues replaced by any edited in Dubcrate."""
+        base = to_audio(self._rekordbox_cues(track), lead_ms(track.path))
+        return with_edits(self._lib, track, base)
 
     def _rekordbox_cues(self, track: Track) -> Sequence[Cue]:
         analysed = self._lib.rekordbox_twin(track) or track
@@ -220,8 +223,13 @@ def prepare_disc(
             else:
                 wanted_waves[entry.position + 1] = None
                 result.to_analyse.append(track)
+    this_id = cc.DiscId.from_toc(starts, lead_out)
     result.request = DiscRequest(
-        cc.DiscId.from_toc(starts, lead_out), mapped.cues, mapped.notes, wanted_waves
+        this_id,
+        mapped.cues,
+        mapped.notes,
+        wanted_waves,
+        tuple(lib.card_baseline(this_id.key) or ()),
     )
     if toc is not None:
         return result
@@ -234,7 +242,15 @@ def prepare_disc(
             continue
         seen.add(other_id.key)
         again = map_cues(cues_by_track, other_starts, other_end)
-        result.alternates.append(DiscRequest(other_id, again.cues, [], wanted_waves))
+        result.alternates.append(
+            DiscRequest(
+                other_id,
+                again.cues,
+                [],
+                wanted_waves,
+                tuple(lib.card_baseline(other_id.key) or ()),
+            )
+        )
     if known:
         return result
     if summary.pregap_sectors:
@@ -270,6 +286,11 @@ class DiscSurvey:
         return len(self.plan.added) if self.plan else 0
 
     @property
+    def to_move(self) -> int:
+        """Cues of ours from an earlier sync that a sync would move to where they are wanted now."""
+        return len(self.plan.moved) if self.plan else 0
+
+    @property
     def waves_to_add(self) -> int:
         """Waveforms a sync would write, counting the tracks it would analyse first."""
         if not self.plan:
@@ -293,13 +314,16 @@ class DiscSurvey:
         if self.plan is None:
             return "Choose a card"
         parts = []
-        if self.to_add or not self.waves_to_add:
+        if self.to_add or not (self.waves_to_add or self.to_move):
             parts.append(f"{self.to_add} cue{'s' if self.to_add != 1 else ''}")
         if self.waves_to_add:
             parts.append(
                 f"{self.waves_to_add} waveform{'s' if self.waves_to_add != 1 else ''}"
             )
-        n = " and ".join(parts) + " to add"
+        n = " and ".join(parts) + " to add" if parts else ""
+        if self.to_move:
+            moves = f"{self.to_move} cue{'s' if self.to_move != 1 else ''} to move"
+            n = f"{n}, {moves}" if n else moves
         if self.plan.status is Status.NOTHING and self.plan.waves_pending:
             return n
         match self.plan.status:
@@ -382,6 +406,7 @@ def wave_rows(
     request = survey.input.request
     wanted = Counter(c.track for c in request.wanted) if request else Counter()
     added = Counter(c.track for c in plan.added) if plan else Counter()
+    moved = Counter(new.track for _, new in plan.moved) if plan else Counter()
     # the cues the track will have on the card (what is there already and what is added), else those wanted
     placed = plan.file.cues if plan is not None and plan.file is not None else (request.wanted if request else ())  # fmt: skip
     starts = survey.input.starts
@@ -422,6 +447,8 @@ def wave_rows(
             cues = f"{wanted[number]}" if wanted[number] else "–"
         elif added[number]:
             cues = f"{added[number]} to add"
+        elif moved[number]:
+            cues = f"{moved[number]} to move"
         else:
             cues = "on the card" if wanted[number] else "–"
         rows.append(
