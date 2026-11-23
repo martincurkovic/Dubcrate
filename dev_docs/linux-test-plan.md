@@ -29,8 +29,8 @@ this plan is what is left, in the order to do it. Tag what you find as in [burni
 ## Results of the first session (2026-11-23, Omarchy / Arch, a real drive and CDJ card)
 
 Ticked below where it was done; **[hardware 2026-11-23]** details are in [cross-platform.md](cross-platform.md)
-("The first real Linux machine") and [burning.md](burning.md) ("Linux and `cdrdao`"). Not run: sections 5's CDJ
-checks, 6, the wrong-case messages in 4, a real printer. Arch notes: `pacman -S cdrdao libisoburn` (add `fuse2` for
+("The first real Linux machine") and [burning.md](burning.md) ("Linux and `cdrdao`"). Not run: the wrong-case messages in
+4, a real printer; section 6 (an MP3 disc) was started and has no recorded result yet. Arch notes: `pacman -S cdrdao libisoburn` (add `fuse2` for
 AppImages); cdrdao there is **1.2.6**; USB sticks and cards mount under `/run/media/$USER/`; the drive is opened
 through a logind ACL, not a group.
 
@@ -98,8 +98,9 @@ Follow the hardware check in [burning.md](burning.md): a short disc first, 10x t
 
 - [x] The disc was written (10 tracks, 552 MB, requested 48x, written at 24x), the TOC check said "exactly as planned",
       and the owner says it reads fine **[hardware 2026-11-23]**.
-- [ ] **CD-TEXT** shows on the CDJ-1000MK3 (title and artist): not reported.
-- [ ] Track boundaries are gapless on the CDJ: not reported (the TOC is as planned, which has no pregap).
+- [x] **CD-TEXT** shows on the CDJ-1000MK3 (owner) **[hardware 2026-11-23]**; the audio sounds perfect.
+- [x] Track boundaries are gapless: the owner is fairly sure (a CDJ makes it hard to tell); the TOC is as planned, which
+      has no pregap.
 - [x] Drive, media and speed are in `burning.md`.
 
 ## 6. A real MP3 disc

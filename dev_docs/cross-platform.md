@@ -112,7 +112,12 @@ and USB sticks. The burn results are in [burning.md](burning.md), "Linux and `cd
   3. A format on a freshly re-inserted card left a partition table and **no file system** although the script exited 0;
      the cause is unknown (the kernel re-read the partition table as the script ran). The script now reads the
      partition with `blkid -p` after `mkfs.fat` and fails with what it holds, and the app **logs the script's exit code
-     and output** (`format mmcblk0: script exit ...`). **Open: retry it and read that log line if it fails again.**
+     and output** (`format mmcblk0: script exit ...`). **The next format worked (owner: "fixed")**: exit 0,
+     `/dev/mmcblk0p1 now holds: vfat`, the "Card Ready" box, and the failure has not come back; whether the self-check
+     or luck fixed it is not known.
+  4. The card mounted once under the name `8B78-BD46` (its serial) and the "Card Ready" box quoted that. **The label on
+     the card is `DISK_IMG`** (checked afterwards: udisks `IdLabel`, and it mounts as `DISK_IMG` now): udisks had mounted
+     before udev read the label. The box now says the label we wrote, not the mount folder's name. **[hardware 2026-11-23]**
 - **Sync and cues:** owner: waveforms synced to the card, a loop saved on the CDJ and imported back into Dubcrate, and
   **Eject after syncing** works (`udisksctl unmount`; a built-in slot cannot power off, `CanPowerOff` is false, so its
   device stays: the card list now hides a disk with a file system and no mount instead of listing it as a card to set up).
@@ -169,7 +174,7 @@ Each helper gets one function with the platform chosen in ONE place (as `card_fo
 injectable runner, an expected-error exception with plain words, tests against stand-in commands, and a
 **[not tried]** tag until it has run on the real OS.
 
-- [x] **1. Eject** (`eject.py`): Linux and Windows added, tested against stand-in commands. **Linux, a card in a built-in slot: [hardware 2026-11-23]** (owner: Eject after syncing works; the slot's device stays, which the card list now hides). Disc eject on Linux and everything on Windows **[not tried]**.
+- [x] **1. Eject** (`eject.py`): Linux and Windows added, tested against stand-in commands. **Linux: [hardware 2026-11-23]** (owner: Eject after syncing works for a card in a built-in slot, whose device stays and which the card list now hides; **disc eject works**). Everything on Windows **[not tried]**.
 - [x] **2. Wording**: "Eject it in Finder" and the other Mac-only phrases use `card_format.eject_hint()` or say the OS neutrally.
 - [x] **3. Read the TOC** on Linux (kernel ioctls) and Windows (`IOCTL_CDROM_READ_TOC`, `ctypes`) in `drive_toc.py`, so `burn_check` runs after any burn. Tested against made-up answers only. **Linux: [hardware 2026-11-23]**, the kernel reader matched a card entry exactly and `burn_check` said "exactly as planned" after a real burn; Windows **[not tried]**.
 - [x] **4. `pycdlib`** makes the MP3 disc's ISO on every OS (`iso.py`: Joliet names, Rock Ridge, numbered 8.3 names underneath, ASCII volume label); the external-tool lookup and the `hdiutil` branch are gone. Read back with `xorriso` and `isoinfo`; the smoke test makes an image in a built app. **Not burned and played** on a real drive.
@@ -254,8 +259,9 @@ injectable runner, an expected-error exception with plain words, tests against s
 - [ ] Hardware checks, in the style of `burning.md`: drive detection, a simulated audio burn, a
   real audio burn on a CDJ-1000MK3 (gapless boundaries, CD-TEXT), an MP3 disc. Tag results
   **[hardware DATE]**. **Done 2026-11-23** (see "Linux and `cdrdao`" in [burning.md](burning.md)): drive detection, a
-  simulated burn, a real audio burn at the drive's top speed with the TOC check; **still to do**: the disc on a CDJ
-  (CD-TEXT, gapless) and an MP3 disc.
+  simulated burn, a real audio burn at the drive's top speed with the TOC check, and the disc on a CDJ-1000MK3
+  (CD-TEXT shows, the audio is right, gapless as far as the owner can tell); **still to do**: the MP3 disc (started,
+  result not recorded) and the wrong-case messages.
 - [x] Device permissions: the user must be allowed to open the drive (often the `cdrom` or
   `optical` group, or a udev rule). Detected and said (2026-11-16): `cdrdao.access_problem(device)` checks the device's
   group and the user's before anything runs (`CdrdaoBurner._device`), says which group and the `usermod` line, or

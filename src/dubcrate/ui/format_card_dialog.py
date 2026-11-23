@@ -286,7 +286,9 @@ class FormatCardDialog(QDialog):
             self._update()
             self.formatted.emit(Path(found.volume))
             self.accept()
-            announce_ready(self.parent(), found.volume.name)
+            # (the label we wrote, not the mount folder's name: udisks names that after the serial,
+            # `8B78-BD46`, if it mounts before it has read the label)
+            announce_ready(self.parent(), card_format.LABEL)
 
         def failed(text: str) -> None:
             self._busy = False

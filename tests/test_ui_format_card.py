@@ -114,7 +114,9 @@ def test_formatting_runs_the_formatter_on_the_picked_card_with_the_disk_as_liste
     )  # what was listed, so a swapped card is caught
     assert told == [Path("/Volumes/DISK_IMG")]
     # it closes itself and a box says so, rather than leaving a quiet line in an open window
-    assert closed == [True] and dialog.announced == ["DISK_IMG"]
+    assert closed == [True] and dialog.announced == [
+        "DISK_IMG"
+    ]  # (the label, not the mount's name)
     assert dialog.result.text() == ""
     assert not dialog.format_button.isVisibleTo(dialog)
     assert (

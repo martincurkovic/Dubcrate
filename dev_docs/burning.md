@@ -137,8 +137,9 @@ Magnetics CD-Rs. Nothing below needed a change to the burner code.
   drive's real maximum and so can't warn about it. It took 4 min 50 s; `Enabling JustSpeed`, power calibration
   (about 15 s), `Writing CD-TEXT lead-in...`, progress lines every 10 percent (`Writing: 10% (56 of 552 MB)`),
   `Writing finished successfully`, then **`Checked the disc's TOC: it is exactly as planned`** (the Linux ioctl TOC
-  reader and `burn_check` on a real burn). The owner reports the disc reads fine. Not reported: CD-TEXT and gapless
-  boundaries on a CDJ-1000MK3.
+  reader and `burn_check` on a real burn). **On a CDJ-1000MK3 (owner): the CD-TEXT shows, the audio sounds perfect, and
+  the owner is fairly sure it is gapless (hard to tell on a CDJ anyway; the TOC has no pregap). Dubcrate's disc eject
+  after the check worked.** The first Linux-written disc to be played.
 - **[hardware 2026-11-23]** The kernel TOC reader (`drive_toc.linux_entries`) read a disc burned on the Mac: 18
   tracks, lead-out 358,964, track 2 at 25,180, last track at 341,351, and the CDJ's SD card has an entry for it with
   **exactly those four numbers** (`CDJ00001`), so the Linux reader agrees with what the player recorded. Another
@@ -146,9 +147,11 @@ Magnetics CD-Rs. Nothing below needed a change to the burner code.
 - **[hardware 2026-11-23]** The Mac's "one frame later than planned" TOC is **not consistent** (owner, from 48 discs
   burned on the Mac: some read back exactly as planned, others a frame late). The one Linux disc matched exactly, which
   proves nothing about `cdrdao` against DiscRecording either way. The TOC Manager exists for this.
-- **[not tried]** An MP3 disc on Linux (the `cdrdao` data-track path, or `xorriso -as cdrecord`); a test disc
-  with three folders is in the library ("MP3 Linux Test"). The wrong-case messages (no disc, not blank, permission
-  denied); whether a CDJ shows CD-TEXT and plays gaplessly from a disc `cdrdao` wrote.
+- **[hardware 2026-11-23]** An MP3 disc (the library's "MP3 Linux Test": 15 tracks in three folders plus three at
+  the root) was started from the burn window at 19:47: `cdrdao write --device /dev/sr0 -n --speed 48 --eject
+  disc.toc` (the ISO as one data track). **Its result, and playing it on a CDJ, are not recorded yet.**
+- **[not tried]** `xorriso -as cdrecord` as the alternative for MP3 discs; the wrong-case messages (no disc, not blank,
+  permission denied).
 
 ## MP3 CDs
 
