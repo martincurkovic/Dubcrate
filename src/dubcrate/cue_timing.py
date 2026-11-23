@@ -20,7 +20,8 @@ from collections.abc import Sequence
 from dataclasses import replace
 from pathlib import Path
 
-from dubcrate.analysis import Cue
+from dubcrate.analysis import Analysis, Cue, Phrase
+from dubcrate.waveform import Waveform
 
 log = logging.getLogger(__name__)
 
@@ -124,6 +125,30 @@ def to_audio(cues: Sequence[Cue], lead: int) -> list[Cue]:
         )
         for c in cues
     ]
+
+
+def analysis_to_audio(analysis: Analysis, lead: int) -> Analysis:
+    """All of rekordbox's analysis of a track in audio time, so what the player draws and snaps to (the beat grid
+    Q quantises on, the bar counter, beat jump, phrases, the detail waveform, the cues) lines up with the sound.
+    The detail waveform loses its first `lead` milliseconds a whole column (1/150 s) at a time, so it can be up
+    to 3 ms off; the whole-track overview is left as it is (50 ms is a fraction of a column of it)."""
+    if not lead:
+        return analysis
+    shift = lead / 1000.0
+    wave = analysis.waveform
+    if wave is not None and wave.columns_per_second:
+        drop = round(shift * wave.columns_per_second)
+        wave = Waveform(wave.bands[drop:], wave.columns_per_second)
+    return replace(
+        analysis,
+        waveform=wave,
+        beat_times=analysis.beat_times - shift,
+        cues=tuple(to_audio(analysis.cues, lead)),
+        phrases=tuple(
+            Phrase(max(0.0, p.start - shift), max(0.0, p.end - shift), p.label)
+            for p in analysis.phrases
+        ),
+    )
 
 
 def rekordbox_ms(audio_ms: int, lead: int) -> int:

@@ -42,10 +42,13 @@ rekordbox's own time, so an edit never moves another cue, and a cue within the l
 stays put). The finder shifts rekordbox's beat grid by the same amount (`track_finder.in_audio_time`) so a cue
 on a beat reads as on it.
 
-**Not converted** (still rekordbox's time, so the same 25-51 ms off on an affected MP3): the player's
-waveforms, beat grid, phrases, bar counter, beat jump and quantise. Quantise snaps to rekordbox's grid, so a
-cue set with Q lands that much late in the audio and is saved late. Moving all of rekordbox's analysis into
-audio time at load is the way to fix those.
+**The player's analysis too** (`analysis_to_audio`, applied in `ui/preview.load_media`): beat grid, phrases,
+the cues in the analysis files and the detail waveform (which loses its first `lead` ms, in whole 1/150 s
+columns, so up to 3 ms off) move into audio time as the track loads. So **Q (quantise) snaps to where the
+beat is in the audio** and a cue set with it is saved there (and converted back to rekordbox's time on the way
+out), and the bar counter, beat jump and grid lines agree with the sound. The whole-track overview waveform
+is left as it is (50 ms is a fraction of one of its columns). The deck clamps a snapped cue to 0, and a beat
+before 0 (a first beat inside the lead) stays in the grid.
 
 ## Rounding and earlier syncs
 

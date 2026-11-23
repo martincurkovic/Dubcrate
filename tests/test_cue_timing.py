@@ -111,3 +111,32 @@ def test_cues_move_earlier_by_the_lead_and_never_before_the_start():
 def test_a_round_trip_through_audio_time_is_exact(ms):
     [back] = ct.to_audio([Cue("memory", ms / 1000)], 51)
     assert ct.rekordbox_ms(round(back.time * 1000), 51) == max(ms, 51)
+
+
+def test_the_whole_analysis_moves_into_audio_time():
+    import numpy as np
+
+    from dubcrate.analysis import Analysis, Phrase
+    from dubcrate.waveform import Waveform
+
+    bands = np.arange(300 * 3, dtype=np.float32).reshape(300, 3)
+    analysis = Analysis(
+        waveform=Waveform(bands, 150.0),
+        preview=Waveform(bands[:10], 5.0),
+        beat_times=np.array([0.03, 0.53, 1.03]),
+        beat_numbers=np.array([1, 2, 3], dtype=np.int8),
+        bpm=120.0,
+        cues=(Cue("memory", 1.05),),
+        phrases=(Phrase(0.03, 8.03, "INTRO"),),
+    )
+    got = ct.analysis_to_audio(analysis, 50)
+    assert [round(float(t), 3) for t in got.beat_times] == [-0.02, 0.48, 0.98]
+    assert list(got.beat_numbers) == [1, 2, 3] and got.bpm == 120.0
+    assert round(got.cues[0].time, 3) == 1.0
+    assert (got.phrases[0].start, round(got.phrases[0].end, 3)) == (0.0, 7.98)
+    assert (
+        got.waveform.columns == 300 - 8
+    )  # 50 ms is 7.5 columns, rounded: 8 whole columns
+    assert got.waveform.bands[0, 0] == bands[8, 0]
+    assert got.preview is analysis.preview
+    assert ct.analysis_to_audio(analysis, 0) is analysis
