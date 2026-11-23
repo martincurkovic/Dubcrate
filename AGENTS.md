@@ -175,6 +175,43 @@ branches in one named helper each (as `rekordbox.default_master_db` does), never
 
 ## Working notes (from the first sessions)
 
+### Handover: the 2026-11-23 session (first real Linux machine, MP3 discs on the card)
+
+**State:** all committed (the owner commits; last commit `d52aa58`), full suite 2,711 passed and 6 skipped, ruff clean. Nothing is half done.
+
+**What now works on real hardware** (Omarchy / Arch, Wayland, LiteOn eSAU108, CDJ-1000MK3; the evidence is in `dev_docs/burning.md` "Linux and `cdrdao`",
+`cross-platform.md` "The first real Linux machine", `linux-test-plan.md`):
+- Linux: audio and MP3 burns through `cdrdao` 1.2.6 (the audio disc plays on a CDJ with CD-TEXT, the MP3 disc plays too), the kernel TOC reader,
+  disc and card eject, Format a Card (three races found and fixed), cards and discs noticed by themselves, preview audio, PDF labels.
+- **MP3 discs on the card**: `PIONEER/MPJ` decoded (`dev_docs/cdj1000mk3-card.md` section 6: waveform records keyed by (folder, file), 132-byte cue
+  entries with the time, MP3 frame number and the file byte offset, hot cues, loops, deletes; the player's own files are test data in
+  `tests/data/cdj_card/mp3/`) and **sync built end to end** (`iso.image_layout`, `mp3_sync`, `card_mp3`, `dubcrate card sync`, the Sync tab's list and button).
+  **The waveforms are proven on the CDJ**; the cue half is only tried on synthetic discs.
+- The player: Q and the beat jump menu follow rekordbox's beat grid (a track it hasn't analysed gets no Q, manual loops and a jump in seconds).
+
+**Open, in the order I would do them** (`TODO.md` has the whole list):
+1. **MP3 cues on the CDJ**: set a cue in Dubcrate (or rekordbox) on a track of "MP3 Linux Test", sync, look at the CDJ. Positions are audio time plus the rendered
+   file's `lead_ms`, **unmeasured**: a click-track disc (one CD-R) measures the player's time against ours.
+2. **Sync an MP3 disc before the player has seen it.** Needs the ID's last eight bytes (`05 2c 06`, `33 87 45 e7`, `00 00`); 48 simple checksums failed. Routes, cheapest
+   first, are in `dev_docs/card-sync.md` ("Why an MP3 disc has to be played once first"): does loading alone make the entry, IDs from the owner's older card copies,
+   the firmware (it stalled there once: the writer is reached through code Ghidra doesn't disassemble), CD-RW variants.
+3. **Windows**: the owner has no Windows PC, only a Windows container on this machine (Docker's socket refuses the agent: ask them for the image and steps);
+   `build_windows.ps1` has never run; `card_devices` (macOS `/dev`), `disc_state` (`drutil status`) and everything Windows are untried.
+4. Loose ends: the four bytes at `+112` of an MP3 cue entry, deleting a hot cue (unseen), Import Cues from an MP3 card, a tracks table for an MP3 row in the Sync tab,
+   a banner when a sync has finished (suggested, not decided).
+
+**Gotchas that cost time:**
+- The owner uses a **tiling window manager**: starting the real GUI puts windows on their screen and a tiler forces sizes, so it says nothing about layout. Render offscreen
+  (`QT_QPA_PLATFORM=offscreen`, `scripts/make_screenshots.py --only NAME`, `scripts/ui_snapshots.py`).
+- **The default library (`~/.local/share/Dubcrate/library.db`) holds the owner's real data**: the 1,116 tracks of `~/Music/Rekordbox`, a stale "Rekordbox USB" source (it
+  points at a stick; remove it in the GUI), the discs "Absolute Heaters" and "MP3 Linux Test". `card sync --yes` caches waveforms into it, so experiment with `--library`
+  and with a **copy** of the card's `PIONEER` folder, never the card. Nothing is burned or written to a real card without the owner saying so.
+- The owner has several 2 GB cards (their volume serials differ) and backups of the first; a card's label should be `DISK_IMG`.
+- rbxport (their other app, an AppImage in `~/Applications`) made `~/Library/Pioneer/rekordbox/` on this machine: Dubcrate ignores it on Linux, and a test skips unless it holds analysis files.
+- This Qt theme puts `&` on standard buttons' text (tests strip it); AppImages need `fuse2`; a journaled HFS+ stick mounts read-only on Linux.
+- `ruff format` reflows long lines, so an exact-string edit written from memory misses: read the text first (it cost several scripts this session).
+- A property that asks a field being decided (`plan.changed` asking `plan.status` while computing the status) always answers its initial value: compute from the data.
+
 ### Where things stand
 
 *Last updated after the session (2026-11-15) that built the rbxport-style player, the Sync tab's redesign, Linux/Windows groundwork (card formatting, eject, TOC, pycdlib ISOs, a Linux AppImage), **memory cue editing, the rekordbox memory-cue writer and the way back from the card**; before that (2026-11-14): card sync proven on the owner's CDJ-1000MK3, the Sync tab, the post-burn TOC check, the waveform test disc; (2026-11-13): the card's format reverse-engineered and card sync's core.*
@@ -339,6 +376,7 @@ something new.
 
 ### How the owner works
 
+- **Suggest a commit message after any change to code** (they asked twice); they report real-hardware results in chat, so write them into `TODO.md` and the `dev_docs/` notes at once, tagged **[hardware DATE]**, and keep "not tried" for what was not.
 - The owner commits; you may `git add` and should suggest a short commit message.
 - Decisions go in `dev_docs/roadmap.md` ("Decisions so far"); keep `README.md` for end
   users only.
