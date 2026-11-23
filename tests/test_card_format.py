@@ -359,3 +359,10 @@ def test_a_system_that_does_not_say_where_a_disk_is_mounted_offers_nothing(monke
     assert unknown.mounts is None
     monkeypatch.setattr(cf, "list_disks", lambda run=None: [unknown])
     assert cf.unset_cards() == []
+
+
+def test_mac_devices_are_the_whole_and_partition_free_disk_nodes(tmp_path):
+    for name in ("disk0", "disk0s1", "disk4", "rdisk4", "tty.x"):
+        (tmp_path / name).touch()
+    assert cf.mac_devices(tmp_path) == ["disk0", "disk4"]
+    assert cf.mac_devices(tmp_path / "missing") == []

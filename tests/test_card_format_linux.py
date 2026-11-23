@@ -472,3 +472,50 @@ def test_a_card_that_never_shows_a_file_system_is_said_unformatted(
     )
     with pytest.raises(cf.FormatError, match="unformatted, not FAT16"):
         cf.format_card("sdb", system)
+
+
+def test_a_disk_says_whether_a_partition_of_it_holds_a_file_system():
+    with_fs = block(
+        children=[
+            {"name": "sdb1", "type": "part", "fstype": "vfat", "mountpoints": [None]}
+        ]
+    )
+    (disk,) = lx.parse_lsblk(listing(with_fs))
+    assert disk.has_filesystem and disk.mounts == ()
+    (blank,) = lx.parse_lsblk(listing(block()))
+    assert not blank.has_filesystem
+
+
+def test_an_ejected_card_is_not_offered_as_a_card_to_set_up_but_a_blank_one_is(
+    monkeypatch,
+):
+    from dataclasses import replace
+
+    ejected = cf.CardDisk(
+        "mmcblk0", "", 2_013_265_920, "Secure Digital", True, True, False, False, True,
+        mounts=(), has_filesystem=True,
+    )  # fmt: skip
+    monkeypatch.setattr(cf, "list_disks", lambda run=None: [ejected])
+    assert cf.unset_cards() == []  # (a built-in slot keeps its device after an eject)
+    blank = replace(ejected, has_filesystem=False)
+    monkeypatch.setattr(cf, "list_disks", lambda run=None: [blank])
+    assert [u.disk for u in cf.unset_cards()] == [blank]
+    mounted = replace(ejected, mounts=("/run/media/me/DISK_IMG",))
+    monkeypatch.setattr(cf, "list_disks", lambda run=None: [mounted])
+    assert [u.disk for u in cf.unset_cards()] == [
+        mounted
+    ]  # (mounted, no PIONEER: still to set up)
+
+
+def test_card_devices_lists_the_disks_a_card_could_be_in_with_their_sizes(tmp_path):
+    for name, size in {
+        "sda": "100", "mmcblk0": "3932160", "nvme0n1": "9", "loop0": "0", "sr0": "2", "sdb": "0",
+    }.items():  # fmt: skip
+        (tmp_path / name).mkdir()
+        (tmp_path / name / "size").write_text(size + "\n", encoding="utf-8")
+    assert lx.card_devices(tmp_path) == ["mmcblk0:3932160", "sda:100", "sdb:0"]
+    (tmp_path / "sdb" / "size").write_text("2013265920\n", encoding="utf-8")
+    assert "sdb:2013265920" in lx.card_devices(
+        tmp_path
+    )  # (a card put into a reader changes it)
+    assert lx.card_devices(tmp_path / "missing") == []

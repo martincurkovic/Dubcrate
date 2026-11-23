@@ -274,6 +274,16 @@ def _no_real_card_format(monkeypatch):
     monkeypatch.setattr(
         "dubcrate.ui.sync_view._real_unset", list
     )  # no card list asks the system
+    monkeypatch.setattr(
+        "dubcrate.card_format.card_devices", list
+    )  # nor looks at /sys/block
+
+
+@pytest.fixture(autouse=True)
+def _no_real_disc_probe(monkeypatch):
+    """The burn window asks the drive whether a disc is in it every couple of seconds: no test reaches a real
+    drive, so the probe says "can't tell" (a test that wants it hands the window a `probe`)."""
+    monkeypatch.setattr("dubcrate.ui.burn_dialog.disc_state", lambda device=None: None)
 
 
 @pytest.fixture(autouse=True)

@@ -219,7 +219,11 @@ LOCAL_DB = Path.home() / "Library/Pioneer/rekordbox/master.db"
 
 
 @pytest.mark.skipif(
-    not (LOCAL_DB.parent / "share").is_dir(), reason="no local rekordbox library"
+    not any(
+        (LOCAL_DB.parent / "share" / "PIONEER" / "USBANLZ").glob("*/*/ANLZ0000.DAT")
+    ),
+    reason="no local rekordbox library with analysis files (an empty share folder, such as"
+    " another app makes, is not one)",
 )
 def test_against_a_real_local_rekordbox_analysis():
     root = share_root(LOCAL_DB)

@@ -9,7 +9,7 @@ Picking a folder emits `folder_selected(path)`; the window reads its audio files
 import logging
 import os
 import sys
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from pathlib import Path
 
 from PySide6.QtCore import (
@@ -174,7 +174,7 @@ class DrivePoller(QObject):
     def __init__(
         self,
         parent: QObject | None = None,
-        volumes: Callable[[], list[Path]] | None = None,
+        volumes: Callable[[], Sequence[object]] | None = None,
         interval_ms: int = DRIVE_POLL_MS,
     ):
         super().__init__(parent)

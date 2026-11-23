@@ -1067,3 +1067,66 @@ def test_cancel_stops_an_export_and_removes_the_half_made_folder(make_dialog, wa
     assert "export was cancelled" in dialog.status_label.text()
     assert not dialog.cancel_burn_button.isVisibleTo(dialog)
     assert dialog.export_button.isEnabled()  # (it can be done again)
+
+
+# -- a disc put in while the window is open ----------------------------------------------------------
+
+
+def test_a_disc_put_in_after_the_window_opened_is_noticed_without_check_again(
+    qapp, lib, disc_id, wait_for
+):
+    state = {"now": "empty"}
+    burner = FakeBurner()
+    dialog = BurnDialog(
+        lib,
+        disc_id,
+        burner_factory=lambda: burner,
+        probe=lambda device=None: state["now"],
+    )
+    assert wait_for(lambda: not dialog._busy) and burner.media_calls == 1
+    dialog._watch_disc()
+    assert burner.media_calls == 1  # nothing changed: the drive is not asked again
+    state["now"] = "loading"
+    dialog._watch_disc()
+    assert burner.media_calls == 1  # a disc still spinning up is waited for
+    state["now"] = "disc"
+    dialog._watch_disc()
+    assert wait_for(lambda: burner.media_calls == 2 and not dialog._busy)
+    dialog._watch_disc()
+    assert burner.media_calls == 2  # (settled: no more looks)
+    state["now"] = "empty"  # taken out again
+    dialog._watch_disc()
+    assert wait_for(lambda: burner.media_calls == 3 and not dialog._busy)
+    dialog.close()
+
+
+def test_a_drive_that_cannot_say_is_never_asked_again_by_itself(
+    qapp, lib, disc_id, wait_for
+):
+    burner = FakeBurner()
+    dialog = BurnDialog(
+        lib, disc_id, burner_factory=lambda: burner, probe=lambda device=None: None
+    )
+    assert wait_for(lambda: not dialog._busy)
+    for _ in range(3):
+        dialog._watch_disc()
+    assert burner.media_calls == 1  # (Check Again is still there for it)
+    dialog.close()
+
+
+def test_the_watch_runs_only_while_the_window_is_shown_and_never_for_an_export(
+    qapp, lib, disc_id, wait_for
+):
+    burner = FakeBurner()
+    dialog = BurnDialog(lib, disc_id, burner_factory=lambda: burner)
+    assert wait_for(lambda: not dialog._busy)
+    assert not dialog._disc_timer.isActive()  # (not shown yet)
+    dialog.show()
+    assert dialog._disc_timer.isActive()
+    dialog.hide()
+    assert not dialog._disc_timer.isActive()
+    dialog.close()
+    export = BurnDialog(lib, disc_id, burner_factory=lambda: burner, export_only=True)
+    export.show()
+    assert not export._disc_timer.isActive()  # (no drive to watch)
+    export.close()

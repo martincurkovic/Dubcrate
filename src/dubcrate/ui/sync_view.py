@@ -134,6 +134,9 @@ def confirmation_text(
 CARD_SETTLE_MS = (
     800  # after a change in /Volumes, a moment for the card to finish mounting
 )
+DEVICE_POLL_MS = (
+    2000  # how often the card list looks at which disks exist, while it is on show
+)
 ROW_HEIGHT = 62
 # A card not set up: its note wraps (two lines for "Has other files…"), and the Format… button has a line.
 UNSET_ROW_HEIGHT = 104
@@ -307,6 +310,7 @@ class CardPanel(QWidget):
         watch: Sequence[Path] = (),
         poll: bool = False,
         unset: Callable[[], list[card_format.UnsetCard]] | None = None,
+        devices: Callable[[], list[str]] | None = None,
     ):
         super().__init__(parent)
         self._volumes = volumes  # None: the drives that are plugged in
@@ -368,16 +372,26 @@ class CardPanel(QWidget):
         if poll:  # (Windows: a drive is a letter, not a folder to watch)
             self._poller = DrivePoller(self)
             self._poller.changed.connect(self._settle.start)
+        # A card that never mounts (a blank one) changes no folder: look at which disks exist as well,
+        # while the tab is on show, so it joins the list without a click on Refresh.
+        self._devices = DrivePoller(
+            self,
+            volumes=devices or card_format.card_devices,
+            interval_ms=DEVICE_POLL_MS,
+        )
+        self._devices.changed.connect(self._settle.start)
         self._watch_folders()
 
     def showEvent(self, event) -> None:
         if self._poller is not None:
             self._poller.start()
+        self._devices.start()
         super().showEvent(event)
 
     def hideEvent(self, event) -> None:
         if self._poller is not None:
             self._poller.stop()
+        self._devices.stop()
         super().hideEvent(event)
 
     # -- finding cards -------------------------------------------------------------

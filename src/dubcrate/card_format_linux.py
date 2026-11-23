@@ -139,6 +139,32 @@ def _mountpoints(node: dict) -> list[str]:
     return found
 
 
+def _has_filesystem(node: dict) -> bool:
+    """Whether the disk or any partition of it holds a file system, as lsblk says."""
+    return bool(node.get("fstype")) or any(
+        _has_filesystem(child) for child in node.get("children") or []
+    )
+
+
+def card_devices(base: Path = SYSFS_BLOCK) -> list[str]:
+    """`name:size` of every disk a card could be in (`sdX`, `mmcblkN`), from /sys/block alone (no command),
+    for the card list to notice a card coming or going: a reader's size goes to 0 with no card in it."""
+    found = []
+    try:
+        entries = sorted(base.iterdir())
+    except OSError:
+        return []
+    for entry in entries:
+        if not re.fullmatch(r"sd[a-z]+|mmcblk\d+", entry.name):
+            continue
+        try:
+            size = (entry / "size").read_text(encoding="utf-8").strip()
+        except OSError:
+            continue  # (gone while we looked)
+        found.append(f"{entry.name}:{size}")
+    return found
+
+
 def _holds_system(mounts: list[str]) -> bool:
     return any(m in SYSTEM_MOUNTS or m.startswith("/boot/") for m in mounts)
 
@@ -173,6 +199,7 @@ def parse_lsblk(data: str, sysfs: Path = SYSFS_BLOCK) -> list[CardDisk]:
                 system=_holds_system(_mountpoints(node)),
                 writable=not _flag(node.get("ro")),
                 mounts=tuple(_mountpoints(node)),
+                has_filesystem=_has_filesystem(node),
             )
         )
     return disks

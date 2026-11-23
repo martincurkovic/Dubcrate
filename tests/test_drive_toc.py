@@ -301,3 +301,76 @@ def test_windows_read_drive_toc_goes_through_the_entries(monkeypatch):
     monkeypatch.setattr(drive_toc, "windows_entries", audio_entries)
     starts, lead_out = read_drive_toc(lambda *a, **kw: pytest.fail("ran a command"))
     assert starts[0] == cc.frames(0, 2) and lead_out == cc.frames(10, 0)
+
+
+# -- is a disc in the drive? (cheap, never spins the drive) ---------------------------------------
+
+
+@pytest.mark.parametrize(
+    "status, expected",
+    [(1, "empty"), (2, "empty"), (3, "loading"), (4, "disc"), (0, None), (99, None)],
+)
+def test_linux_asks_the_kernel_whether_a_disc_is_in(monkeypatch, status, expected):
+    monkeypatch.setattr(sys, "platform", "linux")
+    asked = []
+
+    def ioctl(fd, request, arg):
+        asked.append((request, arg))
+        return status
+
+    closed = []
+    monkeypatch.setattr("os.close", closed.append)
+    got = drive_toc.disc_state(
+        "/dev/sr0", os_open=lambda path, flags: 7, ioctl=ioctl, exists=lambda p: True
+    )
+    assert got == expected and closed == [7]
+    assert asked == [(drive_toc.CDROM_DRIVE_STATUS, drive_toc.CDSL_CURRENT)]
+
+
+def test_linux_without_a_drive_or_without_permission_cannot_say(monkeypatch):
+    monkeypatch.setattr(sys, "platform", "linux")
+    assert drive_toc.disc_state(exists=lambda p: False) is None  # no drive found
+
+    def refuse(path, flags):
+        raise PermissionError(13, "denied")
+
+    assert (
+        drive_toc.disc_state("/dev/sr0", os_open=refuse) is None
+    )  # the full check says why
+
+
+def test_linux_opens_the_drive_without_blocking_and_ignores_a_drive_that_is_not_a_device_path(
+    monkeypatch,
+):
+    monkeypatch.setattr(sys, "platform", "linux")
+    opened = []
+
+    def open_(path, flags):
+        opened.append((path, flags))
+        return 5
+
+    monkeypatch.setattr("os.close", lambda fd: None)
+    drive_toc.disc_state(
+        "disk3", os_open=open_, ioctl=lambda *a: 4, exists=lambda p: p == "/dev/sr0"
+    )  # (a macOS-style name: fall back to the first drive found)
+    ((path, flags),) = opened
+    assert path == "/dev/sr0" and flags & __import__("os").O_NONBLOCK
+
+
+@pytest.mark.parametrize(
+    "text, expected",
+    [
+        (" Vendor   Product           Rev \n LITE-ON  eSAU108 3  HL09\n\n           Type: No Media Inserted\n", "empty"),
+        (" Vendor   Product           Rev \n LITE-ON  eSAU108 3  HL09\n\n           Type: CD-R        Name: /dev/disk4\n", "disc"),
+        ("something else", None),
+    ],
+)  # fmt: skip
+def test_a_mac_reads_drutil_status(monkeypatch, text, expected):
+    monkeypatch.setattr(sys, "platform", "darwin")
+    got = drive_toc.disc_state(run=lambda *a, **k: finished(text))
+    assert got == expected
+
+
+def test_windows_cannot_say(monkeypatch):
+    monkeypatch.setattr(sys, "platform", "win32")
+    assert drive_toc.disc_state() is None

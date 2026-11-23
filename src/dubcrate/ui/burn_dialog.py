@@ -60,7 +60,7 @@ from dubcrate.burn import (
 from dubcrate.burn_check import check_burn
 from dubcrate.cancel import CancelToken
 from dubcrate.cd import SECTORS_PER_SECOND, format_clock
-from dubcrate.drive_toc import can_read_toc
+from dubcrate.drive_toc import can_read_toc, disc_state
 from dubcrate.export import ExportError, ExportResult, export_plan
 from dubcrate.library import Library
 from dubcrate.library.levels import measure_loudness, needs_loudness, store_loudness
@@ -79,6 +79,8 @@ def ask_export_folder(parent: QWidget | None) -> str:
 
 # (`logger`, since the dialog's own `self.log` is the progress box)
 logger = logging.getLogger(__name__)
+
+DISC_WATCH_MS = 2000  # how often the open window asks whether a disc is in the drive
 
 
 def _expected_failures(fn: Callable) -> Callable:
@@ -140,9 +142,17 @@ class BurnDialog(QDialog):
         parent=None,
         burner_factory: BurnerFactory | None = None,
         export_only: bool = False,
+        probe: Callable[[str | None], str | None] | None = None,
     ):
         super().__init__(parent)
         self._export_only = export_only
+        # Is a disc in the drive? Asked every couple of seconds while the window is idle, so a disc put in
+        # (or swapped) shows up without a click on Check Again; the full check runs only when this changes.
+        self._probe = probe or disc_state
+        self._disc_state: str | None = None
+        self._disc_timer = QTimer(self)
+        self._disc_timer.setInterval(DISC_WATCH_MS)
+        self._disc_timer.timeout.connect(self._watch_disc)
         self._lib = lib
         self._disc_id = disc_id
         self._burner_factory = burner_factory or _backend
@@ -562,6 +572,9 @@ class BurnDialog(QDialog):
         self._media = None
         self._media_error = ""
         self._busy = True
+        self._disc_state = self._probe(
+            self._device
+        )  # (what the watch compares against)
         self._update()
         picked, remembered = self._device, settings.get_burn_drive()
 
@@ -585,6 +598,17 @@ class BurnDialog(QDialog):
             self._update()
 
         run_async(_expected_failures(work), done, failed)
+
+    def _watch_disc(self) -> None:
+        """Look at whether a disc is in the drive; when that has settled on something new, check the drive
+        again by itself (what Check Again does). A disc still loading is waited for, not looked at."""
+        if self._export_only or self._busy:
+            return
+        state = self._probe(self._device)
+        if state is None or state == "loading" or state == self._disc_state:
+            return
+        logger.info("the drive's disc changed: %s -> %s", self._disc_state, state)
+        self.check_drive()
 
     def _set_drives(self, drives: list[Drive], chosen: Drive | None) -> None:
         """Show what the burner saw: the combo only when there is a choice to make."""
@@ -854,8 +878,14 @@ class BurnDialog(QDialog):
             return
         super().reject()
 
+    def hideEvent(self, event) -> None:
+        self._disc_timer.stop()
+        super().hideEvent(event)
+
     def showEvent(self, event) -> None:
         super().showEvent(event)
+        if not self._export_only:
+            self._disc_timer.start()
         # (the first size comes from the layout's size hint, before long messages wrap to the real width)
         QTimer.singleShot(0, self._grow_to_fit)
 

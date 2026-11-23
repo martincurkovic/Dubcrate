@@ -1431,3 +1431,27 @@ def test_right_click_import_picks_the_card_and_offers_its_new_cues(writing, monk
     monkeypatch.setattr(writing.view, "import_from_card", lambda: called.append(1))
     writing.view.import_from(writing.card)  # (the card is already the one shown)
     assert called == [1]
+
+
+def test_a_card_that_never_mounts_is_noticed_by_the_disks_that_exist(
+    qapp, plugged, wait_for
+):
+    disks = ["mmcblk0:0"]
+    looked = []
+    panel = CardPanel(
+        volumes=plugged.volumes,
+        devices=lambda: list(disks),
+        unset=lambda: looked.append(True) or [],
+    )
+    assert not panel._devices.is_running()  # (not shown yet)
+    panel.show()
+    assert panel._devices.is_running()
+    assert not panel._devices.check()  # nothing changed
+    disks[:] = [
+        "mmcblk0:3932160"
+    ]  # a blank card pushed into the slot: no folder appears anywhere
+    assert panel._devices.check()
+    assert wait_for(lambda: bool(looked))  # the list looked again by itself
+    panel.hide()
+    assert not panel._devices.is_running()
+    panel.close()

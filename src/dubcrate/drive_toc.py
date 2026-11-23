@@ -236,6 +236,88 @@ def linux_entries(
             pass
 
 
+CDROM_DRIVE_STATUS = 0x5326
+CDSL_CURRENT = 0x7FFFFFFF  # "the slot the drive is on" (a changer has more than one)
+_CDS_NO_DISC, _CDS_TRAY_OPEN, _CDS_NOT_READY, _CDS_DISC_OK = 1, 2, 3, 4
+
+# What `disc_state` says: a cheap look that never spins the drive up or reads the disc.
+DISC = "disc"  # a disc is in and ready
+EMPTY = "empty"  # nothing in the drive, or the tray is open
+LOADING = "loading"  # a disc is going in or spinning up: look again in a moment
+
+
+def disc_state(
+    device: str | None = None,
+    *,
+    os_open: Callable[..., int] = os.open,
+    ioctl: Callable[..., object] | None = None,
+    exists: Callable[[str], bool] = os.path.exists,
+    run: Callable[..., subprocess.CompletedProcess[str]] = subprocess.run,
+) -> str | None:
+    """Whether a disc is in the drive: `DISC`, `EMPTY`, `LOADING`, or None when this system can't say (or
+    there is no drive to ask). The burn window asks every couple of seconds to notice a disc being put in
+    or taken out without a click on Check Again, so it must be cheap and must not wake the drive: Linux
+    asks the kernel (`CDROM_DRIVE_STATUS`, non-blocking), macOS runs `drutil status`, Windows says None.
+    One helper per system; only Linux has been run on a real drive (macOS and Windows: NOT tried)."""
+    if sys.platform.startswith("linux"):
+        return _linux_disc_state(device, os_open, ioctl, exists)
+    if sys.platform == "darwin":
+        return _mac_disc_state(run)
+    return None
+
+
+def _linux_disc_state(device, os_open, ioctl, exists) -> str | None:
+    if ioctl is None:
+        import fcntl
+
+        ioctl = fcntl.ioctl
+    path = device if device and device.startswith("/dev/") else None
+    path = path or next((d for d in LINUX_DEVICES if exists(d)), None)
+    if path is None:
+        return None
+    try:
+        fd = os_open(path, os.O_RDONLY | getattr(os, "O_NONBLOCK", 0))
+    except OSError:
+        return None  # (not allowed, or gone: the full check says why)
+    try:
+        status = ioctl(fd, CDROM_DRIVE_STATUS, CDSL_CURRENT)
+    except OSError:
+        return None
+    finally:
+        try:
+            os.close(fd)
+        except OSError:  # pragma: no cover
+            pass
+    if status == _CDS_DISC_OK:
+        return DISC
+    if status in (_CDS_NO_DISC, _CDS_TRAY_OPEN):
+        return EMPTY
+    if status == _CDS_NOT_READY:
+        return LOADING
+    return None
+
+
+def _mac_disc_state(run) -> str | None:
+    try:
+        proc = run(
+            ["drutil", "status"],
+            check=False,
+            capture_output=True,
+            encoding="utf-8",
+            errors="replace",
+            stdin=subprocess.DEVNULL,
+            timeout=10,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    text = (proc.stdout or "") + (proc.stderr or "")
+    if "No Media Inserted" in text:
+        return EMPTY
+    if "Type:" in text:
+        return DISC
+    return None
+
+
 def _linux_error(path: str, exc: OSError) -> DriveTocError:
     if exc.errno in (ENOMEDIUM, errno.ENXIO, errno.EIO):
         return _NoDisc(

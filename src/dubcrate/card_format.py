@@ -59,6 +59,9 @@ class CardDisk:
     writable: bool
     # where its file systems are mounted; None = this system's listing doesn't say (Windows)
     mounts: tuple[str, ...] | None = None
+    # some partition holds a file system (Linux only; False = none, or this system doesn't say). With no
+    # mount it is a card that was ejected (a built-in slot keeps its device), not a blank one.
+    has_filesystem: bool = False
 
     @property
     def node(self) -> str:
@@ -188,6 +191,29 @@ def device_name(text: str) -> str:
     raise FormatError(f"{text!r} is not a disk name such as disk4.")
 
 
+def card_devices() -> list[str]:
+    """A cheap look, with no command run, at which disks exist, so the card list can notice a card being
+    plugged in or taken out even when it never mounts (a blank one). One helper per system: Linux reads
+    /sys/block, macOS lists /dev, Windows has none (its drive letters are watched already: NOT tried on
+    macOS or Windows)."""
+    if sys.platform == "darwin":
+        return mac_devices()
+    if sys.platform.startswith("linux"):
+        from dubcrate import card_format_linux
+
+        return card_format_linux.card_devices()
+    return []
+
+
+def mac_devices(dev: Path = Path("/dev")) -> list[str]:
+    """macOS makes a /dev/diskN for every disk, a card in a built-in slot or a reader included."""
+    try:
+        names = os.listdir(dev)
+    except OSError:
+        return []
+    return sorted(n for n in names if re.fullmatch(r"disk\d+", n))
+
+
 def _backend():
     """The module that formats on this system, or None for macOS (this module's own `diskutil` code).
 
@@ -284,6 +310,8 @@ def unset_cards(run: Runner = subprocess.run) -> list[UnsetCard]:
         volumes = [Path(m) for m in disk.mounts]
         if cc.find_cards(volumes):
             continue
+        if not volumes and disk.has_filesystem:
+            continue  # ejected: its slot is still there, but nothing needs setting up
         found.append(
             UnsetCard(disk, any(has_files(v) for v in volumes) if volumes else None)
         )
