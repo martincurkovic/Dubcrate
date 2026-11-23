@@ -245,6 +245,15 @@ def test_the_script_matches_the_players_own_layout():
     assert text.index("umount") < text.index("sfdisk") < text.index("mkfs.fat")
 
 
+def test_the_old_boot_sector_is_zeroed_before_partitioning_and_the_partition_unmounted():
+    # else the desktop mounts the new partition at once (the old FAT is still there) and mkfs says busy
+    text = lx.FORMAT_SCRIPT
+    assert text.index("dd if=/dev/zero") < text.index("sfdisk")
+    assert text.rindex("umount") > text.index("sfdisk")  # the new partition too
+    assert text.rindex("umount") < text.index("mkfs.fat")
+    assert text.rindex("udevadm settle") > text.index("mkfs.fat")
+
+
 def test_a_refused_disk_is_checked_before_anything_is_erased(as_root):
     system = FakeSystem(card=listing(block(size=64 * GB)))
     with pytest.raises(cf.FormatError, match="SDXC"):
@@ -391,3 +400,46 @@ def test_a_missing_tool_is_an_expected_error():
 
 def test_the_eject_hint_is_for_the_system():
     assert "udisksctl" in cf.eject_hint()
+
+
+def test_a_file_system_udev_has_not_reported_yet_is_waited_for(
+    as_root, tmp_path, monkeypatch
+):
+    mount = tmp_path / "DISK_IMG"
+    mount.mkdir()
+    slept = []
+    monkeypatch.setattr(lx, "_sleep", slept.append)
+    blank = json.dumps(
+        {"blockdevices": [{"name": "sdb1", "fstype": None, "mountpoints": [None]}]}
+    )
+    ready = json.dumps(
+        {
+            "blockdevices": [
+                {"name": "sdb1", "fstype": "vfat", "mountpoints": [str(mount)]}
+            ]
+        }
+    )
+    system = FakeSystem(after=blank)
+    answers = iter([blank, blank, ready])
+    original = system.__call__
+
+    def call(command, **kw):
+        if command[0] == "lsblk" and command[-1] == "/dev/sdb1":
+            return finished(next(answers))
+        return original(command, **kw)
+
+    done = cf.format_card("sdb", call)
+    assert done.volume == mount and len(slept) == 2
+
+
+def test_a_card_that_never_shows_a_file_system_is_said_unformatted(
+    as_root, monkeypatch
+):
+    monkeypatch.setattr(lx, "_sleep", lambda _s: None)
+    system = FakeSystem(
+        after=json.dumps(
+            {"blockdevices": [{"name": "sdb1", "fstype": None, "mountpoints": []}]}
+        )
+    )
+    with pytest.raises(cf.FormatError, match="unformatted, not FAT16"):
+        cf.format_card("sdb", system)

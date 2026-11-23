@@ -74,11 +74,13 @@ def test_the_box_offers_add_anyway_skip_duplicates_and_cancel(qapp, monkeypatch)
 
     def answer(label):
         def fake_exec(box):
-            seen["buttons"] = [b.text() for b in box.buttons()]
-            seen["default"] = box.defaultButton().text()
-            seen["escape"] = box.escapeButton().text()
+            seen["buttons"] = [b.text().replace("&", "") for b in box.buttons()]
+            seen["default"] = box.defaultButton().text().replace("&", "")
+            seen["escape"] = box.escapeButton().text().replace("&", "")
             if label is not None:
-                next(b for b in box.buttons() if b.text() == label).click()
+                next(
+                    b for b in box.buttons() if b.text().replace("&", "") == label
+                ).click()
             return 0
 
         monkeypatch.setattr(QMessageBox, "exec", fake_exec)

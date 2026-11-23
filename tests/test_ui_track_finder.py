@@ -265,7 +265,7 @@ def run_box(monkeypatch, tick=False, **kwargs):
 
     def fake_exec(self):
         held["text"], held["more"] = self.text(), self.informativeText()
-        held["buttons"] = [b.text() for b in self.buttons()]
+        held["buttons"] = [b.text().replace("&", "") for b in self.buttons()]
         box = self.checkBox()
         held["tick"] = None if box is None else box.text()
         if box is not None:

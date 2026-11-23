@@ -23,6 +23,7 @@ import os
 import re
 import shutil
 import subprocess
+import time
 from pathlib import Path
 
 from dubcrate.card_format import (
@@ -61,6 +62,9 @@ for node in $(lsblk -nrpo NAME "$dev"); do
     umount "$node" 2>/dev/null || true
 done
 wipefs -a "$dev"
+# The new partition starts where the old one did, so an old file system's boot sector would still be
+# there: the desktop would see a valid card, mount it at once and make the formatting fail "busy".
+dd if=/dev/zero of="$dev" bs=1M count=1 conv=fsync status=none
 printf 'label: dos\\nstart=32, type=6\\n' | sfdisk --quiet "$dev"
 if command -v udevadm >/dev/null 2>&1; then udevadm settle || true; fi
 tries=0
@@ -72,9 +76,11 @@ if [ ! -b "$part" ]; then
     echo "the new partition $part did not appear" >&2
     exit 1
 fi
+umount "$part" 2>/dev/null || true
 wipefs -a "$part"
 mkfs.fat -F 16 -a -R 8 -n "$label" "$part"
 sync
+if command -v udevadm >/dev/null 2>&1; then udevadm settle || true; fi
 """
 
 
@@ -222,10 +228,21 @@ def elevation() -> list[str]:
     )
 
 
+# lsblk reads the file system from udev's database, which is refreshed a moment AFTER mkfs.fat has
+# finished: asked at once it says there is none (seen on a real card, 2026-11-23). Ask again for a while.
+_SETTLE_TRIES = 20
+_SETTLE_SECONDS = 0.5
+_sleep = time.sleep
+
+
 def _mount_point(run: Runner, part: str) -> tuple[str, str]:
-    """(file system, where it is mounted or "") of the partition, as lsblk sees it."""
-    listing = json.loads(_lsblk(run, f"/dev/{part}"))
-    node = listing["blockdevices"][0]
+    """(file system, where it is mounted or "") of the partition, as lsblk sees it, once it has said."""
+    for attempt in range(_SETTLE_TRIES):
+        listing = json.loads(_lsblk(run, f"/dev/{part}"))
+        node = listing["blockdevices"][0]
+        if node.get("fstype") or attempt == _SETTLE_TRIES - 1:
+            break
+        _sleep(_SETTLE_SECONDS)
     mounts = _mountpoints(node)
     return str(node.get("fstype") or ""), mounts[0] if mounts else ""
 
