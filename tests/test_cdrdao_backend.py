@@ -176,6 +176,21 @@ def test_media_info_with_no_disc_says_no_disc(fake):
 
 
 @pytestmark_posix
+def test_media_info_with_an_empty_tray_on_a_real_drive_says_no_disc(fake):
+    # what cdrdao 1.2.6 printed on the LiteOn eSAU108 with the tray empty (2026-11-23)
+    fake.say(
+        "disk-info.txt",
+        "/dev/sr0: slimtype eSAU108   3\tRev: HL09\nCD-TEXT writing is supported.\n"
+        "Using driver: Generic SCSI-3/MMC - Version 2.0 (options 0x0010)\n\n"
+        + "WARNING: Unit not ready, still trying...\n" * 10
+        + "ERROR: Unit not ready, giving up.\nERROR: Cannot setup device /dev/sr0.\n",
+    )
+    fake.say("rc", "1")
+    info = CdrdaoBurner().media_info("/dev/sr0")
+    assert info.present is False  # not the raw "cdrdao said: Cannot setup device"
+
+
+@pytestmark_posix
 def test_media_info_failure_is_an_expected_error_with_a_fix(fake):
     fake.say("disk-info.txt", "ERROR: Unable to open SCSI device /dev/sr0: Permission denied.\n")  # fmt: skip
     fake.say("rc", "1")

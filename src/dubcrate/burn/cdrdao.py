@@ -306,6 +306,9 @@ class CdrdaoBurner:
             if (
                 "insert a recordable medium" in low
                 or "cannot determine status of inserted medium" in low
+                # cdrdao 1.2.6 on a real drive with an empty tray: ten "Unit not ready, still trying..."
+                # lines (about 27 s), then "ERROR: Unit not ready, giving up." (seen 2026-11-23)
+                or "unit not ready, giving up" in low
             ):
                 return MediaInfo(drive=info.drive, present=False)
             raise BurnError(explain_failure(text, device, proc.returncode))

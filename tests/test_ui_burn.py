@@ -1094,9 +1094,17 @@ def test_a_disc_put_in_after_the_window_opened_is_noticed_without_check_again(
     assert wait_for(lambda: burner.media_calls == 2 and not dialog._busy)
     dialog._watch_disc()
     assert burner.media_calls == 2  # (settled: no more looks)
-    state["now"] = "empty"  # taken out again
+    state["now"] = "empty"  # taken out again, or ejected by a burn
+    dialog._watch_disc()
+    # the drive has said so: no slow `disk-info` to find an empty tray, the window just says no disc
+    assert burner.media_calls == 2 and not dialog._busy
+    assert "no disc inside" in dialog.drive_label.text()
+    dialog._watch_disc()
+    assert burner.media_calls == 2
+    state["now"] = "disc"  # a new one put in
     dialog._watch_disc()
     assert wait_for(lambda: burner.media_calls == 3 and not dialog._busy)
+    assert "blank disc" in dialog.drive_label.text()
     dialog.close()
 
 

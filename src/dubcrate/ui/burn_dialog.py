@@ -608,6 +608,16 @@ class BurnDialog(QDialog):
         if state is None or state == "loading" or state == self._disc_state:
             return
         logger.info("the drive's disc changed: %s -> %s", self._disc_state, state)
+        if state == "empty":
+            # (the drive has just said so: no need for a `disk-info` that takes half a minute to find an
+            # empty tray, as after a burn ejects the disc)
+            self._disc_state = state
+            self._media = MediaInfo(
+                drive=self._media.drive if self._media else "", present=False
+            )
+            self._media_error = ""
+            self._update()
+            return
         self.check_drive()
 
     def _set_drives(self, drives: list[Drive], chosen: Drive | None) -> None:
