@@ -269,6 +269,7 @@ def _no_real_card_format(monkeypatch):
 
     monkeypatch.setattr("dubcrate.ui.format_card_dialog._real_lister", refuse)
     monkeypatch.setattr("dubcrate.ui.format_card_dialog._real_formatter", refuse)
+    monkeypatch.setattr("dubcrate.ui.format_card_dialog.announce_ready", refuse)
     monkeypatch.setattr("dubcrate.ui.sync_view.FormatCardDialog", refuse)
     monkeypatch.setattr(
         "dubcrate.ui.sync_view._real_unset", list

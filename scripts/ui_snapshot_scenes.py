@@ -1437,6 +1437,9 @@ def _finder_howto(ctx, window):
 _message_scene("msg-finder-howto", "Message: how to open the track finder on a phone",
                "After Disc > Export Track Finder…: where it was saved, anything left out, the steps for an iPhone and the Don't show this again tick.",
                _finder_howto)  # fmt: skip
+_message_scene("msg-card-ready", "Message: the card is formatted",
+               "Shown over the main window when Format a Card finishes, after that window has closed itself.",
+               lambda ctx, w: __import__("dubcrate.ui.format_card_dialog", fromlist=["announce_ready"]).announce_ready(w, "DISK_IMG"))  # fmt: skip
 _message_scene("msg-delete-disc", "Question: delete a disc",
                "Delete Disc… on a disc.",
                lambda ctx, w: w.disc_view.delete_disc(ctx.demo.discs["warm"]))  # fmt: skip

@@ -329,7 +329,7 @@ For a disc burned earlier or elsewhere, right-click it in the Discs list (or in 
 
 ### Setting up a blank card
 
-A card that has no **PIONEER** folder yet appears in the card list, greyed out, with a **Format…** button that opens the window below with that card picked. **Format a Card…** (right-click the card list) does the same for any card, and it erases a blank SD card, makes it the FAT16 card the player expects (named `DISK_IMG`) and adds the **PIONEER** folder, so you can sync at home before the card has been in a player.
+A card that has no **PIONEER** folder yet appears in the card list, greyed out, with a **Format…** button that opens the window below with that card picked. **Format a Card…** (right-click the card list) does the same for any card, and it erases a blank SD card, makes it the FAT16 card the player expects (named `DISK_IMG`) and adds the **PIONEER** folder, so you can sync at home before the card has been in a player. When it finishes, the window closes by itself and a box says the card is ready; the card is picked in the list.
 
 ![The Format a Card window: the removable disks, a card that can be used and one that can't](screenshots/format-card.png "Format a Card")
 

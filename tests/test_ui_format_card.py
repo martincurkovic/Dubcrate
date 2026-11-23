@@ -24,8 +24,13 @@ def disk(device="disk4", name="Generic STORAGE DEVICE", size=2_013_265_920, **kw
 
 
 @pytest.fixture
-def make(qapp, wait_for):
+def make(qapp, wait_for, monkeypatch):
     made = []
+    announced = []
+    monkeypatch.setattr(
+        "dubcrate.ui.format_card_dialog.announce_ready",
+        lambda parent, name: announced.append(name),
+    )
 
     def build(disks=None, formatter=None, error=None):
         def lister():
@@ -45,6 +50,7 @@ def make(qapp, wait_for):
             None, list_disks=lister, formatter=formatter or default_format
         )
         dialog.calls = calls
+        dialog.announced = announced
         made.append(dialog)
         assert wait_for(lambda: dialog.status.text() != "Looking for cards…")
         return dialog
@@ -96,7 +102,9 @@ def test_formatting_runs_the_formatter_on_the_picked_card_with_the_disk_as_liste
 ):
     dialog = make()
     told = []
+    closed = []
     dialog.formatted.connect(told.append)
+    dialog.accepted.connect(lambda: closed.append(True))
     dialog.understand.setChecked(True)
     dialog.format_button.click()
     assert wait_for(lambda: bool(told))
@@ -105,11 +113,10 @@ def test_formatting_runs_the_formatter_on_the_picked_card_with_the_disk_as_liste
         device == "disk4" and expect == disk()
     )  # what was listed, so a swapped card is caught
     assert told == [Path("/Volumes/DISK_IMG")]
-    assert "is ready" in dialog.result.text() and "Eject" in dialog.result.text()
-    assert (
-        dialog.close_button.text() == "Close"
-        and not dialog.format_button.isVisibleTo(dialog)
-    )
+    # it closes itself and a box says so, rather than leaving a quiet line in an open window
+    assert closed == [True] and dialog.announced == ["DISK_IMG"]
+    assert dialog.result.text() == ""
+    assert not dialog.format_button.isVisibleTo(dialog)
     assert (
         not dialog.understand.isChecked()
     )  # (a second erase needs a new tick and a new list)
@@ -128,6 +135,9 @@ def test_a_failure_is_said_in_words_and_the_tick_must_be_given_again(make, wait_
     dialog.format_button.click()
     assert wait_for(lambda: "Couldn't format" in dialog.result.text())
     assert "nothing was erased" in dialog.result.text() and told == []
+    assert (
+        dialog.announced == []
+    )  # (no "Card Ready" box for a failure; the window stays open)
     assert not dialog.understand.isChecked() and not dialog.format_button.isEnabled()
     assert dialog.close_button.text() == "Cancel"  # (nothing is done: it can try again)
 
@@ -396,3 +406,18 @@ def test_a_card_just_formatted_is_not_listed_twice(qapp, tmp_path, monkeypatch, 
     panel._formatted(card)
     assert wait_for(lambda: panel.cards.count() == 1)
     assert panel.current_card() == card and panel.subtitle.text() == "1 card found"
+
+
+def test_the_card_ready_box_names_the_card_and_says_to_eject(qapp, monkeypatch):
+    import dubcrate.ui.format_card_dialog as fcd
+
+    shown = []
+    monkeypatch.undo()  # (conftest refuses the real one: this test is of the real one)
+    monkeypatch.setattr(
+        "dubcrate.ui.format_card_dialog.QMessageBox.information",
+        lambda parent, title, text: shown.append((title, text)),
+    )
+    fcd.announce_ready(None, "DISK_IMG")
+    ((title, text),) = shown
+    assert title == "Card Ready" and "“DISK_IMG”" in text
+    assert "sync" in text and "Eject" in text

@@ -24,6 +24,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QListWidget,
     QListWidgetItem,
+    QMessageBox,
     QPushButton,
     QVBoxLayout,
     QWidget,
@@ -63,8 +64,21 @@ def short_reason(disk: CardDisk) -> str:
     return f"{disk.card_class}: only plain SD (2 GB or less) works"
 
 
+def announce_ready(parent: QWidget | None, name: str) -> None:
+    """The box shown over the window once the card is formatted and the Format a Card window has closed
+    (tests and the gallery patch or photograph it: `conftest.py` refuses the real one)."""
+    QMessageBox.information(
+        parent,
+        "Card Ready",
+        f"“{name}” is formatted and ready for the CDJ-1000MK3.\n\n"
+        "It is picked in the card list, so you can sync your discs to it now. "
+        "Eject it before you take it out.",
+    )
+
+
 class FormatCardDialog(QDialog):
-    """Pick a removable disk, say you understand, erase and format it."""
+    """Pick a removable disk, say you understand, erase and format it. It closes itself when the card is
+    ready and `announce_ready` says so, so the end of the job is unmistakable."""
 
     formatted = Signal(object)  # the card's mounted folder (a Path), once it is ready
 
@@ -268,12 +282,11 @@ class FormatCardDialog(QDialog):
             self._done = True
             self.understand.setChecked(False)
             self.status.setText("")
-            self.result.setText(
-                f"Done. “{found.volume.name}” is ready to sync to. "
-                "Eject it before you take it out."
-            )
+            self.result.setText("")
             self._update()
             self.formatted.emit(Path(found.volume))
+            self.accept()
+            announce_ready(self.parent(), found.volume.name)
 
         def failed(text: str) -> None:
             self._busy = False
