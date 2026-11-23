@@ -268,12 +268,15 @@ class MainWindow(QMainWindow):
 
         # Sync: the CDJ's card on the left, the discs and what a sync would do in the middle
         self.card_panel = CardPanel(
-            watch=volume_parents(), poll=needs_polling()
+            watch=volume_parents(),
+            poll=needs_polling(),
+            mp3_discs=self._mp3_discs_to_sync,
         )  # (a card shows up by itself)
         self.sync_view = SyncView(self._lib, can_eject=self.card_panel.is_volume)
         self.card_panel.card_changed.connect(self.sync_view.set_card)
         self.card_panel.sync_requested.connect(self.sync_view.sync_to)
         self.card_panel.import_requested.connect(self.sync_view.import_from)
+        self.card_panel.mp3_sync_requested.connect(self.sync_view.sync_mp3_disc)
         self.sync_view.card_ejected.connect(self.card_panel.refresh)  # (it has gone)
         self.sync_view.busy_changed.connect(self.card_panel.set_busy)
         self.card_panel.message.connect(
@@ -1990,6 +1993,14 @@ class MainWindow(QMainWindow):
         self.player_strip.set_beat_jump(
             settings.get_beat_jump()
         )  # (it may have been changed there)
+
+    def _mp3_discs_to_sync(self) -> list[tuple[int, str]]:
+        """(id, name) of the MP3 discs with a track, for the card's right-click > Sync an MP3 Disc."""
+        return [
+            (d.id, d.name)
+            for d in self._lib.discs()
+            if d.kind == "mp3" and d.track_count
+        ]
 
     def _import_card_cues(self, choices: list) -> None:
         """What was ticked in Sync > Import Cues… becomes memory cues and loops in Dubcrate (and rekordbox)."""

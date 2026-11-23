@@ -560,6 +560,12 @@ def _replace(target: Path, data: bytes) -> None:
         )
 
 
+def replace_file(target: Path, data: bytes) -> None:
+    """Write `data` to `target` through a temporary name and a rename, and read it back (CardFormatError if it
+    differs): the way every card file is written, public for the MP3 discs' module."""
+    _replace(target, data)
+
+
 def backup_card(path: Path, into: Path) -> Path:
     """Copy a card's `PIONEER/CDJ` files (a few kilobytes) to a new `card-DATE-TIME` folder in `into`.
 

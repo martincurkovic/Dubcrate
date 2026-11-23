@@ -10,9 +10,11 @@ it for the card entry instead of computing it. **No file written this way has be
 import argparse
 import sys
 from pathlib import Path
+from tempfile import TemporaryDirectory
 
 from dubcrate import card_format, wave_check
 from dubcrate import cdj_card as cc
+from dubcrate import cdj_card_mp3 as m3
 from dubcrate.card_apply import apply_sync, default_backup_dir
 from dubcrate.card_discs import (
     RekordboxCues,
@@ -21,13 +23,23 @@ from dubcrate.card_discs import (
     prepare_disc,
     toc_differences,
 )
+from dubcrate.card_mp3 import Mp3SyncError, collect_request
+from dubcrate.card_mp3 import prepare_disc as prepare_mp3_disc
 from dubcrate.card_report import describe_card, describe_id, describe_plan, msf
 from dubcrate.card_sync import plan_card
 from dubcrate.drive_toc import DriveTocError, read_drive_toc
 from dubcrate.library import Library
 from dubcrate.library.lengths import measure_tracks
 from dubcrate.library.rekordbox import RekordboxError
-from dubcrate.library.waves import ensure_waveforms
+from dubcrate.library.waves import ensure_waveforms, store_waveforms
+from dubcrate.mp3_sync import (
+    Mp3Status,
+    apply_mp3_plan,
+    plan_mp3_disc,
+)
+from dubcrate.mp3_sync import (
+    describe_plan as describe_mp3_plan,
+)
 
 
 def cmd_show(_: Library, args: argparse.Namespace) -> int:
@@ -107,7 +119,7 @@ def _analysis_progress(done: int, total: int) -> None:
             print(file=sys.stderr)
 
 
-def cmd_sync(lib: Library, args: argparse.Namespace) -> int:
+def _sync_audio(lib: Library, args: argparse.Namespace) -> int:
     card = Path(args.card).expanduser()
     if args.from_drive and len(args.disc) != 1:
         print(
@@ -184,6 +196,84 @@ def cmd_sync(lib: Library, args: argparse.Namespace) -> int:
         "can be left unreadable."
     )
     return 0
+
+
+def _sync_mp3(lib: Library, disc_ids: list[int], args: argparse.Namespace) -> int:
+    """MP3 discs: waveforms and cues onto the card (dry run unless --yes). The disc must already have an entry on
+    the card (the player makes it when it first plays the disc). **Not tried on a player yet.**"""
+    card = Path(args.card).expanduser()
+    try:
+        index, files = m3.read_mp3_card(card)
+    except m3.Mp3CardError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    rekordbox = RekordboxCues(lib)
+    status = 0
+    wrote = 0
+    for disc_id in disc_ids:
+        name = lib.disc(disc_id).name
+        print(f"\nDisc {disc_id}, {name!r} (an MP3 disc)")
+        try:
+            request = collect_request(lib, disc_id, rekordbox)
+            with TemporaryDirectory(prefix="dubcrate-mp3sync-") as tmp:
+                prepared = prepare_mp3_disc(
+                    request,
+                    Path(tmp),
+                    say=lambda text: print(f"  {text}", file=sys.stderr),
+                    waves=not args.no_waveforms,
+                )
+        except (Mp3SyncError, RekordboxError) as exc:
+            print(f"  can't sync: {exc}")
+            status = max(status, 2)
+            continue
+        plan = plan_mp3_disc(prepared.disc, index, files)
+        print("\n".join(describe_mp3_plan(plan)))
+        if plan.status in (Mp3Status.NO_ENTRY, Mp3Status.AMBIGUOUS):
+            status = max(status, 2)
+            continue
+        if not plan.changed:
+            continue
+        if not args.yes:
+            print(f"  dry run: would write {plan.entry.file_name} on {card}.")
+            continue
+        try:
+            outcome = apply_mp3_plan(card, plan, _backup_dir(args))
+        except (m3.Mp3CardError, OSError) as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 1
+        store_waveforms(lib, prepared.analysed)  # (what was worked out stays cached)
+        wrote += 1
+        print(
+            f"  wrote {outcome.name}.PDJ ({outcome.cues_written} cues, {outcome.waveforms_written} waveforms); "
+            f"the card's old MP3 files are in {outcome.backup}"
+        )
+        files[plan.entry.name] = (
+            plan.file
+        )  # (the next disc is planned against what is there now)
+    if wrote:
+        print(
+            f"\nEject the card ({card_format.eject_hint()}) before taking it out: a card pulled early "
+            "can be left unreadable."
+        )
+    elif not args.yes:
+        print("\nre-run with --yes to write (the card's files are copied aside first).")
+    return status
+
+
+def cmd_sync(lib: Library, args: argparse.Namespace) -> int:
+    """Audio discs by their TOC and MP3 discs by their image: each kind its own way, one command."""
+    mp3_ids = [d for d in args.disc if lib.disc(d).kind == "mp3"]
+    audio_ids = [d for d in args.disc if d not in mp3_ids]
+    status = 0
+    if audio_ids:
+        args.disc = audio_ids
+        status = _sync_audio(lib, args)
+    if mp3_ids:
+        if args.from_drive:
+            print("error: --from-drive is for an audio disc.", file=sys.stderr)
+            return 1
+        status = max(status, _sync_mp3(lib, mp3_ids, args))
+    return status
 
 
 def cmd_format(_: Library, args: argparse.Namespace) -> int:
@@ -304,10 +394,13 @@ def add_parsers(sub: argparse._SubParsersAction) -> None:
 
     p = card.add_parser(
         "sync",
-        help="add discs' rekordbox cues to the card as memory cues (dry run unless --yes)",
+        help="add discs' rekordbox cues and waveforms to the card (audio and MP3 discs; dry run unless --yes)",
     )
     p.add_argument(
-        "disc", type=int, nargs="+", help="audio disc ids (see: dubcrate disc list)"
+        "disc",
+        type=int,
+        nargs="+",
+        help="disc ids (see: dubcrate disc list); an MP3 disc must already have been played in the player once",
     )
     p.add_argument("--card", required=True, help=where)
     p.add_argument("--backup-dir", help="default: card-backups next to the library")

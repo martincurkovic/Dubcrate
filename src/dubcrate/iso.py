@@ -16,6 +16,7 @@ The image was checked by listing it with `xorriso` and `isoinfo` (Joliet and Roc
 
 import logging
 import unicodedata
+from dataclasses import dataclass
 from pathlib import Path
 
 import pycdlib
@@ -107,3 +108,88 @@ def build_iso(folder: Path, volume: str, out: Path) -> Path:
         out.unlink(missing_ok=True)
         raise IsoError("The disc image could not be made: it came out empty.")
     return out
+
+
+SECTOR = 2048  # an ISO 9660 logical block
+
+
+@dataclass(frozen=True)
+class ImageFile:
+    """One file of an image, as the CDJ numbers it: `folder` 0 is the root, then one number per folder in the
+    order of their names (`D001` is 1); `file` counts from 1 in its folder (`001.MP3`)."""
+
+    folder: int
+    file: int
+    path: Path  # the staged file it was made from
+    extent: int  # its first sector on the image
+    size: int  # bytes
+
+
+@dataclass(frozen=True)
+class ImageLayout:
+    """What the CDJ's disc ID is made from on an MP3 disc, read off the image: the number of files, the first
+    sector of the last file, and the image's size in sectors (the three fields of the ID that are understood).
+    So this is also how a card's entry is told to belong to this exact image."""
+
+    sectors: int
+    files: tuple[ImageFile, ...]
+
+    @property
+    def file_count(self) -> int:
+        return len(self.files)
+
+    @property
+    def last_file_start(self) -> int:
+        return max((f.extent for f in self.files), default=0)
+
+    def by_path(self) -> dict[Path, ImageFile]:
+        return {f.path: f for f in self.files}
+
+
+def image_layout(image: Path, folder: Path) -> ImageLayout:
+    """The layout of `image`, which `build_iso` made from `folder` (which is only read for its names).
+
+    The numbers come from the image itself: each file's `001.MP3;1`, in `D001`, is looked up and its first
+    sector and size read. One level of folders only: what the player numbers a folder inside a folder is not
+    known, so that raises `IsoError` rather than guess."""
+    files: list[ImageFile] = []
+    top_dirs, top_files = _children(folder)
+    if any(_children(sub)[0] for sub in top_dirs):
+        raise IsoError(
+            "Folders inside folders aren't supported on the card yet: how the player numbers them isn't known."
+        )
+    iso = pycdlib.PyCdlib()
+    try:
+        iso.open(str(image))
+        digits = max(MIN_DIGITS, len(str(max(len(top_dirs), len(top_files), 1))))
+        groups = [(0, "", top_files, digits)]
+        for number, sub in enumerate(top_dirs, 1):
+            inside = _children(sub)[1]
+            groups.append(
+                (
+                    number,
+                    f"/D{number:0{digits}d}",
+                    inside,
+                    max(MIN_DIGITS, len(str(max(len(inside), 1)))),
+                )
+            )
+        for folder_number, iso_dir, inside, width in groups:
+            for number, path in enumerate(inside, 1):
+                record = iso.get_record(iso_path=f"{iso_dir}/{number:0{width}d}.MP3;1")
+                files.append(
+                    ImageFile(
+                        folder_number,
+                        number,
+                        path,
+                        record.extent_location(),
+                        record.get_data_length(),
+                    )
+                )
+    except (PyCdlibException, OSError) as exc:
+        raise IsoError(f"The disc image couldn't be read: {exc}") from exc
+    finally:
+        try:
+            iso.close()
+        except PyCdlibException:
+            pass
+    return ImageLayout(image.stat().st_size // SECTOR, tuple(files))

@@ -459,3 +459,13 @@ writes it (tested on the player's own files, `tests/data/cdj_card/mp3/`). **Noth
 
 **Out of scope for v1**: a disc with no card entry yet; hot cues; a file that is not MPEG-1 Layer III at 44.1, 48 or 32 kHz
 (refused with a message: `Mp3FrameError`); and anything about the rest of the disc ID.
+
+**Status (2026-11-23, the same day): steps 1 to 5 are built** (`iso.image_layout`, `mp3_sync`, `card_mp3`, `dubcrate card sync` for MP3
+discs, and the Sync tab: MP3 discs are rows of its list, ticked and synced with the Sync button, or from the card's right-click).
+**Tried**: a dry run, a write and a second run (which found nothing to do) against a **copy** of the owner's real card, with the real
+15-file disc: the rendered files made exactly the card entry's three numbers (84,029 sectors, last file at 80,245, 15 files), three
+waveforms were added, the 12 records the player had were byte for byte untouched, and the index and audio files were identical.
+**Not tried**: the real card, a player reading what we wrote, and the cue half on the real disc (its tracks have no cues in Dubcrate:
+cues are covered by tests on synthetic discs, where the byte offsets written are the rendered files' real frame offsets). **Measured
+since the plan**: the burned copy of a LAME file decodes identically to the library file (0 samples apart), so audio-time cues carry
+over; a file with no Info frame decodes about 12 ms earlier (529 samples).

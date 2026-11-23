@@ -16,6 +16,7 @@ import logging
 import shutil
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
+from tempfile import TemporaryDirectory
 
 from PySide6.QtCore import QFileSystemWatcher, QSize, Qt, QTimer, Signal
 from PySide6.QtWidgets import (
@@ -40,6 +41,7 @@ from PySide6.QtWidgets import (
 
 from dubcrate import card_format, settings
 from dubcrate import cdj_card as cc
+from dubcrate import cdj_card_mp3 as m3
 from dubcrate.analysis import Cue
 from dubcrate.cancel import CancelToken
 from dubcrate.card_apply import apply_sync, default_backup_dir
@@ -50,12 +52,29 @@ from dubcrate.card_discs import (
     wave_rows,
 )
 from dubcrate.card_import import survey_new_cues
+from dubcrate.card_mp3 import (
+    Mp3DiscRow,
+    Mp3SyncError,
+    collect_request,
+    survey_mp3_discs,
+)
+from dubcrate.card_mp3 import (
+    prepare_disc as prepare_mp3_disc,
+)
 from dubcrate.eject import EjectError, eject_card
 from dubcrate.library import Library
 from dubcrate.library.lengths import needs_measuring, probe_lengths
 from dubcrate.library.models import Track
 from dubcrate.library.rekordbox import RekordboxError, read_cues
 from dubcrate.library.waves import measure_waveforms, store_waveforms
+from dubcrate.mp3_sync import (
+    Mp3Status,
+    apply_mp3_plan,
+    plan_mp3_disc,
+)
+from dubcrate.mp3_sync import (
+    describe_plan as describe_mp3_plan,
+)
 
 from . import theme
 from .card_import_dialog import ask_import
@@ -301,6 +320,9 @@ class CardPanel(QWidget):
     import_requested = Signal(
         object
     )  # right-click > Import Cues: the card's folder (a Path)
+    mp3_sync_requested = Signal(
+        object, int
+    )  # right-click > Sync an MP3 Disc: the card's folder (a Path) and the disc's id
     message = Signal(str)  # for the status bar
 
     def __init__(
@@ -311,9 +333,13 @@ class CardPanel(QWidget):
         poll: bool = False,
         unset: Callable[[], list[card_format.UnsetCard]] | None = None,
         devices: Callable[[], list[str]] | None = None,
+        mp3_discs: Callable[[], list[tuple[int, str]]] | None = None,
     ):
         super().__init__(parent)
-        self._volumes = volumes  # None: the drives that are plugged in
+        self._volumes = volumes
+        self._mp3_discs = (
+            mp3_discs or (list)
+        )  # (disc id, name) of the MP3 discs that can be synced  # None: the drives that are plugged in
         self._chosen: list[Path] = []  # folders picked by hand, kept for the session
         self._found: list[Path] = []  # the cards plugged in, as last looked for
         self._find_unset = unset or _real_unset
@@ -537,6 +563,17 @@ class CardPanel(QWidget):
                 "Write the ticked discs' cues and waveforms to this card (it asks first)"
             )
             sync.triggered.connect(lambda: self._sync_to(path))
+            if discs := self._mp3_discs():
+                chooser = menu.addMenu(f"Sync an MP3 Disc to “{name}”")
+                chooser.setEnabled(idle)
+                chooser.setToolTip(
+                    "Write an MP3 disc's waveforms and cues to this card (it asks first). The disc has to have "
+                    "been played in the player once, so the card has an entry for it"
+                )
+                for disc_id, disc_name in discs:
+                    chooser.addAction(disc_name).triggered.connect(
+                        lambda _checked=False, d=disc_id: self._sync_mp3_to(path, d)
+                    )
             grab = menu.addAction(f"Import Cues from “{name}”…")
             grab.setEnabled(idle)
             grab.setToolTip(
@@ -574,6 +611,11 @@ class CardPanel(QWidget):
         """Right-click > Sync: show `path` as the picked card and ask for a sync to it."""
         self._pick_quietly(path)
         self.sync_requested.emit(path)
+
+    def _sync_mp3_to(self, path: Path, disc_id: int) -> None:
+        """Right-click > Sync an MP3 Disc: show `path` as the picked card and ask for that disc's sync."""
+        self._pick_quietly(path)
+        self.mp3_sync_requested.emit(path, disc_id)
 
     def _import_from(self, path: Path) -> None:
         """Right-click > Import Cues: show `path` as the picked card and ask for its new cues."""
@@ -735,6 +777,12 @@ class SyncView(QWidget):
         self._card: tuple[cc.IndexFile, Mapping[str, cc.TrackFile | None]] | None = None
         self._card_note = ""  # why the card couldn't be read, if it couldn't
         self._surveys: dict[int, DiscSurvey] = {}
+        self._mp3_rows: dict[
+            int, Mp3DiscRow
+        ] = {}  # the MP3 discs: rows of the same list
+        self._mp3_last: dict[
+            int, str
+        ] = {}  # what this session's last sync did for each, shown as its status
         self._unmeasured: list[Track] = []
         self._loaded: dict = {}  # rekordbox's cues as last read, for looking at the discs again
         self._cue_loader: Callable[[Path], Mapping[str, Sequence[Cue]]] = lambda _p: {}
@@ -882,6 +930,12 @@ class SyncView(QWidget):
             waves=True,
         )
         self._surveys = {s.disc.id: s for s in surveys}
+        self._mp3_rows = {
+            r.disc.id: r
+            for r in survey_mp3_discs(
+                self._lib, disc_paths(self._lib), self._mp3_card_state(), self._mp3_last
+            )
+        }
         self._unmeasured = self._tracks_to_measure(surveys)
         self._fill()
         if (
@@ -895,6 +949,16 @@ class SyncView(QWidget):
             self._import_when_ready = False
             self.import_from_card()
 
+    def _mp3_card_state(self) -> tuple[bool, bool]:
+        """(a card is chosen, it has MP3 disc files): the player makes them when it first plays an MP3 disc."""
+        if self._card_path is None:
+            return False, False
+        try:
+            index, _files = m3.read_mp3_card(self._card_path)
+        except m3.Mp3CardError:
+            return True, False
+        return True, bool(index.entries)
+
     def _tracks_to_measure(self, surveys: Sequence[DiscSurvey]) -> list[Track]:
         """The tracks of discs that can't be synced for want of a length, that can be probed."""
         found: dict[int, Track] = {}
@@ -906,16 +970,16 @@ class SyncView(QWidget):
         return list(found.values())
 
     def _fill(self) -> None:
-        """Folders, then discs, each A to Z, as in the Discs list; a folder with no audio disc inside
-        is left out."""
+        """Folders, then discs (audio and MP3), each A to Z, as in the Discs list; a folder with no disc
+        inside is left out."""
         ticked = set(self.ticked_ids())
         current = self._current_disc_id()
         folders = self._lib.disc_folders()
         by_parent: dict[int | None, list] = {}
         for folder in folders:
             by_parent.setdefault(folder.parent_id, []).append(folder)
-        in_folder: dict[int | None, list[DiscSurvey]] = {}
-        for survey in self._surveys.values():
+        in_folder: dict[int | None, list[DiscSurvey | Mp3DiscRow]] = {}
+        for survey in [*self._surveys.values(), *self._mp3_rows.values()]:
             in_folder.setdefault(survey.disc.folder_id, []).append(survey)
 
         def has_discs(folder_id: int) -> bool:
@@ -943,7 +1007,7 @@ class SyncView(QWidget):
                     ],
                 )
                 item.setData(COL_NAME, Qt.ItemDataRole.UserRole, survey.disc.id)
-                item.setIcon(COL_NAME, _disc_icon("audio"))
+                item.setIcon(COL_NAME, _disc_icon(survey.disc.kind))
                 item.setToolTip(COL_NAME, "\n".join([survey.status, *survey.detail()]))
                 item.setTextAlignment(
                     COL_TRACKS,
@@ -1050,7 +1114,7 @@ class SyncView(QWidget):
 
     def _tick_clicked(self) -> None:
         """The header's box: tick every disc that can be synced, or, when all are ticked, none."""
-        every = len(self.ticked_ids()) == len(self._tickable_discs())
+        every = self._ticked_count() == len(self._tickable_discs())
         self._tick_all(Qt.CheckState.Unchecked if every else Qt.CheckState.Checked)
 
     def _tickable_discs(self) -> list[QTreeWidgetItem]:
@@ -1059,7 +1123,7 @@ class SyncView(QWidget):
     def _update_header_tick(self) -> None:
         """The header's box shows how many of the discs that can be synced are ticked."""
         discs = self._tickable_discs()
-        ticked = len(self.ticked_ids())
+        ticked = self._ticked_count()
         state = (
             Qt.CheckState.Unchecked
             if not ticked
@@ -1070,14 +1134,29 @@ class SyncView(QWidget):
         self.tick_header.set_state(state, bool(discs))
 
     def ticked_ids(self) -> list[int]:
-        """The ticked discs' ids, in the order listed."""
+        """The ticked AUDIO discs' ids, in the order listed."""
         return [
             self._id(i)
             for i in self._disc_items()
             if self._tickable(i)
             and i.checkState(COL_NAME) == Qt.CheckState.Checked
+            and self._id(i) in self._surveys
             and self._surveys[self._id(i)].writable
         ]
+
+    def ticked_mp3_ids(self) -> list[int]:
+        """The ticked MP3 discs' ids, in the order listed."""
+        return [
+            self._id(i)
+            for i in self._disc_items()
+            if self._tickable(i)
+            and i.checkState(COL_NAME) == Qt.CheckState.Checked
+            and self._id(i) in self._mp3_rows
+            and self._mp3_rows[self._id(i)].writable
+        ]
+
+    def _ticked_count(self) -> int:
+        return len(self.ticked_ids()) + len(self.ticked_mp3_ids())
 
     def _current_disc_id(self) -> int | None:
         item = self.tree.currentItem()
@@ -1101,10 +1180,13 @@ class SyncView(QWidget):
     def _show_detail(self) -> None:
         """The middle for the disc picked on the right: its tracks and the picked track's waveform."""
         survey = self._surveys.get(self._current_disc_id() or -1)
-        if survey is None:
+        row = self._mp3_rows.get(self._current_disc_id() or -1)
+        if row is not None:
+            self.browser.show_message("\n".join(row.detail()[1:]), title=row.disc.name)
+        elif survey is None:
             self.browser.show_message(
-                "No audio discs yet. Make one, or open the Library, and it is listed on the right."
-                if not self._surveys
+                "No discs yet. Make one, or open the Library, and it is listed on the right."
+                if not (self._surveys or self._mp3_rows)
                 else ""
             )
         elif survey.input.problems:
@@ -1125,8 +1207,10 @@ class SyncView(QWidget):
         self._update_analyse()
 
     def _update_buttons(self) -> None:
-        writable = [s for s in self._surveys.values() if s.writable]
-        ticked = [self._surveys[i] for i in self.ticked_ids()]
+        writable = [
+            s for s in (*self._surveys.values(), *self._mp3_rows.values()) if s.writable
+        ]
+        ticked = [*self.ticked_ids(), *self.ticked_mp3_ids()]
         if not (
             self._measuring or self._writing or self._analysing
         ):  # (which have their own to show)
@@ -1134,8 +1218,8 @@ class SyncView(QWidget):
                 self._card_note  # (a folder that isn't the player's card: said where it is seen)
                 if self._card is None and self._card_note
                 else f"{len(ticked)} of {len(writable)} disc{'s' if len(writable) != 1 else ''} selected"
-                if self._surveys
-                else "No audio discs"
+                if self._surveys or self._mp3_rows
+                else "No discs"
             )
         self._update_header_tick()
         busy = self._measuring or self._writing or self._analysing
@@ -1178,10 +1262,12 @@ class SyncView(QWidget):
         clear = menu.addAction(
             "Clear Selection", lambda: self._tick_all(Qt.CheckState.Unchecked)
         )
-        clear.setEnabled(bool(self.ticked_ids()))
+        clear.setEnabled(bool(self._ticked_count()))
         menu.addSeparator()
         toc = menu.addAction("TOC Manager…", self.open_toc_manager)
-        toc.setEnabled(self._current_disc_id() is not None)
+        toc.setEnabled(
+            self._current_disc_id() in self._surveys
+        )  # (an audio disc: the TOC is its ID)
         return menu
 
     def open_toc_manager(self, disc_id: int | None = None) -> None:
@@ -1248,6 +1334,210 @@ class SyncView(QWidget):
             return
         self._request_sync()
 
+    def sync_mp3_disc(self, card: Path, disc_id: int) -> None:
+        """The card's right-click > Sync an MP3 Disc: that one disc, whether or not it is ticked."""
+        self.sync_mp3(card, [disc_id])
+
+    def sync_mp3(
+        self,
+        card: Path,
+        disc_ids: Sequence[int],
+        then: Callable[[], None] | None = None,
+    ) -> None:
+        """MP3 discs' waveforms and cues onto the card.
+
+        Each disc's files are rendered the way a burn makes them (on a worker: a track is a second or so, more for
+        a file that has to be encoded), the image's layout found, and the card's entry for the disc matched by the
+        three numbers of its ID that are understood, so the disc must have been played in the player once. Then one
+        question for all of them, and one file written for each (the card's MP3 files are copied aside first; what
+        the card has is never changed). `then`, if given, runs when this is done and the card is not ejected here
+        (the audio discs' sync comes next). **Not tried on a player yet** (`dev_docs/card-sync.md`, "MP3 discs")."""
+        if self._writing or self._measuring or self._analysing:
+            self.message.emit("Wait for the card to finish first.")
+            return
+        try:
+            m3.read_mp3_card(card)
+        except m3.Mp3CardError as exc:
+            show_problem(
+                self,
+                "Couldn't Sync to the Card",
+                f"{exc}\n\nPlay an MP3 disc in the player once, so it makes its MP3 files on the card.",
+            )
+            return
+        rekordbox = RekordboxCues(self._lib)
+        try:
+            requests = [collect_request(self._lib, d, rekordbox) for d in disc_ids]
+        except (Mp3SyncError, RekordboxError) as exc:
+            show_problem(self, "Couldn't Sync to the Card", str(exc))
+            return
+        self._set_writing(True)
+        self._analysing = True  # (the Cancel button is for the rendering below)
+        token = self._cancel = CancelToken()
+        names = ", ".join(f"“{r.name}”" for r in requests)
+        self.subtitle.setText(f"Reading {names}…")
+        self._update_buttons()
+        steps = sum(
+            2 * len(r.plan.tracks) + 1 for r in requests
+        )  # (rendering, the image, reading: a line each)
+
+        def work(report):
+            count = 0
+
+            def say(_text: str) -> None:
+                nonlocal count
+                count += 1
+                report(min(count, steps), steps)
+
+            found = []
+            with TemporaryDirectory(prefix="dubcrate-mp3sync-") as tmp:
+                for number, request in enumerate(requests):
+                    folder = Path(tmp) / str(number)
+                    folder.mkdir()
+                    try:
+                        found.append(prepare_mp3_disc(request, folder, say, token))
+                    except Mp3SyncError as exc:
+                        raise TaskError(f"“{request.name}”: {exc}") from exc
+            return found
+
+        def finish(problem: str | None = None) -> None:
+            self._analysing = False
+            self._cancel = None
+            self._set_writing(False)
+            self._update_buttons()
+            if problem:
+                self.message.emit(problem)
+
+        def failed(text: str) -> None:
+            finish()
+            show_problem(self, "Couldn't Sync to the Card", text)
+
+        def cancelled(_partial) -> None:
+            finish("Cancelled: nothing was written to the card.")
+
+        def done(found) -> None:
+            for prepared in found:
+                store_waveforms(
+                    self._lib, prepared.analysed
+                )  # (what was worked out stays cached)
+            try:
+                index, files = m3.read_mp3_card(
+                    card
+                )  # (as the card is now: it may have changed)
+            except m3.Mp3CardError as exc:
+                finish()
+                show_problem(self, "Couldn't Sync to the Card", str(exc))
+                return
+            plans = [
+                (r, p.disc, plan_mp3_disc(p.disc, index, files))
+                for r, p in zip(requests, found, strict=True)
+            ]
+            ready = [(r, plan) for r, _disc, plan in plans if plan.changed]
+            blocked = [
+                (r, plan)
+                for r, _disc, plan in plans
+                if plan.status in (Mp3Status.NO_ENTRY, Mp3Status.AMBIGUOUS)
+            ]
+            for r, _disc, plan in plans:  # (an up-to-date disc says so in the list)
+                if plan.status is Mp3Status.IN_SYNC:
+                    self._mp3_last[r.disc_id] = "In sync (checked just now)"
+            if not ready:
+                lines = [
+                    line
+                    for r, plan in blocked
+                    for line in describe_mp3_plan(plan, r.name)
+                ]
+                self._look_at_discs(self._loaded)
+                finish()
+                if lines:
+                    show_problem(self, "Couldn't Sync to the Card", "\n".join(lines))
+                else:
+                    self.message.emit(
+                        "The card already has everything for the MP3 discs."
+                    )
+                    if then is not None:
+                        then()
+                return
+            eject = (
+                then is None
+                and self.eject_check.isChecked()
+                and self.eject_check.isEnabled()
+            )
+            lines = [
+                line
+                for r, _disc, plan in plans
+                for line in describe_mp3_plan(plan, r.name)
+            ]
+            text = (
+                f"Write {len(ready)} MP3 disc{'s' if len(ready) != 1 else ''} to “{card.name or card}”?\n\n"
+                + "\n".join(lines)
+                + f"\n\nThe card's MP3 files are copied to {self._backup_dir} first. A waveform or cue the card "
+                "has is never changed, and hot cues are never touched."
+                + (" The card is ejected afterwards." if eject else "")
+                + "\n\nNot tried on a player yet: please check the disc on the CDJ."
+            )
+            if not ask_sync_confirmation(self, text):
+                finish("Nothing was written to the card.")
+                return
+            self.subtitle.setText("Writing to the card…")
+
+            def write():
+                return [
+                    apply_mp3_plan(card, plan, self._backup_dir) for _r, plan in ready
+                ]
+
+            run_async(
+                write, lambda outcomes: written(outcomes, ready, eject), write_failed
+            )
+
+        def written(outcomes, ready, eject: bool) -> None:
+            waves = sum(o.waveforms_written for o in outcomes)
+            cues = sum(o.cues_written for o in outcomes)
+            for (r, _plan), o in zip(ready, outcomes, strict=True):
+                self._mp3_last[r.disc_id] = (
+                    f"Synced: {o.waveforms_written} waveform{'s' if o.waveforms_written != 1 else ''}, "
+                    f"{o.cues_written} cue{'s' if o.cues_written != 1 else ''} added"
+                )
+            said = (
+                f"Wrote {len(outcomes)} MP3 disc file{'s' if len(outcomes) != 1 else ''} ({cues} cues, "
+                f"{waves} waveforms) to “{card.name}”; the old ones are copied to {self._backup_dir}."
+            )
+            self._analysing = False
+            self._cancel = None
+            if eject:
+                self._eject_card(card, said)
+                return
+            self._set_writing(False)
+            self.message.emit(
+                said
+                if then is not None
+                else f"{said} Eject the card before taking it out."
+            )
+            self._look_at_discs(self._loaded)
+            self._update_buttons()
+            if then is not None:
+                then()
+            else:
+                self.refresh()
+
+        def write_failed(text: str) -> None:
+            finish(text)
+            show_problem(
+                self,
+                "Couldn't Sync to the Card",
+                f"{text}\n\nThe card's MP3 files are copied to {self._backup_dir} before anything is written, "
+                "so the old ones can be put back from there.",
+            )
+
+        run_async(
+            work,
+            done,
+            failed,
+            on_progress=lambda n, total: self.subtitle.setText(
+                f"Reading {names}: {n} of {total}"
+            ),
+            on_cancel=cancelled,
+        )
+
     def import_from(self, card: Path) -> None:
         """The card's right-click > Import Cues: make `card` the one shown (looking at the discs against
         it first, if it is not already), then offer its new memory cues as the button does."""
@@ -1258,12 +1548,26 @@ class SyncView(QWidget):
         self.import_from_card()
 
     def _request_sync(self) -> None:
-        if not self.ticked_ids():
+        if not self._ticked_count():
             self.message.emit("Tick the discs you want to sync first.")
             return
         self._on_sync()
 
     def _on_sync(self) -> None:
+        """The Sync button: the ticked MP3 discs (one flow: render, ask, write), then the ticked audio discs (the
+        other: ask, write); only the last one ejects the card."""
+        card = self._card_path
+        if not WRITING_ENABLED or self._writing or card is None:
+            return
+        mp3 = self.ticked_mp3_ids()
+        if mp3:
+            self.sync_mp3(
+                card, mp3, then=self._on_sync_audio if self.ticked_ids() else None
+            )
+            return
+        self._on_sync_audio()
+
+    def _on_sync_audio(self) -> None:
         """Ask, then plan the card fresh, copy its files aside and write (on a worker); then, if
         asked, eject the card."""
         card = self._card_path
