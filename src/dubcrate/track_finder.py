@@ -34,6 +34,7 @@ from dubcrate.audio.decode import DecodeError, decode_file
 from dubcrate.barcount import nearest_beat
 from dubcrate.cancel import Cancelled, CancelToken, cancellable_map
 from dubcrate.card_discs import RekordboxCues
+from dubcrate.cue_timing import lead_ms
 from dubcrate.library import Library
 from dubcrate.library.cue_edits import is_memory
 from dubcrate.library.models import DiscDir, Track
@@ -366,6 +367,13 @@ def cue_beats(
     return tuple(found)
 
 
+def in_audio_time(grid: BeatGrid | None, path: str) -> BeatGrid | None:
+    """rekordbox's beat grid moved to where the beats fall in the audio on the disc (`cue_timing`), as the cues
+    already are, so a cue on a beat reads as on it."""
+    lead = lead_ms(path)
+    return grid if grid is None or not lead else (grid[0] - lead / 1000.0, grid[1])
+
+
 _BAR_LABEL = re.compile(r"\s*\d+(\.\d+)?\s*bars?\s*", re.IGNORECASE)
 
 
@@ -444,7 +452,7 @@ def _disc(
             found.without_wave += 1
         found.coarse_wave += coarse
         on_card = cues.on_card(track) if cues else ()
-        beats = cue_beats(on_card, grids.get(track.id))
+        beats = cue_beats(on_card, in_audio_time(grids.get(track.id), track.path))
         on_card = without_bar_labels(on_card, beats)
         tracks.append(
             FinderTrack(

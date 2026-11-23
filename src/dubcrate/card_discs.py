@@ -22,6 +22,7 @@ from dubcrate import cdj_card as cc
 from dubcrate.analysis import Cue
 from dubcrate.card_report import describe_plan, msf
 from dubcrate.card_sync import DiscPlan, DiscRequest, Status, map_cues, plan_card
+from dubcrate.cue_timing import lead_ms, to_audio
 from dubcrate.library import Library
 from dubcrate.library.cue_edits import with_edits
 from dubcrate.library.models import DiscEntry, DiscSummary, Track
@@ -118,8 +119,10 @@ class RekordboxCues:
         self._by_source: dict[int, Mapping[str, Sequence[Cue]]] = {}
 
     def for_track(self, track: Track) -> Sequence[Cue]:
-        """The track's cues for the card: rekordbox's, with its memory cues replaced by any edited in Dubcrate."""
-        return with_edits(self._lib, track, self._rekordbox_cues(track))
+        """The track's cues for the card, in audio time (`cue_timing`: rekordbox's are later than the audio on the
+        disc for most MP3s): rekordbox's, with its memory cues replaced by any edited in Dubcrate."""
+        base = to_audio(self._rekordbox_cues(track), lead_ms(track.path))
+        return with_edits(self._lib, track, base)
 
     def _rekordbox_cues(self, track: Track) -> Sequence[Cue]:
         analysed = self._lib.rekordbox_twin(track) or track
@@ -220,8 +223,13 @@ def prepare_disc(
             else:
                 wanted_waves[entry.position + 1] = None
                 result.to_analyse.append(track)
+    this_id = cc.DiscId.from_toc(starts, lead_out)
     result.request = DiscRequest(
-        cc.DiscId.from_toc(starts, lead_out), mapped.cues, mapped.notes, wanted_waves
+        this_id,
+        mapped.cues,
+        mapped.notes,
+        wanted_waves,
+        tuple(lib.card_baseline(this_id.key) or ()),
     )
     if toc is not None:
         return result
@@ -234,7 +242,15 @@ def prepare_disc(
             continue
         seen.add(other_id.key)
         again = map_cues(cues_by_track, other_starts, other_end)
-        result.alternates.append(DiscRequest(other_id, again.cues, [], wanted_waves))
+        result.alternates.append(
+            DiscRequest(
+                other_id,
+                again.cues,
+                [],
+                wanted_waves,
+                tuple(lib.card_baseline(other_id.key) or ()),
+            )
+        )
     if known:
         return result
     if summary.pregap_sectors:
@@ -267,7 +283,7 @@ class DiscSurvey:
 
     @property
     def to_add(self) -> int:
-        return len(self.plan.added) if self.plan else 0
+        return len(self.plan.added) + len(self.plan.moved) if self.plan else 0
 
     @property
     def waves_to_add(self) -> int:

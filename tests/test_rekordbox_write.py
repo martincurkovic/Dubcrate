@@ -741,3 +741,50 @@ def test_a_database_is_closed_all_the_way_so_windows_can_delete_its_folder():
         "close",
         "dispose",
     ]  # (the engine, which holds the file open, is let go even then)
+
+
+# --- Dubcrate keeps audio time; rekordbox's is later for most MP3s (`cue_timing`) ------------
+
+
+def test_edits_in_audio_time_are_written_in_rekordboxs_time(library, monkeypatch):
+    monkeypatch.setattr(rw, "lead_ms", lambda _path: 50)
+    # as the player shows rekordbox's cues (1000 and 5000 ms) 50 ms earlier, with a new cue added
+    edits = {path_key(A): [(950, "intro"), (4950, ""), (5950, "drop")]}
+    plan = rw.plan_write(library, edits, unlock=False)
+    [change] = plan.changes
+    assert change.after == [
+        (1000, "intro"),
+        (5000, ""),
+        (6000, "drop"),
+    ]  # the new one only is shifted
+
+
+def test_a_cue_dubcrate_shows_unchanged_keeps_rekordboxs_own_time(library, monkeypatch):
+    monkeypatch.setattr(rw, "lead_ms", lambda _path: 50)
+    edits = {path_key(A): [(950, "intro"), (4950, "")]}  # nothing edited
+    plan = rw.plan_write(library, edits, unlock=False)
+    assert plan.empty and plan.unchanged == [path_key(A)]
+
+
+def test_a_cue_near_the_start_keeps_its_time_when_another_is_edited(
+    library, monkeypatch
+):
+    # rekordbox has a cue at 20 ms: audio time clamps it to 0, and an edit elsewhere must not move it to 50
+    engine = create_engine(f"sqlite:///{library}")
+    with Session(engine) as s:
+        s.add(cue("90", "1", 20))
+        s.commit()
+    engine.dispose()
+    monkeypatch.setattr(rw, "lead_ms", lambda _path: 50)
+    edits = {path_key(A): [(0, ""), (950, "intro"), (4950, ""), (9950, "end")]}
+    [change] = rw.plan_write(library, edits, unlock=False).changes
+    assert change.after == [(20, ""), (1000, "intro"), (5000, ""), (10000, "end")]
+
+
+def test_loops_are_added_and_removed_in_rekordboxs_time(library, monkeypatch):
+    monkeypatch.setattr(rw, "lead_ms", lambda _path: 50)
+    plan = rw.plan_write(
+        library, {}, loops={path_key(A): [(8000, 9000, "x")]}, unlock=False
+    )
+    [change] = plan.changes
+    assert change.new_loops == [(8050, 9050, "x")]

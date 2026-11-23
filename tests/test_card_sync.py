@@ -360,3 +360,112 @@ def test_the_mapped_cues_of_the_players_own_disc_are_already_there():
     )
     assert plan.discs[0].status == cs.Status.IN_SYNC
     assert plan.discs[0].already_there == 5
+
+
+# --- a cue is never later than where it was set, and an earlier sync's cues are moved ----------
+
+
+def test_a_time_is_rounded_down_to_its_frame():
+    starts, lead_out = toc("CD1_TOC.txt")
+    mapped = cs.map_cues(
+        {1: [Cue("memory", 1.999), Cue("memory", 0.52), Cue("loop", 3.0, end=4.999)]},
+        starts,
+        lead_out,
+    )
+    # 1.999 s is frame 149.9 (149, not 150); 0.52 s is exactly 39 frames though a float holds it a hair short
+    assert [(w.position - 150, w.end and w.end - 150) for w in mapped.cues] == [
+        (39, 0),
+        (149, 0),
+        (225, 374),
+    ]
+
+
+def moved_wanted(track, position, end=0):
+    return cs.WantedCue(track, position, end)
+
+
+def test_a_cue_an_earlier_sync_wrote_moves_to_where_it_is_wanted_now():
+    existing = [
+        cc.CueEntry.memory(0, 5000, 1),
+        cc.CueEntry.memory(1, 9000, 1),  # (the player's own)
+    ]
+    merge = cs.merge_cues(existing, [moved_wanted(1, 4996)], earlier=[(1, 5000, 0)])
+    assert [(c.index, c.position) for c in merge.cues] == [(0, 4996), (1, 9000)]
+    assert [(a.position, b.position) for a, b in merge.moved] == [(5000, 4996)]
+    assert merge.added == [] and merge.already_there == 0
+
+
+def test_a_cue_not_exactly_as_it_was_left_is_never_moved():
+    # the player moved it a frame: it is no longer the one the sync wrote, so the wanted cue is added beside it
+    existing = [cc.CueEntry.memory(0, 5001, 1)]
+    merge = cs.merge_cues(existing, [moved_wanted(1, 4996)], earlier=[(1, 5000, 0)])
+    assert merge.moved == [] and [c.position for c in merge.cues] == [5001, 4996]
+    # no record of an earlier sync at all: the same
+    merge = cs.merge_cues([cc.CueEntry.memory(0, 5000, 1)], [moved_wanted(1, 4996)])
+    assert merge.moved == [] and len(merge.cues) == 2
+
+
+def test_a_tiny_difference_is_the_same_cue_not_a_move():
+    existing = [cc.CueEntry.memory(0, 5000, 1)]
+    merge = cs.merge_cues(existing, [moved_wanted(1, 4999)], earlier=[(1, 5000, 0)])
+    assert merge.moved == [] and merge.already_there == 1
+    assert merge.cues == existing
+
+
+def test_a_cue_already_where_another_is_wanted_is_not_taken_for_the_move():
+    # 5000 is wanted as it is; 4994 (also ours) is a different cue and goes to 4990
+    existing = [cc.CueEntry.memory(0, 5000, 1), cc.CueEntry.memory(1, 4994, 1)]
+    earlier = [(1, 5000, 0), (1, 4994, 0)]
+    merge = cs.merge_cues(
+        existing, [moved_wanted(1, 5000), moved_wanted(1, 4990)], earlier=earlier
+    )
+    assert [c.position for c in merge.cues] == [5000, 4990]
+    assert merge.already_there == 1 and len(merge.moved) == 1
+
+
+def test_each_earlier_cue_is_moved_once_and_only_within_reach():
+    existing = [cc.CueEntry.memory(0, 5000, 1)]
+    far = cs.merge_cues(
+        existing, [moved_wanted(1, 5000 - cs.MOVE_FRAMES - 1)], earlier=[(1, 5000, 0)]
+    )
+    assert far.moved == [] and len(far.cues) == 2
+    two = cs.merge_cues(
+        existing, [moved_wanted(1, 4996), moved_wanted(1, 4990)], earlier=[(1, 5000, 0)]
+    )
+    assert (
+        len(two.moved) == 1 and len(two.added) == 1
+    )  # the second one has no earlier cue left to take
+    other_track = cs.merge_cues(
+        existing, [moved_wanted(2, 4996)], earlier=[(1, 5000, 0)]
+    )
+    assert other_track.moved == []
+
+
+def test_a_loop_moves_when_both_ends_are_near():
+    existing = [cc.CueEntry.loop(0, 5000, 6000, 1)]
+    merge = cs.merge_cues(
+        existing, [moved_wanted(1, 4996, 5996)], earlier=[(1, 5000, 6000)]
+    )
+    assert [(c.position, c.end) for c in merge.cues] == [(4996, 5996)]
+    far_end = cs.merge_cues(
+        existing, [moved_wanted(1, 4996, 6200)], earlier=[(1, 5000, 6000)]
+    )
+    assert far_end.moved == []
+
+
+def test_a_sync_moves_the_cues_it_wrote_and_says_so():
+    starts, lead_out = toc("CD1_TOC.txt")
+    disc_id = cc.DiscId.from_toc(starts, lead_out)
+    old = 28905 + 5 * 75
+    file = cc.TrackFile.new(disc_id)
+    file.cues = [cc.CueEntry.memory(0, old, 2)]
+    index = cc.IndexFile([cc.IndexEntry("CDJ00001", disc_id)], 1)
+    request = cs.DiscRequest(disc_id, [cs.WantedCue(2, old - 4)], earlier=[(2, old, 0)])
+    plan = cs.plan_card(index, {"CDJ00001": file}, [request])
+    [disc] = plan.discs
+    assert disc.status is cs.Status.UPDATE and plan.changes
+    assert [c.position for c in plan.writes()["CDJ00001"].cues] == [old - 4]
+    assert disc.added == [] and disc.kept == 0 and len(disc.moved) == 1
+    from dubcrate import card_report
+
+    assert any("moved from" in line for line in card_report.describe_plan(disc))

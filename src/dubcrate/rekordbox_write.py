@@ -38,6 +38,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from dubcrate.cue_timing import lead_ms
 from dubcrate.library.cue_edits import SAME_LOOP_MS
 from dubcrate.library.paths import default_library_path
 from dubcrate.library.rekordbox import (
@@ -282,6 +283,24 @@ def _new_loops(
     return adding
 
 
+def _in_rekordbox_time(
+    after: Sequence[tuple[int, str]], before: Sequence[tuple[int, str]], lead: int
+) -> list[tuple[int, str]]:
+    """Memory cues kept by Dubcrate in audio time as rekordbox has them: `lead` milliseconds later
+    (`cue_timing`). A cue rekordbox already has that Dubcrate shows unchanged keeps rekordbox's own time, so
+    an edit to one cue never moves another, and a cue within `lead` of the start (shown at 0) stays put."""
+    spare = list(before)
+    out: list[tuple[int, str]] = []
+    for ms, label in sorted(after):
+        same = next((b for b in spare if b[1] == label and max(0, b[0] - lead) == ms), None)  # fmt: skip
+        if same is not None:
+            spare.remove(same)
+            out.append(same)
+        else:
+            out.append((ms + lead, label))
+    return sorted(out)
+
+
 def _loops_to_remove(
     removal: Sequence[tuple[int, int]], have: Sequence[tuple[int, int, str]]
 ) -> list[tuple[int, int, str]]:
@@ -335,16 +354,26 @@ def _resolve(
         content = rows[0]
         cues = _memory_rows(db, str(content.ID))
         before = _listed(cues)
+        # Dubcrate's times are in audio time, rekordbox's later for most MP3s (`cue_timing`)
+        lead = lead_ms(str(content.FolderPath))
         # (a track with only loops to add keeps its memory cues as they are)
         after = (
-            sorted((int(ms), str(label)) for ms, label in edits[key])
+            _in_rekordbox_time(
+                [(int(ms), str(label)) for ms, label in edits[key]], before, lead
+            )
             if key in edits
             else before
         )
         before_loops = _listed_loops(_loop_rows(db, str(content.ID)))
-        removing = _loops_to_remove(remove_loops.get(key, ()), before_loops)
+        removing = _loops_to_remove(
+            [(s + lead, e + lead) for s, e in remove_loops.get(key, ())],
+            before_loops,
+        )
         staying = [h for h in before_loops if h not in removing]
-        adding = _new_loops(loops.get(key, ()), staying)
+        adding = _new_loops(
+            [(s + lead, e + lead, label) for s, e, label in loops.get(key, ())],
+            staying,
+        )
         if before == after and not adding and not removing:
             plan.unchanged.append(key)
             continue

@@ -1600,3 +1600,16 @@ def test_related_to_the_last_tagged_track(lib, tmp_path):
     assert got["backInTagged"]["rows"] == ["Smooth Up", "Same Key"]
     assert got["backInTagged"]["lastShown"] is True
     assert got["end"] is True
+
+
+def test_the_beat_grid_is_moved_into_audio_time_with_the_cues(monkeypatch):
+    # rekordbox has beat 1 at 1.050 s on a file it times 50 ms late; the cue is already at 1.000 s in audio time
+    monkeypatch.setattr(tf, "lead_ms", lambda _path: 50)
+    grid = (np.array([1.05, 1.55, 2.05]), np.array([1, 2, 3], dtype=np.int8))
+    moved = tf.in_audio_time(grid, "/m/a.mp3")
+    assert [round(float(t), 3) for t in moved[0]] == [1.0, 1.5, 2.0]
+    [(bar, beat, ms)] = tf.cue_beats([(1.0, "", "")], moved)
+    assert (bar, beat, ms) == (1, 1, 0)  # on the beat, not "50 ms before" it
+    assert tf.in_audio_time(None, "/m/a.mp3") is None
+    monkeypatch.setattr(tf, "lead_ms", lambda _path: 0)
+    assert tf.in_audio_time(grid, "/m/a.mp3") is grid
