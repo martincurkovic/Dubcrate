@@ -773,6 +773,7 @@ PAGE = """<!DOCTYPE html>
     <button id="all" type="button" aria-pressed="false">All tracks</button>
     <button id="tagged" type="button" aria-pressed="false">Tagged</button>
     <button id="clear" type="button" hidden>Clear</button>
+    <button id="rellast" type="button" hidden>Related to last</button>
     <span class="sortrow" id="sortrow">
       <select id="sort" aria-label="Sort by"></select>
       <button id="dir" type="button" aria-label="Reverse the order">\u2191</button>
@@ -785,7 +786,10 @@ PAGE = """<!DOCTYPE html>
   <div class="frow"><span class="l">BPM</span>
     <select id="reltol" aria-label="How far the BPM may differ">
       <option value="3">± 3%</option><option value="6" selected>± 6%</option>
-      <option value="10">± 10%</option><option value="16">± 16%</option></select></div>
+      <option value="10">± 10%</option><option value="16">± 16%</option></select>
+    <select id="relsort" aria-label="Order within each heading">
+      <option value="bpm" selected>Nearest BPM</option><option value="title">Title</option>
+      <option value="disc">Disc order</option></select></div>
   <div class="frow"><span class="l">Also</span>
     <button id="relhalf" type="button" aria-pressed="false">Half / double</button>
     <button id="relenergy" type="button" aria-pressed="false">Energy moves</button></div>
@@ -991,7 +995,18 @@ function toggleTag(r) {
   if (i < 0) tags.push(r.id); else tags.splice(i, 1);
   saveTags();
   showTagCount();
+  showRelLast();
   if (tagView) showStatus();
+}
+
+// "Related to last": the most recently tagged track's related tracks, from Tagged or from a related list, so
+// a set goes tag, see what follows, tag. Only for a last tagged track that has a BPM and a key, and not
+// while that track is the one being looked at.
+const relLastButton = document.getElementById("rellast");
+function showRelLast() {
+  const last = tags.length ? byId.get(tags[tags.length - 1]) : null;
+  const src = related();
+  relLastButton.hidden = !(last && canRelate(last) && last !== src && (src || tagView));
 }
 
 function el(tag, cls, text) {
@@ -1038,8 +1053,9 @@ function sorted(list, key) {
 // -- related tracks: a BPM near this one and a key that mixes with it.
 // Keys are compared as Camelot whatever notation the page shows. From a key on the wheel (number, A or B):
 //   0 same key; 1 smooth: one step round the wheel, or the same number's other letter (relative major/minor);
-//   2 energy: two steps up the wheel, or one step with the letter swapped (a diagonal); -1 not related.
-const TIERS = ["Same key", "Smooth: one step or relative", "Energy moves: +2 or diagonal"];
+//   2 energy up: two steps up the wheel, or one step up with the letter swapped (a diagonal);
+//   3 energy down: the same going down; -1 not related.
+const TIERS = ["Same key", "Smooth: one step or relative", "Energy up: +2 or diagonal", "Energy down: −2 or diagonal"];
 function camelotParts(k) {
   const m = /^([0-9]{1,2})([AB])$/.exec(k);
   return m ? [+m[1], m[2]] : null;
@@ -1048,8 +1064,8 @@ function keyTier(a, b) {
   const x = camelotParts(a), y = camelotParts(b);
   if (!x || !y) return -1;
   const step = (y[0] - x[0] + 12) % 12, same = x[1] === y[1];
-  if (same) return step === 0 ? 0 : (step === 1 || step === 11) ? 1 : step === 2 ? 2 : -1;
-  return step === 0 ? 1 : (step === 1 || step === 11) ? 2 : -1;
+  if (same) return step === 0 ? 0 : (step === 1 || step === 11) ? 1 : step === 2 ? 2 : step === 10 ? 3 : -1;
+  return step === 0 ? 1 : step === 1 ? 2 : step === 11 ? 3 : -1;
 }
 // How far `bpm` is from `from`, in percent of it: the smallest gap, also against double and half
 // time when asked (then `times` says which: 2 = it is at double time).
@@ -1080,6 +1096,7 @@ const relTitle = document.getElementById("reltitle");
 const relGenre = document.getElementById("relgenre");
 let relSkipped = 0, relHidden = 0, relNoGenre = 0, relGenreIgnored = false;
 let halfOn = false, energyOn = false, genreOn = false;
+const relSort = document.getElementById("relsort");
 // "Deep House" and "Tech House" are one genre here: two genres match when they share a word (capitals,
 // accents and punctuation ignored; "and", "the", "of" and "music" don't count).
 const GENRE_SKIP = new Set(["and", "the", "of", "music"]);
@@ -1093,12 +1110,13 @@ const sharesGenre = (a, b) => { for (const w of genreWords(a)) if (genreWords(b)
 const RELATED_KEY = "dubcrate-finder-related";
 function saveRelated() {
   try {
-    localStorage.setItem(RELATED_KEY, JSON.stringify({ tol: relTol.value, half: halfOn, energy: energyOn, genre: genreOn }));
+    localStorage.setItem(RELATED_KEY, JSON.stringify({ tol: relTol.value, half: halfOn, energy: energyOn, genre: genreOn, order: relSort.value }));
   } catch (e) { /* not kept */ }
 }
 try {
   const kept = JSON.parse(localStorage.getItem(RELATED_KEY) || "{}");
   if (["3", "6", "10", "16"].includes(kept.tol)) relTol.value = kept.tol;
+  if (["bpm", "title", "disc"].includes(kept.order)) relSort.value = kept.order;
   halfOn = kept.half === true;
   energyOn = kept.energy === true;
   genreOn = kept.genre === true;
@@ -1125,13 +1143,16 @@ function relatedTo(src) {
     const gap = bpmGap(src.bpmX, r.bpmX, halfDouble);
     if (Math.abs(gap.pct) > tol) continue;
     if (byGenre && !sharesGenre(src, r)) { if (genreWords(r).size === 0) relNoGenre++; continue; }
-    if (tier === 2 && !energy) { relHidden++; continue; }
+    if (tier >= 2 && !energy) { relHidden++; continue; }
     r.tier = tier;
     r.gap = Math.abs(gap.pct);
     r.relNote = gapText(gap);
     found.push(r);
   }
-  return found.sort((a, b) => a.tier - b.tier || a.gap - b.gap || a.titleKey.localeCompare(b.titleKey) || a.order - b.order);
+  // Within a heading: the nearest BPM first, or by title, or in disc order; ties fall back to the title, then the disc.
+  const inside = relSort.value === "title" ? (a, b) => 0 : relSort.value === "disc" ? (a, b) => a.order - b.order
+    : (a, b) => a.gap - b.gap;
+  return found.sort((a, b) => a.tier - b.tier || inside(a, b) || a.titleKey.localeCompare(b.titleKey) || a.order - b.order);
 }
 
 // -- the waveform: "3:" + base64 of (low, mid, high) bytes a column, or "1:" + one 0-15 byte a column
@@ -1481,6 +1502,7 @@ function show() {
     el("span", "", src.title + (src.artist ? " – " + src.artist : "")),
     el("small", "", "Related to " + src.info.join(" · ")));
   clearButton.hidden = !(tagView && tags.length) || src !== null;
+  showRelLast();
   if (clearButton.hidden) resetClear();
   activeSort = sortKey === "match" && !text ? "title" : sortKey;
   let found;
@@ -1545,6 +1567,8 @@ function openRelated(r) {
 }
 document.getElementById("relback").addEventListener("click", () => { relStack.pop(); scrollUp(); show(); });
 relTol.addEventListener("change", () => { saveRelated(); show(); });
+relSort.addEventListener("change", () => { saveRelated(); show(); });
+relLastButton.addEventListener("click", () => openRelated(byId.get(tags[tags.length - 1])));
 relHalf.addEventListener("click", () => {
   halfOn = !halfOn;
   relHalf.setAttribute("aria-pressed", String(halfOn));

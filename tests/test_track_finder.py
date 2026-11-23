@@ -260,7 +260,7 @@ const els = { data: { textContent: data }, q: node("input"), status: node("div")
               indexbtn: node("button"), bubble: node("div"),
               related: node("section"), relback: node("button"), reltitle: node("div"),
               reltol: node("select"), relhalf: node("button"), relenergy: node("button"),
-              relgenre: node("button"),
+              relgenre: node("button"), relsort: node("select"), rellast: node("button"),
               sort: node("select"), dir: node("button") };
 els.reltol.value = "6";
 els.q.value = "";
@@ -1336,8 +1336,10 @@ def test_related_tracks_in_the_page(lib, tmp_path):
         track("Smooth Up", 124.0, "9A"),  # one step up the wheel
         track("Smooth Down", 132.0, "7A"),
         track("Relative", 127.0, "8B"),  # the same number's other letter
-        track("Plus Two", 128.0, "10A"),  # an energy move
+        track("Plus Two", 128.0, "10A"),  # an energy move up
         track("Diagonal", 128.0, "9B"),  # an energy move
+        track("Minus Two", 128.0, "6A"),  # an energy move down
+        track("Diagonal Down", 128.0, "7B"),  # an energy move down
         track("Clash", 128.0, "3A"),  # no key relation
         track("Far", 150.0, "8A"),  # key fits, BPM does not
         track("Double", 256.0, "8A"),  # only at double time
@@ -1379,10 +1381,17 @@ def test_related_tracks_in_the_page(lib, tmp_path):
     assert got["first"]["hidden"] is False
     assert got["first"]["title"] == ["Source – X", "Related to 128 BPM · 8A"]
     assert "4 related" in got["first"]["status"]
-    assert "2 more with energy moves hidden" in got["first"]["status"]
+    assert "4 more with energy moves hidden" in got["first"]["status"]
     # Unknown Key and Nothing have no BPM or no key to compare.
     assert "2 can't be compared" in got["first"]["status"]
-    assert got["energy"]["rows"][-3:] == ["# Energy moves: +2 or diagonal", "Diagonal (same BPM)", "Plus Two (same BPM)"]  # fmt: skip
+    assert got["energy"]["rows"][-6:] == [
+        "# Energy up: +2 or diagonal",
+        "Diagonal (same BPM)",
+        "Plus Two (same BPM)",
+        "# Energy down: −2 or diagonal",
+        "Diagonal Down (same BPM)",
+        "Minus Two (same BPM)",
+    ]
     assert "hidden" not in got["energy"]["status"]
     # A tighter BPM window drops the 3.1% ones.
     assert got["tight"]["rows"] == ["# Same key", "Same Key (pitch −0.8%)", "# Smooth: one step or relative", "Relative (pitch +0.8%)"]  # fmt: skip
@@ -1414,6 +1423,7 @@ for (const step of JSON.parse(process.argv[3])) {
   else if (step === "genre") els.relgenre.handlers.click();
   else if (step === "half") els.relhalf.handlers.click();
   else if (step === "energy") els.relenergy.handlers.click();
+  else if (step.startsWith("order:")) { els.relsort.value = step.slice(6); els.relsort.handlers.change(); }
   out[step] = view();
 }
 out.final = view();
@@ -1493,9 +1503,100 @@ def test_related_choices_are_kept_for_the_next_visit(lib, tmp_path):
     page, harness = related_genre_page(lib, tmp_path)
     store = tmp_path / "phone.json"
     run_related_genre(
-        page, harness, ["tol10", "genre", "half", "energy"], storage=store
+        page,
+        harness,
+        ["tol10", "genre", "half", "energy", "order:title"],
+        storage=store,
     )
     got = run_related_genre(page, harness, [], storage=store)
     assert got["start"]["tol"] == "10"
-    # Same genre is still on, so only the tracks that share a word are listed.
-    assert [r.split("|")[0] for r in got["final"]["rows"]] == ["Tech", "Fast"]
+    # Same genre and the title order are still on: only tracks sharing a word, by title.
+    assert [r.split("|")[0] for r in got["final"]["rows"]] == ["Fast", "Tech"]
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="needs node")
+def test_related_can_be_ordered_by_title_or_disc_inside_a_heading(lib, tmp_path):
+    page, harness = related_genre_page(lib, tmp_path)
+    got = run_related_genre(page, harness, ["tol10", "order:title", "order:disc"])
+    titles = lambda step: [r.split("|")[0] for r in got[step]["rows"]]
+    assert titles("tol10") == [
+        "Music Only",
+        "No Genre",
+        "Tech",
+        "Techno",
+        "Fast",
+    ]  # nearest BPM, then title
+    assert titles("order:title") == ["Fast", "Music Only", "No Genre", "Tech", "Techno"]
+    assert titles("order:disc") == ["Tech", "Techno", "No Genre", "Fast", "Music Only"]
+
+
+RELATED_LAST_TAIL = r"""
+const open = { target: { closest: () => null } };
+const cards = () => els.results.children.filter(c => c.className.startsWith("hit"));
+const part = (c, cls) => c.children.find(x => x.className.split(" ")[0] === cls);
+const titleOf = c => part(c, "what").children[0].textContent;
+const tag = title => { const c = cards().find(x => titleOf(x) === title); c.children[c.children.length - 1].handlers.click(); };
+const find = title => { els.q.value = title; els.q.handlers.input(); };
+const out = {};
+find("Smooth Up");
+tag("Smooth Up");
+out.beforeTagged = els.rellast.hidden;           // not in a plain search
+els.tagged.handlers.click();
+out.inTagged = els.rellast.hidden;
+els.rellast.handlers.click();
+out.related = { title: els.reltitle.children[0].textContent, hidden: els.rellast.hidden, rows: cards().map(titleOf) };
+tag("Same Key");                                  // tagged from the related list: it is now the last
+out.nowLast = els.rellast.hidden;
+els.rellast.handlers.click();
+out.chained = els.reltitle.children[0].textContent;
+els.relback.handlers.click();
+els.relback.handlers.click();
+out.backInTagged = { relHidden: els.related.hidden, rows: cards().map(titleOf), lastShown: !els.rellast.hidden };
+find("Nothing");
+tag("Nothing");
+els.tagged.handlers.click();                      // Nothing has no BPM or key: no button
+out.end = els.rellast.hidden;
+console.log(JSON.stringify(out));
+"""
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="needs node")
+def test_related_to_the_last_tagged_track(lib, tmp_path):
+    rows = [
+        ("Source", 128.0, "8A"),
+        ("Same Key", 129.0, "8A"),
+        ("Smooth Up", 124.0, "9A"),
+        ("Nothing", None, None),
+    ]
+    lib.replace_source(
+        "folder",
+        "/m",
+        "M",
+        [
+            TrackRecord(
+                ext_id=str(i),
+                path=f"/m/{i}.mp3",
+                title=t,
+                **({"bpm": b, "key": k} if b else {}),
+            )
+            for i, (t, b, k) in enumerate(rows)
+        ],
+    )
+    lib.add_to_disc(lib.create_disc("D"), [t.id for t in lib.tracks(sort="path")])
+    page = tmp_path / "finder.html"
+    tf.write_html(tf.collect(lib), page, MADE)
+    harness = tmp_path / "harness.js"
+    harness.write_text(NODE_HARNESS.split("const out = {};")[0] + RELATED_LAST_TAIL, encoding="utf-8")  # fmt: skip
+    run = subprocess.run(["node", str(harness), str(page)], check=True, capture_output=True, encoding="utf-8", errors="replace")  # fmt: skip
+    got = json.loads(run.stdout)
+    assert got["beforeTagged"] is True and got["inTagged"] is False
+    # Smooth Up (124, 9A) at 6%: Source (128, 8A) and Same Key (129, 8A) are each a step away.
+    assert got["related"]["title"] == "Smooth Up" and got["related"]["hidden"] is True
+    assert sorted(got["related"]["rows"]) == ["Same Key", "Source"]
+    assert got["nowLast"] is False  # the new last track is another one
+    assert got["chained"] == "Same Key"
+    # Two Backs: up to Smooth Up's list, then out to Tagged, where the button is back.
+    assert got["backInTagged"]["relHidden"] is True
+    assert got["backInTagged"]["rows"] == ["Smooth Up", "Same Key"]
+    assert got["backInTagged"]["lastShown"] is True
+    assert got["end"] is True
