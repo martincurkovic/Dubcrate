@@ -245,6 +245,35 @@ def test_the_script_matches_the_players_own_layout():
     assert text.index("umount") < text.index("sfdisk") < text.index("mkfs.fat")
 
 
+def test_the_script_checks_the_card_itself_after_the_format_and_refreshes_udev():
+    text = lx.FORMAT_SCRIPT
+    assert (
+        text.index("mkfs.fat -F")
+        < text.index("blkid -p")
+        < text.index("udevadm trigger")
+    )
+    assert '"$found" != vfat' in text and "exit 1" in text[text.index("blkid -p") :]
+
+
+def test_what_the_script_said_is_logged_even_when_it_worked(as_root, tmp_path, caplog):
+    import logging
+
+    mount = tmp_path / "DISK_IMG"
+    mount.mkdir()
+    system = FakeSystem(
+        after=json.dumps(
+            {
+                "blockdevices": [
+                    {"name": "sdb1", "fstype": "vfat", "mountpoints": [str(mount)]}
+                ]
+            }
+        )
+    )
+    with caplog.at_level(logging.INFO, logger="dubcrate.card_format_linux"):
+        cf.format_card("sdb", system)
+    assert "script exit 0" in caplog.text
+
+
 def test_the_old_boot_sector_is_zeroed_before_partitioning_and_the_partition_unmounted():
     # else the desktop mounts the new partition at once (the old FAT is still there) and mkfs says busy
     text = lx.FORMAT_SCRIPT

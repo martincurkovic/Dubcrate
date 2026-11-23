@@ -19,6 +19,7 @@ and tested only against stand-in commands. `dev_docs/linux-test-plan.md` has the
 """
 
 import json
+import logging
 import os
 import re
 import shutil
@@ -33,6 +34,8 @@ from dubcrate.card_format import (
     FormatError,
     Runner,
 )
+
+log = logging.getLogger(__name__)
 
 SYSFS_BLOCK = Path("/sys/block")
 SYSTEM_MOUNTS = frozenset(
@@ -80,7 +83,18 @@ umount "$part" 2>/dev/null || true
 wipefs -a "$part"
 mkfs.fat -F 16 -a -R 8 -n "$label" "$part"
 sync
-if command -v udevadm >/dev/null 2>&1; then udevadm settle || true; fi
+# Read the card itself (blkid -p goes round udev's database) so a format that left nothing behind is
+# said so here, with what the card holds, instead of showing up later as a vague "unformatted".
+found=$(blkid -p -o value -s TYPE "$part" 2>/dev/null || true)
+echo "$part now holds: ${found:-no file system}"
+if [ "$found" != vfat ]; then
+    echo "The card was erased but no FAT file system was written to it ($part holds: ${found:-nothing})." >&2
+    exit 1
+fi
+if command -v udevadm >/dev/null 2>&1; then
+    udevadm trigger --action=change "$part" || true
+    udevadm settle || true
+fi
 """
 
 
@@ -261,6 +275,14 @@ def format_disk(disk: CardDisk, run: Runner = subprocess.run) -> Path:
         LABEL,
     ]
     proc = _run(run, command, "formatting the card")
+    # (what the script said goes in the log whatever happened: a card that came out wrong is otherwise a mystery)
+    log.info(
+        "format %s: script exit %s; stdout: %s; stderr: %s",
+        disk.device,
+        proc.returncode,
+        (proc.stdout or "").strip(),
+        (proc.stderr or "").strip(),
+    )
     if proc.returncode in (126, 127) and command[0] == "pkexec":
         raise FormatError(
             "The administrator password wasn't given, so nothing was erased."
