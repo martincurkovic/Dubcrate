@@ -563,8 +563,20 @@ and **firmware other than 2.20**.
     record) and then (0,3) with 49 columns, so (0,3) sits **after** (2,2). The index was unchanged and the checksum still
     validates. **Safe and Sound, (3,4), has no record at all**, although most of it was played: either a record is only
     written when the player moves on (the track ends, another is loaded, or the disc is ejected) and this one was not
-    flushed before the card came out, or something else: **[unknown]**, asked of the owner (what was done after
-    stopping, and how the card was removed).
+    flushed before the card came out, or something else: **[unknown]**. The owner **paused it, waited a couple of
+    seconds and pulled the card** (no other action). That rules out "only when played to the end" (records for tracks
+    stopped at 0, 1, 4 and 15 of 50 columns exist, and the audio notes have a part-filled record after 2 seconds of
+    play); what is left is a flush when the player **leaves** a track (it ends, another is loaded, the disc is
+    ejected), which every record present fits and a pause does not trigger. Two tests would settle it: play a new
+    track for 20 s then load another and pull the card (does the first have a record?), and play one and pause and
+    wait longer before pulling. It does not matter for pre-writing waveforms (below), but it does for the safe-eject
+    advice, and for reading back cues set on the player.
+  - **Our waveform model against the player's own MP3 records** (`dubcrate`'s `library.waves.analyse`, run on the
+    exported copies of the burned files, against the `W002` columns in time order, 2026-11-23): Gotta Get Thru This 67%
+    of 100 columns within one value (23% exact), Rather Be 63%, Sorry For Party Rockin' 78%, Summertime Blues 90% (64%
+    exact): **about 74% within one, as for audio discs (76%)**, so the same model serves MP3 discs. Not yet checked:
+    that the player keeps a record we write for an MP3 as it keeps one on an audio disc (it never re-measures a column
+    that has a value there).
   - **The disc has `HC11` of 396 bytes, so hot cues A, B, C are 132-byte entries**, and a played track with no cue has
     all of it zero. `Dubcrate`'s audio parser still refuses the file (it reads a 60-byte `HC11` block and takes the first `u16`
     of a waveform record as a track number); the layout is otherwise the same code path.
