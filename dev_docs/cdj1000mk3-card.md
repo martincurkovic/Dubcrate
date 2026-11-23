@@ -631,6 +631,9 @@ and **firmware other than 2.20**.
     cue** was the one on folder C file 1 at 8.47 s (index 6): **it is simply removed from `CN11`** (count 8 to 7, length
     926 = 2 + 7 x 132), **the others are untouched and not renumbered** (the indexes are now 0 to 5 and 7), so an index
     is the order set, not a position. Two more waveform records appeared, (3,2) with 0 columns and (3,3) with 1.
+  - **Eighth look (`MPJ00001_loop_deleted.PDJ`): a deleted loop** (folder C file 1, index 7, the loop at 20.35 s) is **removed
+    from `CN11` the same way** (count 7 to 6, the others untouched, the hot cues unchanged). Deleting a **hot cue** has not
+    been seen: the owner does not know how to do it on a CDJ-1000MK3.
   - **Hot cues saved as loops**: the notes' table lists "a loop's end in a hot slot" as not seen, and it was only an
     idea from rekordbox, which can do it. The owner thinks the CDJ-1000MK3 cannot save a loop as a hot cue (a
     CDJ-2000 feature); **unconfirmed either way**, and not worth an experiment unless the player has the control.

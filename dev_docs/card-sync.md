@@ -418,3 +418,44 @@ track plays (cdj1000mk3-card.md). Writing needs what a column means and the scal
    the player then sees a different disc and shows no cues. Reading the TOC from the drive avoids it.
 4. **Hot cues stay out** by decision, so the player's A, B and C are the owner's.
 5. **Firmware version and card variants**: one player, one 2 GB card, one firmware (unknown).
+
+## MP3 discs: the v1 plan (2026-11-23)
+
+Goal (owner): **waveforms and cue points from Dubcrate onto the card for an MP3 disc**, timing precision later. What
+is known is in [cdj1000mk3-card.md](cdj1000mk3-card.md), section 6, and `src/dubcrate/cdj_card_mp3.py` reads and
+writes it (tested on the player's own files, `tests/data/cdj_card/mp3/`). **Nothing writes to a card yet.**
+
+**Facts that shape it** (all measured on one disc and one player):
+
+- One file for the whole disc, records keyed by (folder, file), 132-byte cue entries with the time in 1/75 s, the MP3
+  **frame number and the byte offset in the file as burned**: the player seeks by byte.
+- **Every file on a disc is made by ffmpeg**, even a plain copy (`render.render_mp3`: a new ID3v2.3 tag with no cover, an
+  ID3v1 block, ffmpeg's own Info frame). So none of the 15 files was byte-identical to its library file, and the offsets
+  cannot be taken from the library's files. A closed formula from the first frame's offset was tried and is wrong for
+  most files (padding differs): the offsets come from the frame headers of the rendered file (`cdj_card_mp3.frame_table`).
+- The disc's ID is 16 bytes of which only three fields are understood (file count, the last file's start sector, the
+  image's size in sectors). **So v1 cannot make an ID: the disc must already have an entry in `MPJINDX0.PDJ`** (the player
+  adds one when it first plays the disc; whether loading is enough is not known), and Dubcrate finds it by those three
+  numbers and copies the whole ID from it.
+
+**The flow**, in the order to build it:
+
+1. **Layout**: render the disc's files as a burn does (about a second for 15 copies), build the image with `iso.build_iso`
+   and read the numbers off it (the file count, the last file's extent, the image's size): `iso.py` has to expose them.
+   **The card entry's three fields are then a checksum on the layout**: if they match, the rendered files have the
+   sizes of the burned ones, so their tags and offsets can be trusted; if not (the disc was burned elsewhere, by another
+   ffmpeg, or edited since) say so and do not write. A "read it from the disc in the drive" way round that is not built.
+2. **Waveforms**: `wave_model.records` for each track, written as `Mp3Wave` for every (folder, file) with no record
+   (an existing record is never changed, partial or not, as on audio discs: not yet seen to hold for MP3).
+3. **Cues**: Dubcrate's memory cues and loops (rekordbox's, with the edits laid over) become new `CN11` entries, appended
+   after the highest index; **merge, never change what is there**; skip one within 2 frames of an existing one; at most 100
+   cues and loops a disc; **hot cues are never written** (as for audio discs); a new entry's unused fields are zero.
+4. **Time**: v1 writes **rekordbox's own time** as the position. The player counts the Info frame as audio like rekordbox
+   does, so the two probably agree, but that is **unverified**: the click-track disc (one more CD-R) measures it.
+   Dubcrate's cues are in audio time, so this means `cue_timing.to_rekordbox`-style conversion back, not none.
+5. **Where**: `mp3_sync.py` (pure planning, like `card_sync`), a `dubcrate card sync` path for MP3 discs (a dry run unless
+   `--yes`, backing the card up first, run on a **copy** of a card first), then the Sync tab listing MP3 discs next to the
+   audio ones. Import Cues from an MP3 disc is the same reading in reverse and comes after.
+
+**Out of scope for v1**: a disc with no card entry yet; hot cues; a file that is not MPEG-1 Layer III at 44.1, 48 or 32 kHz
+(refused with a message: `Mp3FrameError`); and anything about the rest of the disc ID.
