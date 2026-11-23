@@ -580,8 +580,8 @@ and **firmware other than 2.20**.
   - **The disc has `HC11` of 396 bytes, so hot cues A, B, C are 132-byte entries**, and a played track with no cue has
     all of it zero. `Dubcrate`'s audio parser still refuses the file (it reads a 60-byte `HC11` block and takes the first `u16`
     of a waveform record as a track number); the layout is otherwise the same code path.
-  - **Cue entries, decoded (fourth and fifth looks, 2026-11-23; `MPJ00001_with_cues.PDJ` and `MPJ00001_folder_cues.PDJ`,
-    checksum valid in both).** Set on the player: a memory cue and hot cue A on root file 2, a loop on root file 3, then in
+  - **Cue entries, decoded (fourth to sixth looks, 2026-11-23; `MPJ00001_with_cues.PDJ`, `MPJ00001_folder_cues.PDJ` and
+    `MPJ00001_all_folders.PDJ`, checksum valid in all).** Set on the player: a memory cue and hot cue A on root file 2, a loop on root file 3, then in
     folder B a hot cue (B) and a loop on file 1 (Rather Be) and a memory cue on file 4 (Dracula); the owner confirmed the
     times. `CN11` is `u16 count` + **n x 132 bytes** (length 0 with no cue; 266 for two, 530 for four), and `HC11` has
     length 396 once a hot cue is used (slots of 132). An entry has the audio entry's shape with more in it. Offsets are
@@ -592,24 +592,27 @@ and **firmware other than 2.20**.
     - `+16` `u16`: **1 for a cue, 2 for a loop** (the first look read this as "file - 1": a coincidence of the first
       two tracks). `+18` `u16`: **the file's number in its folder** (2, 3, 1, 4 for the four `CN11` entries, 2 and 1 for the
       hot slots). `+20` `u16`: for a loop the file number again; for a cue it is **a leftover** (below).
-    - **The folder: a byte at `+104` (hot slot) or `+106` (`CN11` entry), 2 for the three entries on tracks in folder B,
-      0 for those in the root.** Folders A and C, and whether it is a byte or part of a wider field, are not seen.
+    - **The folder: a byte at `+104` (hot slot) or `+106` (`CN11` entry), **0 for the root, then one number per folder in order:
+      1 for folder A (two entries), 2 for folder B (three), 3 for folder C (two)** (the sixth look). Whether it is a byte or
+      the top of a wider field, and what happens past nine folders, are not seen.
     - `+24` **position**, a `u32` in **frames of 1/75 s within the track** (not a CD's absolute frames): hot A 916 (12.2 s),
       memory cue 1474, loop 3358, hot B 919, Rather Be's loop 1218, Dracula's cue 792. `+28` the loop's **end**
       (0 for a cue). `+32` the **track's length** in the same frames: `ceil(MP3 frames x 1152 / 44100 x 75)`,
-      **counting the Info frame**, which holds for four tracks (15304, 24721, 16932, 19349). A loop has the length again at
+      **counting the Info frame**, which holds for six tracks (15304, 24721, 16932, 19349, 12181, 30127). A loop has the length again at
       `+36`.
     - `+88` the **MP3 frame number** of the position and `+92` of the loop's end (`floor(position / 0.026122 s)`);
-      `+96` the **byte offset in the file** of that frame and `+100` of the end. **All eight offsets seen match the real
-      files exactly**, counting frames from the file's first frame (the Info frame is frame 0) and bytes from the start of
+      `+96` the **byte offset in the file** of that frame and `+100` of the end. **All fourteen offsets seen match the real
+      files exactly (cues and loops in the root and in folders A, B and C)**, counting frames from the file's first frame (the Info frame is frame 0) and bytes from the start of
       the file with its ID3 tag; **a loop's end is the start of its end frame** (an earlier note here, that it sat 1,024
       bytes before, was my arithmetic slip: `0x001c6a2a` is 1,862,186). **So the player seeks an MP3 by byte offset, and a cue
       written from Dubcrate needs the file's frame headers read** (`mp3.scan_mp3` reads them).
     - `+112` `00 86 ff ff` for the memory cues and hot A, `ff ff ff ff` for the loops and hot B: perhaps a colour,
       **[unknown]**. Everything else in the 132 bytes is zero in the entries seen.
-    - **A cue set after a loop carries the loop's leftovers**: Dracula's memory cue (set after the loop on Rather Be) has
-      that loop's end (1362), its second length (16932), its end frame (695), its end byte offset (726,363) and its `+20`
-      value (1); the first memory cue, set with no loop before, has zeros. The player does not clear the fields a cue
+    - **A memory cue carries the leftovers of the last loop set**: Dracula's cue (after the loop on Rather Be) has that
+      loop's end (1362), second length (16932), end frame (695), end byte offset (726,363) and `+20` value (1); the cue on
+      folder A's file 1 has the same Rather Be loop's, and the cue on folder C's file 1 (set after folder A's loop) has
+      **folder A's loop's** (end 995, length 12181, end frame 507, end byte 529,925); the first memory cue, set with no
+      loop before, has zeros. The player does not clear the fields a cue
       doesn't use, so **a reader must ignore them for a cue and a writer should write zeros**.
     - The positions are in the player's time for the file, which counts the Info frame as audio: the relation to
       Dubcrate's audio time (`cue_timing`: about 51 ms for a LAME file) is **[unknown]** and needs a cue at a known sound
@@ -620,8 +623,8 @@ and **firmware other than 2.20**.
     **kept it in RAM and wrote it with the next write of the file** (a track left, a cue set), not at the pause, and the
     records are still appended in the order tracks were first touched. The owner saw Dracula's waveform stop loading after a
     cue was set on it; its record has 24 columns (a firmware quirk, unexplained).
-  - **Next, in this order**: a cue and a loop in folders A and C (is the folder byte 1 and 3?); a hot cue C and a hot
-    cue saved as a loop; what **deleting** or **moving** a cue on the player does to its entry; the player's time against
+  - **Next, in this order**: a hot cue C and a hot cue saved as a loop (and a hot cue in a folder: is its byte at `+104`
+    the same?); what **deleting** or **moving** a cue on the player does to its entry; the player's time against
     audio time (a click track with known positions: one more disc); then a second disc image to pull the rest of the
     disc ID apart (`05 2c 06`, `33 87 45 e7`, `00 00`). Then `card_sync` could write MP3 waveforms and cues: **no code
     reads or writes `MPJ` yet.**
