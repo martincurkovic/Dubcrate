@@ -580,9 +580,39 @@ and **firmware other than 2.20**.
   - **The disc has `HC11` of 396 bytes, so hot cues A, B, C are 132-byte entries**, and a played track with no cue has
     all of it zero. `Dubcrate`'s audio parser still refuses the file (it reads a 60-byte `HC11` block and takes the first `u16`
     of a waveform record as a track number); the layout is otherwise the same code path.
-  - **Next, in this order**: find out when the player writes a record (Safe and Sound is missing); set one memory cue and one hot cue on a played track (the 132-byte entry layout); a loop;
-    then a second image to pull the rest of the ID apart (`05 2c 06`, `33 87 45 e7`, `00 00`). Then `card_sync` could
-    write MP3 waveforms and cues: **no code reads or writes `MPJ` yet.**
+  - **Cue entries, decoded (fourth look, `MPJ00001_with_cues.PDJ`, 1,642 bytes, checksum valid): a memory cue and hot cue
+    A on root file 2 (Sorry For Party Rockin') and a loop on root file 3 (Summertime Blues), all set on the player.**
+    `CN11` is now `00 02` + **2 x 132 bytes** (266; with no cue it is length 0), `HC11` has length 396 and slot A is
+    filled (the length is 0 until a hot cue is used, as on audio). An entry is **132 bytes** and has the audio entry's
+    shape, with more in it. Offsets are those of a hot slot; a `CN11` entry has a **u32 index in front of the kind, so its
+    offsets are 2 more** (as on audio: `_CUE` has `index u32, kind u16`, `_HOT` has `slot u16, kind u16`):
+    - `+0` hot: slot (1 = A); `CN11`: the u32 index in the order set (0, 1, ...). `+2` **kind**: `0x0010` a cue (the memory
+      cue and the hot cue), **`0x0020` a loop**.
+    - `+16`, `+18` two `u16`: **(1, 2) for a cue on file 2, (2, 3) for the loop on file 3**, and the loop has a third `u16`,
+      3, at `+20`: so far equal to (file - 1, file), but every cue was in the root, so how a **folder** enters is
+      **[unknown]**.
+    - `+24` **position** as a `u32`, in **frames of 1/75 s within the track** (not a CD's absolute frames: there is no
+      TOC): hot A **916** (12.2 s), memory cue **1474** (19.65 s), loop start **3358** (44.77 s). `+28` the loop's **end**
+      (3493 = 46.57 s; 0 for a cue). `+32` the **track's length** in the same frames, 15304 and 24721, which is
+      `ceil(MP3 frames x 1152 / 44100 x 75)` counting every frame **including the Info frame** (7,811 and 12,618 frames);
+      a loop has it a second time at `+36`.
+    - `+88` the **MP3 frame number** of the position, `+92` of the loop's end: 467, 752, 1713 and 1782, which is
+      `floor(position / 0.026122 s)`. `+96` the **byte offset in the file** of that frame, `+100` of the end: 488,101,
+      785,897 and 1,790,088 **match the real files exactly**, counting frames from the file's first frame (the
+      Info frame is frame 0) and bytes from the start of the file (the ID3 tag included). **The loop's end is
+      1,861,162, 1,024 bytes before frame 1782's start (1,862,186)**: one sample only, so whether the end always backs off
+      1,024 bytes (a margin for the bit reservoir?) is **[unknown]**. So **the player seeks an MP3 by byte offset, and a
+      cue written from Dubcrate needs the file's frame headers read** (`mp3.scan_mp3` already reads them).
+    - `+112` a constant `00 86 ff ff` for a cue and `ff ff ff ff` for a loop (colour or flags: **[unknown]**); everything
+      else in the 132 bytes is zero in these three entries.
+    - The positions are in the player's time for the file, which counts the Info frame (frame 0) as audio time: the
+      relation to Dubcrate's audio time (`cue_timing`: about 51 ms for a LAME file) is **[unknown]**, and has to be
+      measured with a cue at a known sound before cues are written.
+  - **Next, in this order**: a cue and a loop **inside a folder** (does the pair at `+16` carry the folder?); a second
+    hot cue (B) and a memory cue on a track not in the root; a hot cue set as a loop; find out when the player writes a
+    record (a track left, not just paused: the card has no record for one that was paused and pulled); then a second image
+    to pull the rest of the disc ID apart (`05 2c 06`, `33 87 45 e7`, `00 00`). Then `card_sync` could write MP3
+    waveforms and cues: **no code reads or writes `MPJ` yet.**
 - **`INTERNAL MEMORY` / `CARD MEMORY`, `CARDCOPY_MODE`, `CUE FOLDER00`, `.BAK`, `THUM`** appear in
   the firmware and not on the card seen: the player can copy cues between its internal memory
   and the card, there may be several folders of cues, and `.BAK` may be a backup written
