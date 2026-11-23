@@ -517,13 +517,43 @@ disc's name.
 
 Solved enough to write (see "The waveform, measured" and `card-sync.md`, "Waveform sync"). Open: the **dip after a drop** and the
 two-nibble difference on pulses (not modelled), the model's accuracy on music **very different from the nine tracks it was fitted on**
-(run `dubcrate card check-waveforms` after playing a new disc), **MP3 discs** (their records, in `PIONEER/MPJ`, have never been seen),
+(run `dubcrate card check-waveforms` after playing a new disc), **MP3 discs** (first seen 2026-11-23, see section 6; one track played, no cue yet),
 and **firmware other than 2.20**.
 
 ### 6. Other media and the rest of the card
 
-- **MP3 discs** (`MPJ`, `MPJINDX0.PDJ`): never looked at on a real card. cdjmerge's notes (see
-  above) say the entries are 132 bytes there; the audio-CD layout does not carry over unchecked.
+- **MP3 discs** (`PIONEER/MPJ/`): **first look 2026-11-23, [hardware]**, one MP3 disc and one track played. The
+  real files are in `tests/data/cdj_card/mp3/` (the player's own, untouched). The disc was burned on Linux by
+  Dubcrate (15 files: 3 in the root, 4 in each of folders A, B and C; an ISO of **84,029** sectors), and the owner
+  played "Gotta Get Thru This", the first track of folder A, to the end, with no cue set. The player made
+  `PIONEER/MPJ/MPJINDX0.PDJ` (48 bytes) and `MPJ00001.PDJ` (928 bytes) and nothing else; their times are 1980-01-01
+  (the player has no clock), as for the audio files it writes. **The player's waveform for an MP3 loads at about
+  real-time speed** (owner), so a track's waveform is only there after it has been played through: the same gap
+  that writing waveforms in Sync closes for audio discs.
+  - **Index**: `PIONEER INDX` `00000001`, then the media word `MP3 ` and a `u32` (1: the disc count, as `CD  ` and
+    `00000019` = 25 on the audio index), a 0x18-byte header exactly as documented above; then **24-byte entries, the same
+    as an audio index's**: the file name `MPJ00001` (8 ASCII bytes) and a **16-byte disc ID**. No checksum: 24 + 24 = 48.
+  - **The disc ID is not a TOC.** Read as an audio ID it is nonsense. `05 2c 06 0f 33 87 45 e7 01 39 75 01 48 3d 00 00`:
+    **bytes 8 to 10 (`01 39 75` = 80,245) are the start sector of the last file** on the image (`/D003/004.MP3`), and
+    **bytes 11 to 13 (`01 48 3d` = 84,029) are the image's size in sectors** (the ISO's volume size, also what `cdrdao`
+    wrote). So, as for an audio disc, the ID comes from the numbers of the disc itself, here the ISO's. **[inferred]**
+    Byte 3 is `0x0f` = 15, the number of files; the rest (`05 2c 06`, the four bytes `33 87 45 e7`, and `00 00`) is
+    **[unknown]**: a hash or counts of folders and entries. One disc cannot say; a second image with known numbers can.
+  - **Track file**: the same chunked layout as an audio disc's, **not** a fixed buffer of 132-byte entries:
+    `PIONEER INFO` `00000002`, `DID ` `00000010` and the 16-byte ID (the same as the index's), `CN11` with length
+    `00000000` (no cues: an audio file with one cue has length `0x16`), `HC11` with length 0 (no hot cues), `W001`
+    length `0xe0`, `W002` length `0xe0`, and `CSUM` `00000002` + 4 bytes. **`Dubcrate`'s audio parser refuses it**
+    ("Expected the W001 chunk here"), as it should until the layout is known. **`W001` is 224 bytes = 4 x 56**, and an
+    audio disc's is 56 bytes a track (`CDJ00025`: `0x230` = 10 x 56): **four slots, the number of tracks in folder A**
+    (the disc has 3 files in the root and 4 in each folder). **[inferred]** So one file seems to hold the tracks of
+    one folder, or just the first four; it also has one file and one index entry for a disc with four folders, so
+    whether the other folders get `MPJ00002...` (and with which ID) is **[unknown]**. The values in the slots are
+    4-bit amplitudes like the audio ones. cdjmerge's "one `MPJ` file per track" and "132-byte entries" are **not**
+    what a played track makes (its empty cue chunk is 0 bytes long here); the 132 bytes may be an entry's size once a
+    cue exists.
+  - **Next, in this order**: play a root track and a track in folder B (does the file grow, or is there an
+    `MPJ00002`? how many slots?); set one memory cue and one hot cue (the entry layout); a loop; then a second image to
+    pull the ID apart. Then `card_sync` could write MP3 waveforms and cues; **no code reads or writes `MPJ` yet.**
 - **`INTERNAL MEMORY` / `CARD MEMORY`, `CARDCOPY_MODE`, `CUE FOLDER00`, `.BAK`, `THUM`** appear in
   the firmware and not on the card seen: the player can copy cues between its internal memory
   and the card, there may be several folders of cues, and `.BAK` may be a backup written

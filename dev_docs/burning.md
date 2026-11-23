@@ -147,9 +147,14 @@ Magnetics CD-Rs. Nothing below needed a change to the burner code.
 - **[hardware 2026-11-23]** The Mac's "one frame later than planned" TOC is **not consistent** (owner, from 48 discs
   burned on the Mac: some read back exactly as planned, others a frame late). The one Linux disc matched exactly, which
   proves nothing about `cdrdao` against DiscRecording either way. The TOC Manager exists for this.
-- **[hardware 2026-11-23]** An MP3 disc (the library's "MP3 Linux Test": 15 tracks in three folders plus three at
-  the root) was started from the burn window at 19:47: `cdrdao write --device /dev/sr0 -n --speed 48 --eject
-  disc.toc` (the ISO as one data track). **Its result, and playing it on a CDJ, are not recorded yet.**
+- **[hardware 2026-11-23]** An **MP3 disc** (the library's "MP3 Linux Test": 15 files, three folders of four plus
+  three in the root) burned from the window: `cdrdao write --device /dev/sr0 -n --speed 48 --eject disc.toc` (the
+  ISO as one `MODE1` data track), written at 24x (clamped, as before) in 2 min 33 s: 84,029 blocks, `Writing finished
+  successfully`, the disc ejected by `--eject` (the probe saw `disc -> empty`). No TOC check for a data disc. **It plays
+  on a CDJ-1000MK3**: the owner played the first track of folder A to the end, and the player wrote `PIONEER/MPJ` files
+  for it ([cdj1000mk3-card.md](cdj1000mk3-card.md), section 6). Not yet reported: the folder navigation, file order
+  and long names on the player. The window's check of the drive after the eject showed cdrdao's raw "Cannot setup
+  device" (an empty tray): fixed, it says "no disc inside".
 - **[not tried]** `xorriso -as cdrecord` as the alternative for MP3 discs; the wrong-case messages (no disc, not blank,
   permission denied).
 
