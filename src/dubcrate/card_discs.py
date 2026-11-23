@@ -283,7 +283,12 @@ class DiscSurvey:
 
     @property
     def to_add(self) -> int:
-        return len(self.plan.added) + len(self.plan.moved) if self.plan else 0
+        return len(self.plan.added) if self.plan else 0
+
+    @property
+    def to_move(self) -> int:
+        """Cues of ours from an earlier sync that a sync would move to where they are wanted now."""
+        return len(self.plan.moved) if self.plan else 0
 
     @property
     def waves_to_add(self) -> int:
@@ -309,13 +314,16 @@ class DiscSurvey:
         if self.plan is None:
             return "Choose a card"
         parts = []
-        if self.to_add or not self.waves_to_add:
+        if self.to_add or not (self.waves_to_add or self.to_move):
             parts.append(f"{self.to_add} cue{'s' if self.to_add != 1 else ''}")
         if self.waves_to_add:
             parts.append(
                 f"{self.waves_to_add} waveform{'s' if self.waves_to_add != 1 else ''}"
             )
-        n = " and ".join(parts) + " to add"
+        n = " and ".join(parts) + " to add" if parts else ""
+        if self.to_move:
+            moves = f"{self.to_move} cue{'s' if self.to_move != 1 else ''} to move"
+            n = f"{n}, {moves}" if n else moves
         if self.plan.status is Status.NOTHING and self.plan.waves_pending:
             return n
         match self.plan.status:
@@ -398,6 +406,7 @@ def wave_rows(
     request = survey.input.request
     wanted = Counter(c.track for c in request.wanted) if request else Counter()
     added = Counter(c.track for c in plan.added) if plan else Counter()
+    moved = Counter(new.track for _, new in plan.moved) if plan else Counter()
     # the cues the track will have on the card (what is there already and what is added), else those wanted
     placed = plan.file.cues if plan is not None and plan.file is not None else (request.wanted if request else ())  # fmt: skip
     starts = survey.input.starts
@@ -438,6 +447,8 @@ def wave_rows(
             cues = f"{wanted[number]}" if wanted[number] else "–"
         elif added[number]:
             cues = f"{added[number]} to add"
+        elif moved[number]:
+            cues = f"{moved[number]} to move"
         else:
             cues = "on the card" if wanted[number] else "–"
         rows.append(

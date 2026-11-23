@@ -405,11 +405,25 @@ def test_a_cue_not_exactly_as_it_was_left_is_never_moved():
     assert merge.moved == [] and len(merge.cues) == 2
 
 
-def test_a_tiny_difference_is_the_same_cue_not_a_move():
+def test_a_tiny_difference_is_the_same_cue_unless_it_is_one_we_wrote():
     existing = [cc.CueEntry.memory(0, 5000, 1)]
+    # not ours (or no record): within two frames it is the wanted cue, and stays as it is
+    merge = cs.merge_cues(existing, [moved_wanted(1, 4999)])
+    assert merge.moved == [] and merge.already_there == 1 and merge.cues == existing
+    # one we wrote a frame or two later than it should be: moved, so a cue is never left late
     merge = cs.merge_cues(existing, [moved_wanted(1, 4999)], earlier=[(1, 5000, 0)])
+    assert [c.position for c in merge.cues] == [4999] and len(merge.moved) == 1
+    # already exactly there: nothing to do
+    merge = cs.merge_cues(existing, [moved_wanted(1, 5000)], earlier=[(1, 5000, 0)])
     assert merge.moved == [] and merge.already_there == 1
-    assert merge.cues == existing
+
+
+def test_a_very_short_loop_keeps_a_frame_whichever_way_it_rounds():
+    starts, lead_out = toc("CD1_TOC.txt")
+    mapped = cs.map_cues({1: [Cue("loop", 1.001, end=1.010)]}, starts, lead_out)
+    assert mapped.notes == [] and [(w.position, w.end) for w in mapped.cues] == [
+        (225, 226)
+    ]
 
 
 def test_a_cue_already_where_another_is_wanted_is_not_taken_for_the_move():

@@ -94,10 +94,12 @@ def _head(path: Path) -> bytes:
 _held: dict[tuple[str, int, int], int] = {}
 
 
-def lead_ms(path: str | os.PathLike[str]) -> int:
-    """How many milliseconds later rekordbox's time is than the audio ffmpeg renders for this file (0 for any
-    file that isn't an MP3 with an Info / Xing frame, or that can't be read: never raises). Kept per file
-    until it changes."""
+_HELD_LIMIT = 20000  # files remembered at once (a changed file leaves a dead entry): then start again
+
+
+def lead_or_none(path: str | os.PathLike[str]) -> int | None:
+    """`lead_ms`, but None for an MP3 that can't be read just now (a drive that is unplugged): a caller that
+    would write a time must not take that for "no lead". Kept per file until it changes."""
     where = Path(path)
     if where.suffix.lower() != ".mp3":
         return 0
@@ -105,11 +107,19 @@ def lead_ms(path: str | os.PathLike[str]) -> int:
         info = where.stat()
         key = (str(where), info.st_size, info.st_mtime_ns)
         if key not in _held:
+            if len(_held) >= _HELD_LIMIT:
+                _held.clear()
             samples, rate = lead_samples(_head(where))
             _held[key] = round(samples * 1000 / rate) if rate else 0
         return _held[key]
     except OSError:
-        return 0
+        return None
+
+
+def lead_ms(path: str | os.PathLike[str]) -> int:
+    """How many milliseconds later rekordbox's time is than the audio ffmpeg renders for this file (0 for any
+    file that isn't an MP3 with an Info / Xing frame, or that can't be read: never raises)."""
+    return lead_or_none(path) or 0
 
 
 def to_audio(cues: Sequence[Cue], lead: int) -> list[Cue]:

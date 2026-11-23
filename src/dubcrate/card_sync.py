@@ -97,6 +97,10 @@ def map_cues(
             end = 0
             if cue.kind == "loop":
                 end = start + _frame(cue.end) if cue.end is not None else 0
+                if cue.end is not None and cue.end > cue.time:
+                    end = max(
+                        end, position + 1
+                    )  # (a very short loop keeps a frame, whichever way it rounds)
                 if end <= position or end > stop:
                     result.notes.append(f"The loop in {where} has no usable end.")
                     continue
@@ -148,14 +152,18 @@ def merge_cues(
     cues = list(existing)
     result = Merge(cues, [], 0, [])
     ours = set(earlier)
+
+    def present(c: cc.CueEntry, want: WantedCue) -> bool:
+        """Already where `want` is: within `DUPLICATE_FRAMES`, unless it is one we wrote that is not exactly there
+        (then it is moved: it may be a frame or two later than a cue is meant to be)."""
+        return _same(c.track, c.is_loop, c.position, want) and (
+            c.position == want.position or (c.track, c.position, c.end) not in ours
+        )
+
     # a cue that is already where something is wanted is not ours to move
-    pinned = {
-        i
-        for i, c in enumerate(cues)
-        if any(_same(c.track, c.is_loop, c.position, w) for w in wanted)
-    }
+    pinned = {i for i, c in enumerate(cues) if any(present(c, w) for w in wanted)}
     for want in wanted:
-        if any(_same(c.track, c.is_loop, c.position, want) for c in cues):
+        if any(present(c, want) for c in cues):
             result.already_there += 1
             continue
         near = [

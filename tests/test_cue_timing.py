@@ -140,3 +140,22 @@ def test_the_whole_analysis_moves_into_audio_time():
     assert got.waveform.bands[0, 0] == bands[8, 0]
     assert got.preview is analysis.preview
     assert ct.analysis_to_audio(analysis, 0) is analysis
+
+
+def test_an_mp3_that_cannot_be_read_is_not_taken_for_one_with_no_lead(tmp_path):
+    assert (
+        ct.lead_or_none(tmp_path / "missing.mp3") is None
+    )  # (a writer must not take it for "no lead")
+    assert ct.lead_ms(tmp_path / "missing.mp3") == 0
+    assert (
+        ct.lead_or_none(tmp_path / "a.wav") == 0
+    )  # not an MP3: no lead, whether or not it exists
+
+
+def test_the_files_remembered_are_capped(tmp_path, monkeypatch):
+    monkeypatch.setattr(ct, "_HELD_LIMIT", 3)
+    for i in range(10):
+        path = tmp_path / f"{i}.mp3"
+        path.write_bytes(frame())
+        assert ct.lead_ms(path) == 51
+    assert len(ct._held) <= 3

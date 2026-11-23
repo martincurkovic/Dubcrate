@@ -44,7 +44,9 @@ class SyncOutcome:
 
     @property
     def cues_written(self) -> int:
-        return sum(len(d.added) + len(d.moved) for d in self.plan.discs)
+        return sum(
+            len(d.added) + len(d.moved) for d in self.plan.discs
+        )  # (cues written: new and moved)
 
     @property
     def waveforms_written(self) -> int:

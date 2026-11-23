@@ -444,3 +444,25 @@ def test_the_cues_the_last_sync_left_are_asked_to_move(lib):
     lib.set_card_baseline(first.request.disc_id.key, [(1, 5000, 0), (2, 9000, 9100)])
     again = card_discs.prepare_disc(lib, disc_id)
     assert again.request.earlier == ((1, 5000, 0), (2, 9000, 9100))
+
+
+def test_a_disc_with_only_moved_cues_says_so_and_does_not_call_them_additions(lib):
+    from dubcrate import cdj_card as cc2
+
+    disc_id = cd2_disc(lib, source="rekordbox")
+    entries = lib.disc_entries(disc_id)
+    cues = keyed(entries, {0: [Cue("memory", 10.0)]})
+    first = card_discs.prepare_disc(
+        lib, disc_id, card_discs.RekordboxCues(lib, load=lambda _p: cues)
+    )
+    old = 150 + 10 * 75 + 4  # what an older sync left: four frames late
+    file = cc2.TrackFile.new(first.request.disc_id)
+    file.cues = [cc2.CueEntry.memory(0, old, 1)]
+    index = cc2.IndexFile([cc2.IndexEntry("CDJ00001", first.request.disc_id)], 1)
+    request = card_sync.DiscRequest(
+        first.request.disc_id, first.request.wanted, earlier=[(1, old, 0)]
+    )
+    plan = card_sync.plan_card(index, {"CDJ00001": file}, [request]).discs[0]
+    survey = card_discs.DiscSurvey(None, "D", first, plan)
+    assert (survey.to_add, survey.to_move) == (0, 1)
+    assert survey.status == "1 cue to move"

@@ -57,3 +57,17 @@ before 0 (a first beat inside the lead) stays in the grid.
 exactly as the last sync left it to the nearest wanted cue within `MOVE_FRAMES` (8), keeping its place, so
 re-syncing a disc corrects its cues instead of adding a second one beside each. A cue the player moved is no
 longer in the baseline and is left alone; a disc with no baseline gets the corrected cue added beside the old.
+
+## After the review (2026-11-23)
+
+- **Edits an older Dubcrate kept** (memory cues, loop removals waiting in Dubcrate's tables) hold rekordbox's
+  unedited cues in rekordbox's own time. When written, `_in_rekordbox_time` also accepts a cue whose time equals
+  one rekordbox has (so it is not shifted twice) and a loop removal is tried in both times. Until they are
+  written such a cue is shown that much late in the player.
+- **A file that can't be read** (an unplugged drive) is skipped by the writer (`lead_or_none`), not written as
+  if it had no lead; the edit waits in Dubcrate.
+- **A cue we wrote that is 1 or 2 frames later than wanted** is moved, not counted as already there.
+- **A very short loop** keeps one frame when its end is floored.
+- The Sync list says "N cues to move" (and the track column "N to move") for moved cues.
+- Known and left: the whole-track overview waveform is not shifted, and `lead_ms` reads a file's first bytes on
+  the GUI thread the first time a track's cues are asked for (the lead is remembered, up to 20,000 files).
