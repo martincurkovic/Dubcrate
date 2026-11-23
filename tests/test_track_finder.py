@@ -202,7 +202,7 @@ def test_the_page_holds_the_data_and_no_network_reference(lib):
     data = embedded_data(page)
     assert data["made"] == "2026-11-18"
     assert data["discs"][0]["tracks"] == [
-        [1, "Ünïcode ✓", "Bjørk", "", [], "", "", "", "", "", 0.0, "", []]
+        [1, "Ünïcode ✓", "Bjørk", "", [], "", "", "", "", "", 0.0, "", [], 0.0, ""]
     ]
     assert "http" not in page.replace("http-equiv", "")
 
@@ -258,7 +258,10 @@ const els = { data: { textContent: data }, q: node("input"), status: node("div")
               fkey: node("select"), fgenre: node("select"), fclear: node("button"),
               compact: node("button"), clear: node("button"), index: node("nav"),
               indexbtn: node("button"), bubble: node("div"),
+              related: node("section"), relback: node("button"), reltitle: node("div"),
+              reltol: node("select"), relhalf: node("button"), relenergy: node("button"),
               sort: node("select"), dir: node("button") };
+els.reltol.value = "6";
 els.q.value = "";
 const header = Object.assign(node("header"), { offsetHeight: 90 });
 const document = { getElementById: id => els[id], createElement: node, querySelector: () => header,
@@ -1244,3 +1247,149 @@ def test_the_letter_strip_jumps_through_a_long_list(lib, tmp_path):
     assert got["offHidden"] and got["offPadding"] == ""
     assert got["pressed"] == "false" and got["saved"] == "0"
     assert got["taggedHidden"]
+
+
+# -- related tracks ----------------------------------------------------------------------
+
+
+def test_the_page_carries_the_exact_bpm_and_the_camelot_key(lib):
+    lib.replace_source(
+        "folder",
+        "/m",
+        "M",
+        [
+            TrackRecord(ext_id="a", path="/m/a.mp3", title="A", bpm=127.64, key="Am"),
+            TrackRecord(ext_id="b", path="/m/b.mp3", title="B"),
+        ],
+    )
+    lib.add_to_disc(lib.create_disc("D"), [t.id for t in lib.tracks(sort="path")])
+    found = tf.collect(lib, notation="musical")
+    a, b = found.discs[0].tracks
+    assert (a.bpm_exact, a.camelot, a.key) == (
+        127.6,
+        "8A",
+        "A min",
+    )  # shown as musical, compared as Camelot
+    assert (b.bpm_exact, b.camelot) == (0.0, "")
+    data = embedded_data(tf.html_text(found, MADE))
+    assert data["discs"][0]["tracks"][0][13:] == [127.6, "8A"]
+
+
+RELATED_TAIL = r"""
+const open = { target: { closest: () => null } };
+const cards = () => els.results.children.filter(c => c.className.startsWith("hit"));
+const part = (c, cls) => c.children.find(x => x.className.split(" ")[0] === cls);
+const titleOf = c => part(c, "what").children[0].textContent;
+const rowsOf = () => els.results.children.map(c => c.className === "group" ? "# " + c.textContent
+  : titleOf(c) + (part(c, "what").children.find(x => x.className === "relnote") ? " (" +
+      part(c, "what").children.find(x => x.className === "relnote").textContent + ")" : ""));
+const out = {};
+const relatedOf = title => {
+  els.q.value = title;
+  els.q.handlers.input();
+  const card = cards()[0];
+  card.handlers.click(open);
+  const bar = card.children.find(x => x.className === "relbar");
+  return { card, button: bar && bar.children[0] };
+};
+const view = () => ({ rows: rowsOf(), status: els.status.textContent, hidden: els.related.hidden,
+                      title: els.reltitle.children.map(c => c.textContent) });
+// A track with no BPM has no Related button.
+out.noBpm = relatedOf("Nothing").button === undefined;
+const { button } = relatedOf("Source");
+button.handlers.click();
+out.first = view();
+els.relenergy.handlers.click();
+out.energy = view();
+els.relenergy.handlers.click();
+els.reltol.value = "3";
+els.reltol.handlers.change();
+out.tight = view();
+els.reltol.value = "6";
+els.relhalf.handlers.click();
+out.half = view();
+els.relhalf.handlers.click();
+// A related track opens and goes one deeper; Back goes up, and the last Back returns to the search.
+els.reltol.value = "10";
+els.reltol.handlers.change();
+const deeper = cards().find(c => titleOf(c) === "Smooth Up");
+deeper.handlers.click(open);
+deeper.children.find(x => x.className === "relbar").children[0].handlers.click();
+out.deeper = view();
+els.relback.handlers.click();
+out.up = view();
+els.relback.handlers.click();
+out.back = { hidden: els.related.hidden, status: els.status.textContent, q: els.q.value };
+console.log(JSON.stringify(out));
+"""
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="needs node")
+def test_related_tracks_in_the_page(lib, tmp_path):
+    def track(title, bpm, key, artist="X"):
+        return (title, artist, {"bpm": bpm, "key": key} if bpm or key else {})
+
+    rows = [
+        track("Source", 128.0, "8A"),
+        track("Same Key", 129.0, "8A"),
+        track("Smooth Up", 124.0, "9A"),  # one step up the wheel
+        track("Smooth Down", 132.0, "7A"),
+        track("Relative", 127.0, "8B"),  # the same number's other letter
+        track("Plus Two", 128.0, "10A"),  # an energy move
+        track("Diagonal", 128.0, "9B"),  # an energy move
+        track("Clash", 128.0, "3A"),  # no key relation
+        track("Far", 150.0, "8A"),  # key fits, BPM does not
+        track("Double", 256.0, "8A"),  # only at double time
+        track("Unknown Key", 128.0, ""),
+        track("Nothing", None, None),
+    ]
+    lib.replace_source(
+        "folder",
+        "/m",
+        "M",
+        [
+            TrackRecord(ext_id=str(i), path=f"/m/{i}.mp3", title=t, artist=a, **extra)
+            for i, (t, a, extra) in enumerate(rows)
+        ],
+    )
+    lib.add_to_disc(lib.create_disc("D"), [t.id for t in lib.tracks(sort="path")])
+    page = tmp_path / "finder.html"
+    tf.write_html(tf.collect(lib), page, MADE)
+    harness = tmp_path / "harness.js"
+    harness.write_text(NODE_HARNESS.split("const out = {};")[0] + RELATED_TAIL, encoding="utf-8")  # fmt: skip
+    run = subprocess.run(
+        ["node", str(harness), str(page)],
+        check=True,
+        capture_output=True,
+        encoding="utf-8",
+        errors="replace",
+    )
+    got = json.loads(run.stdout)
+    assert got["noBpm"] is True
+    # Same key first, then smooth (nearest BPM first); energy moves stay hidden until asked for.
+    assert got["first"]["rows"] == [
+        "# Same key",
+        "Same Key (0.8% faster)",
+        "# Smooth: one step or relative",
+        "Relative (0.8% slower)",
+        "Smooth Down (3.1% faster)",  # level with Smooth Up: the title decides
+        "Smooth Up (3.1% slower)",
+    ]
+    assert got["first"]["hidden"] is False
+    assert got["first"]["title"] == ["Source – X", "Related to 128 BPM · 8A"]
+    assert "4 related" in got["first"]["status"]
+    assert "2 more with energy moves hidden" in got["first"]["status"]
+    # Unknown Key and Nothing have no BPM or no key to compare.
+    assert "2 can't be compared" in got["first"]["status"]
+    assert got["energy"]["rows"][-3:] == ["# Energy moves: +2 or diagonal", "Diagonal (same BPM)", "Plus Two (same BPM)"]  # fmt: skip
+    assert "hidden" not in got["energy"]["status"]
+    # A tighter BPM window drops the 3.1% ones.
+    assert got["tight"]["rows"] == ["# Same key", "Same Key (0.8% faster)", "# Smooth: one step or relative", "Relative (0.8% slower)"]  # fmt: skip
+    # Half and double time bring the 256 BPM track in.
+    assert "Double (double time, same BPM)" in got["half"]["rows"]
+    # Chaining: Smooth Up (124, 9A) at 10% sees 8A, 9B, 10A, 8B ...; Back climbs out, then returns to the search.
+    assert got["deeper"]["title"][0] == "Smooth Up – X"
+    assert "Source (3.2% faster)" in got["deeper"]["rows"]
+    assert got["up"]["title"][0] == "Source – X"
+    assert got["back"]["hidden"] is True and got["back"]["q"] == "Source"
+    assert "related" not in got["back"]["status"]

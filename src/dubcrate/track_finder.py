@@ -68,6 +68,10 @@ class FinderTrack:
     ] = ()  # (seconds, label, hot cue letter or ""), in time order
     # each cue's nearest beat: (bar, beat, milliseconds after it, negative if before); () = no beat grid
     beats: tuple[tuple[int, int, int], ...] = ()
+    # what "Related" compares, whatever notation the page shows: the BPM to one decimal (0 = unknown) and
+    # the key as Camelot ("" = unknown or not a key)
+    bpm_exact: float = 0.0
+    camelot: str = ""
 
     @property
     def info(self) -> list[str]:
@@ -457,6 +461,8 @@ def _disc(
                 wave=wave,
                 cues=on_card,
                 beats=beats,
+                bpm_exact=round(track.bpm, 1) if track.bpm and track.bpm > 0 else 0.0,
+                camelot=_camelot_of(track.key),
             )
         )
     if not tracks:
@@ -464,6 +470,11 @@ def _disc(
     return FinderDisc(
         disc.name, where.get(disc.folder_id, ""), disc.kind, tuple(tracks)
     )
+
+
+def _camelot_of(key: str | None) -> str:
+    parsed = keys.parse_key(key) if key else None
+    return keys.camelot(*parsed) if parsed else ""
 
 
 def collect(
@@ -556,6 +567,8 @@ def page_data(found: Finder, made: date) -> str:
                             [*cue, *(t.beats[i] if t.beats else (0, 0, 0))]
                             for i, cue in enumerate(t.cues)
                         ],
+                        t.bpm_exact,
+                        t.camelot,
                     ]
                     for t in d.tracks
                 ],
@@ -731,6 +744,21 @@ PAGE = """<!DOCTYPE html>
   .compact .hit.open .title, .compact .hit.open .artist { display: inline; }
   .compact .where { margin-top: 2px; }
   .compact .disc { font-size: 15px; }
+  /* Related tracks: a button in an open card, and a bar above the list that says what it is related to. */
+  .relbar { flex: 0 0 100%; display: none; }
+  .hit.open .relbar { display: block; }
+  .relbar button { font: inherit; font-size: 15px; color: var(--bright); background: var(--input);
+         border: 1px solid var(--border); border-radius: 6px; padding: 6px 12px; min-height: 38px; }
+  .relnote { color: var(--accent); font-size: 13px; margin-top: 2px; }
+  #related { padding: 10px 0 2px; }
+  .relhead { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
+  .relhead button, #related .frow select, #related .frow button { font: inherit; font-size: 15px;
+         color: var(--bright); background: var(--input); border: 1px solid var(--border);
+         border-radius: 6px; padding: 6px 10px; min-height: 38px; white-space: nowrap; }
+  #related .frow button { flex: 1; min-width: 0; }
+  #related .frow button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: #fff; }
+  #reltitle { flex: 1; min-width: 0; color: var(--bright); font-weight: 600; overflow-wrap: anywhere; }
+  #reltitle small { display: block; color: var(--muted); font-weight: 400; font-size: 13px; }
 </style>
 </head>
 <body>
@@ -752,6 +780,16 @@ PAGE = """<!DOCTYPE html>
   </div>
 </header>
 <div class="note" id="status"></div>
+<section id="related" hidden>
+  <div class="relhead"><button id="relback" type="button">‹ Back</button><div id="reltitle"></div></div>
+  <div class="frow"><span class="l">BPM</span>
+    <select id="reltol" aria-label="How far the BPM may differ">
+      <option value="3">± 3%</option><option value="6" selected>± 6%</option>
+      <option value="10">± 10%</option><option value="16">± 16%</option></select></div>
+  <div class="frow"><span class="l">Also</span>
+    <button id="relhalf" type="button" aria-pressed="false">Half / double</button>
+    <button id="relenergy" type="button" aria-pressed="false">Energy moves</button></div>
+</section>
 <section id="filters" hidden>
   <div class="frow"><span class="l">BPM</span>
     <input id="bpmMin" type="number" inputmode="numeric" placeholder="from" aria-label="BPM from">
@@ -791,7 +829,7 @@ const rows = [];
 data.discs.forEach((disc, i) => {
   disc.stripe = STRIPES[i % STRIPES.length];
   disc.index = i;
-  for (const [number, title, artist, folder, info, bpm, key, year, genre, length, seconds, wave, cues] of disc.tracks) {
+  for (const [number, title, artist, folder, info, bpm, key, year, genre, length, seconds, wave, cues, bpmExact, camelot] of disc.tracks) {
     const clock = /^([0-9]+):([0-9]{2})$/.exec(length);
     rows.push({ disc, number, title, artist, folder, info, genre, key, order: rows.length,
                 id: JSON.stringify([disc.name, folder, number, title]),
@@ -799,7 +837,8 @@ data.discs.forEach((disc, i) => {
                 titleKey: norm(title), artistKey: norm(artist),
                 bpmN: parseInt(bpm, 10) || 0, yearN: parseInt(year, 10) || 0,
                 secs: clock ? +clock[1] * 60 + +clock[2] : 0, keyN: keyRank(key),
-                dur: seconds || (clock ? +clock[1] * 60 + +clock[2] : 0), wave, cues });
+                dur: seconds || (clock ? +clock[1] * 60 + +clock[2] : 0), wave, cues,
+                bpmX: bpmExact || 0, camelot: camelot || "" });
   }
 });
 
@@ -837,6 +876,10 @@ const sortSelect = document.getElementById("sort");
 const dirButton = document.getElementById("dir");
 const tagButton = document.getElementById("tagged");
 let browse = false, tagView = false, sortKey = "match", descending = false;
+// Related tracks: the track being looked at is the top of `relStack` (tapping a related track and then
+// Related again goes one deeper; Back goes up, and the last Back returns to the list it came from).
+const relStack = [];
+const related = () => relStack[relStack.length - 1] || null;
 
 // Tagged: tracks to play later, in the order they were tagged. They are kept in the browser's storage
 // on this device, keyed by disc, folder, track number and title, so a newer export keeps them. Some
@@ -990,6 +1033,67 @@ function sorted(list, key) {
   });
 }
 
+// -- related tracks: a BPM near this one and a key that mixes with it.
+// Keys are compared as Camelot whatever notation the page shows. From a key on the wheel (number, A or B):
+//   0 same key; 1 smooth: one step round the wheel, or the same number's other letter (relative major/minor);
+//   2 energy: two steps up the wheel, or one step with the letter swapped (a diagonal); -1 not related.
+const TIERS = ["Same key", "Smooth: one step or relative", "Energy moves: +2 or diagonal"];
+function camelotParts(k) {
+  const m = /^([0-9]{1,2})([AB])$/.exec(k);
+  return m ? [+m[1], m[2]] : null;
+}
+function keyTier(a, b) {
+  const x = camelotParts(a), y = camelotParts(b);
+  if (!x || !y) return -1;
+  const step = (y[0] - x[0] + 12) % 12, same = x[1] === y[1];
+  if (same) return step === 0 ? 0 : (step === 1 || step === 11) ? 1 : step === 2 ? 2 : -1;
+  return step === 0 ? 1 : (step === 1 || step === 11) ? 2 : -1;
+}
+// How far `bpm` is from `from`, in percent of it: the smallest gap, also against double and half
+// time when asked (then `times` says which: 2 = it is at double time).
+function bpmGap(from, bpm, halfDouble) {
+  let best = null;
+  for (const times of halfDouble ? [1, 2, 0.5] : [1]) {
+    const pct = (bpm - from * times) / (from * times) * 100;
+    if (best === null || Math.abs(pct) < Math.abs(best.pct)) best = { pct, times };
+  }
+  return best;
+}
+function gapText(g) {
+  const size = Math.abs(g.pct);
+  const how = size < 0.05 ? "same BPM" : size.toFixed(1) + "% " + (g.pct > 0 ? "faster" : "slower");
+  return (g.times === 2 ? "double time, " : g.times === 0.5 ? "half time, " : "") + how;
+}
+const relTol = document.getElementById("reltol");
+const relHalf = document.getElementById("relhalf");
+const relEnergy = document.getElementById("relenergy");
+const relPanel = document.getElementById("related");
+const relTitle = document.getElementById("reltitle");
+let relSkipped = 0, relHidden = 0, halfOn = false, energyOn = false;
+const canRelate = r => r.bpmX > 0 && r.camelot !== "";
+
+function relatedTo(src) {
+  const tol = parseFloat(relTol.value) || 6;
+  const halfDouble = halfOn, energy = energyOn;
+  const found = [];
+  relSkipped = relHidden = 0;
+  for (const r of rows) {
+    // the same song on another disc is not a next track
+    if (r === src || (r.titleKey === src.titleKey && r.artistKey === src.artistKey)) continue;
+    if (!canRelate(r)) { relSkipped++; continue; }
+    const tier = keyTier(src.camelot, r.camelot);
+    if (tier < 0) continue;
+    const gap = bpmGap(src.bpmX, r.bpmX, halfDouble);
+    if (Math.abs(gap.pct) > tol) continue;
+    if (tier === 2 && !energy) { relHidden++; continue; }
+    r.tier = tier;
+    r.gap = Math.abs(gap.pct);
+    r.relNote = gapText(gap);
+    found.push(r);
+  }
+  return found.sort((a, b) => a.tier - b.tier || a.gap - b.gap || a.titleKey.localeCompare(b.titleKey) || a.order - b.order);
+}
+
 // -- the waveform: "3:" + base64 of (low, mid, high) bytes a column, or "1:" + one 0-15 byte a column
 // (the CDJ's coarse one). Drawn in the app's own colours; the cues are red, as rekordbox's memory cues.
 const WAVE_HEIGHT = 68;
@@ -1141,6 +1245,7 @@ function card(r) {
   what.append(el("div", "title", r.title));
   if (r.artist) what.append(el("div", "artist", r.artist));
   if (r.info.length) what.append(el("div", "info", r.info.join(" · ")));
+  if (related() && r.relNote) what.append(el("div", "relnote", r.relNote));
   const where = el("div", "where");
   where.append(el("div", "disc", r.disc.name));
   where.append(el("div", "num", "Track " + r.number));
@@ -1156,23 +1261,34 @@ function card(r) {
     star.textContent = on ? "★" : "☆";
     star.className = "star" + (on ? " on" : "");
     star.setAttribute("aria-label", on ? "Remove from Tagged" : "Tag this track");
-    hit.className = "hit" + (tagView && !on ? " off" : "") + (open ? " open" : "");
+    hit.className = "hit" + (tagView && !related() && !on ? " off" : "") + (open ? " open" : "");
   };
   star.addEventListener("click", () => { toggleTag(r); paint(); });
   // A tap on the card (not on the star or the handle) shows or hides the rest of a long title.
   let box = null;
   hit.addEventListener("click", e => {
-    if (e.target && e.target.closest && e.target.closest(".star, .grip, .wavebox")) return;
+    if (e.target && e.target.closest && e.target.closest(".star, .grip, .wavebox, .relbar")) return;
     open = !open;
     paint();
     if (open) {
-      if (!box) { box = waveBox(r); hit.append(box); }
+      if (!box) {
+        box = waveBox(r);
+        hit.append(box);
+        if (canRelate(r)) {
+          const bar = el("div", "relbar");
+          const go = el("button", "", "Related tracks");
+          go.type = "button";
+          go.addEventListener("click", () => openRelated(r));
+          bar.append(go);
+          hit.append(bar);
+        }
+      }
       box.redraw();  // (the width is known once the card is open)
     }
   });
   paint();
   hit._rid = r.id;
-  if (tagView) {
+  if (tagView && !related()) {
     // Hold the handle and move: the card follows the finger and the others make room.
     const grip = el("div", "grip", "≡");
     grip.setAttribute("aria-label", "Drag to move");
@@ -1263,7 +1379,7 @@ let pending = [], heading = null, shown = 0;
 function draw(upTo = 0) {
   if (watcher) watcher.unobserve(sentinel);
   sentinel.remove();
-  const group = listing ? SORTS[activeSort].group : null;
+  const group = related() ? (r => TIERS[r.tier]) : listing ? SORTS[activeSort].group : null;
   const end = watcher ? Math.min(pending.length, Math.max(shown + CHUNK, upTo + 1)) : pending.length;
   for (; shown < end; shown++) {
     const r = pending[shown];
@@ -1283,7 +1399,14 @@ function draw(upTo = 0) {
 
 function showStatus() {
   const text = q.value.trim();
-  if (tagView) {
+  const src = related();
+  if (src) {
+    const tol = (relTol.value || "6") + "%";
+    const parts = [shownCount + " related · within " + tol];
+    if (relHidden) parts.push(relHidden + " more with energy moves hidden");
+    if (relSkipped) parts.push(relSkipped + " can't be compared (no BPM or key)");
+    status.textContent = parts.join(" · ");
+  } else if (tagView) {
     const note = storageOk ? "kept on this device" : "NOT kept: this app can't save them";
     status.textContent = tags.length
       ? tags.length + " tagged · " + note
@@ -1307,13 +1430,20 @@ function show() {
   const f = filterState();
   filtering = f.count > 0 && !tagView;
   listing = !tagView && (text !== "" || filtering || browse);
+  const src = related();
+  if (src) listing = false;  // the tiers are the headings, not a sort
   filterButton.textContent = f.count ? "Filter · " + f.count : "Filter";
-  sortRow.hidden = tagView;
-  clearButton.hidden = !(tagView && tags.length);
+  sortRow.hidden = tagView || src !== null;
+  relPanel.hidden = src === null;
+  if (src) relTitle.replaceChildren(
+    el("span", "", src.title + (src.artist ? " – " + src.artist : "")),
+    el("small", "", "Related to " + src.info.join(" · ")));
+  clearButton.hidden = !(tagView && tags.length) || src !== null;
   if (clearButton.hidden) resetClear();
   activeSort = sortKey === "match" && !text ? "title" : sortKey;
   let found;
-  if (tagView) found = tags.map(id => byId.get(id));
+  if (src) found = relatedTo(src);
+  else if (tagView) found = tags.map(id => byId.get(id));
   else if (listing) {
     const pool = filtering ? rows.filter(r => passes(r, f)) : rows;
     found = sorted(text ? matching(text, pool) : pool.slice(), activeSort);
@@ -1330,6 +1460,7 @@ function show() {
 function scrollUp() { if (typeof window !== "undefined") window.scrollTo(0, 0); }
 
 function setMode(mode) {  // "search", "all" or "tagged"
+  relStack.length = 0;
   browse = mode === "all";
   tagView = mode === "tagged";
   if (browse) q.value = "";  // All tracks shows everything, whatever was typed
@@ -1364,7 +1495,24 @@ dirButton.addEventListener("click", () => {
 });
 
 // Typing is a search: it leaves All tracks and Tagged.
-q.addEventListener("input", () => { if (tagView || browse) setMode("search"); else show(); });
+q.addEventListener("input", () => { relStack.length = 0; if (tagView || browse) setMode("search"); else show(); });
+function openRelated(r) {
+  relStack.push(r);
+  scrollUp();
+  show();
+}
+document.getElementById("relback").addEventListener("click", () => { relStack.pop(); scrollUp(); show(); });
+relTol.addEventListener("change", show);
+relHalf.addEventListener("click", () => {
+  halfOn = !halfOn;
+  relHalf.setAttribute("aria-pressed", String(halfOn));
+  show();
+});
+relEnergy.addEventListener("click", () => {
+  energyOn = !energyOn;
+  relEnergy.setAttribute("aria-pressed", String(energyOn));
+  show();
+});
 // Compact cards: a switch in the filter panel, kept on this device like the tags.
 const COMPACT_KEY = "dubcrate-finder-compact";
 const compactButton = document.getElementById("compact");
