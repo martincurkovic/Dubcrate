@@ -5,6 +5,7 @@ The failure messages are ones cdrdao 1.2.4 really printed (without a drive, in D
 so the stand-in `cdrdao` below only plays back what the parsers are written for."""
 
 import sys
+from pathlib import Path
 
 import pytest
 
@@ -15,9 +16,11 @@ from dubcrate.burn.cdrdao import (
     MIN_TRACK_SECTORS,
     CdrdaoBurner,
     _ProgressFilter,
+    cygwin_path,
     explain_failure,
     parse_disk_info,
     parse_max_write_speed,
+    parse_scanbus,
     scan_devices,
 )
 
@@ -411,3 +414,27 @@ def test_media_info_carries_the_drives_top_speed_and_does_without_it(fake):
     fake.say("drive-info.txt", DRIVE_INFO)
     info = CdrdaoBurner().media_info(None)
     assert info.max_write_speed == 24 and info.blank is True
+
+
+def test_a_windows_drive_letter_is_a_device_too():
+    assert parse_scanbus("D:\\ : slimtype, eSAU108   3, HL09\n") == [("D:\\", "slimtype, eSAU108   3, HL09")]  # fmt: skip
+    assert parse_scanbus("E: : Some, Drive , 1.0") == [("E:", "Some, Drive , 1.0")]
+    assert parse_scanbus("/dev/sr0 : TEST, DRIVE , 1.0") == [("/dev/sr0", "TEST, DRIVE , 1.0")]  # fmt: skip
+    assert parse_scanbus("ERROR: Cannot setup device : nothing\nCdrdao version 1.2.6 : x\n") == []  # fmt: skip
+
+
+def test_a_windows_path_is_given_to_cdrdao_in_the_posix_layers_form():
+    assert cygwin_path("C:\\Users\\me\\AppData\\Local\\Temp\\dubcrate-x\\disc.iso") == "/cygdrive/c/Users/me/AppData/Local/Temp/dubcrate-x/disc.iso"  # fmt: skip
+    assert cygwin_path("D:\\a b\\c.wav") == "/cygdrive/d/a b/c.wav"
+    assert cygwin_path("/already/posix.wav") == "/already/posix.wav"
+
+
+def test_the_toc_names_files_in_the_form_this_cdrdao_wants(tmp_path, monkeypatch):
+    from dubcrate.burn import cdrdao as module
+
+    iso = tmp_path / "disc.iso"
+    iso.write_bytes(b"")
+    assert str(iso.resolve()) in module.build_data_toc(iso)  # (here: the path as it is)
+    monkeypatch.setattr(module, "cygwin_path", lambda p: "/cygdrive/x/" + Path(p).name)
+    monkeypatch.setattr(module.sys, "platform", "win32")
+    assert 'DATAFILE "/cygdrive/x/disc.iso"' in module.build_data_toc(iso)

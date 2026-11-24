@@ -33,3 +33,6 @@ nuitka-crash-report.xml
 Dubcrate-linux-*.zip
 deployment/
 assets/icon/*.ico
+
+# Local notes (the owner's machine setup: ports, device IDs): never committed
+local/

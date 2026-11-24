@@ -182,6 +182,19 @@ def test_windows_ejects_the_drive_through_the_shell_and_waits_for_it_to_go(on_wi
     assert "Test-Path" in script and "Start-Sleep" in script
 
 
+def test_windows_access_denied_while_the_card_leaves_is_not_a_failure(on_windows):
+    seen = []
+    eject.eject_card(
+        Path("E:/"), lambda command, **kw: seen.append(command) or finished()
+    )
+    script = seen[0][-1]
+    # Test-Path answered "access denied" as the card went away, and that stopped an eject that had worked
+    assert "try { $present = Test-Path -LiteralPath ($drive + '\\') } catch { $present = $false }" in script  # fmt: skip
+    assert (
+        "Write-Error" not in script
+    )  # (its message is a block of PowerShell's own, not a sentence)
+
+
 def test_windows_a_drive_that_stays_is_said(on_windows):
     run = lambda *a, **kw: finished(
         1, err="Write-Error: The card is still in use: close whatever has it open"

@@ -115,13 +115,22 @@ def _eject_card_linux(volume: Path, run: Runner, what: str) -> None:
 _WINDOWS_EJECT = """\
 $ErrorActionPreference = 'Stop'
 $drive = '{drive}'
-$shell = New-Object -ComObject Shell.Application
-$shell.Namespace(17).ParseName($drive).InvokeVerb('Eject')
+try {{
+    $shell = New-Object -ComObject Shell.Application
+    $shell.Namespace(17).ParseName($drive).InvokeVerb('Eject')
+}} catch {{
+    [Console]::Error.WriteLine('Windows would not eject the drive: ' + $_.Exception.Message)
+    exit 1
+}}
 for ($i = 0; $i -lt 20; $i++) {{
-    if (-not (Test-Path ($drive + '\\'))) {{ exit 0 }}
+    # (while the card is going away Windows can answer "access denied" instead of "no": that error is
+    # not a failure, it is the drive leaving; it stopped an eject that had worked, seen 2026-11-24)
+    $present = $false
+    try {{ $present = Test-Path -LiteralPath ($drive + '\\') }} catch {{ $present = $false }}
+    if (-not $present) {{ exit 0 }}
     Start-Sleep -Milliseconds 500
 }}
-Write-Error 'The card is still in use: close whatever has it open and try again.'
+[Console]::Error.WriteLine('The card is still in use: close whatever has it open and try again.')
 exit 1
 """
 

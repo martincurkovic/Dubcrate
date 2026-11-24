@@ -1817,7 +1817,8 @@ class SyncView(QWidget):
             self.message.emit(
                 f"{said} {text} Eject it ({card_format.eject_hint()}) before taking it out."
             )
-            self.refresh()
+            if card.exists():  # (a card the system has already taken away has nothing to read: no "no CDJINDX0.PDJ")
+                self.refresh()
 
         run_async(work, done, failed)
 

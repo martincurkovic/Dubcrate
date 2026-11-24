@@ -5,6 +5,7 @@ and CD-TEXT. We generate the TOC and let cdrdao do the burning.
 """
 
 import logging
+import ntpath
 import os
 import re
 import subprocess
@@ -62,6 +63,27 @@ def install_hint() -> str:
     )
 
 
+def cygwin_path(windows_path: str) -> str:
+    """A Windows path as the POSIX layer the Windows `cdrdao` runs on wants it: `C:\\Users\\me\\a.wav` is
+    `/cygdrive/c/Users/me/a.wav`. cdrdao takes a path as relative unless it starts with `/`, and puts its
+    working folder in front of a Windows one (`/cygdrive/c/Dubcrate/C:\\Users...`: seen on a real Windows
+    machine, 2026-11-24). Anything that isn't `X:\\...` (a path with no drive) is returned with its slashes
+    turned."""
+    drive, rest = ntpath.splitdrive(
+        windows_path
+    )  # (not os.path: it splits nothing on Linux)
+    if len(drive) == 2 and drive[1] == ":":
+        return "/cygdrive/" + drive[0].lower() + rest.replace("\\", "/")
+    return windows_path.replace("\\", "/")
+
+
+def toc_file_name(path: Path) -> str:
+    """How a file is named in a TOC that is written for this computer's own `cdrdao`: the full path, in the
+    form it understands (`cygwin_path` on Windows)."""
+    resolved = str(path.resolve())
+    return cygwin_path(resolved) if sys.platform == "win32" else resolved
+
+
 def build_toc(
     disc: Disc, pregap_sectors: int = 0, relative_to: Path | None = None
 ) -> str:
@@ -90,7 +112,7 @@ def build_toc(
         if index > 0 and pregap_sectors:
             lines.append(f"PREGAP {format_msf(pregap_sectors)}")
         if relative_to is None:
-            name = str(track.wav.resolve())
+            name = toc_file_name(track.wav)
         else:  # (forward slashes: cdrdao reads them on every system)
             name = Path(os.path.relpath(track.wav, relative_to)).as_posix()
         lines.append(f'FILE "{cdtext_toc_escape(name)}" 0')
@@ -101,10 +123,26 @@ def build_data_toc(iso: Path, relative_to: Path | None = None) -> str:
     """A cdrdao TOC that writes `iso` as the one data track of an MP3 CD (no CD-TEXT: it is a data
     disc). Named by full path, or relative to `relative_to`."""
     if relative_to is None:
-        name = str(iso.resolve())
+        name = toc_file_name(iso)
     else:
         name = Path(os.path.relpath(iso, relative_to)).as_posix()
     return f'CD_ROM\n\nTRACK MODE1\nDATAFILE "{cdtext_toc_escape(name)}"\n'
+
+
+_WINDOWS_DRIVE = re.compile(
+    r"^[A-Za-z]:\\?$"
+)  # "D:\\", as cdrdao names a drive on Windows
+
+
+def parse_scanbus(text: str) -> list[tuple[str, str]]:
+    """(device, description) pairs from what `cdrdao scanbus` printed: "/dev/sr0 : VENDOR, MODEL, REV" on Linux and
+    the Mac, "D:\\ : slimtype, eSAU108   3, HL09" on Windows (seen on a real drive, 2026-11-24)."""
+    pairs = []
+    for line in text.splitlines():
+        match = re.match(r"^(\S+)\s*:\s*(.+)$", line.strip())
+        if match and ("/" in match.group(1) or _WINDOWS_DRIVE.match(match.group(1))):
+            pairs.append((match.group(1), match.group(2).strip()))
+    return pairs
 
 
 def scan_devices() -> list[tuple[str, str]]:
@@ -120,12 +158,7 @@ def scan_devices() -> list[tuple[str, str]]:
         errors="replace",
         stdin=subprocess.DEVNULL,
     )
-    pairs = []
-    for line in (proc.stdout + proc.stderr).splitlines():
-        match = re.match(r"^(\S+)\s*:\s*(.+)$", line.strip())
-        if match and "/" in match.group(1):
-            pairs.append((match.group(1), match.group(2).strip()))
-    return pairs
+    return parse_scanbus(proc.stdout + proc.stderr)
 
 
 # What `cdrdao disk-info` prints, from the strings in cdrdao 1.2.4's own binary (the labels are
