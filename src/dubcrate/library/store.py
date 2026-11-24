@@ -583,6 +583,63 @@ class Library:
             for r in rows
         ]
 
+    def track_paths(self, source_id: int) -> list[tuple[int, str]]:
+        """(id, file path) of every track of a source, for a worker to look at the files (the library stays here)."""
+        return [
+            (r["id"], r["path"])
+            for r in self._conn.execute(
+                "SELECT id, path FROM track WHERE source_id = ?", (source_id,)
+            )
+        ]
+
+    def set_missing(self, source_id: int, missing_ids: Iterable[int]) -> int:
+        """Mark exactly `missing_ids` of the source's tracks as "file not found" and the rest as found (what an
+        import does for each file as it reads it). Returns how many tracks changed. A drive that is unplugged or
+        plugged in again is the reason: the files are not looked at here, the caller did that."""
+        missing = set(missing_ids)
+        with self._conn:
+            rows = self._conn.execute(
+                "SELECT id, missing FROM track WHERE source_id = ?", (source_id,)
+            ).fetchall()
+            changed = [(int(r["id"] in missing), r["id"]) for r in rows if bool(r["missing"]) != (r["id"] in missing)]  # fmt: skip
+            self._conn.executemany("UPDATE track SET missing = ? WHERE id = ?", changed)
+        return len(changed)
+
+    def move_source(self, source_id: int, new_path: str) -> None:
+        """A source whose folder is now somewhere else (a USB stick that came back under another name): its path and
+        every track's path under it change, **and so do the things kept by a file's path** (memory cue and loop edits,
+        the kept preview waveforms), which would otherwise be left behind. Raises `LibraryError` if another source
+        of the kind is already at `new_path`. A key that already exists at the new place is left alone."""
+        row = self._conn.execute(
+            "SELECT kind, path FROM source WHERE id = ?", (source_id,)
+        ).fetchone()
+        if row is None:
+            raise LibraryError(f"no source {source_id}")
+        old = row["path"]
+        if new_path == old:
+            return
+        if self._conn.execute(
+            "SELECT 1 FROM source WHERE kind = ? AND path = ?", (row["kind"], new_path)
+        ).fetchone():
+            raise LibraryError("another source is already there")
+        with self._conn:
+            for track in self._conn.execute(
+                "SELECT id, path FROM track WHERE source_id = ?", (source_id,)
+            ).fetchall():
+                path = track["path"]
+                if not path.startswith(old):
+                    continue
+                moved = new_path + path[len(old) :]
+                self._conn.execute("UPDATE track SET path = ? WHERE id = ?", (moved, track["id"]))  # fmt: skip
+                before, after = path_key(path), path_key(moved)
+                for table in ("memory_cue_set", "memory_cue", "memory_loop", "memory_loop_removed", "preview_cache"):  # fmt: skip
+                    self._conn.execute(
+                        f"UPDATE OR IGNORE {table} SET path_key = ? WHERE path_key = ?",
+                        (after, before),
+                    )
+            self._conn.execute("UPDATE source SET path = ? WHERE id = ?", (new_path, source_id))  # fmt: skip
+        log.info("source %s moved from %s to %s", source_id, old, new_path)
+
     def remove_source(self, source_id: int, *, force: bool = False) -> None:
         """Delete a source and its tracks.
 

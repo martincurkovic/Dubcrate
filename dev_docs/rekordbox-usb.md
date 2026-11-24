@@ -11,7 +11,7 @@ that reads rekordbox's cues and analysis can read a stick) are built, 2026-11-24
 2. `exportLibrary.db` only ("OneLibrary", rekordbox 7). A stick with only the older `export.pdb` is refused in words.
 3. What is read: tracks (title, artist, album, genre, year, BPM, key, rating, label, remixer, composer, My Tags,
    play count, date added, comment), playlists and folders, and cues (memory, hot, loops), plus each track's `USBANLZ` path.
-4. An unplugged stick: the start-up re-read only refreshes `kind == "rekordbox"`, so a stick is left alone (its files show as missing).
+4. An unplugged stick: the start-up re-read only refreshes `kind == "rekordbox"`, so a stick is left alone and its tracks stay listed. **(The first version of this note said its files "show as missing": they did not. `track.missing` is only set during an import, so an unplugged stick looked normal and failed when a track was played or burned. Fixed in "Leftovers" below.)**
 5. How one is imported: `dubcrate import-usb PATH` (the root, its PIONEER folder or the database). The window's
    "Rekordbox USB…" with a list of detected sticks (`rekordbox_usb.find_sticks`) is step 3.
 
@@ -73,10 +73,28 @@ worker. It reads on a worker with Cancel, like any import (`start_import("rekord
 is being read. Tests: `tests/test_ui_window.py` (the menu, the choice, the cancel, the explanation, busy); gallery scenes `menus-file-usb`
 and `msg-usb-not-a-stick` (the main window's `mounted_volumes` is stubbed in every test and in the gallery, so a real drive is never listed there).
 
+## The leftovers (2026-11-24)
+
+- **An unplugged stick** (`MainWindow.check_usb_sticks`, every `USB_POLL_MS` = 2 s, plus once at start-up): one look at each stick's `exportLibrary.db`
+  (`rekordbox_usb.stick_present`); when a stick has gone or come back its tracks' files are checked on a worker (`missing_tracks`: all of them when
+  the stick is gone, no file looked at; else `os.path.exists` each) and `Library.set_missing` marks them, then the track list, the open disc and the
+  discs list are refreshed. The tracks, cues, playlists and discs stay while the stick is away; the rows are greyed with "File not found", a burn is
+  blocked with that reason, the player says so instead of failing in the decoder. The status bar says "“Name” was unplugged..." / "is plugged in
+  again" (nothing on the first look at start-up). **It does not re-read the stick on plug-in**: its tracks come back from the stored copy; Re-import (or
+  File > Import rekordbox USB) reads it again. Master.db sources on an unplugged drive still have the old behaviour (flags only change at an import).
+- **A stick that comes back under another name** (`Martin` -> `Martin 1`): `rekordbox_usb.store_stick` (used by the window and `import-usb`) first
+  looks for a stick source whose drive is not there now (`find_moved_source`) and where at least half of the smaller track list is the same
+  (content id, path from the stick's root): such a stick is the same one, because a stick has no id of its own (`deviceName` is the drive's name, `masterDbId`
+  the computer's). `Library.move_source` then re-points the source and every track's path **and re-keys what is kept by a file's path** (memory cue and loop
+  edits, the preview cache: `UPDATE OR IGNORE`), so track ids, discs and edits survive; the source keeps its name unless one is given, and the import notes say
+  it was moved. A stick whose drive is still plugged in is never taken (a copy of a stick is its own source).
+- **`export.pdb`-only sticks stay refused** (decision 2). Not built, and not planned unless a stick that needs it turns up.
+- Tests: `tests/test_library_rekordbox_usb.py` (moved sticks, edits following the file, the drive-still-there and different-stick cases, `set_missing`,
+  `missing_tracks`, the command line) and `tests/test_ui_window.py` (unplug and replug, a stick missing at start-up). **Tried in tests only**: I could not
+  unplug the owner's stick from here.
+
 ## Not done / open
 
 - **Looked at in tests, a script and the offscreen gallery only, not in the running window:** the menu, the player, the track list's flags and Sync with a stick's tracks.
-- A stick that mounts under another name (`/Volumes/Martin 1`) is a different source path: Re-import says it is no longer there, and importing it again makes a second source (the tracks' paths are absolute).
-- A re-read when a stick is plugged in (it is read when you choose it, or Re-import while it is there; nothing watches for it).
 - Never tried: a stick with a different rekordbox version, a Windows/FAT32/exFAT stick, a stick with only `export.pdb`.
 - Tracks on a stick are copies of files that are also in the computer's library; they are not matched as twins (different paths).

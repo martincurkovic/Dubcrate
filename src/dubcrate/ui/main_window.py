@@ -3,6 +3,7 @@ you picked, or the disc you opened; your discs (burn playlists, in folders) on t
 
 import logging
 import os
+import sqlite3
 from pathlib import Path
 
 from PySide6.QtCore import QEvent, QModelIndex, Qt, QTimer, QUrl, Signal
@@ -52,7 +53,15 @@ from dubcrate.library.rekordbox import (
     read_master_db,
 )
 from dubcrate.library.rekordbox_sources import analysis_root, carries_rekordbox_data
-from dubcrate.library.rekordbox_usb import find_sticks, problem, read_usb, stick_root
+from dubcrate.library.rekordbox_usb import (
+    find_sticks,
+    missing_tracks,
+    problem,
+    read_usb,
+    stick_present,
+    stick_root,
+    store_stick,
+)
 from dubcrate.library.store import LibraryError
 
 from . import theme, track_finder_ui, wave_style
@@ -104,6 +113,7 @@ from .version import icon_path
 
 log = logging.getLogger(__name__)
 
+USB_POLL_MS = 2000  # how often a rekordbox USB stick's being plugged in or taken out is looked for
 SEARCH_DELAY_MS = 200
 PREVIEW_DELAY_MS = 40
 UPDATE_CHECK_DELAY_MS = (
@@ -193,6 +203,13 @@ class MainWindow(QMainWindow):
         self._preview_timer.setSingleShot(True)
         self._preview_timer.setInterval(PREVIEW_DELAY_MS)
         self._preview_timer.timeout.connect(self._request_previews)
+        # a rekordbox USB stick that is unplugged (or plugged in again) turns its tracks "file not found" (or back)
+        self._usb_present: dict[int, bool] = {}
+        self._usb_checking: set[int] = set()
+        self._usb_timer = QTimer(self)
+        self._usb_timer.setInterval(USB_POLL_MS)
+        self._usb_timer.timeout.connect(self.check_usb_sticks)
+        self._usb_timer.start()
         theme.notifier.changed.connect(self._on_theme_changed)
         # Space and Left / Right drive the preview from anywhere in this window
         QApplication.instance().installEventFilter(self)
@@ -200,6 +217,9 @@ class MainWindow(QMainWindow):
         self.refresh_sources()
         self.refresh_discs()
         self._sync_disc_markers()
+        QTimer.singleShot(
+            0, self.check_usb_sticks
+        )  # (a stick that is not there at start-up)
         if (
             update_check and update_check_due()
         ):  # (the app turns it on; tests never touch the network)
@@ -1609,6 +1629,55 @@ class MainWindow(QMainWindow):
             path = Path(chosen)
         self.start_import("rekordbox", path)
 
+    def check_usb_sticks(self) -> None:
+        """Keep the "file not found" marks of rekordbox USB sticks true: looked at every `USB_POLL_MS` (one look at
+        each stick's `exportLibrary.db`), and when a stick has gone or come back its tracks' files are checked on a
+        worker and the marks, the track list and the discs follow. The library is not otherwise touched (the tracks,
+        cues and discs stay while the stick is away; Re-import reads it again while it is there)."""
+        for source in self._lib.sources():
+            if source.kind != "rekordbox_usb" or source.id in self._usb_checking:
+                continue
+            present = stick_present(Path(source.path))
+            if self._usb_present.get(source.id) == present:
+                continue
+            first = source.id not in self._usb_present
+            self._usb_present[source.id] = present
+            self._usb_checking.add(source.id)
+            paths = self._lib.track_paths(source.id)
+            run_async(
+                lambda p=paths, here=present: missing_tracks(p, here),
+                lambda missing, s=source, f=first, here=present: self._usb_checked(
+                    s, missing, here, f
+                ),
+                lambda _text, sid=source.id: self._usb_failed(sid),
+            )
+
+    def _usb_failed(self, source_id: int) -> None:
+        self._usb_checking.discard(source_id)
+        self._usb_present.pop(source_id, None)  # (looked at again at the next tick)
+
+    def _usb_checked(
+        self, source, missing: set[int], present: bool, first: bool
+    ) -> None:
+        self._usb_checking.discard(source.id)
+        try:
+            if self._lib.set_missing(source.id, missing) == 0:
+                return
+        except (
+            sqlite3.ProgrammingError
+        ):  # (the library was closed while the files were being looked at)
+            return
+        self.refresh_tracks()
+        self.disc_view.reload()
+        self.refresh_discs()
+        if not first:
+            self.statusBar().showMessage(
+                f"“{source.name}” is plugged in again"
+                if present
+                else f"“{source.name}” was unplugged: its files are marked not found until it is back",
+                8000,
+            )
+
     def _fill_usb_menu(self) -> None:
         """File > Import rekordbox USB: the sticks that are plugged in (looked for each time the menu opens), then
         a way to choose a folder (a stick that isn't listed, or a copy of one)."""
@@ -1706,15 +1775,17 @@ class MainWindow(QMainWindow):
                 notes,
             )
         else:
-            summary = self._lib.replace_source(
-                "rekordbox_usb" if kind == "rekordbox_usb" else "rekordbox",
-                str(result.source),
-                name
-                or (result.source.name if kind == "rekordbox_usb" else "rekordbox"),
-                result.tracks,
-                result.nodes,
-                result.notes,
-            )
+            if kind == "rekordbox_usb":
+                summary = store_stick(self._lib, result, name)
+            else:
+                summary = self._lib.replace_source(
+                    "rekordbox",
+                    str(result.source),
+                    name or "rekordbox",
+                    result.tracks,
+                    result.nodes,
+                    result.notes,
+                )
         log.info(
             "imported %s %s: %d new, %d updated, %d removed, %d notes",
             kind,

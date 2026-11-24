@@ -14,16 +14,18 @@ format Deep Symmetry documents) is refused with a message. `dev_docs/rekordbox-u
 """
 
 import logging
+import os
 import shutil
 import tempfile
 from collections import Counter, defaultdict
 from collections.abc import Iterable
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
 from dubcrate.analysis import Cue
 from dubcrate.cancel import CancelToken
-from dubcrate.library.models import NodeRecord, TrackRecord
+from dubcrate.library.models import ImportSummary, NodeRecord, Source, TrackRecord
 from dubcrate.library.rekordbox import (
     Progress,
     RekordboxError,
@@ -31,6 +33,7 @@ from dubcrate.library.rekordbox import (
     close_database,
     hot_slot,
 )
+from dubcrate.library.store import Library
 
 log = logging.getLogger(__name__)
 
@@ -219,6 +222,79 @@ def build_nodes(
 
     walk(None)
     return nodes, []
+
+
+def stick_present(root: Path) -> bool:
+    """Whether the stick at `root` is plugged in (its `exportLibrary.db` is there). Cheap: one look."""
+    try:
+        return library_file(Path(root)) is not None
+    except OSError:
+        return False
+
+
+def missing_tracks(paths: Iterable[tuple[int, str]], present: bool) -> set[int]:
+    """The ids of the tracks whose files can't be found: all of them when the stick is not there (no file is looked
+    at, a drive that is gone can be slow to say so), else those whose file is not. Reads nothing but file names,
+    so it is safe on a worker thread."""
+    paths = list(paths)
+    if not present:
+        return {i for i, _ in paths}
+    return {i for i, p in paths if not os.path.exists(p)}
+
+
+SAME_STICK = 0.5  # of the smaller of two track lists must be the same tracks at the same places in the stick
+
+
+def find_moved_source(lib: Library, usb: RekordboxLibrary) -> Source | None:
+    """The stick source already in the library that `usb` (just read) is the same stick as, under another name.
+
+    A stick has no id of its own (its `deviceName` is just the drive's name and the `masterDbId` is the
+    computer's), so it is known by what it holds: a source of this kind whose drive is **not there now** and
+    where at least half of the smaller track list is the same track id at the same place from the stick's
+    root (`/Contents/...`). A source whose drive is plugged in is never taken."""
+    root = str(usb.source)
+    incoming = {(t.ext_id, t.path[len(root) :]) for t in usb.tracks}
+    for source in lib.sources():
+        if source.kind != "rekordbox_usb" or source.path == root:
+            continue
+        if stick_present(Path(source.path)):
+            continue
+        held = {
+            (t.ext_id, t.path[len(source.path) :])
+            for t in lib.tracks(source_id=source.id)
+        }
+        smaller = min(len(held), len(incoming))
+        if smaller and len(held & incoming) >= SAME_STICK * smaller:
+            return source
+    return None
+
+
+def store_stick(
+    lib: Library, usb: RekordboxLibrary, name: str | None = None
+) -> ImportSummary:
+    """Put a stick that was read into the library. If it is the stick of a source whose drive is gone (it came back
+    under another name), that source is moved to the new place first, so its track ids, the discs that use them and
+    the cue edits made on them are kept, and it keeps its name unless one is given."""
+    moved = find_moved_source(lib, usb)
+    if moved is not None:
+        lib.move_source(moved.id, str(usb.source))
+    summary = lib.replace_source(
+        "rekordbox_usb",
+        str(usb.source),
+        name or (moved.name if moved else usb.source.name),
+        usb.tracks,
+        usb.nodes,
+        usb.notes,
+    )
+    if moved is not None:
+        return replace(
+            summary,
+            notes=(
+                f"This is the stick that was “{moved.name}” (at {moved.path}): it was moved here, and its tracks keep their place on your discs.",
+                *summary.notes,
+            ),
+        )
+    return summary
 
 
 def read_usb(

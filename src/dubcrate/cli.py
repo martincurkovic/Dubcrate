@@ -10,7 +10,7 @@ from dubcrate.cd import format_msf
 from dubcrate.library import ImportSummary, Library
 from dubcrate.library.folder import scan_folder
 from dubcrate.library.rekordbox import RekordboxError, read_master_db
-from dubcrate.library.rekordbox_usb import read_usb
+from dubcrate.library.rekordbox_usb import read_usb, store_stick
 
 log = logging.getLogger(__name__)
 
@@ -82,16 +82,7 @@ def cmd_import_usb(lib: Library, args: argparse.Namespace) -> int:
     except RekordboxError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
-    _report(
-        lib.replace_source(
-            "rekordbox_usb",
-            str(usb.source),
-            args.name or usb.source.name,
-            usb.tracks,
-            usb.nodes,
-            usb.notes,
-        )
-    )
+    _report(store_stick(lib, usb, args.name))
     return 0
 
 

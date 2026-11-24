@@ -1429,3 +1429,49 @@ def test_the_usb_menu_waits_while_something_is_being_imported(window, tmp_path):
     assert not win.usb_menu.menuAction().isEnabled()
     win._set_busy(False)
     assert win.usb_menu.menuAction().isEnabled()
+
+
+def test_an_unplugged_stick_keeps_its_tracks_but_they_are_marked_not_found(
+    window, tmp_path, wait_for
+):
+
+    from test_library_rekordbox_usb import make_stick
+
+    win, lib = window
+    stick = make_stick(tmp_path)
+    for name in ("Contents/Art/Track 1.mp3", "Contents/Art/Track 2.mp3"):
+        (stick / name).parent.mkdir(parents=True, exist_ok=True)
+        (stick / name).write_bytes(b"x")
+    win.start_import("rekordbox_usb", stick)
+    assert wait_for(lambda: not win._busy)
+    source = next(s for s in lib.sources() if s.kind == "rekordbox_usb")
+    win.check_usb_sticks()
+    assert wait_for(lambda: not win._usb_checking)
+    assert not any(t.missing for t in lib.tracks(source_id=source.id))
+    hidden = tmp_path / "stick-away"
+    stick.rename(hidden)  # unplugged
+    win.check_usb_sticks()
+    assert wait_for(lambda: all(t.missing for t in lib.tracks(source_id=source.id)))
+    assert len(lib.tracks(source_id=source.id)) == 2  # (still listed)
+    assert "was unplugged" in win.statusBar().currentMessage()
+    hidden.rename(stick)  # plugged in again
+    win.check_usb_sticks()
+    assert wait_for(lambda: not any(t.missing for t in lib.tracks(source_id=source.id)))
+    assert "plugged in again" in win.statusBar().currentMessage()
+
+
+def test_the_window_follows_a_stick_that_is_not_there_at_start_up(
+    window, tmp_path, wait_for
+):
+    win, lib = window
+    lib.replace_source("rekordbox_usb", str(tmp_path / "gone"), "Gone", [TrackRecord(ext_id="1", path=str(tmp_path / "gone" / "a.mp3"), title="A")])  # fmt: skip
+    source = next(s for s in lib.sources() if s.kind == "rekordbox_usb")
+    lib.set_missing(
+        source.id, []
+    )  # (as if its tracks were marked found from an earlier session)
+    assert not any(t.missing for t in lib.tracks(source_id=source.id))
+    win.check_usb_sticks()
+    assert wait_for(lambda: all(t.missing for t in lib.tracks(source_id=source.id)))
+    assert (
+        "unplugged" not in win.statusBar().currentMessage()
+    )  # (the first look says nothing)

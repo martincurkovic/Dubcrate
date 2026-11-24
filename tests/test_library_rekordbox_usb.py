@@ -400,3 +400,146 @@ def test_the_finder_finds_a_sticks_beat_grids_and_cue_tables(lib_with_stick):
     assert track_finder.rekordbox_databases(lib) == [str(stick)]
     tables, problem = track_finder.read_cue_tables([str(stick)])
     assert problem == "" and set(tables[str(stick)]) == {"1"}
+
+
+# -- a stick that comes back under another name, and one that is unplugged ----------------------------
+
+
+def moved_copy(stick: Path, tmp_path: Path, name: str = "stick 1") -> Path:
+    """The same stick mounted somewhere else (its drive is called something else now)."""
+    new = tmp_path / name
+    shutil.copytree(stick, new)
+    return new
+
+
+def import_stick(lib, stick, name=None):
+    return ru.store_stick(lib, ru.read_usb(stick), name)
+
+
+def test_a_stick_that_comes_back_under_another_name_is_the_same_source(tmp_path):
+    stick = make_stick(tmp_path)
+    with Library.open(":memory:") as lib:
+        first = import_stick(lib, stick)
+        ids = {t.ext_id: t.id for t in lib.tracks()}
+        disc = lib.create_disc("D")
+        lib.add_to_disc(disc, [ids["1"]])
+        lib.set_memory_cues(
+            lib.tracks()[0].path, [(5000, "mine")]
+        )  # (an edit, kept by the file's path)
+        again = moved_copy(stick, tmp_path)
+        shutil.rmtree(stick)  # (the old mount is gone)
+        second = import_stick(lib, again)
+        [source] = lib.sources()
+        assert (second.source_id, source.path, source.name) == (
+            first.source_id,
+            str(again),
+            "stick",
+        )
+        assert {
+            t.ext_id: t.id for t in lib.tracks()
+        } == ids  # (no new tracks, same ids)
+        assert [e.track.id for e in lib.disc_entries(disc)] == [ids["1"]]
+        moved = next(t for t in lib.tracks() if t.ext_id == "1")
+        assert moved.path == str(again / "Contents" / "Art" / "Track 1.mp3")
+        assert lib.memory_cues(moved.path) == [
+            (5000, "mine")
+        ]  # the edit followed the file
+        assert (
+            any("was moved here" in n for n in second.notes)
+            and "“stick”" in second.notes[0]
+        )
+        assert (second.added, second.removed) == (0, 0)
+
+
+def test_a_stick_that_is_still_plugged_in_is_not_taken_for_a_moved_one(tmp_path):
+    stick = make_stick(tmp_path)
+    with Library.open(":memory:") as lib:
+        import_stick(lib, stick)
+        import_stick(
+            lib, moved_copy(stick, tmp_path)
+        )  # (a copy, while the first is still there)
+        assert sorted(s.name for s in lib.sources()) == ["stick", "stick 1"]
+
+
+def test_a_different_stick_is_not_taken_for_a_moved_one(tmp_path):
+    first = make_stick(tmp_path / "a", tracks=2)
+    other = make_stick(tmp_path / "b", tracks=2)
+    with Library.open(":memory:") as lib:
+        import_stick(lib, first)
+        lib._conn.execute(
+            "UPDATE track SET ext_id = ext_id || 'x'"
+        )  # (it holds other tracks than `other` does)
+        shutil.rmtree(first)
+        import_stick(lib, other)
+        assert len(lib.sources()) == 2
+
+
+def test_a_given_name_wins_over_the_old_one(tmp_path):
+    stick = make_stick(tmp_path)
+    with Library.open(":memory:") as lib:
+        import_stick(lib, stick)
+        again = moved_copy(stick, tmp_path)
+        shutil.rmtree(stick)
+        import_stick(lib, again, "Gig stick")
+        assert [s.name for s in lib.sources()] == ["Gig stick"]
+
+
+def test_moving_a_source_onto_another_one_is_refused(tmp_path):
+    from dubcrate.library.store import LibraryError
+
+    with Library.open(":memory:") as lib:
+        a = lib.replace_source(
+            "rekordbox_usb",
+            "/Volumes/A",
+            "A",
+            [TrackRecord(ext_id="1", path="/Volumes/A/x.mp3")],
+        )
+        lib.replace_source(
+            "rekordbox_usb",
+            "/Volumes/B",
+            "B",
+            [TrackRecord(ext_id="1", path="/Volumes/B/x.mp3")],
+        )
+        with pytest.raises(LibraryError):
+            lib.move_source(a.source_id, "/Volumes/B")
+        lib.move_source(a.source_id, "/Volumes/A")  # (to where it is: nothing)
+
+
+def test_missing_tracks_are_all_of_them_when_the_stick_is_gone_else_the_ones_not_found(
+    tmp_path,
+):
+    real = tmp_path / "here.mp3"
+    real.write_bytes(b"x")
+    paths = [(1, str(real)), (2, str(tmp_path / "gone.mp3"))]
+    assert ru.missing_tracks(paths, present=True) == {2}
+    assert ru.missing_tracks(paths, present=False) == {1, 2}
+    assert ru.stick_present(tmp_path) is False
+
+
+def test_the_library_can_mark_tracks_not_found_and_found_again():
+    with Library.open(":memory:") as lib:
+        s = lib.replace_source("rekordbox_usb", "/Volumes/A", "A", [TrackRecord(ext_id=str(n), path=f"/Volumes/A/{n}.mp3") for n in (1, 2, 3)])  # fmt: skip
+        ids = [i for i, _ in lib.track_paths(s.source_id)]
+        assert all(
+            t.missing for t in lib.tracks()
+        )  # (the files aren't there: an import says so)
+        assert lib.set_missing(s.source_id, []) == 3 and not any(
+            t.missing for t in lib.tracks()
+        )
+        assert lib.set_missing(s.source_id, [ids[0]]) == 1
+        assert [t.missing for t in lib.tracks(sort="path")] == [True, False, False]
+        assert lib.set_missing(s.source_id, [ids[0]]) == 0  # (nothing changed)
+
+
+def test_the_command_line_recognises_a_moved_stick(tmp_path, capsys):
+    from dubcrate import cli
+
+    stick = make_stick(tmp_path)
+    db = tmp_path / "lib.db"
+    assert cli.main(["--library", str(db), "import-usb", str(stick)]) == 0
+    again = moved_copy(stick, tmp_path)
+    shutil.rmtree(stick)
+    capsys.readouterr()
+    assert cli.main(["--library", str(db), "import-usb", str(again)]) == 0
+    out = capsys.readouterr().out
+    assert "added 0" in out and "was moved here" in out
