@@ -49,9 +49,9 @@ How rekordbox stores waveforms, beat grids, cue points and phrases was learned f
 
 The app includes **ffmpeg** and **ffprobe** (FFmpeg 9.0.2, LGPL-2.1-or-later; <https://ffmpeg.org>), which read your tracks, convert them to CD quality and write MP3 files, and the **LAME** MP3 encoder (3.100, LGPL-2.0-or-later; <https://lame.sourceforge.io>), which is built into `ffmpeg`. They are built without `--enable-gpl` and without `--enable-nonfree`. Dubcrate starts them as separate programs and does not link them. They are in the `dubcrate/bin` folder inside the app, with their licence texts, their build configuration and the written offer of source (`licenses/`). The exact sources and the script that builds them (`scripts/build_ffmpeg_macos.sh`, with the same script for Linux and Windows) are in the Dubcrate source repository, so you can rebuild them and put your own copy in that folder, or install ffmpeg on your `PATH`. The Linux download is built the same way (`scripts/build_ffmpeg_linux.sh`), and is an **AppImage**: a single file made with `appimagetool` (MIT, <https://github.com/AppImage/appimagetool>), which starts with the AppImage *runtime* (MIT, <https://github.com/AppImage/type2-runtime>) and carries the app after it.
 
-## Programs Dubcrate runs, but does not include
+## Programs Dubcrate runs as separate programs
 
-Dubcrate starts the optional **cdrdao** (GPL; <https://cdrdao.sourceforge.net>) as a separate program if you have it installed; it does not contain or link it. **DiscRecording** is part of macOS.
+Dubcrate starts **cdrdao** (GPL-2.0-or-later; <https://cdrdao.sourceforge.net>) as a separate program to burn on Linux and, if you have it installed, on a Mac. The Linux build carries its own copy (built without any audio-format libraries, with its licence and source in the app's `bin/licenses` folder); Dubcrate does not link it. **DiscRecording** is part of macOS.
 
 ## Trademarks
 

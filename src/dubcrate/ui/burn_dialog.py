@@ -594,6 +594,7 @@ class BurnDialog(QDialog):
             self._busy = False
             self._set_drives(drives, drive)
             self._media = media
+            self._limit_speeds()
             self._update()
 
         def failed(text: str) -> None:
@@ -602,6 +603,28 @@ class BurnDialog(QDialog):
             self._update()
 
         run_async(_expected_failures(work), done, failed)
+
+    def _limit_speeds(self) -> None:
+        """Offer only the speeds the drive can write at, when it said what its top speed is (a faster one is
+        greyed out, and a faster one chosen is swapped for the fastest it can do: `cdrdao` would quietly use
+        its own top speed, the log saying so and this window not). A drive that didn't say gets every speed."""
+        top = self._media.max_write_speed if self._media else None
+        model = self.speed_combo.model()
+        allowed = [
+            i
+            for i in range(self.speed_combo.count())
+            if top is None or self.speed_combo.itemData(i) <= top
+        ]
+        for i in range(self.speed_combo.count()):
+            item = model.item(i)  # type: ignore[attr-defined]
+            item.setEnabled(i in allowed)
+        if allowed and self.speed_combo.currentIndex() not in allowed:
+            self.speed_combo.setCurrentIndex(allowed[-1])
+        wanted = settings.get_burn_speed()
+        tip = f"Your default is {wanted}x (File > Settings > Burning). Changing it here affects this burn only."
+        if top is not None:
+            tip += f" This drive writes at {top}x at most."
+        self.speed_combo.setToolTip(tip)
 
     def _watch_disc(self) -> None:
         """Ask, on a worker, whether a disc is in the drive: on a Mac that is a `drutil` run that can take seconds,
@@ -633,7 +656,9 @@ class BurnDialog(QDialog):
             # empty tray, as after a burn ejects the disc)
             self._disc_state = state
             self._media = MediaInfo(
-                drive=self._media.drive if self._media else "", present=False
+                drive=self._media.drive if self._media else "",
+                present=False,
+                max_write_speed=self._media.max_write_speed if self._media else None,
             )
             self._media_error = ""
             self._update()

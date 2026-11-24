@@ -136,7 +136,6 @@ def test_a_failed_check_is_reported_and_the_exit_code_is_one(tmp_path, monkeypat
 
 def test_the_missing_command_line_tools_are_a_note_not_a_failure(tmp_path, monkeypatch):
     monkeypatch.setattr(tools, "BUNDLE_DIR", tmp_path / "no-bundle")
-    monkeypatch.setattr(smoke_test.shutil, "which", lambda name: None)
     monkeypatch.setattr(tools.shutil, "which", lambda name: None)
     report = tmp_path / "report.txt"
     assert smoke_test.run(str(report), isolate=False) == 0

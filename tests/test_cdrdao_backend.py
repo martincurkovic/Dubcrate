@@ -17,6 +17,7 @@ from dubcrate.burn.cdrdao import (
     _ProgressFilter,
     explain_failure,
     parse_disk_info,
+    parse_max_write_speed,
     scan_devices,
 )
 
@@ -121,6 +122,7 @@ echo "$@" >> "$FAKE_LOG"
 case "$1" in
 scanbus) echo "/dev/sr0 : TEST, DRIVE , 1.0" ;;
 disk-info) cat "$FAKE_DIR/disk-info.txt"; exit "$(cat "$FAKE_DIR/rc" 2>/dev/null || echo 0)" ;;
+drive-info) cat "$FAKE_DIR/drive-info.txt" 2>/dev/null; exit 0 ;;
 write)
   # nothing may be waiting for a keypress: stdin must be closed
   if read -r _line; then echo "stdin was open" >> "$FAKE_LOG"; fi
@@ -164,7 +166,7 @@ def test_media_info_asks_the_first_drive_and_reads_the_answer(fake):
     fake.say("disk-info.txt", BLANK)
     info = CdrdaoBurner().media_info(None)
     assert (info.drive, info.blank, info.free_sectors) == ("HL-DT-ST DVDRAM GH24NSC0", True, 359_849)  # fmt: skip
-    assert fake.calls() == ["scanbus", "disk-info --device /dev/sr0"]
+    assert fake.calls() == ["scanbus", "disk-info --device /dev/sr0", "drive-info --device /dev/sr0"]  # fmt: skip
     assert scan_devices() == [("/dev/sr0", "TEST, DRIVE , 1.0")]
 
 
@@ -378,3 +380,34 @@ def test_a_permission_denied_from_cdrdao_names_the_group_when_it_can(linux_drive
         True  # (the file is fine now: only the general advice is left)
     )
     assert "usermod -aG GROUP" in explain_failure("Permission denied", "/dev/sr0", 1)
+
+
+DRIVE_INFO = """\
+/dev/sr0: slimtype eSAU108   3	Rev: HL09
+CD-TEXT writing is supported.
+Using driver: Generic SCSI-3/MMC - Version 2.0 (options 0x0010)
+
+Maximum reading speed: 4234 kB/s
+Current reading speed: 4234 kB/s
+Maximum writing speed: 4234 kB/s
+Current writing speed: 4234 kB/s
+BurnProof supported: yes
+"""
+
+
+def test_the_drives_top_writing_speed_is_read_in_x():
+    assert (
+        parse_max_write_speed(DRIVE_INFO) == 24
+    )  # (a real drive's answer, 2026-11-24)
+    assert parse_max_write_speed(DRIVE_INFO.replace("4234", "8467")) == 48
+    assert parse_max_write_speed(DRIVE_INFO.replace("4234 kB/s", "0 kB/s")) is None
+    assert parse_max_write_speed("nothing useful") is None
+
+
+@pytestmark_posix
+def test_media_info_carries_the_drives_top_speed_and_does_without_it(fake):
+    fake.say("disk-info.txt", BLANK)
+    assert CdrdaoBurner().media_info(None).max_write_speed is None  # (it said nothing)
+    fake.say("drive-info.txt", DRIVE_INFO)
+    info = CdrdaoBurner().media_info(None)
+    assert info.max_write_speed == 24 and info.blank is True

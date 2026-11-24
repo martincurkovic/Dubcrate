@@ -189,6 +189,21 @@ def test_the_linux_build_has_no_macos_parts_and_names_what_it_needs():
     assert "patchelf" in LINUX_SCRIPT and "build-essential" in LINUX_SCRIPT
 
 
+def test_the_linux_build_bundles_a_gpl_cdrdao_with_its_source_and_licence():
+    cdrdao = (ROOT / "scripts" / "build_cdrdao_linux.sh").read_text(encoding="utf-8")  # fmt: skip
+    assert "build_cdrdao_linux.sh" in LINUX_SCRIPT
+    assert (
+        "for tool in ffmpeg ffprobe cdrdao" in LINUX_SCRIPT
+    )  # (the executable bit survives)
+    assert re.fullmatch(r"[0-9a-f]{64}", assigned(cdrdao, "CDRDAO_SHA256"))
+    for needed in ("--without-gcdmaster", "--without-mp3-support", "--without-ogg-support", "-static-libstdc++", "-source.tar.gz", "cdrdao-COPYING.txt"):  # fmt: skip
+        assert needed in cdrdao, needed
+    assert (
+        "autoconf" in LINUX_SCRIPT and "autoconf" in BUILD_WORKFLOW
+    )  # (the GitHub tag has no configure)
+    assert "autoconf" in (ROOT / "scripts" / "linux-build.Dockerfile").read_text(encoding="utf-8")  # fmt: skip
+
+
 def test_both_ffmpeg_builds_are_the_same_lgpl_build():
     for name in ("FFMPEG_VERSION", "FFMPEG_SHA256", "LAME_VERSION", "LAME_SHA256"):
         assert assigned(FFMPEG_LINUX, name) == assigned(FFMPEG_MACOS, name), name

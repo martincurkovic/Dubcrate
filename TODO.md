@@ -7,7 +7,7 @@ Open items by area; finished work is under **Completed** at the bottom (same hea
 - [ ] Auto download update (maybe once code signing in place...)
 - [ ] Windows burn support
   - [ ] Spike on a real Windows machine (cdrdao + CD-TEXT)
-- [ ] Linux build script (AppImage / Flatpak / uv tool?): ffmpeg is bundled, `cdrdao` is not; decide whether to (GPL-2.0-or-later)
+- [ ] Linux: run the CI AppImage build (`build.yml`, now with `cdrdao` bundled) once, and try the AppImage on a real desktop (see below)
 - [ ] Windows build script and installer: written, **never run** (see "Linux and Windows" below)
 - [ ] Mixxx library support
 - [ ] Engine DJ library support
@@ -22,7 +22,7 @@ Open items by area; finished work is under **Completed** at the bottom (same hea
 
 - [ ] Find out what unit `DRPreGapLengthKey` uses before trusting the 1, 2 and 3 s "Between tracks" options ([burning.md](dev_docs/burning.md)).
 - [ ] Compare the drive's reported free blocks on a 74 and an 80 minute disc (expect about 333,000 and 359,850) to confirm the capacity check ([burning.md](dev_docs/burning.md)).
-- [ ] **Try MP3 cues on the CDJ**: set a memory cue in Dubcrate, sync, check it lands right. Only tried on synthetic discs; the player's time against audio time is unmeasured (needs a click-track disc) ([card-sync.md](dev_docs/card-sync.md)).
+- [ ] **MP3 cue timing on the CDJ**: cues sync and show. First data point (2026-11-24, track 1 of "MP3 Full Folders Test", an ffmpeg-made file, lead 25 ms, cue at 1.668 s): the CDJ's cue is about 5 frames (67 ms) early. Need more points (a late cue, a LAME file, different phases) or a click-track disc to separate the player's MP3-frame rounding from a constant offset ([card-sync.md](dev_docs/card-sync.md)).
 - [ ] MP3 discs: Mac/DiscRecording burns aren't recorded, the Disc ID window can't read a disc on macOS and Windows, and discs with another label are refused ([card-sync.md](dev_docs/card-sync.md)).
 - [ ] MP3 sync follow-ups: a tracks table with waveform state in the Sync tab's middle pane; Import Cues from an MP3 card (reading is built, mapping back to tracks is not); nested folders and non-MPEG-1 Layer III files are refused.
 - [ ] Finish decoding the MP3 disc's card files: cue timing against audio time (click-track disc), the four bytes at +112 of a cue entry ([cdj1000mk3-card.md](dev_docs/cdj1000mk3-card.md) section 6).
@@ -44,7 +44,6 @@ Open items by area; finished work is under **Completed** at the bottom (same hea
 - [ ] Try the drive picker with two real drives (the check after a burn is skipped for any but the first).
 - [ ] Read a rekordbox USB stick's own database (`export.pdb`, `USBANLZ`) so a stick imports with BPM, key, cues and beat grids (today only `master.db` or a folder of audio).
 - [ ] Burn through the USB-C hub for real with the `generic-mmc` retry: behind the hub the default `cdrdao` driver was refused and a write then stalled (2026-11-24); direct on the computer it burned fine. Not yet seen: the retry itself writing a disc ([burning.md](dev_docs/burning.md)).
-- [ ] Ask the drive for its top write speed: the burn window offered 48x and `cdrdao` quietly wrote at 24x (the log says so, the window does not).
 - [ ] Try disc and card auto-detection on macOS and Windows (Linux works).
 - [ ] Make it clear when a Sync has finished (it is a status-bar message that the list refresh replaces within seconds): a banner in the Sync tab that stays until the next action was suggested, not decided.
 - [ ] Cancel the writing of a burn itself (needs a confirmation: a stopped write ruins the disc).
@@ -127,6 +126,7 @@ Open items by area; finished work is under **Completed** at the bottom (same hea
 - [x] Read the third-party notices carefully, since they name each licence but don't reproduce the full texts ([roadmap.md](dev_docs/roadmap.md)).
 
 ### Features and app polish
+- [x] The burn window greys out speeds above the drive's top writing speed (`cdrdao drive-info`: 24x on the test drive; it offered 48x and `cdrdao` quietly wrote at 24x). Tried on the real drive: 4234 kB/s reads as 24x; the window itself is untried.
 
 - [x] Let Export Disc as Files… be cancelled (2026-11-17): the Cancel button stops it between tracks and removes the half-made folder.
 - [x] Year on labels (2026-11-16): **Show year** in the label window, off by default, between key and time; from rekordbox or the file's tags. (The album was asked for and skipped: not wanted.)

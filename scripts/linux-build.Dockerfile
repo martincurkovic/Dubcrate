@@ -5,7 +5,7 @@
 # .github/workflows/build.yml.
 FROM ubuntu:24.04
 ENV DEBIAN_FRONTEND=noninteractive UV_LINK_MODE=copy PATH="/root/.local/bin:$PATH"
-RUN apt-get update -qq && apt-get install -y -qq build-essential patchelf curl xz-utils nasm zip file zlib1g-dev git rsync ca-certificates \
+RUN apt-get update -qq && apt-get install -y -qq build-essential patchelf curl xz-utils nasm zip file zlib1g-dev autoconf automake libtool pkg-config git rsync ca-certificates \
         libegl1 libgl1 libxkbcommon0 libfontconfig1 libdbus-1-3 libglib2.0-0 fonts-dejavu-core libnss3 libasound2t64 libpulse0 \
         libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-randr0 libxcb-render-util0 libxcb-shape0 libxcb-shm0 \
         libxcb-sync1 libxcb-xkb1 libxkbcommon-x11-0 libxcomposite1 libxdamage1 libxi6 libxtst6 >/dev/null \

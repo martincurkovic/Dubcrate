@@ -5,7 +5,7 @@
 - [uv](https://docs.astral.sh/uv/), which fetches Python 3.13 and everything in `pyproject.toml`
 - A C compiler for Nuitka, which compiles the app
 - **macOS 14 or newer** (the Qt 6.12 wheels need it) with the Xcode Command Line Tools (`xcode-select --install`). Its build script is `scripts/build_macos.sh`
-- **Linux** (x86_64 or aarch64; Ubuntu 24.04 is what CI and the Docker build use): `sudo apt install build-essential patchelf curl xz-utils nasm zip file zlib1g-dev`. Its build script is `scripts/build_linux.sh`, which makes an **AppImage**; with Docker running, `scripts/build_linux_docker.sh` does the whole build in a container, from any computer (see below)
+- **Linux** (x86_64 or aarch64; Ubuntu 24.04 is what CI and the Docker build use): `sudo apt install build-essential patchelf curl xz-utils nasm zip file zlib1g-dev autoconf automake libtool pkg-config`. Its build script is `scripts/build_linux.sh`, which makes an **AppImage**; with Docker running, `scripts/build_linux_docker.sh` does the whole build in a container, from any computer (see below)
 - **Windows 10 or 11 (64-bit)**: the Visual Studio Build Tools' C++ workload (or let Nuitka download MinGW), [MSYS2](https://www.msys2.org) (to build ffmpeg: `winget install MSYS2.MSYS2`, then in an MSYS2 MINGW64 shell `pacman -S --needed base-devel diffutils make nasm xz curl mingw-w64-x86_64-gcc mingw-w64-x86_64-zlib mingw-w64-x86_64-pkgconf`) and [Inno Setup 6](https://jrsoftware.org/isinfo.php) (`winget install JRSoftware.InnoSetup`). Its build script is `scripts/build_windows.ps1`, which makes an **installer**
 - `ffmpeg` and `ffprobe` to run the app from source (`brew install ffmpeg` on a Mac, `sudo apt install ffmpeg` on Linux). The built app carries its own (see below)
 - `nasm` on an Intel Mac or an x86_64 Linux, to build those (`brew install nasm`, `sudo apt install nasm`)
@@ -47,7 +47,7 @@ scripts/build_linux_docker.sh   # builds in an Ubuntu 24.04 container (from a Ma
 chmod +x Dubcrate-linux-x86_64.AppImage && ./Dubcrate-linux-x86_64.AppImage
 ```
 
-The Docker build on an Apple Silicon Mac makes an **aarch64** AppImage; the GitHub runner makes the x86_64 one. It was built and smoke-tested in Docker, but **has not been run on a real Linux desktop** (a window on screen, sound, a drive): see `dev_docs/linux-test-plan.md`. An AppImage built on Ubuntu 24.04 needs a distribution with glibc 2.39 or newer. `cdrdao` is GPL and is not bundled: install it with the package manager to burn.
+The Docker build on an Apple Silicon Mac makes an **aarch64** AppImage; the GitHub runner makes the x86_64 one. It was built and smoke-tested in Docker, but **has not been run on a real Linux desktop** (a window on screen, sound, a drive): see `dev_docs/linux-test-plan.md`. An AppImage built on Ubuntu 24.04 needs a distribution with glibc 2.39 or newer. `cdrdao` (the burner on Linux) is bundled too, built by `scripts/build_cdrdao_linux.sh` from a pinned, hash-checked source (no audio-format libraries, libstdc++ linked in, so it needs nothing but the C library); it is GPL, so the licence, the offer of source and the source itself are in `dubcrate/bin/licenses` beside ffmpeg's. The build needs `autoconf automake libtool pkg-config` as well (the GitHub tag has no `configure`).
 
 ## Building for Windows (an installer)
 

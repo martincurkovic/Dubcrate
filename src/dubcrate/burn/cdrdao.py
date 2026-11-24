@@ -11,6 +11,7 @@ import subprocess
 import sys
 import tempfile
 import time
+from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
 
@@ -137,6 +138,18 @@ _DISK_INFO_LINE = re.compile(
 _DRIVE_LINE = re.compile(
     r"^\S+: (.*?)\s*Rev:", re.MULTILINE
 )  # "/dev/sr0: VENDOR MODEL  Rev: X"
+
+
+_MAX_WRITE_SPEED = re.compile(r"^Maximum writing speed:\s*(\d+)\s*kB/s", re.MULTILINE)
+KB_PER_SECOND_PER_X = 176.4  # a CD's 1x: 44,100 samples of 4 bytes a second
+
+
+def parse_max_write_speed(text: str) -> int | None:
+    """The drive's top writing speed in "x" from `cdrdao drive-info` ("Maximum writing speed: 4234 kB/s" is 24x:
+    seen on a real drive, 2026-11-24), or None if it did not say (or said 0)."""
+    found = _MAX_WRITE_SPEED.search(text)
+    speed = round(int(found.group(1)) / KB_PER_SECOND_PER_X) if found else 0
+    return speed or None
 
 
 def parse_disk_info(text: str) -> MediaInfo:
@@ -296,6 +309,28 @@ class CdrdaoBurner:
         `cdrdao disk-info`. Unreadable parts stay unknown. NOT tried on a real drive."""
         exe = self._exe()
         device = self._device(device)
+        info = self._disk_info(exe, device)
+        return replace(info, max_write_speed=self._max_write_speed(exe, device))
+
+    @staticmethod
+    def _max_write_speed(exe: str, device: str) -> int | None:
+        """How fast the drive can write, in x (`cdrdao drive-info`), or None if it won't say: an unknown
+        speed never stops a burn."""
+        try:
+            proc = subprocess.run(
+                [exe, "drive-info", "--device", device],
+                check=False,
+                capture_output=True,
+                encoding="utf-8",
+                errors="replace",
+                stdin=subprocess.DEVNULL,
+                timeout=30,
+            )
+        except (OSError, subprocess.SubprocessError):
+            return None
+        return parse_max_write_speed(proc.stdout + proc.stderr)
+
+    def _disk_info(self, exe: str, device: str) -> MediaInfo:
         try:
             proc = subprocess.run(
                 [exe, "disk-info", "--device", device],

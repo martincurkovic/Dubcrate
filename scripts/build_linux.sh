@@ -3,12 +3,13 @@ set -e
 
 # build_linux.sh - builds the Dubcrate standalone Linux app and the AppImage that carries it
 # Can be run from anywhere. Handles uv sync and the packaging (pyside6-deploy / Nuitka), the same way as JV Studio and AKAISDS.
-# Needs, once:  sudo apt install build-essential patchelf curl xz-utils nasm zip file zlib1g-dev      (Nuitka compiles C; nasm and zlib are for ffmpeg; appimagetool runs `file`)
+# Needs, once:  sudo apt install build-essential patchelf curl xz-utils nasm zip file zlib1g-dev autoconf automake libtool pkg-config
+#               (Nuitka compiles C; nasm and zlib are for ffmpeg; autoconf, automake, libtool and pkg-config for cdrdao; appimagetool runs `file`)
 # To build in Docker from any computer (a Mac included), use scripts/build_linux_docker.sh.
 #
 # The app bundles LGPL builds of ffmpeg and ffprobe (scripts/build_ffmpeg_linux.sh makes them for this machine's architecture, the
-# first time), which dubcrate/tools.py looks for before PATH. cdrdao, which burns off a Mac, is GPL and is not bundled: the user
-# installs it (`sudo apt install cdrdao`). Output, in the repository root: Dubcrate-linux-<arch>.AppImage and a .zip of it (a zip
+# first time), which dubcrate/tools.py looks for before PATH. So does cdrdao, which burns on Linux (scripts/build_cdrdao_linux.sh:
+# GPL, so its source and licence go in the bundle too). Output, in the repository root: Dubcrate-linux-<arch>.AppImage and a .zip of it (a zip
 # keeps the executable bit when it is downloaded from a CI run).
 
 APP_NAME="Dubcrate"
@@ -23,7 +24,7 @@ APPIMAGETOOL_SHA256_AARCH64="f0837e7448a0c1e4e650a93bb3e85802546e60654ef287576f4
 
 if ! command -v gcc >/dev/null 2>&1 && ! command -v cc >/dev/null 2>&1; then
     echo "No C compiler found - install one first (Nuitka needs it):"
-    echo "  sudo apt update && sudo apt install build-essential patchelf curl xz-utils nasm zip file zlib1g-dev"
+    echo "  sudo apt update && sudo apt install build-essential patchelf curl xz-utils nasm zip file zlib1g-dev autoconf automake libtool pkg-config"
     exit 1
 fi
 
@@ -47,6 +48,11 @@ uv pip install pip
 "$ROOT_DIR/scripts/build_ffmpeg_linux.sh"
 rm -rf "$ROOT_DIR/build/ffmpeg/bundle"
 cp -R "$ROOT_DIR/build/ffmpeg/$ARCH" "$ROOT_DIR/build/ffmpeg/bundle"
+
+# cdrdao for this architecture, into the same bundle (dubcrate/bin), with its licence, offer of source and source beside ffmpeg's
+"$ROOT_DIR/scripts/build_cdrdao_linux.sh"
+cp "$ROOT_DIR/build/cdrdao/$ARCH/cdrdao" "$ROOT_DIR/build/ffmpeg/bundle/cdrdao"
+cp "$ROOT_DIR/build/cdrdao/$ARCH/licenses/"* "$ROOT_DIR/build/ffmpeg/bundle/licenses/"
 
 cd "$SRC_DIR"
 
@@ -94,7 +100,7 @@ uv run pyside6-deploy -c pysidedeploy.spec
 
 DIST="$SRC_DIR/$APP_NAME.dist"
 # Make sure the bundled tools can run: Nuitka copies data files, and the executable bit must survive.
-for tool in ffmpeg ffprobe; do
+for tool in ffmpeg ffprobe cdrdao; do
     chmod 755 "$DIST/dubcrate/bin/$tool"
 done
 

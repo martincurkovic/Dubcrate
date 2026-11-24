@@ -92,6 +92,9 @@ class MediaInfo:
     present: bool | None = None
     blank: bool | None = None
     free_sectors: int | None = None  # room for audio on a blank disc
+    max_write_speed: int | None = (
+        None  # the drive's top writing speed, in "x" (176.4 kB/s each)
+    )
 
 
 Progress = Callable[[str], None]

@@ -9,7 +9,7 @@ a silent stand-in, and DiscRecording is only imported, never asked for a drive.
 """
 
 import os
-import shutil
+import subprocess
 import sys
 import tempfile
 import wave
@@ -177,7 +177,7 @@ def _check_ca_bundle() -> str:
 
 
 def _check_tools() -> str:
-    """ffmpeg and ffprobe read the tracks; cdrdao is the optional second burner: only reported.
+    """ffmpeg and ffprobe read the tracks; cdrdao burns on Linux and must be bundled there; elsewhere it is only reported.
 
     A built app must carry its own ffmpeg and ffprobe, and they must work: decode a WAV, encode an
     MP3 (LAME) and read the result back. A run from source only reports what it found."""
@@ -197,7 +197,27 @@ def _check_tools() -> str:
         for name in tools.REQUIRED
     ):
         found.append(_exercise_bundled_tools())
-    found.append(f"cdrdao: {shutil.which('cdrdao') or 'not found'}")
+    burner = tools.find_tool("cdrdao")
+    if built and sys.platform.startswith(
+        "linux"
+    ):  # (the AppImage carries it; the Mac uses DiscRecording)
+        assert burner is not None and burner.bundled, (
+            f"cdrdao is not bundled in the app: {burner.path if burner else 'not found'}"
+        )
+        said = subprocess.run(  # (with nothing to do it prints its version and usage, and fails)
+            [str(burner.path)],
+            check=False,
+            capture_output=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=20,
+        )
+        assert "Cdrdao version" in said.stdout + said.stderr, (
+            "the bundled cdrdao won't run"
+        )
+    found.append(
+        f"cdrdao: {f'{burner.path} ({burner.source})' if burner else 'not found'}"
+    )
     return "; ".join(found)
 
 

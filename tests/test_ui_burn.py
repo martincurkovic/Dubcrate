@@ -233,6 +233,30 @@ def test_a_check_that_says_something_puts_it_in_the_burn_log(
     assert "marked as burned" in dialog.log.toPlainText()
 
 
+def test_speeds_above_the_drives_top_speed_are_greyed_out_and_the_default_follows(
+    make_dialog, monkeypatch
+):
+    from dubcrate import settings
+
+    monkeypatch.setattr(
+        settings, "get_burn_speed", lambda: 48
+    )  # (a default the drive can't do)
+    slow = MediaInfo(drive="D", present=True, blank=True, free_sectors=359_849, max_write_speed=24)  # fmt: skip
+    dialog, _burner = make_dialog(FakeBurner(slow))
+    combo = dialog.speed_combo
+    model = combo.model()
+    enabled = [combo.itemData(i) for i in range(combo.count()) if model.item(i).isEnabled()]  # fmt: skip
+    assert enabled == [4, 8, 10, 12, 16, 20, 24]
+    assert combo.currentData() == 24  # (the fastest it can do, not the 48 asked for)
+    assert "24x at most" in combo.toolTip()
+
+
+def test_a_drive_that_does_not_say_its_speed_gets_every_speed(make_dialog):
+    dialog, _burner = make_dialog()  # (ROOMY: no top speed)
+    combo = dialog.speed_combo
+    assert all(combo.model().item(i).isEnabled() for i in range(combo.count()))
+
+
 def test_a_burn_renders_burns_stores_lengths_and_marks_the_disc_burned(
     lib, disc_id, make_dialog, wait_for
 ):
