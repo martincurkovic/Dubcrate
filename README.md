@@ -6,15 +6,14 @@
 [![Python 3.13+](https://img.shields.io/badge/python-3.13%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![Qt 6.12 LTS](https://img.shields.io/badge/Qt-6.12%20LTS-41CD52?logo=qt&logoColor=white)](https://doc.qt.io/qtforpython-6/)
 [![uv](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/uv/main/assets/badge/v0.json)](https://github.com/astral-sh/uv)
-[![Platform: macOS, with Windows and Linux builds new](https://img.shields.io/badge/platform-macOS%20%C2%B7%20Windows%20%26%20Linux%20new-lightgrey)](#what-you-need)
+[![Platform: macOS, Windows and Linux](https://img.shields.io/badge/platform-macOS%20%C2%B7%20Windows%20%C2%B7%20Linux-lightgrey)](#what-you-need)
 [![License: GPL-3.0-or-later](https://img.shields.io/badge/license-GPL--3.0--or--later-blue)](LICENSE)
 
-**Burn audio CDs and print index cards for old-style CDJs from your DJ library.**
+**Burn audio CDs and MP3 CDs for older CDJs, and print the index cards, from your DJ library.**
 
-Older players like the CDJ-1000MK3 play audio CDs only.
-Dubcrate lets you pick tracks from your rekordbox library (or any folder of
-music), plan CDs that fit exactly, preview them with waveforms, and burn audio CDs
-with CD-TEXT so track titles appear on the CDJ.
+Older players like the CDJ-1000MK3 only play music from discs. Dubcrate lets you pick tracks from your rekordbox library
+(or any folder of music), fit them onto discs exactly, and burn them. Track titles show on the player.
+It can also put your cues on the player's SD card.
 
 <p align="center">
   <picture>
@@ -25,15 +24,13 @@ with CD-TEXT so track titles appear on the CDJ.
 
 ## What it does
 
-- **Imports your rekordbox library** (read-only), with your existing playlists, or any folder of music.
-- **Previews tracks** with a smooth 60 frames a second waveform (30 on a slower computer). For rekordbox tracks it shows
-  rekordbox's own waveform, beat grid, phrases and cue points.
-- **Edits memory cues and loops** in the preview player, and (if you allow it) saves them into rekordbox's library.
-- **Syncs cues and waveforms to a CDJ-1000MK3's SD card**, and brings what you set on the player back.
-- **Plans discs** of 74 or 80 minutes. Drag tracks on, rename them, move them around.
-- **Burns audio CDs with CD-TEXT**, or **MP3 discs** with folders, and can match the loudness of the tracks.
+- **Reads your music.** Your rekordbox library, a rekordbox USB stick or XML file, or any folder. It only ever reads them.
+- **Plans discs** of 74 or 80 minutes. Drag tracks on, rename them, move them around. A bar shows how full the disc is.
+- **Burns audio CDs** (with CD-TEXT titles) or **MP3 CDs** (with folders). It can even out the loudness.
+- **Previews tracks** with smooth waveforms, beat grids and cue points. You can edit memory cues and loops too.
+- **Syncs cues to a CDJ-1000MK3's SD card**, and brings back what you set on the player.
 - **Prints index labels** for the case.
-- **Keeps its own playlists.** Your discs are saved in Dubcrate.
+- **Finds a track at a gig:** one web page for your phone that says which disc a track is on.
 
 <table>
   <tr>
@@ -52,81 +49,64 @@ with CD-TEXT so track titles appear on the CDJ.
 
 ## What you need
 
-- **System requirements** (best guesses, not measured): macOS 14 or later on an Apple Silicon or Intel Mac (or Windows 10 or 11, 64-bit, or a 64-bit Linux with glibc 2.39 or newer: both new), about 4 GB of memory,
-  a 1280 × 720 or larger screen (the window can't be made smaller than 980 × 660), and about 1 GB of free disk space while
-  burning (the disc's audio is prepared as temporary files).
-- **A Mac**, which is what Dubcrate has been used on. **Linux** is built as an AppImage and **Windows** as an installer, but both are
-  new and not yet tried on a real machine. On Linux you install `cdrdao` with your package manager to burn. **Windows can't burn yet**
-  (it can still plan discs, preview, print labels and sync cues, and **Export Disc as Files** makes a disc for another burning program).
-- **A CD burner** that can write CD-R, and blank **CD-R** discs. (CD-RW is not recommended
-  for old CD players, and has not been tried.)
-- **[ffmpeg](https://ffmpeg.org/)**, which Dubcrate uses to read tracks and prepare
-  them for the disc. The download includes it; nothing to install. (Running from source: `brew install ffmpeg`.)
-- **A player that reads audio CDs**.
-- Music as **MP3, WAV, FLAC, AIFF, AAC/M4A, Ogg, Opus or WMA**.
-- Optionally, an existing **rekordbox 7** library. rekordbox version 6 uses the same format and will likely work, but is untested.
+- **A computer:** macOS 14 or newer (Apple Silicon or Intel), Windows 10 or 11 (64-bit), or 64-bit Linux (glibc 2.39 or newer).
+  About 4 GB of memory and a screen of 1280 × 720 or more. These are best guesses.
+- **A CD burner** and blank **CD-R** discs. CD-RW isn't recommended for old players.
+- **Music** as MP3, WAV, FLAC, AIFF, AAC/M4A, Ogg, Opus or WMA.
+- Optionally, a **rekordbox 7** library.
 
-## Download & installation
+Everything else (ffmpeg, and `cdrdao` on Windows and Linux) comes with the download.
 
-Download the latest `.dmg` from the [Releases page](https://github.com/martincurkovic/Dubcrate/releases)
-(`Dubcrate-macos-arm.dmg` for Apple Silicon, `Dubcrate-macos-intel.dmg` for Intel Macs),
-open it and drag Dubcrate to your Applications folder. It needs macOS 14 or later. Other than optionally checking for updates upon startup, Dubcrate works completely offline.
+## Download & install
 
-The app is not signed, because a signing certificate is hard to justify for a free
-single-person project, so macOS will warn about it the first time. To open it anyway:
+Get the latest version from the [Releases page](https://github.com/martincurkovic/Dubcrate/releases).
+Apart from an optional daily check for updates, Dubcrate works offline.
 
-1. Try to open Dubcrate. macOS will warn about security.
-2. Open System Settings ▸ Privacy & Security and scroll down.
-3. Click **Open Anyway**, and confirm with your password or Touch ID.
+**Mac.** Download `Dubcrate-macos-arm.dmg` (Apple Silicon) or `Dubcrate-macos-intel.dmg` (Intel). Open it and drag Dubcrate
+to Applications. The app isn't signed, so macOS warns you the first time. To open it anyway:
 
-**Windows and Linux.** Releases will also list `Dubcrate-windows-x64-Setup.exe` (an installer that doesn't need an administrator
-password; it isn't signed either, so Windows SmartScreen will warn: choose **More info**, then **Run anyway**) and
-`Dubcrate-linux-x86_64.zip` (an AppImage: unzip it, `chmod +x` it and run it). Both are untried on a real machine.
+1. Try to open Dubcrate. macOS shows a warning.
+2. Open **System Settings ▸ Privacy & Security** and scroll down.
+3. Click **Open Anyway** and confirm.
 
-If you would rather not trust a download, [BUILDING.md](BUILDING.md) builds it from source.
+**Windows.** Run `Dubcrate-windows-x64-Setup.exe`. It isn't signed either, so SmartScreen warns you: choose
+**More info**, then **Run anyway**. **Burning needs an administrator account.**
+
+**Linux.** Unzip `Dubcrate-linux-x86_64.zip`, make the file runnable (`chmod +x`) and start it. If it won't start, install FUSE 2.
+If Dubcrate can't use your drive, it tells you how to get access.
+
+Rather build it yourself? See [BUILDING.md](BUILDING.md).
 
 ## Using Dubcrate
 
-1. **Import your music.** *File ▸ Import rekordbox Library…*, or
-   *File ▸ Import Folder…* reads a folder of music. Imported sources appear on the
-   left (the *Library* tab), with their playlists and folders beneath them. The *Explorer* tab beside it
-   browses the folders on your computer, or a plugged-in drive.
-2. **Browse and listen.** Pick a playlist, search by title, artist, album or genre,
-   and sort by clicking a column heading.
-3. **Build a disc.** Your discs are playlists, listed on the right and can be filed in folders
-   like rekordbox playlists. *Disc ▸ New Disc* creates a new playlist for burning.
-   Right-click a track for **Fit All Shown Tracks to Disc**, which adds tracks in order until the disc is full, and
-   *Disc ▸ Split Shown Tracks Across Discs…* turns a long playlist into several discs.
-4. **Check the bar.** It shows each track as a coloured block. A disc can't be burned
-   if it is over its size or contains a track whose file can't be found.
-5. **Burn it.** *Burn…* (or *Disc ▸ Burn Disc…*) shows the drive and the disc in it. Load a blank CD-R and press Burn.
-   Burn speed can be adjusted. It is recommended to use a slower burn speed for reliability, particularly with older CD players.
-6. **Print an index label for the case.** *Disc ▸ Print Labels…* (⌘P) lays out the track list of
-   one or several discs on sticker paper.
+1. **Import your music.** *File ▸ Import Folder…*, or *File ▸ Import rekordbox Library…* (or **XML**, or **USB**).
+   Your music shows on the left. The *Explorer* tab browses any folder or drive without importing.
+2. **Find tracks.** Pick a playlist, or search. Click a column heading to sort.
+3. **Build a disc.** *Disc ▸ New Disc*, then drag tracks on. Right-click a track for **Fit All Shown Tracks to Disc**.
+4. **Watch the bar.** A disc can't be burned if it's too long or a file is missing.
+5. **Burn it.** Press *Burn…*, load a blank CD-R and press Burn. Slower speeds are safer on old players.
+6. **Print a label.** *Disc ▸ Print Labels…* lays out the track list for the case.
 
-The keyboard shortcuts and other controls are in *Help ▸ User Guide*.
+The keyboard shortcuts and everything else are in *Help ▸ User Guide*.
 
 ## Good to know
 
-- **Your music and rekordbox library are never modified.** Dubcrate only reads them.
-- **Cue points, beat grids and analysis are not burned to the CD**, which can't hold them:
-  the disc holds only the audio and the titles. For the CDJ-1000MK3, Dubcrate can write your rekordbox cues, and the
-  player's waveform for each track, to the player's **SD card** instead (the **Sync** tab), so a disc loads with its
-  cues already set. That has been tried on one player and one card.
-- **Titles use CD-TEXT**, which handles Western European characters. Characters
-  outside that set are simplified, or become a question mark, on the disc.
-- **Discs are gapless** by default, but this setting can be changed.
-- **Burn slowly.** Older CD players tend to read CD-R discs that have been burned at a lower speed more reliably.
+- **Your music and your rekordbox library are never changed.** The one exception is memory cues, and only if you allow it.
+- **Cue points and beat grids can't go on a CD.** Use the **Sync** tab to put your cues on the player's SD card instead.
+- **Titles use CD-TEXT**, which handles Western European letters. Others are simplified.
+- **What has been tried on real gear:** burning audio CDs on Mac, Windows and Linux, and MP3 CDs on Windows and Linux,
+  all played on a CDJ-1000MK3; syncing cues and waveforms to its SD card; the track finder on an iPhone.
+  Printing has only been checked by saving PDFs. Windows 10 hasn't been tried.
 
 ## What's coming
 
-Other DJ libraries (eg. Mixxx, Engine DJ), and burning on Windows. The Windows and Linux builds still need trying on real machines.
+Other DJ libraries, such as Mixxx and Engine DJ.
 
 ## More
 
-- **[User Guide](src/dubcrate/ui/help/manual.md)**: also in the app under *Help ▸ User Guide*.
+- **[User Guide](src/dubcrate/ui/help/manual.md)**, also in the app under *Help ▸ User Guide*.
 - **[Changelog](CHANGELOG.md)**, **[building from source](BUILDING.md)** and **[notes for developers](CONTRIBUTING.md)**.
-- The pictures above use made-up music and a pretend SD card; nothing in them is anyone's library.
+- The pictures use made-up music and a pretend SD card.
 
 ## License
 

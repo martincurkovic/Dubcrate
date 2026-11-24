@@ -13,7 +13,6 @@ Open items by area; finished work is under **Completed** at the bottom (same hea
 - [ ] Drop `experimental` from the Windows leg in test.yml once happy (follow-up to: CI test legs for Linux, macOS, Windows)
 - [ ] Homebrew packaging once first release public
 - [ ] Maybe use some real songs, not fake ones (follow-up to: Screenshot staging)
-- [ ] Clean up user facing docs (readme, user guide)
 
 ### Hardware checks (Mac and the CDJ-1000MK3)
 
@@ -32,7 +31,7 @@ Open items by area; finished work is under **Completed** at the bottom (same hea
 
 ### Before the first release
 
-- [ ] Write a changelog (the update check reads GitHub's release notes) ([roadmap.md](dev_docs/roadmap.md)). (a draft is in CHANGELOG.md: edit it)
+- [ ] Write a changelog (the update check reads GitHub's release notes) ([roadmap.md](dev_docs/roadmap.md)). (Rewritten short and plain on 2026-11-24 in CHANGELOG.md: read it once more and edit it before tagging.)
 
 ### Features and app polish
 
@@ -57,12 +56,12 @@ Open items by area; finished work is under **Completed** at the bottom (same hea
 - [ ] Try the Linux drive permission message on a real machine (`cdrdao.access_problem`; stand-ins only).
 - [ ] Check the Explorer's real drive lists on Linux and Windows, which are only tested with fake folders ([cross-platform.md](dev_docs/cross-platform.md)).
 - [ ] Windows burning needs an administrator account (a standard user can't open the drive): Dubcrate says so; an elevated burn (a UAC prompt) is not built.
-- [ ] Update `README.md`, `CONTRIBUTING.md` and the guide per OS (they still talk about a Mac in places) ([cross-platform.md](dev_docs/cross-platform.md)).
 - [ ] Check what `pyrekordbox`'s SQLCipher needs on Intel Linux (Windows passes its smoke test) ([cross-platform.md](dev_docs/cross-platform.md)).
 
 ## Completed
 
 ### General
+- [x] Docs pass (2026-11-24): README, user guide and changelog rewritten short and in plain English (the guide is 36% shorter, the changelog 75%); Windows and Linux burning, USB sticks, XML and the track finder are in; the OS wording is fixed (⌘ is Ctrl on Windows and Linux, Windows needs an administrator account to burn, the AppImage and installer bundle `cdrdao`); `CONTRIBUTING.md` brought up to date. The guide's own tests still pin its menu names, shortcuts and settings.
 
 - [x] Linux burn support
 - [x] Audio normalisation setting?
