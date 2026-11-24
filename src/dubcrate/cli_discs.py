@@ -10,6 +10,7 @@ from dubcrate.build import (
     BuildError,
     build_burn_disc,
     disc_problems,
+    image_record,
     media_notes,
     media_problems,
     planned_with_levels,
@@ -305,6 +306,8 @@ def cmd_burn(lib: Library, args: argparse.Namespace) -> int:
             )
             if isinstance(burn_disc, DataDisc):
                 burner.burn_data(burn_disc, options, progress=print)
+                if not options.simulate and (image := image_record(burn_disc)):
+                    lib.set_disc_image(args.disc, image)
             else:
                 burner.burn(burn_disc, options, progress=print)
     except (BuildError, BurnError) as exc:

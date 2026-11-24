@@ -1372,13 +1372,9 @@ class SyncView(QWidget):
             self.message.emit("Wait for the card to finish first.")
             return
         try:
-            m3.read_mp3_card(card)
+            m3.read_mp3_card(card, missing_ok=True)
         except m3.Mp3CardError as exc:
-            show_problem(
-                self,
-                "Couldn't Sync to the Card",
-                f"{exc}\n\nPlay an MP3 disc in the player once, so it makes its MP3 files on the card.",
-            )
+            show_problem(self, "Couldn't Sync to the Card", str(exc))
             return
         rekordbox = RekordboxCues(
             self._lib, load=self._cue_loader
@@ -1452,7 +1448,7 @@ class SyncView(QWidget):
                 )  # (what was worked out stays cached)
             try:
                 index, files = m3.read_mp3_card(
-                    card
+                    card, missing_ok=True
                 )  # (as the card is now: it may have changed)
             except m3.Mp3CardError as exc:
                 finish()

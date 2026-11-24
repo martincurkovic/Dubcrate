@@ -17,6 +17,7 @@ The image was checked by listing it with `xorriso` and `isoinfo` (Joliet and Roc
 import logging
 import unicodedata
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 
 import pycdlib
@@ -70,8 +71,26 @@ def _add_folder(
         )
 
 
-def build_iso(folder: Path, volume: str, out: Path) -> Path:
+def _volume_date(when: datetime) -> pycdlib.dates.VolumeDescriptorDate:
+    """`when` as an ISO 9660 volume date: 16 digits (hundredths 00), then the zone in quarter hours."""
+    when = when.astimezone() if when.tzinfo is None else when
+    offset = when.utcoffset()
+    quarters = 0 if offset is None else int(offset.total_seconds() // 900)
+    date = pycdlib.dates.VolumeDescriptorDate()
+    date.parse(
+        when.strftime("%Y%m%d%H%M%S00").encode("ascii") + bytes([quarters & 0xFF])
+    )
+    return date
+
+
+def build_iso(
+    folder: Path, volume: str, out: Path, created: datetime | None = None
+) -> Path:
     """Write `out` (an .iso file) holding the contents of `folder`, with volume name `volume`.
+
+    `created` is the volume's creation date (now if None). **The CDJ puts it in an MP3 disc's ID**
+    (`cdj_card_mp3.Mp3DiscId.made_from`), so a disc is burned from an image made with a date that is kept
+    (`DataDisc.created`, `Library.set_disc_image`), and the same date makes the same ID again later.
 
     `folder` and what is in it are only read; `out` is written under another name and moved into
     place, so a failure leaves nothing half made. Raises `IsoError`.
@@ -88,6 +107,10 @@ def build_iso(folder: Path, volume: str, out: Path) -> Path:
             vol_ident=volume_ident(volume),
             app_ident_str=APPLICATION,
         )
+        if created is not None:
+            for descriptor in (iso.pvd, iso.joliet_vd):
+                descriptor.volume_creation_date = _volume_date(created)
+                descriptor.volume_modification_date = _volume_date(created)
         _add_folder(iso, folder, "", "")
         partial.unlink(missing_ok=True)
         iso.write(str(partial))
@@ -133,6 +156,9 @@ class ImageLayout:
 
     sectors: int
     files: tuple[ImageFile, ...]
+    folders: int = (
+        0  # the folders under the root (what the CDJ counts: the root is not)
+    )
 
     @property
     def file_count(self) -> int:
@@ -192,4 +218,21 @@ def image_layout(image: Path, folder: Path) -> ImageLayout:
             iso.close()
         except PyCdlibException:
             pass
-    return ImageLayout(image.stat().st_size // SECTOR, tuple(files))
+    return ImageLayout(image.stat().st_size // SECTOR, tuple(files), len(top_dirs))
+
+
+def joliet_descriptor(image: Path) -> bytes:
+    """The image's Joliet volume descriptor (a 2048-byte sector), which the CDJ reads its disc ID from.
+    Raises `IsoError` if the image has none."""
+    try:
+        with image.open("rb") as f:
+            for sector in range(16, 32):
+                f.seek(sector * SECTOR)
+                block = f.read(SECTOR)
+                if len(block) < SECTOR or block[1:6] != b"CD001" or block[0] == 255:
+                    break
+                if block[0] == 2:
+                    return block
+    except OSError as exc:
+        raise IsoError(f"The disc image couldn't be read: {exc}") from exc
+    raise IsoError("The disc image has no Joliet volume descriptor.")

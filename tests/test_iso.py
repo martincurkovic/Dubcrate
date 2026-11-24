@@ -284,3 +284,79 @@ def test_an_image_that_cannot_be_made_is_said_before_touching_the_drive(bundle, 
             DataDisc("V", disc_folder(tmp_path)), BurnOptions(device="/dev/sr0"), print
         )
     assert not log.exists()
+
+
+def test_the_creation_date_can_be_pinned_and_it_makes_the_same_cdj_id(tmp_path):
+    from datetime import datetime, timedelta, timezone
+
+    from dubcrate import cdj_card_mp3 as m3
+
+    folder = tmp_path / "V"
+    (folder / "A").mkdir(parents=True)
+    (folder / "A" / "x.mp3").write_bytes(b"x" * 5000)
+    (folder / "y.mp3").write_bytes(b"y" * 3000)
+    when = datetime(2026, 11, 23, 19, 47, 51, tzinfo=timezone(timedelta(hours=11)))
+    ids = []
+    for name in ("one", "two"):  # two images made at different moments, one date
+        image = build_iso(folder, "MP3 Linux Test", tmp_path / f"{name}.iso", when)
+        svd = iso.joliet_descriptor(image)
+        assert svd[0] == 2 and svd[813:830] == b"2026112319475100,"
+        pvd = image.read_bytes()[16 * 2048 : 17 * 2048]
+        assert pvd[0] == 1 and pvd[813:830] == b"2026112319475100,"
+        layout = iso.image_layout(image, folder)
+        assert (layout.file_count, layout.folders) == (2, 1)
+        ids.append(
+            m3.Mp3DiscId.made_from(
+                svd,
+                file_count=layout.file_count,
+                folder_count=layout.folders,
+                last_file_start=layout.last_file_start,
+            )
+        )
+    assert ids[0] == ids[1] and ids[0].raw[4:8].hex() == "338745e7"
+    later = build_iso(
+        folder, "MP3 Linux Test", tmp_path / "later.iso", when + timedelta(seconds=1)
+    )
+    other = m3.Mp3DiscId.made_from(
+        iso.joliet_descriptor(later), file_count=2, folder_count=1, last_file_start=0
+    )
+    assert other.raw[4:8] != ids[0].raw[4:8]
+
+
+def test_without_a_date_the_image_is_made_now_and_a_missing_descriptor_is_an_error(tmp_path):  # fmt: skip
+    folder = tmp_path / "V"
+    folder.mkdir()
+    (folder / "y.mp3").write_bytes(b"y")
+    image = build_iso(folder, "V", tmp_path / "v.iso")
+    assert iso.joliet_descriptor(image)[813:817].isdigit()
+    bare = tmp_path / "bare.iso"
+    bare.write_bytes(bytes(40 * 2048))
+    with pytest.raises(IsoError):
+        iso.joliet_descriptor(bare)
+
+
+@posix
+def test_a_burn_makes_the_image_with_a_date_and_says_what_it_looked_like(bundle, tmp_path):  # fmt: skip
+    from dubcrate.build import image_record
+
+    stand_in(bundle, "cdrdao", 'echo "Writing finished successfully."\n')
+    folder = tmp_path / "SIMPLE"
+    folder.mkdir()
+    (folder / "01 A.mp3").write_bytes(b"a" * 4000)
+    disc = DataDisc("SIMPLE", folder)
+    CdrdaoBurner().burn_data(disc, BurnOptions(device="/dev/sr0", eject=False), print)
+    assert disc.created is not None and disc.layout is not None
+    record = image_record(disc)
+    assert (record.label, record.file_count, record.folders) == ("SIMPLE", 1, 0)
+    assert record.sectors == disc.layout.sectors and record.created.startswith(
+        str(disc.created.year)
+    )
+    # a disc with a date already (staged earlier) keeps it
+    fixed = disc.created.replace(year=2020)
+    again = DataDisc("SIMPLE", folder, created=fixed)
+    CdrdaoBurner().burn_data(again, BurnOptions(device="/dev/sr0", eject=False), print)
+    assert again.created == fixed
+    # a folder in a folder: written all the same, but not recorded (how the player numbers it is not known)
+    nested = DataDisc("MIXED BAG", disc_folder(tmp_path))
+    CdrdaoBurner().burn_data(nested, BurnOptions(device="/dev/sr0", eject=False), print)
+    assert nested.layout is None and image_record(nested) is None

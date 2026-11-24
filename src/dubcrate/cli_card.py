@@ -199,11 +199,12 @@ def _sync_audio(lib: Library, args: argparse.Namespace) -> int:
 
 
 def _sync_mp3(lib: Library, disc_ids: list[int], args: argparse.Namespace) -> int:
-    """MP3 discs: waveforms and cues onto the card (dry run unless --yes). The disc must already have an entry on
-    the card (the player makes it when it first plays the disc). **Not tried on a player yet.**"""
+    """MP3 discs: waveforms and cues onto the card (dry run unless --yes). The disc needs an entry on the card: the
+    player makes it when it first plays the disc, or we make it for a disc Dubcrate burned (`Mp3DiscId.made_from`).
+    **Not tried on a player yet.**"""
     card = Path(args.card).expanduser()
     try:
-        index, files = m3.read_mp3_card(card)
+        index, files = m3.read_mp3_card(card, missing_ok=True)
     except m3.Mp3CardError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1

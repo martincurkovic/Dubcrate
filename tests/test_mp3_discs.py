@@ -390,6 +390,7 @@ def test_an_older_library_gets_the_new_columns(tmp_path):
         library._conn.execute("DROP TABLE card_baseline")
         library._conn.execute("DROP TABLE memory_loop_removed")  # (schema 16)
         library._conn.execute("DROP TABLE disc_toc")  # (schemas 17 and 18)
+        library._conn.execute("DROP TABLE disc_image")  # (schema 19)
         library._conn.execute("INSERT INTO disc (name, capacity_sectors, created_at, updated_at) VALUES ('Old', 1, '', '')")  # fmt: skip
         library._conn.execute("PRAGMA user_version = 6")
         library._conn.commit()

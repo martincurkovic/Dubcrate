@@ -5,6 +5,7 @@ import sys
 import wave
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
+from datetime import datetime
 from pathlib import Path
 
 import numpy as np
@@ -16,7 +17,7 @@ from dubcrate.cancel import CancelToken
 from dubcrate.cd import MAX_TRACKS, disc_used_sectors, format_msf
 from dubcrate.library.lengths import measure_tracks
 from dubcrate.library.levels import ensure_loudness
-from dubcrate.library.models import DiscKind
+from dubcrate.library.models import DiscImage, DiscKind
 from dubcrate.library.store import Library
 from dubcrate.loudness import (
     PEAK_CEILING_DB,
@@ -333,6 +334,22 @@ def path_too_long_message(path: Path) -> str:
     )
 
 
+def image_record(disc: DataDisc) -> DiscImage | None:
+    """What to keep of the image an MP3 disc was just burned from (`Library.set_disc_image`), or None when the
+    burner didn't say (it has no layout: DiscRecording makes its own image, whose date we don't control)."""
+    if disc.layout is None or disc.created is None:
+        return None
+    layout = disc.layout
+    return DiscImage(
+        disc.created.isoformat(timespec="seconds"),
+        disc.title,
+        layout.file_count,
+        layout.folders,
+        layout.last_file_start,
+        layout.sectors,
+    )
+
+
 def _render_mp3_plan(
     plan: BurnPlan, workdir: Path, say: Progress, cancel: CancelToken | None = None
 ) -> Rendered:
@@ -350,7 +367,9 @@ def _render_mp3_plan(
     if too_long := path_too_long([*where.values(), *destinations]):
         raise BuildError(path_too_long_message(too_long))
     folder.mkdir(parents=True, exist_ok=True)
-    data = DataDisc(title=folder.name, folder=folder)
+    data = DataDisc(
+        title=folder.name, folder=folder, created=datetime.now().astimezone()
+    )
     for d in plan.dirs:
         where[d.id].mkdir(
             exist_ok=True

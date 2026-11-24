@@ -256,3 +256,18 @@ class TrackUsage:
     """Where a track is already used: the discs it is on."""
 
     discs: tuple[DiscRef, ...] = ()
+
+
+@dataclass(frozen=True)
+class DiscImage:
+    """The image an MP3 disc was burned from, as far as the CDJ's disc ID goes (`cdj_card_mp3.Mp3DiscId`): the
+    volume's creation date (ISO 8601 with its zone), the label, and the numbers the ID has in it. With these Sync
+    can make the ID the player will make, before the player has seen the disc. An edited disc no longer matches
+    (`card_mp3` compares what it lays out now) and the record is then not used."""
+
+    created: str
+    label: str
+    file_count: int
+    folders: int
+    last_file_start: int
+    sectors: int

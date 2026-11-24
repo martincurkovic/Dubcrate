@@ -490,6 +490,11 @@ class Mp3Index:
             out += entry.name.encode("ascii").ljust(8, b"\0")[:8] + entry.disc_id.raw
         return bytes(out)
 
+    def next_name(self) -> str:
+        """The name for a new entry's file: one past the highest number there, as the player counts (`MPJ00002`)."""
+        numbers = [int(e.name[3:]) for e in self.entries if e.name[3:].isdigit()]
+        return f"MPJ{max(numbers, default=0) + 1:05d}"
+
     def find(
         self, file_count: int, last_file_start: int, image_sectors: int
     ) -> list[Mp3IndexEntry]:
@@ -523,9 +528,17 @@ def mp3_disc_count(path: Path) -> int:
         return 0
 
 
-def read_mp3_card(path: Path) -> tuple[Mp3Index, dict[str, Mp3TrackFile | None]]:
-    """The MP3 disc index and each disc's file (None for an entry with no file yet). Read only."""
-    folder = mpj_dir(path)
+def read_mp3_card(
+    path: Path, missing_ok: bool = False
+) -> tuple[Mp3Index, dict[str, Mp3TrackFile | None]]:
+    """The MP3 disc index and each disc's file (None for an entry with no file yet). Read only. With `missing_ok`
+    a card that has no MP3 disc files at all gives an empty index (for making the first entry)."""
+    try:
+        folder = mpj_dir(path)
+    except Mp3CardError:
+        if missing_ok:
+            return Mp3Index(), {}
+        raise
     try:
         index = Mp3Index.parse((folder / "MPJINDX0.PDJ").read_bytes())
         files: dict[str, Mp3TrackFile | None] = {}

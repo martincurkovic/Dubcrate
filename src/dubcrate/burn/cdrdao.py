@@ -4,11 +4,13 @@ cdrdao writes in disc-at-once mode from a TOC file, which gives gapless audio
 and CD-TEXT. We generate the TOC and let cdrdao do the burning.
 """
 
+import logging
 import os
 import re
 import subprocess
 import sys
 import tempfile
+from datetime import datetime
 from pathlib import Path
 
 from dubcrate.burn.base import (
@@ -26,8 +28,10 @@ from dubcrate.cd import (
     cdtext_toc_escape,
     format_msf,
 )
-from dubcrate.iso import IsoError, build_iso
+from dubcrate.iso import IsoError, build_iso, image_layout
 from dubcrate.tools import find_tool
+
+log = logging.getLogger(__name__)
 
 # The CD standard wants every track to be at least 4 seconds long, and cdrdao refuses a shorter one
 # ("Use option --force to ignore the warnings"), so a burn says so before it starts.
@@ -323,10 +327,19 @@ class CdrdaoBurner:
         device = self._device(options.device)
         with tempfile.TemporaryDirectory(prefix="dubcrate-") as tmp:
             progress(f"making the disc image of “{disc.title}”…")
+            disc.created = disc.created or datetime.now().astimezone()
             try:
-                iso = build_iso(disc.folder, disc.title, Path(tmp) / "disc.iso")
+                iso = build_iso(
+                    disc.folder, disc.title, Path(tmp) / "disc.iso", disc.created
+                )
             except IsoError as exc:
                 raise BurnError(str(exc)) from exc
+            try:
+                disc.layout = image_layout(iso, disc.folder)
+            except (
+                IsoError
+            ) as exc:  # (a folder in a folder: written all the same, just not recorded)
+                log.info("the image's layout was not read: %s", exc)
             toc = Path(tmp) / "disc.toc"
             toc.write_text(build_data_toc(iso), encoding="ascii")
             self._write(exe, toc, device, options, progress)

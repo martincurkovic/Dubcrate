@@ -40,6 +40,7 @@ from dubcrate.build import (
     apply_levels,
     disc_problems,
     format_amount,
+    image_record,
     media_problems,
     plan_burn,
     remember_rendered,
@@ -64,7 +65,7 @@ from dubcrate.drive_toc import can_read_toc, disc_state
 from dubcrate.export import ExportError, ExportResult, export_plan
 from dubcrate.library import Library
 from dubcrate.library.levels import measure_loudness, needs_loudness, store_loudness
-from dubcrate.library.models import DiscKind
+from dubcrate.library.models import DiscImage, DiscKind
 from dubcrate.render import RenderError
 
 from .tasks import TaskError, run_async
@@ -733,8 +734,10 @@ class BurnDialog(QDialog):
                 # the point of no return: a Cancel from here on does nothing (writing can't be stopped)
                 cancel.commit()
                 self._writing.emit()
+                image = None
                 if isinstance(rendered.disc, DataDisc):
                     burner.burn_data(rendered.disc, options, say)
+                    image = image_record(rendered.disc)  # (None when not made by us)
                 else:
                     burner.burn(rendered.disc, options, say)
                     if check:  # (never raises: a good burn stays a good burn)
@@ -746,7 +749,12 @@ class BurnDialog(QDialog):
                                 (planned, actual)
                             ),
                         )
-            return rendered.lengths, rendered.waveforms, (read_back or [None])[0]
+            return (
+                rendered.lengths,
+                rendered.waveforms,
+                (read_back or [None])[0],
+                image,
+            )
 
         run_async(
             work,
@@ -790,6 +798,7 @@ class BurnDialog(QDialog):
         lengths: dict[int, int],
         waveforms: dict[int, list[int]] | None = None,
         read_back: tuple | None = None,
+        image: DiscImage | None = None,
     ) -> None:
         # what the render found out stays: the exact lengths, and the waveforms Sync would write
         remember_rendered(self._lib, lengths, waveforms or {})
@@ -798,6 +807,10 @@ class BurnDialog(QDialog):
         self._lib.mark_burned(
             self._disc_id
         )  # a note on the disc: it stays fully editable
+        if (
+            image is not None
+        ):  # the card knows an MP3 disc by an ID made from its image's date and numbers
+            self._lib.set_disc_image(self._disc_id, image)
         if read_back is not None:  # the card knows the disc by the TOC the drive made
             self._lib.add_disc_toc(self._disc_id, *read_back, source="burn")
         self._finished = True

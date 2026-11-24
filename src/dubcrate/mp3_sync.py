@@ -4,9 +4,10 @@ The card files are `cdj_card_mp3`'s; the plan is the same as an audio disc's (`c
 card is kept**, ours is added after it. A track with a waveform record (the player's, ours, or half filled) is
 never given another; a cue within `DUPLICATE_FRAMES` of one there, memory cue or hot cue, is the same cue;
 hot cues are never written; at most 100 cues and loops a disc. A disc is found on the card by the three
-fields of its ID that are understood (`Mp3DiscId`), so **it must already have an entry**, which the player
-makes when it first plays the disc: Dubcrate can't make an ID. Those three numbers come from the image the
-disc's files make (`iso.image_layout`), so they also check that the files here are the ones that were burned.
+fields of its ID that are understood (`Mp3DiscId`), so it needs an entry: the player makes one when it first loads
+the disc, and Dubcrate makes one for a disc it burned itself (`Mp3DiscInput.made_id`, the ID the firmware's recipe gives
+for the burned image: `Mp3DiscId.made_from`). Those three numbers come from the image the disc's files make
+(`iso.image_layout`), so they also check that the files here are the ones that were burned.
 
 `dev_docs/card-sync.md`, "MP3 discs: the v1 plan". **No file written this way has been loaded by a player yet.**
 """
@@ -51,6 +52,10 @@ class Mp3DiscInput:
     image_sectors: int
     tracks: list[Mp3TrackInput]
     notes: list[str] = field(default_factory=list)  # what could not be placed, in words
+    # The ID the player will make for this disc, made from the image it was burned from (`Mp3DiscId.made_from`):
+    # None when that isn't known (burned elsewhere, edited since, or no record). With it a disc the card has no
+    # entry for yet can be given one.
+    made_id: m3.Mp3DiscId | None = None
 
 
 class Mp3Status(StrEnum):
@@ -65,6 +70,7 @@ class Mp3Plan:
     status: Mp3Status
     message: str = ""
     entry: m3.Mp3IndexEntry | None = None
+    new_entry: bool = False  # `entry` is one we make (the player has not seen the disc), not one on the card
     file: m3.Mp3TrackFile | None = (
         None  # the whole new file (what was there, then ours)
     )
@@ -111,11 +117,18 @@ def plan_mp3_disc(
 ) -> Mp3Plan:
     """What a sync would write for this disc: the card's file for it with ours added, or why not."""
     found = index.find(disc.file_count, disc.last_file_start, disc.image_sectors)
+    new_entry = False
+    if not found and disc.made_id is not None:
+        # the player hasn't seen this disc, but the image it was burned from says what ID it will make: make the
+        # entry (the player finds the disc by that ID when it is put in)
+        found = [m3.Mp3IndexEntry(index.next_name(), disc.made_id)]
+        new_entry = True
     if not found:
         return Mp3Plan(
             Mp3Status.NO_ENTRY,
             "The player doesn't know this disc yet (or the files here are not the ones burned: its size and last "
-            "file are not on the card). Play the disc in the player once, so it makes its entry, then sync again.",
+            "file are not on the card). Play the disc in the player once, so it makes its entry, then sync again "
+            "(a disc burned by Dubcrate with cdrdao, on Linux or Windows, doesn't need that).",
             notes=list(disc.notes),
         )
     if len(found) > 1:
@@ -134,6 +147,7 @@ def plan_mp3_disc(
     plan = Mp3Plan(
         Mp3Status.IN_SYNC,
         entry=entry,
+        new_entry=new_entry,
         file=work,
         had_file=existing is not None,
         notes=list(disc.notes),
@@ -238,6 +252,8 @@ def describe_plan(plan: Mp3Plan, name: str = "") -> list[str]:
     if plan.status in (Mp3Status.NO_ENTRY, Mp3Status.AMBIGUOUS):
         return [head + plan.message, *plan.notes]
     where = plan.entry.file_name if plan.entry else ""
+    if plan.new_entry:
+        where += " (a new entry: the player hasn't seen this disc)"
     bits = []
     if plan.waves_added:
         bits.append(
@@ -293,7 +309,10 @@ class Mp3Outcome:
 
 def backup_mp3_card(path: Path, into: Path) -> Path:
     """Copy a card's `PIONEER/MPJ` files (a few kilobytes) to a new `card-DATE-TIME-mpj` folder in `into`."""
-    folder = m3.mpj_dir(path)
+    try:
+        folder = m3.mpj_dir(path)
+    except m3.Mp3CardError:  # (a card with no MP3 files yet: there is nothing to keep, but the folder says when)
+        folder = None
     stamp = time.strftime("%Y%m%d-%H%M%S")
     destination = into / f"card-{stamp}-mpj"
     n = 1
@@ -301,9 +320,25 @@ def backup_mp3_card(path: Path, into: Path) -> Path:
         n += 1
         destination = into / f"card-{stamp}-mpj-{n}"
     destination.mkdir(parents=True)
-    for file in sorted(folder.glob("*.PDJ")):
+    for file in sorted(folder.glob("*.PDJ")) if folder else ():
         shutil.copy2(file, destination / file.name)
     return destination
+
+
+def _make_mpj_dir(card: Path) -> Path:
+    """The card's `PIONEER/MPJ` folder, made (with `PIONEER`) if the player has never made it. `card` is the card's
+    root or its `PIONEER` folder. **Not tried on a player: a card with no MP3 files yet is given the folder by us.**"""
+    card = Path(card)
+    try:
+        return m3.mpj_dir(card)
+    except m3.Mp3CardError:
+        pass
+    root = card.parent if card.name == "PIONEER" else card
+    folder = root / "PIONEER" / "MPJ"
+    if not (root / "PIONEER").is_dir():
+        raise m3.Mp3CardError(f"{card} is not a CDJ card (no PIONEER folder).")
+    folder.mkdir(exist_ok=True)
+    return folder
 
 
 def apply_mp3_plan(card: Path, plan: Mp3Plan, backup_dir: Path) -> Mp3Outcome:
@@ -312,8 +347,24 @@ def apply_mp3_plan(card: Path, plan: Mp3Plan, backup_dir: Path) -> Mp3Outcome:
     changed. **The card must be ejected through the system before it is pulled.**"""
     if not plan.changed or plan.entry is None or plan.file is None:
         return Mp3Outcome(False, name=plan.entry.name if plan.entry else "")
-    folder = m3.mpj_dir(card)
     backup = backup_mp3_card(card, backup_dir)
+    index = None
+    if plan.new_entry:
+        folder = _make_mpj_dir(card)
+        index_file = folder / "MPJINDX0.PDJ"
+        index = (
+            m3.Mp3Index.parse(index_file.read_bytes())
+            if index_file.is_file()
+            else m3.Mp3Index()
+        )
+        if any(e.disc_id.raw == plan.entry.disc_id.raw for e in index.entries):
+            raise m3.Mp3CardError(
+                "The card already has an entry for this disc (it changed since the plan was made): look again."
+            )
+        # (several new discs are planned against the same index, so the name is taken now, from the card as it is)
+        plan.entry = m3.Mp3IndexEntry(index.next_name(), plan.entry.disc_id)
+    else:
+        folder = m3.mpj_dir(card)
     data = plan.file.to_bytes()
     target = folder / plan.entry.file_name
     cc.replace_file(target, data)
@@ -322,6 +373,13 @@ def apply_mp3_plan(card: Path, plan: Mp3Plan, backup_dir: Path) -> Mp3Outcome:
     )  # (it reads back as a file the player can read)
     if again.to_bytes() != data:
         raise m3.Mp3CardError(f"{target.name} did not read back as it was written.")
+    if (
+        index is not None
+    ):  # (the index last, as for an audio disc: the entry points at a file that is there)
+        index.entries.append(plan.entry)
+        cc.replace_file(index_file, index.to_bytes())
+        if m3.Mp3Index.parse(index_file.read_bytes()).entries[-1] != plan.entry:
+            raise m3.Mp3CardError("The index did not read back as it was written.")
     if hasattr(os, "sync"):
         os.sync()
     return Mp3Outcome(

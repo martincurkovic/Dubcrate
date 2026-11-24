@@ -564,3 +564,221 @@ def test_a_card_file_that_is_too_short_for_its_own_count_or_unreadable_is_a_plai
     ).unlink()  # (and a card pulled before the index could be read)
     with pytest.raises(m3.Mp3CardError, match="No MP3 disc files"):
         m3.read_mp3_card(card)
+
+
+# -- a disc the player has not seen: its entry is made (from the image it was burned from) -----------------
+
+
+def made(seed: int, files=15, last=88000, sectors=90000) -> m3.Mp3DiscId:
+    """An ID as `Mp3DiscId.made_from` lays one out (what differs between discs is `seed`, standing for the label
+    and the date), with the numbers the card is searched by in their places."""
+    return m3.Mp3DiscId(
+        seed.to_bytes(2, "big")
+        + ((3 << 9) | files).to_bytes(2, "big")
+        + (0x338745E7 + seed).to_bytes(4, "big")
+        + last.to_bytes(3, "big")
+        + sectors.to_bytes(3, "big")
+        + b"\x00\x00"
+    )
+
+
+OTHER, THIRD = made(1), made(2)
+
+
+def unseen(made=OTHER, **kw):
+    d = disc(sectors=90000, last=88000, **kw)
+    d.made_id = made
+    return d
+
+
+def test_a_disc_with_a_made_id_gets_a_new_entry_after_the_cards_with_the_next_name():
+    p = ms.plan_mp3_disc(unseen(), index(), {"MPJ00001": card_file()})
+    assert p.status is ms.Mp3Status.READY and p.new_entry and p.changed
+    assert p.entry.name == "MPJ00002" and p.entry.disc_id == OTHER
+    assert len(p.file.coarse) == 15 and not p.had_file
+    assert "a new entry" in " ".join(ms.describe_plan(p))
+
+
+def test_a_made_id_is_never_used_for_a_disc_the_card_already_has():
+    p = ms.plan_mp3_disc(disc(), index(), {"MPJ00001": card_file()})
+    assert (
+        not p.new_entry and p.entry.name == "MPJ00001"
+    )  # (found by its three numbers)
+
+
+def test_without_a_made_id_the_old_message_says_to_play_it_and_that_a_burn_here_needs_no_play():
+    d = unseen(made=None)
+    p = ms.plan_mp3_disc(d, index(), {})
+    assert p.status is ms.Mp3Status.NO_ENTRY and "doesn't need that" in p.message
+
+
+def test_a_new_entry_is_written_file_first_then_the_index_and_reads_back(tmp_path):
+    card, mpj = make_card(tmp_path)
+    p = ms.plan_mp3_disc(unseen(), *m3.read_mp3_card(card))
+    out = ms.apply_mp3_plan(card, p, tmp_path / "b")
+    assert out.wrote and out.name == "MPJ00002"
+    again = m3.Mp3Index.parse((mpj / "MPJINDX0.PDJ").read_bytes())
+    assert [e.name for e in again.entries] == ["MPJ00001", "MPJ00002"]
+    assert (
+        again.entries[1].disc_id == OTHER
+        and again.entries[0].disc_id == index().entries[0].disc_id
+    )
+    assert (
+        mpj / "MPJ00001.PDJ"
+    ).read_bytes() == LAST.read_bytes()  # the other disc is untouched
+    assert m3.Mp3TrackFile.parse((mpj / "MPJ00002.PDJ").read_bytes()).coarse
+    assert (out.backup / "MPJINDX0.PDJ").read_bytes() == (
+        DATA / "MPJINDX0.PDJ"
+    ).read_bytes()
+    # and the disc is now found on the card by its numbers: a second sync adds nothing
+    index2, files2 = m3.read_mp3_card(card)
+    second = ms.plan_mp3_disc(unseen(), index2, files2)
+    assert not second.new_entry and second.entry.name == "MPJ00002"
+    assert second.status is ms.Mp3Status.IN_SYNC
+
+
+def test_two_new_discs_planned_together_get_different_names(tmp_path):
+    card, mpj = make_card(tmp_path)
+    idx, files = m3.read_mp3_card(card)
+    first = ms.plan_mp3_disc(unseen(), idx, files)
+    second = ms.plan_mp3_disc(unseen(made=THIRD), idx, files)
+    assert (
+        first.entry.name == second.entry.name == "MPJ00002"
+    )  # (planned against the same index)
+    ms.apply_mp3_plan(card, first, tmp_path / "b")
+    ms.apply_mp3_plan(card, second, tmp_path / "b")
+    names = [
+        e.name for e in m3.Mp3Index.parse((mpj / "MPJINDX0.PDJ").read_bytes()).entries
+    ]
+    assert names == ["MPJ00001", "MPJ00002", "MPJ00003"]
+    assert (mpj / "MPJ00003.PDJ").is_file()
+
+
+def test_an_entry_the_card_got_meanwhile_is_not_made_twice(tmp_path):
+    card, _mpj = make_card(tmp_path)
+    p = ms.plan_mp3_disc(unseen(), *m3.read_mp3_card(card))
+    ms.apply_mp3_plan(card, p, tmp_path / "b")
+    again = ms.plan_mp3_disc(
+        unseen(), *m3.read_mp3_card(card)
+    )  # (planned before, applied after)
+    stale = ms.plan_mp3_disc(unseen(), index(), {"MPJ00001": card_file()})
+    with pytest.raises(m3.Mp3CardError):
+        ms.apply_mp3_plan(card, stale, tmp_path / "b")
+    assert not again.new_entry  # (planned now, the card has it: found by its numbers)
+
+
+def test_a_card_with_no_mp3_files_is_given_the_folder_the_index_and_the_file(tmp_path):
+    card = tmp_path / "card"
+    (card / "PIONEER" / "CDJ").mkdir(parents=True)
+    idx, files = m3.read_mp3_card(card, missing_ok=True)
+    assert idx.entries == [] and files == {}
+    p = ms.plan_mp3_disc(unseen(), idx, files)
+    assert p.entry.name == "MPJ00001"
+    out = ms.apply_mp3_plan(card, p, tmp_path / "b")
+    assert out.wrote and out.backup.is_dir()
+    mpj = card / "PIONEER" / "MPJ"
+    parsed = m3.Mp3Index.parse((mpj / "MPJINDX0.PDJ").read_bytes())
+    assert [(e.name, e.disc_id) for e in parsed.entries] == [("MPJ00001", OTHER)]
+    assert (mpj / "MPJ00001.PDJ").is_file()
+    with pytest.raises(m3.Mp3CardError):
+        m3.read_mp3_card(
+            tmp_path / "nowhere"
+        )  # (without missing_ok it is still an error)
+
+
+def test_a_folder_that_is_not_a_card_is_refused_not_made(tmp_path):
+    (tmp_path / "x").mkdir()
+    p = ms.plan_mp3_disc(unseen(), m3.Mp3Index(), {})
+    with pytest.raises(m3.Mp3CardError):
+        ms.apply_mp3_plan(tmp_path / "x", p, tmp_path / "b")
+    assert not (tmp_path / "x" / "PIONEER").exists()
+
+
+# -- keeping the image a disc was burned from, and the ID made from it ---------------------------------
+
+
+def test_the_burned_image_is_kept_per_disc_and_goes_with_the_disc(tmp_path):
+    from dubcrate.library.models import DiscImage
+
+    lib = Library.open(tmp_path / "l.db")
+    one = lib.create_disc("One", kind="mp3")
+    image = DiscImage("2026-11-23T19:47:51+11:00", "ONE", 15, 3, 80245, 84029)
+    assert lib.disc_image(one) is None
+    lib.set_disc_image(one, image)
+    assert lib.disc_image(one) == image
+    newer = DiscImage("2026-11-24T09:00:00+11:00", "ONE", 16, 3, 80300, 84100)
+    lib.set_disc_image(one, newer)  # a new burn replaces it
+    assert lib.disc_image(one) == newer
+    lib.delete_disc(one)
+    assert lib.disc_image(one) is None
+
+
+def test_the_ids_of_a_disc_as_burned_and_of_one_edited_since(tmp_path):
+    from datetime import datetime
+
+    from dubcrate.library.models import DiscImage
+
+    folder = tmp_path / "V"
+    (folder / "A").mkdir(parents=True)
+    (folder / "A" / "x.mp3").write_bytes(b"x" * 5000)
+    (folder / "y.mp3").write_bytes(b"y" * 3000)
+    created = datetime.fromisoformat("2026-11-23T19:47:51+11:00")
+    image = iso.build_iso(folder, "V", tmp_path / "d.iso", created)
+    layout = iso.image_layout(image, folder)
+    recorded = DiscImage(
+        created.isoformat(),
+        "V",
+        layout.file_count,
+        layout.folders,
+        layout.last_file_start,
+        layout.sectors,
+    )
+    got, why = card_mp3._made_id(recorded, layout, image, "V")
+    assert why == "" and got is not None and got.raw[4:8].hex() == "338745e7"
+    assert got.file_count == 2 and got.last_file_start == layout.last_file_start
+    # the same disc after an edit (a file added, another label): not the burned one, so no ID is made
+    for changed in (
+        DiscImage(
+            created.isoformat(), "V", 3, 1, layout.last_file_start, layout.sectors
+        ),
+        DiscImage(
+            created.isoformat(), "OTHER", 2, 1, layout.last_file_start, layout.sectors
+        ),
+        DiscImage(
+            created.isoformat(), "V", 2, 1, layout.last_file_start, layout.sectors + 1
+        ),
+    ):
+        none, why = card_mp3._made_id(changed, layout, image, "V")
+        assert none is None and "not as it was burned" in why
+
+
+def test_a_row_with_a_record_can_be_ticked_without_the_players_files_on_the_card(
+    tmp_path,
+):
+    from dubcrate.library.models import DiscImage
+
+    lib = Library.open(tmp_path / "l.db")
+    disc_id = lib.create_disc("Mine", kind="mp3")
+    other = lib.create_disc("Other", kind="mp3")
+    lib.set_disc_image(
+        disc_id, DiscImage("2026-11-23T19:47:51+11:00", "MINE", 1, 0, 1, 2)
+    )
+    # (a disc with no track is not listed: give both one)
+    src = tmp_path / "m.mp3"
+    src.write_bytes(b"x" * 100)
+    from dubcrate.library.models import TrackRecord
+
+    lib.replace_source(
+        "folder",
+        str(tmp_path),
+        "F",
+        [TrackRecord(ext_id="1", path=str(src), title="T", file_size=100)],
+    )
+    track = lib.tracks(sort="path")[0]
+    lib.add_to_disc(disc_id, [track.id])
+    lib.add_to_disc(other, [track.id])
+    rows = {r.disc.id: r for r in card_mp3.survey_mp3_discs(lib, {}, (True, False))}
+    assert rows[disc_id].writable and rows[disc_id].can_make
+    assert not rows[other].writable and "Play an MP3 disc" in rows[other].status
+    assert "made if the player hasn't seen it" in " ".join(rows[disc_id].detail())
+    assert not card_mp3.survey_mp3_discs(lib, {}, (False, False))[0].writable  # no card

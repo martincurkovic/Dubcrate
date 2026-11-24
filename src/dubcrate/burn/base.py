@@ -2,10 +2,14 @@
 
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from datetime import datetime
 from pathlib import Path
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
 
 from dubcrate.cd import DISC_80_SECTORS, disc_used_sectors
+
+if TYPE_CHECKING:
+    from dubcrate.iso import ImageLayout
 
 
 class BurnError(RuntimeError):
@@ -51,6 +55,12 @@ class DataDisc:
     folder: Path
     files: list[Path] = field(default_factory=list)
     sectors: int = 0
+    # The image's creation date, which the CDJ puts in the disc's ID: set when the disc is staged, used by the
+    # burner that makes the image, and kept (`Library.set_disc_image`) so Sync can make the same ID later.
+    created: datetime | None = None
+    # What the burner's image looked like, filled in by a burner that makes it with `build_iso` (None for one that
+    # doesn't, such as DiscRecording, whose image has dates we don't control).
+    layout: "ImageLayout | None" = None
 
 
 @dataclass(frozen=True)

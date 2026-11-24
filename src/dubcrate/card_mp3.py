@@ -19,6 +19,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field, replace
+from datetime import datetime
 from pathlib import Path
 
 from dubcrate import cdj_card_mp3 as m3
@@ -31,7 +32,7 @@ from dubcrate.cancel import CancelToken
 from dubcrate.card_discs import RekordboxCues
 from dubcrate.card_sync import map_cues
 from dubcrate.library import Library
-from dubcrate.library.models import DiscSummary
+from dubcrate.library.models import DiscImage, DiscSummary
 from dubcrate.mp3_sync import Mp3DiscInput, Mp3TrackInput
 
 log = logging.getLogger(__name__)
@@ -53,6 +54,9 @@ class Mp3Request:
     waves: dict[int, list[int] | None] = field(
         default_factory=dict
     )  # track id -> the cached waveform
+    # The image the disc was burned from (`Library.disc_image`), or None: with it the disc's ID can be made, so the
+    # card needs no entry for it yet.
+    image: DiscImage | None = None
 
     @property
     def name(self) -> str:
@@ -84,7 +88,7 @@ def collect_request(
             "Folders inside folders aren't supported on the card yet: how the player numbers them isn't known."
         )
     rekordbox = rekordbox or RekordboxCues(lib)
-    request = Mp3Request(disc_id, plan)
+    request = Mp3Request(disc_id, plan, image=lib.disc_image(disc_id))
     by_id = {t.id: t for t in lib.tracks_by_ids(t.track_id for t in plan.tracks)}
     for planned in plan.tracks:
         track = by_id[planned.track_id]
@@ -137,7 +141,10 @@ def prepare_disc(
         if not isinstance(data, DataDisc):  # pragma: no cover
             raise Mp3SyncError("That is not an MP3 disc.")
         say("making the disc image to find where its files are…")
-        image = iso.build_iso(data.folder, data.title, workdir / "disc.iso")
+        recorded = request.image
+        # (the date it was burned with, so the image is the burned one's twin and makes the same ID)
+        created = datetime.fromisoformat(recorded.created) if recorded else None
+        image = iso.build_iso(data.folder, data.title, workdir / "disc.iso", created)
         layout = iso.image_layout(image, data.folder)
     except BuildError as exc:
         raise Mp3SyncError(str(exc)) from exc
@@ -147,6 +154,10 @@ def prepare_disc(
     disc = Mp3DiscInput(
         request.name, layout.file_count, layout.last_file_start, layout.sectors, []
     )
+    if recorded is not None:
+        disc.made_id, why = _made_id(recorded, layout, image, data.title)
+        if why:
+            disc.notes.append(why)
     analysed: dict[int, list[int]] = {}
     for done, (planned, path) in enumerate(
         zip(request.plan.tracks, data.files, strict=True), 1
@@ -184,6 +195,46 @@ def prepare_disc(
     return Prepared(disc, analysed)
 
 
+def _made_id(
+    recorded: DiscImage, layout: iso.ImageLayout, image: Path, label: str
+) -> tuple[m3.Mp3DiscId | None, str]:
+    """(the ID the player makes for the disc, or None, and why not). The image just made has the burned image's
+    date, so its ID is the burned one's, **if the disc is as it was burned**: the label and the numbers the ID has
+    in it must be what was recorded at the burn, else the disc was edited (or rendered differently) since, and an
+    entry made now would be for a disc that doesn't exist."""
+    now = (
+        label,
+        layout.file_count,
+        layout.folders,
+        layout.last_file_start,
+        layout.sectors,
+    )
+    then = (
+        recorded.label,
+        recorded.file_count,
+        recorded.folders,
+        recorded.last_file_start,
+        recorded.sectors,
+    )
+    if now != then:
+        return None, (
+            "The disc is not as it was burned (its files, their order or its name have changed, or it was rendered "
+            "differently), so the player's entry for it can't be made here: play the disc once, then sync."
+        )
+    try:
+        return (
+            m3.Mp3DiscId.made_from(
+                iso.joliet_descriptor(image),
+                file_count=layout.file_count,
+                folder_count=layout.folders,
+                last_file_start=layout.last_file_start,
+            ),
+            "",
+        )
+    except (m3.Mp3CardError, iso.IsoError) as exc:
+        return None, f"The player's ID for the disc couldn't be made: {exc}"
+
+
 @dataclass
 class Mp3DiscRow:
     """An MP3 disc as the Sync tab's list shows it: the same names an audio disc's survey has (`disc`, `status`,
@@ -201,11 +252,16 @@ class Mp3DiscRow:
         False  # ... and it has MP3 disc files (the player has played an MP3 disc)
     )
     last: str = ""
+    # Burned by Dubcrate (a record of the image is kept), so the player's entry can be made before it has seen the disc.
+    can_make: bool = False
 
     @property
     def writable(self) -> bool:
-        """Whether it can be ticked: a card with the player's MP3 files is chosen and nothing rules the disc out."""
-        return not self.problems and self.has_card and self.card_has_mp3
+        """Whether it can be ticked: a card is chosen, nothing rules the disc out, and either the card has the player's
+        MP3 files or the entry can be made."""
+        return (
+            not self.problems and self.has_card and (self.card_has_mp3 or self.can_make)
+        )
 
     @property
     def status(self) -> str:
@@ -213,7 +269,7 @@ class Mp3DiscRow:
             return "Can't sync"
         if not self.has_card:
             return "Choose a card"
-        if not self.card_has_mp3:
+        if not self.card_has_mp3 and not self.can_make:
             return "Play an MP3 disc in the player first"
         return self.last or "MP3 disc: checked when you sync"
 
@@ -221,14 +277,24 @@ class Mp3DiscRow:
         count = tracks if tracks is not None else self.disc.track_count
         out = [self.path, f"{count} track{'s' if count != 1 else ''}, an MP3 disc"]
         out += [f"Can't sync: {p}" for p in self.problems]
-        if not self.problems and self.has_card and not self.card_has_mp3:
+        if (
+            not self.problems
+            and self.has_card
+            and not self.card_has_mp3
+            and not self.can_make
+        ):
             out.append(
                 "The card has no MP3 disc files yet: the player makes them when it first plays an MP3 disc."
             )
         elif not self.problems:
             out.append(
                 "What a sync adds is worked out when you press Sync (the disc's files are made as a burn makes them "
-                "to find where each is). The player must have played this disc once, so the card has an entry for it."
+                "to find where each is). "
+                + (
+                    "Burned here: the card's entry for it is made if the player hasn't seen it yet."
+                    if self.can_make
+                    else "The player must have played this disc once, so the card has an entry for it."
+                )
             )
         return out
 
@@ -258,6 +324,7 @@ def survey_mp3_discs(
                 has_card,
                 card_has_mp3,
                 (last or {}).get(disc.id, ""),
+                lib.disc_image(disc.id) is not None,
             )
         )
     return rows

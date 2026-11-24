@@ -25,6 +25,7 @@ from dubcrate.library.models import (
     DiscDir,
     DiscEntry,
     DiscFolder,
+    DiscImage,
     DiscKind,
     DiscRef,
     DiscSummary,
@@ -392,10 +393,26 @@ INSERT INTO disc_toc (disc_id, planned, actual, source, saved_at)
 DROP TABLE disc_burned_toc
 """
 
+# Schema 19: the image an MP3 disc was burned from (`DiscImage`): the CDJ's ID for the disc has the image's creation
+# date in it, so it is kept to make the same ID again. One per disc (a new burn replaces it).
+_SCHEMA_V19 = """
+CREATE TABLE disc_image (
+    disc_id INTEGER PRIMARY KEY REFERENCES disc(id) ON DELETE CASCADE,
+    created TEXT NOT NULL,
+    label TEXT NOT NULL,
+    file_count INTEGER NOT NULL,
+    folders INTEGER NOT NULL,
+    last_file_start INTEGER NOT NULL,
+    sectors INTEGER NOT NULL,
+    saved_at TEXT NOT NULL
+)
+"""
+
 _MIGRATIONS = (
     _SCHEMA_V1, _SCHEMA_V2, _SCHEMA_V3, _SCHEMA_V4, _SCHEMA_V5, _migrate_to_v6,
     _SCHEMA_V7, _SCHEMA_V8, _SCHEMA_V9, _SCHEMA_V10, _SCHEMA_V11, _SCHEMA_V12,
     _SCHEMA_V13, _SCHEMA_V14, _SCHEMA_V15, _SCHEMA_V16, _SCHEMA_V17, _SCHEMA_V18,
+    _SCHEMA_V19,
 )  # fmt: skip
 
 MAX_CACHED_PREVIEWS = 20_000  # about 40 MB; past it the oldest are forgotten
@@ -1999,6 +2016,32 @@ class Library:
             )
             for r in rows
         ]
+
+    def set_disc_image(self, disc_id: int, image: DiscImage) -> None:
+        """Keep the image this MP3 disc was burned from (replacing an earlier burn's)."""
+        self._disc_row(disc_id)
+        with self._conn:
+            self._conn.execute(
+                "INSERT OR REPLACE INTO disc_image (disc_id, created, label, file_count, folders, last_file_start,"
+                " sectors, saved_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    disc_id,
+                    image.created,
+                    image.label,
+                    image.file_count,
+                    image.folders,
+                    image.last_file_start,
+                    image.sectors,
+                    datetime.now(UTC).isoformat(timespec="seconds"),
+                ),
+            )
+
+    def disc_image(self, disc_id: int) -> DiscImage | None:
+        row = self._conn.execute(
+            "SELECT created, label, file_count, folders, last_file_start, sectors FROM disc_image WHERE disc_id = ?",
+            (disc_id,),
+        ).fetchone()
+        return None if row is None else DiscImage(*tuple(row))
 
     def duplicate_disc(self, disc_id: int, name: str | None = None) -> int:
         """A copy of a disc: its tracks (with any CD text edits), size, gaps and folder.
