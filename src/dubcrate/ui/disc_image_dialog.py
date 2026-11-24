@@ -83,7 +83,7 @@ class DiscImageDialog(QDialog):
         self._choose_file = choose_file or ask_open_image
         self._busy = False
         self.setWindowTitle(f"Disc ID: {lib.disc(disc_id).name}")
-        self.setMinimumWidth(560)
+        self.setMinimumWidth(680)
 
         layout = QVBoxLayout(self)
         layout.setSpacing(8)
@@ -144,6 +144,8 @@ class DiscImageDialog(QDialog):
         buttons.addWidget(self.close_button)
         layout.addLayout(buttons)
         self.fill()
+        self.resize(max(self.sizeHint().width(), 680), 0)
+        self._fit()
 
     # -- what is recorded ----------------------------------------------------
 
@@ -184,6 +186,16 @@ class DiscImageDialog(QDialog):
             self.status.setProperty("level", level)
             self.status.style().unpolish(self.status)
             self.status.style().polish(self.status)
+        self._fit()
+
+    def _fit(self) -> None:
+        """Grow to show all of the wrapped text; a dialog does not do it by itself when a label changes."""
+        layout = self.layout()
+        if layout is None:
+            return
+        wanted = layout.totalHeightForWidth(self.width())
+        if wanted > self.height():
+            self.resize(self.width(), wanted)
 
     def remove(self) -> None:
         self._lib.clear_disc_image(self._disc_id)
