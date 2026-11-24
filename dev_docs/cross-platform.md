@@ -145,10 +145,56 @@ was run on a Windows desktop or drive. What they showed:
   the executable bit, `str(path)` against Qt's forward slashes, `read_text()` without an encoding, shell
   script stand-ins (skipped on Windows).
 - The cdrdao TOC writes a Windows path with its backslashes as `\134` octal escapes, which is valid TOC
-  syntax; whether a Windows cdrdao wants backslashes, forward slashes or Cygwin paths is **[not tried]**.
+  syntax; a Windows cdrdao wants Cygwin paths (`/cygdrive/c/...`), as found on 2026-11-24.
 - **Slowness, on every OS:** the suite left every window alive (over 1,000 top-level widgets by the end), and
   every theme change restyled all of them. Now deleted after each test: the full suite takes about 100 s on a
   Mac (it was 275 s) and a theme test 0.04 s (it was 11 s).
+
+## The first real Windows run (2026-11-24): a Windows 11 virtual machine with a burner and a card reader
+
+Windows 11 in a QEMU/KVM virtual machine on the Linux machine, with the CD burner and an SD card reader handed to it over
+USB (only those two devices: a passed-through device is named by its vendor and product ID, so nothing else on the host
+goes with it, and the host loses the device until the VM stops). Everything below is **[hardware]** unless it says otherwise.
+
+- **Tests:** 2,720 passed, one failed (`str(Path("/dev/sr0"))` is `\dev\sr0` there; the test now compares paths).
+- **The build works:** ffmpeg and LAME in MSYS2's MINGW64 shell; the app with Nuitka, which needs the **Visual Studio Build
+  Tools' C++ workload** (it does not fall back to MinGW by itself on a machine with neither); the installer with Inno Setup.
+  The installer installs for the current user with no prompt, the installed app passes `--smoke-test`, and the uninstaller
+  removes it. Two Windows PowerShell 5.1 traps, both fixed in `build_windows.ps1`: a native command's stderr is a terminating
+  error under `$ErrorActionPreference = "Stop"` when it is redirected or merged (`git describe` on a repository with no tags
+  stopped the build; `2>&1` merged into PowerShell does it for any program that prints progress to stderr), so the script's own
+  calls run with errors not stopping and long runs are redirected by `cmd` instead.
+- **`cdrdao.exe` builds, in MSYS2's MSYS shell, not MINGW64.** cdrdao 1.2.6 is a Unix program (signals, `fcntl`, `sys/wait.h`,
+  `geteuid`...); a native MinGW build fails on all of them, and upstream's Windows support is the Cygwin POSIX layer, which MSYS2's
+  MSYS environment is. configure only picks the Windows SCSI code (`ScsiIf-nt.cc`, the SCSI pass-through the system gives any
+  program that may open the drive) for a Cygwin host, so the script passes `--host=x86_64-pc-cygwin`. The result needs two DLLs beside
+  it (`msys-2.0.dll`, `msys-iconv-2.dll`; both LGPL, shipped with their licences). `strip` is not used (it left a program that
+  printed nothing in one try), and the version check runs through `cmd.exe`: started from inside the MSYS shell, the DLL beside
+  it is a second Cygwin runtime next to the shell's own and the program is "not found" (status 127).
+- **The drive is named by its letter.** `cdrdao scanbus` prints `D:\ : slimtype, eSAU108   3, HL09`; Dubcrate only accepted
+  device names containing `/`, so it said "no drives" until a drive letter counted as a device. `drive-info` reports the same top
+  speed as on Linux (24x), so the burn window's speed limit works there too.
+- **File names in the TOC:** this `cdrdao` takes a path as relative unless it starts with `/` and puts its working folder in front
+  of anything else (`/cygdrive/c/Dubcrate/C:\Users\...`). Files are named `/cygdrive/c/Users/...` (`cygwin_path`).
+- **Drive letters move.** The card reader was `D:` and the burner `E:` in one session, the other way round in the one before:
+  Windows lettered whichever device appeared first. Nothing in Dubcrate depends on a letter (the card is found by its `PIONEER`
+  folder, the drive by `scanbus`).
+- **Burns:** an audio CD with CD-TEXT (6 tracks, 24x) and an MP3 disc with one folder (16x) were written, and the TOC was
+  read back and checked ("exactly as planned"); both play on the CDJ-1000MK3, and the MP3 disc kept its image record, so Sync made
+  the card's entry with no play first. The PDF label export worked.
+- **Administrator rights are not needed** by an administrator's ordinary (UAC, not elevated) session; a *standard* user's account
+  is **[not tried]**.
+- **A real bug in the eject script:** after the Shell "Eject" verb the script polled `Test-Path` for the drive to go; as the card left,
+  Windows answered "access denied" instead of "no", which stopped the script and reported an eject that had worked as a failure.
+  Fixed (that error means the drive is leaving).
+- **Format a Card failed once, then worked after a fix:** `Clear-Disk -RemoveData` leaves a removable card as an empty MBR
+  (not RAW), so `Initialize-Disk` said "The disk has already been initialized" and the card was left cleared and unformatted. The
+  script now reads the partition style again and initialises only a RAW disk. The result: one FAT partition labelled `DISK_IMG`,
+  but of type 0x0E (FAT16 LBA) at 64 KB, where the player's own format is 0x06 from sector 32 (`card_format_linux.py`); whether
+  the CDJ accepts it is **[not tried]**.
+- **Still [not tried] on Windows:** Windows 10, a standard (non-administrator) user, the Disc ID window's read
+  from a drive (Linux only), the CI `build.yml` job, a desktop with sound for previews (the VM has no audio device), and a long
+  path (over 259 characters).
 
 ## Audit of what is still macOS-only (2026-11-15)
 
@@ -276,21 +322,21 @@ injectable runner, an expected-error exception with plain words, tests against s
 
 ### Phase 4: Windows (the hardest burn)
 
-- [ ] **Spike first, on a real Windows machine with a drive**, before any design:
+- [x] (done 2026-11-24, see "The first real Windows run") **Spike first, on a real Windows machine with a drive**, before any design:
   `cdrdao scanbus`, `cdrdao disk-info`, a simulated audio burn with CD-TEXT, one real disc
   checked on a CDJ. `dubcrate burn --backend cdrdao` already drives that backend (a dry run by default),
   `dubcrate doctor` says what is found, and `burning.md` has the hardware check steps.
-- [ ] Get a trustworthy `cdrdao.exe`. The project publishes source (1.2.6 notes mention a native
+- [x] (done: built in MSYS2's MSYS shell, `scripts/build_cdrdao_windows.sh`) Get a trustworthy `cdrdao.exe`. The project publishes source (1.2.6 notes mention a native
   Windows interface; an older note says the port was Cygwin-based). Build it with MSYS2 or
   Cygwin in CI and keep it in a bundled folder. Licence: check (it is GPL; we run it as a
   subprocess, and a bundled copy needs an entry in `ui/help/THIRD_PARTY_NOTICES.md`).
-- [ ] Administrator rights: unknown. Sources about `cdrecord`'s SPTI access disagree and are old.
+- [~] Administrator rights: not needed by an administrator's unelevated session (2026-11-24); a standard user is untried. Older note: Sources about `cdrecord`'s SPTI access disagree and are old.
   Test on Windows 10 and 11 with and without elevation. If elevation is needed, say so in the burn
   window.
 - [ ] Fallbacks if `cdrdao` fails there: `chrdev/cdrecord` (a `cdrecord` fork aimed at audio CDs
   with CD-TEXT, with Windows releases; small hobby project) or cdrtools. `ISOSDK` and FoxBurner
   (commercial) list CD-TEXT; their licences and Python access need checking first.
-- [ ] MP3 discs on Windows: IMAPI2's data interface (`IDiscFormat2Data` with `IFileSystemImage`)
+- [~] (not needed: `cdrdao` writes MP3 discs on Windows too; this stays as the fallback) MP3 discs on Windows: IMAPI2's data interface (`IDiscFormat2Data` with `IFileSystemImage`)
   needs no extra programs and CD-TEXT is irrelevant for data discs. Reach it from Python with
   `comtypes` or `pywin32` (a new dependency: GPL-compatible? add the notice).
 - [ ] Installer and code signing (SmartScreen). Nuitka builds one per OS; there is no

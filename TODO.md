@@ -62,7 +62,7 @@ Open items by area; finished work is under **Completed** at the bottom (same hea
 - [ ] Try eject and the disc TOC reader on a real Windows machine (Linux works) ([cross-platform.md](dev_docs/cross-platform.md)).
 - [ ] Burn an MP3 disc from `dubcrate export`'s `disc.iso` (Brasero, Finder, `cdrdao`), play it in a CDJ and a car player; try 8 folders deep ([cross-platform.md](dev_docs/cross-platform.md)).
 - [ ] Try a long path on Windows (the 259-character limit is refused up front; whether longer would really fail is unchecked).
-- [ ] Try Format a Card on a spare 2 GB card on Windows (Linux works).
+- [ ] Format a Card on Windows: it works after a fix (a card keeps an empty MBR after `Clear-Disk`, so `Initialize-Disk` failed with "already initialized"; 2026-11-24, a VM with a card reader passed through), but Windows made the partition type 0x0E (FAT16 LBA) at 64 KB where the player's own is 0x06 at sector 32: put a card formatted in the app on the CDJ (and sync to it) to see that it accepts it; the format has been run through the app's own window only once, and failed.
 - [ ] Try the Linux drive permission message on a real machine (`cdrdao.access_problem`; stand-ins only).
 - [ ] Check the Explorer's real drive lists on Linux and Windows, which are only tested with fake folders ([cross-platform.md](dev_docs/cross-platform.md)).
 - [ ] Burn for real on Windows with the bundled `cdrdao.exe` (`scripts/build_cdrdao_windows.sh`): through USB passthrough it sees the drive as `D:\`, reads its disc and top speed, and a simulated MP3 disc and a simulated audio CD with CD-TEXT both finish (2026-11-24, a Windows 11 VM). Not yet: a real burn, and whether it needs administrator rights ([cross-platform.md](dev_docs/cross-platform.md)).

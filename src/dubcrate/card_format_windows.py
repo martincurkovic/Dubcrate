@@ -53,7 +53,11 @@ try {
     if ($disk.IsReadOnly) { throw 'The card is write-protected.' }
     if ($disk.IsOffline) { Set-Disk -Number $Number -IsOffline $false }
     if ($disk.PartitionStyle -ne 'RAW') { Clear-Disk -Number $Number -RemoveData -RemoveOEM -Confirm:$false }
-    Initialize-Disk -Number $Number -PartitionStyle MBR
+    # A card or reader the system calls removable keeps its partition style after Clear-Disk (an empty MBR, not RAW):
+    # Initialize-Disk then says "The disk has already been initialized", which failed a real format on 2026-11-24.
+    $style = [string](Get-Disk -Number $Number).PartitionStyle
+    if ($style -eq 'RAW') { Initialize-Disk -Number $Number -PartitionStyle MBR }
+    elseif ($style -ne 'MBR') { Set-Disk -Number $Number -PartitionStyle MBR }
     $part = New-Partition -DiskNumber $Number -UseMaximumSize -AssignDriveLetter -MbrType FAT16
     Format-Volume -Partition $part -FileSystem FAT -NewFileSystemLabel $Label -AllocationUnitSize 32768 -Confirm:$false | Out-Null
     $result = @{ ok = $true; letter = [string]$part.DriveLetter }

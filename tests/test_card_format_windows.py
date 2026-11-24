@@ -190,6 +190,19 @@ def test_the_script_formats_mbr_fat16_and_checks_the_disk_itself():
     )
 
 
+def test_the_script_only_initialises_a_disk_that_is_still_raw():
+    """Clear-Disk leaves a removable card as an empty MBR, and Initialize-Disk on that said "The disk has already
+    been initialized" (a real format failed on it, 2026-11-24): the style is read again after the clear."""
+    text = win.FORMAT_SCRIPT
+    after = text[text.index("Clear-Disk") :]
+    assert "(Get-Disk -Number $Number).PartitionStyle" in after
+    assert "if ($style -eq 'RAW') { Initialize-Disk" in after
+    assert "Set-Disk -Number $Number -PartitionStyle MBR" in after
+    assert (
+        text.count("Initialize-Disk -Number") == 1
+    )  # (the one call, inside the RAW check)
+
+
 def test_the_script_file_is_the_one_run(tmp_path, monkeypatch):
     monkeypatch.setattr(win, "drive_root", lambda letter: tmp_path)
     system = FakePowerShell()
