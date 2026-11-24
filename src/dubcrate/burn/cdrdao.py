@@ -55,7 +55,7 @@ def install_hint() -> str:
     if sys.platform == "darwin":
         return "Install it with “brew install cdrdao” in Terminal"
     if sys.platform == "win32":
-        return "Windows isn't supported for burning yet"
+        return "The Windows installer includes it: reinstall Dubcrate, or put cdrdao.exe in a folder on your PATH"
     return (
         "Install it with your package manager, for example “sudo apt install cdrdao”"
         " (Debian, Ubuntu) or “sudo dnf install cdrdao” (Fedora)"

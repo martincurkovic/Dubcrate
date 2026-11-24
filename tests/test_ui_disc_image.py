@@ -169,7 +169,9 @@ def test_the_data_disc_device_is_a_drive_on_linux_and_an_error_elsewhere(monkeyp
     from dubcrate import drive_toc
 
     monkeypatch.setattr("sys.platform", "linux")
-    assert str(drive_toc.data_disc_device(lambda p: p == "/dev/sr0")) == "/dev/sr0"
+    assert drive_toc.data_disc_device(lambda p: p == "/dev/sr0") == Path(
+        "/dev/sr0"
+    )  # (not str(): Windows spells it \\dev\\sr0)
     with pytest.raises(drive_toc.DriveTocError, match="No optical drive"):
         drive_toc.data_disc_device(lambda p: False)
     monkeypatch.setattr("sys.platform", "darwin")

@@ -291,6 +291,25 @@ def test_the_windows_build_bundles_the_same_data_and_modules_as_the_others():
     assert "build_ffmpeg_windows.sh" in WINDOWS_SCRIPT and "dubcrate/bin" in WINDOWS_SCRIPT  # fmt: skip
 
 
+def test_the_windows_build_bundles_a_gpl_cdrdao_with_its_dlls_source_and_licence():
+    cdrdao = (ROOT / "scripts" / "build_cdrdao_windows.sh").read_text(encoding="utf-8")  # fmt: skip
+    linux = (ROOT / "scripts" / "build_cdrdao_linux.sh").read_text(encoding="utf-8")  # fmt: skip
+    for name in ("CDRDAO_VERSION", "CDRDAO_TAG", "CDRDAO_SHA256", "CDRDAO_URL"):
+        assert assigned(cdrdao, name) == assigned(linux, name), (
+            name
+        )  # (the same source as Linux's)
+    assert "build_cdrdao_windows.sh" in WINDOWS_SCRIPT
+    for needed in ("--build=x86_64-pc-cygwin", "--host=x86_64-pc-cygwin", "--without-gcdmaster", "-source.tar.gz", "msys-2.0.dll", "msys-iconv-2.dll"):  # fmt: skip
+        assert needed in cdrdao, needed
+    assert (
+        'MSYSTEM:-}" != "MSYS"' in cdrdao
+    )  # (the MSYS shell: the MINGW64 one can't build it)
+    for name in ("cdrdao.exe", "msys-2.0.dll", "msys-iconv-2.dll"):
+        assert f"--include-data-files=../build/ffmpeg/bundle/{name}=dubcrate/bin/{name}" in WINDOWS_SCRIPT  # fmt: skip
+    assert "--include-data-dir=../build/ffmpeg/bundle/licenses=dubcrate/bin/licenses" in WINDOWS_SCRIPT  # fmt: skip
+    assert "autoconf" in BUILD_WORKFLOW.split("  build-windows:")[1] and "libiconv-devel" in BUILD_WORKFLOW  # fmt: skip
+
+
 def test_the_windows_ffmpeg_is_the_same_lgpl_build():
     for name in ("FFMPEG_VERSION", "FFMPEG_SHA256", "LAME_VERSION", "LAME_SHA256"):
         assert assigned(FFMPEG_WINDOWS, name) == assigned(FFMPEG_MACOS, name), name

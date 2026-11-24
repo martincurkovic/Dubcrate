@@ -58,7 +58,7 @@ The Docker build on an Apple Silicon Mac makes an **aarch64** AppImage; the GitH
 src\Dubcrate.dist\main.exe --smoke-test=report.txt     # the same check as on the other systems
 ```
 
-**Not yet run.** The Windows scripts, the installer and the CI job were written from JV Studio's and the Linux scripts and checked only by `tests/test_build_files.py`; the first CI run is the first build. `cdrdao` is not bundled and has no tested Windows build, so on Windows the burn window says it can't burn and **Export Disc as Files…** is the way to a disc.
+**Run once, in a Windows 11 virtual machine** (2026-11-24: the build, the installer, a silent install, the smoke test of the installed app and the uninstall all passed; the CI job has not run yet). Nuitka needs the Visual Studio Build Tools' C++ workload (`winget install Microsoft.VisualStudio.2022.BuildTools`, add *Desktop development with C++*; the CI runner has it). `cdrdao` is bundled too: `scripts/build_cdrdao_windows.sh` builds it in MSYS2's **MSYS** shell (not MINGW64: cdrdao is a Unix program that needs the Cygwin-compatible layer), and it travels with `msys-2.0.dll`, `msys-iconv-2.dll`, its licence and its source in `dubcrate/bin`. **Whether it can use a real drive is untried**; **Export Disc as Files…** is the fallback.
 
 ## Icons and the DMG background
 

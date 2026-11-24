@@ -151,7 +151,7 @@ jobs:
         with:
           msystem: MINGW64
           update: false
-          install: base-devel diffutils make nasm xz curl mingw-w64-x86_64-gcc mingw-w64-x86_64-zlib mingw-w64-x86_64-pkgconf
+          install: base-devel diffutils make nasm xz curl gcc autoconf automake libtool pkgconf libiconv-devel gettext-devel mingw-w64-x86_64-gcc mingw-w64-x86_64-zlib mingw-w64-x86_64-pkgconf
       - name: Cache the ffmpeg build
         uses: actions/cache@v4
         with:

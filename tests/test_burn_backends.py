@@ -41,7 +41,7 @@ def test_a_missing_cdrdao_is_explained_with_how_to_get_it(no_cdrdao, monkeypatch
     monkeypatch.setattr(cdrdao.sys, "platform", "darwin")
     assert "brew install cdrdao" in burn.backend_problem("cdrdao")
     monkeypatch.setattr(cdrdao.sys, "platform", "win32")
-    assert "isn't supported" in burn.backend_problem("cdrdao")
+    assert "Windows installer includes it" in burn.backend_problem("cdrdao")
 
 
 def test_cdrdao_is_found_in_the_bundle_or_on_path(no_cdrdao, tmp_path, monkeypatch):

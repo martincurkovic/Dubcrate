@@ -8,12 +8,14 @@
 #   - uv (https://docs.astral.sh/uv/) and the Visual Studio Build Tools' C++ workload (Nuitka compiles C; it can also download MinGW itself)
 #   - MSYS2 (https://www.msys2.org), to build ffmpeg: winget install MSYS2.MSYS2, then in an MSYS2 MINGW64 shell:
 #       pacman -S --needed base-devel diffutils make nasm xz curl mingw-w64-x86_64-gcc mingw-w64-x86_64-zlib mingw-w64-x86_64-pkgconf
+#     and, for cdrdao (built in the MSYS shell, which is a different environment), in an MSYS2 MSYS shell:
+#       pacman -S --needed base-devel gcc make autoconf automake libtool pkgconf diffutils libiconv-devel gettext-devel curl
 #     (set MSYS2_ROOT if it is not in C:\msys64)
 #   - Inno Setup 6 (winget install JRSoftware.InnoSetup), to make the installer; without it the app is still built
 #
 # The app bundles LGPL builds of ffmpeg and ffprobe (scripts/build_ffmpeg_windows.sh makes them, the first time), which
-# dubcrate/tools.py looks for before PATH. cdrdao, which burns off a Mac, is GPL and is not bundled (and has no tested Windows
-# build yet: on Windows, Export Disc as Files is the way to a disc).
+# dubcrate/tools.py looks for before PATH. So does cdrdao, the burner (scripts/build_cdrdao_windows.sh: GPL, so its source and
+# licence go in the bundle too).
 # NOT YET RUN: written from JV Studio's script and scripts/build_linux.sh; the first run is the first CI run.
 
 $ErrorActionPreference = "Stop"
@@ -37,8 +39,8 @@ if ($LASTEXITCODE -ne 0) { Write-Host "making the icon failed"; exit 1 }
 # so the data argument below does not depend on the architecture
 $Msys = if ($env:MSYS2_ROOT) { $env:MSYS2_ROOT } else { "C:\msys64" }
 $FfmpegOut = Join-Path $RootDir "build\ffmpeg\x86_64"
+$Bash = Join-Path $Msys "usr\bin\bash.exe"
 if (-not ((Test-Path (Join-Path $FfmpegOut "ffmpeg.exe")) -and (Test-Path (Join-Path $FfmpegOut "ffprobe.exe")))) {
-    $Bash = Join-Path $Msys "usr\bin\bash.exe"
     if (-not (Test-Path $Bash)) {
         Write-Host "MSYS2 was not found at $Msys (needed to build ffmpeg). Install it (winget install MSYS2.MSYS2) or set MSYS2_ROOT."
         exit 1
@@ -54,10 +56,27 @@ $Bundle = Join-Path $RootDir "build\ffmpeg\bundle"
 if (Test-Path $Bundle) { Remove-Item -Recurse -Force $Bundle }
 Copy-Item -Recurse $FfmpegOut $Bundle
 
+# cdrdao, the burner (GPL: its licence, offer of source and source go with it), built in MSYS2's MSYS shell, not the MINGW64 one:
+# cdrdao is a Unix program that Windows runs through the POSIX layer (see the script). cdrdao.exe and its two DLLs go in the same
+# bundle as ffmpeg, so dubcrate/bin has them all.
+$CdrdaoOut = Join-Path $RootDir "build\cdrdao\x86_64"
+if (-not (Test-Path (Join-Path $CdrdaoOut "cdrdao.exe"))) {
+    $env:MSYSTEM = "MSYS"
+    $env:CHERE_INVOKING = "1"
+    $CdrdaoScript = ($RootDir -replace '\\', '/') + "/scripts/build_cdrdao_windows.sh"
+    Write-Host "Building cdrdao (a few minutes, the first time)..."
+    & $Bash -lc "'$CdrdaoScript'"
+    if ($LASTEXITCODE -ne 0) { Write-Host "building cdrdao failed - fix the error above before continuing."; exit 1 }
+}
+Copy-Item (Join-Path $CdrdaoOut "*.exe"), (Join-Path $CdrdaoOut "*.dll") $Bundle
+Copy-Item (Join-Path $CdrdaoOut "licenses\*") (Join-Path $Bundle "licenses")
+
 Set-Location $SrcDir
 
 # derive the version from the nearest git tag - falls back to a dev placeholder if no tags exist yet
-$RawTag = git -C $RootDir describe --tags --abbrev=0 2>$null
+# (a repository with no tags makes git print "fatal: No names found" to stderr: in Windows PowerShell 5.1 that is a terminating error under
+# $ErrorActionPreference = "Stop", which stopped this script on the first dev build, so the call runs with errors not stopping)
+$RawTag = & { $ErrorActionPreference = "Continue"; git -C $RootDir describe --tags --abbrev=0 2>$null }
 if (-not $RawTag) { $Version = "0.0.0-dev" } else { $Version = $RawTag -replace '^v', '' }
 Write-Host "Building version: $Version"
 # the built app shows this on its splash screen; it is only needed while compiling (a run from source says "development"),
@@ -87,8 +106,8 @@ try {
 
     # Data the app reads at run time, paths relative to src\ (where this runs), as SRC=DEST inside the app: the same as
     # scripts/build_macos.sh and scripts/build_linux.sh (tests/test_build_files.py checks that they agree, and that every file exists).
-    # The exception is ffmpeg: Nuitka's --include-data-dir leaves out every .exe (and .dll), so the two tools are named one by one.
-    $DataArgs = "--include-data-dir=dubcrate/ui/icons=dubcrate/ui/icons --include-data-files=dubcrate/ui/style.qss.template=dubcrate/ui/style.qss.template --include-data-files=dubcrate/ui/style_system6.qss.template=dubcrate/ui/style_system6.qss.template --include-data-dir=dubcrate/ui/fonts=dubcrate/ui/fonts --include-data-dir=dubcrate/ui/help=dubcrate/ui/help --include-data-files=../assets/icon/AppIcon.png=dubcrate/ui/AppIcon.png --include-data-files=../LICENSE=LICENSE --include-data-files=../build/ffmpeg/bundle/ffmpeg.exe=dubcrate/bin/ffmpeg.exe --include-data-files=../build/ffmpeg/bundle/ffprobe.exe=dubcrate/bin/ffprobe.exe"
+    # The exception is the tools: Nuitka's --include-data-dir leaves out every .exe (and .dll), so ffmpeg, ffprobe, cdrdao and its two DLLs are named one by one.
+    $DataArgs = "--include-data-dir=dubcrate/ui/icons=dubcrate/ui/icons --include-data-files=dubcrate/ui/style.qss.template=dubcrate/ui/style.qss.template --include-data-files=dubcrate/ui/style_system6.qss.template=dubcrate/ui/style_system6.qss.template --include-data-dir=dubcrate/ui/fonts=dubcrate/ui/fonts --include-data-dir=dubcrate/ui/help=dubcrate/ui/help --include-data-files=../assets/icon/AppIcon.png=dubcrate/ui/AppIcon.png --include-data-files=../LICENSE=LICENSE --include-data-files=../build/ffmpeg/bundle/ffmpeg.exe=dubcrate/bin/ffmpeg.exe --include-data-files=../build/ffmpeg/bundle/ffprobe.exe=dubcrate/bin/ffprobe.exe --include-data-files=../build/ffmpeg/bundle/cdrdao.exe=dubcrate/bin/cdrdao.exe --include-data-files=../build/ffmpeg/bundle/msys-2.0.dll=dubcrate/bin/msys-2.0.dll --include-data-files=../build/ffmpeg/bundle/msys-iconv-2.dll=dubcrate/bin/msys-iconv-2.dll --include-data-dir=../build/ffmpeg/bundle/licenses=dubcrate/bin/licenses"
 
     # Modules that are loaded by name, which Nuitka's import scan can miss: the rekordbox reader with its encrypted-database driver,
     # and the C bridge miniaudio is built on (cffi). (No PyObjC: DiscRecording is macOS's.) --smoke-test shows if one is missing.
@@ -102,7 +121,7 @@ try {
     if ($LASTEXITCODE -ne 0) { Write-Host "pyside6-deploy failed - fix the error above before continuing."; exit 1 }
 
     $Dist = Join-Path $SrcDir "$AppName.dist"
-    foreach ($Needed in @("main.exe", "dubcrate\bin\ffmpeg.exe", "dubcrate\bin\ffprobe.exe")) {
+    foreach ($Needed in @("main.exe", "dubcrate\bin\ffmpeg.exe", "dubcrate\bin\ffprobe.exe", "dubcrate\bin\cdrdao.exe", "dubcrate\bin\msys-2.0.dll", "dubcrate\bin\msys-iconv-2.dll", "dubcrate\bin\licenses\cdrdao-COPYING.txt")) {
         if (-not (Test-Path (Join-Path $Dist $Needed))) { Write-Host "The build is missing $Needed"; exit 1 }
     }
 }

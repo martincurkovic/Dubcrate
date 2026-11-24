@@ -51,7 +51,7 @@ The app includes **ffmpeg** and **ffprobe** (FFmpeg 9.0.2, LGPL-2.1-or-later; <h
 
 ## Programs Dubcrate runs as separate programs
 
-Dubcrate starts **cdrdao** (GPL-2.0-or-later; <https://cdrdao.sourceforge.net>) as a separate program to burn on Linux and, if you have it installed, on a Mac. The Linux build carries its own copy (built without any audio-format libraries, with its licence and source in the app's `bin/licenses` folder); Dubcrate does not link it. **DiscRecording** is part of macOS.
+Dubcrate starts **cdrdao** (GPL-2.0-or-later; <https://cdrdao.sourceforge.net>) as a separate program to burn on Linux and Windows and, if you have it installed, on a Mac. The Linux and Windows builds carry their own copy (built without any audio-format libraries, with its licence and source in the app's `bin/licenses` folder; the Windows one runs on the Cygwin runtime, `msys-2.0.dll`, LGPL-3.0-or-later with a linking exception, and GNU libiconv, LGPL-2.1-or-later, both from MSYS2 and both shipped beside it); Dubcrate does not link it. **DiscRecording** is part of macOS.
 
 ## Trademarks
 

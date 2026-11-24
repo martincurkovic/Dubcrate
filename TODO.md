@@ -8,7 +8,7 @@ Open items by area; finished work is under **Completed** at the bottom (same hea
 - [ ] Windows burn support
   - [ ] Spike on a real Windows machine (cdrdao + CD-TEXT)
 - [ ] Linux: run the CI AppImage build (`build.yml`, now with `cdrdao` bundled) once, and try the AppImage on a real desktop (see below)
-- [ ] Windows build script and installer: written, **never run** (see "Linux and Windows" below)
+- [ ] Windows build: runs and installs in a Windows 11 VM (2026-11-24); run the CI `build.yml` job once to confirm (it needs the MSYS shell packages for `cdrdao`), then see "Linux and Windows" below
 - [ ] Mixxx library support
 - [ ] Engine DJ library support
 - [ ] Serato library support
@@ -56,17 +56,16 @@ Open items by area; finished work is under **Completed** at the bottom (same hea
 ### Linux and Windows
 
 - [ ] Run the Linux AppImage on an older glibc (needs 2.39+), Ubuntu or Fedora ([linux-test-plan.md](dev_docs/linux-test-plan.md)). (It works on the owner's Arch desktop, 2026-11-24, a build made here.)
-- [ ] **Windows testing without a Windows PC**: use a Windows VM (Docker/QEMU/KVM) to run the tests, `scripts/build_windows.ps1` and look at the app over RDP. Burning, card formatting and drive probes need USB passthrough; `cdrdao` for Windows is unsolved.
-- [ ] Run the Windows build again (`build.yml` by hand): not yet seen are the smoke test, installer, icon and console mode ([cross-platform.md](dev_docs/cross-platform.md), Phase 5).
-- [ ] Install the built installer on a clean Windows 10 or 11: no admin prompt, app opens, bundled ffmpeg, Export Disc as Files, uninstall, upgrade keeps settings.
-- [ ] Run `test-windows.yml` by hand again and check it comes back clean (the two known causes are fixed).
+- [ ] **Windows testing without a Windows PC**: a Windows 11 VM on the Linux machine runs the tests, the build, the installer and a smoke test (2026-11-24). USB passthrough of the burner and the card reader would let it try drives, card formatting and burning.
+- [ ] Run the Windows build in CI (`build.yml` by hand) to match what the VM showed (2026-11-24: ffmpeg, `cdrdao`, Nuitka, the installer and both smoke tests all passed; it needs Visual Studio Build Tools, which the CI runner has).
+- [ ] Install the built installer on Windows and look at the real window: a VM here installs it with no prompt, runs its smoke test and uninstalls it (2026-11-24); not yet seen on a display: the app opens and plays a preview, Settings > Library shows the bundled ffmpeg, Export Disc as Files, and an upgrade over the old one keeps its settings.
 - [ ] Try eject and the disc TOC reader on a real Windows machine (Linux works) ([cross-platform.md](dev_docs/cross-platform.md)).
 - [ ] Burn an MP3 disc from `dubcrate export`'s `disc.iso` (Brasero, Finder, `cdrdao`), play it in a CDJ and a car player; try 8 folders deep ([cross-platform.md](dev_docs/cross-platform.md)).
 - [ ] Try a long path on Windows (the 259-character limit is refused up front; whether longer would really fail is unchecked).
 - [ ] Try Format a Card on a spare 2 GB card on Windows (Linux works).
 - [ ] Try the Linux drive permission message on a real machine (`cdrdao.access_problem`; stand-ins only).
 - [ ] Check the Explorer's real drive lists on Linux and Windows, which are only tested with fake folders ([cross-platform.md](dev_docs/cross-platform.md)).
-- [ ] Find a trustworthy `cdrdao.exe` (build it with MSYS2 or Cygwin in CI) and find out whether it needs administrator rights ([cross-platform.md](dev_docs/cross-platform.md)).
+- [ ] Try the bundled `cdrdao.exe` (built in MSYS2's MSYS shell, `scripts/build_cdrdao_windows.sh`: it runs, scanbus untried for want of a drive) on a real drive through USB passthrough: does it see the drive and what name does it give it, does it need administrator rights, does an audio disc with CD-TEXT and an MP3 disc burn ([cross-platform.md](dev_docs/cross-platform.md)).
 - [ ] Use IMAPI2 for MP3 discs on Windows, which needs no extra program but a COM dependency (`comtypes` or `pywin32`) and a notices entry ([cross-platform.md](dev_docs/cross-platform.md)).
 - [ ] Update `README.md`, `CONTRIBUTING.md` and the guide per OS now that every OS has a build job (`BUILDING.md` is done; the guide and CONTRIBUTING still talk about a Mac in places) ([cross-platform.md](dev_docs/cross-platform.md)).
 - [ ] Check what `pyrekordbox`'s SQLCipher needs on Windows and Intel Linux by letting CI run its first full pass ([cross-platform.md](dev_docs/cross-platform.md)).
@@ -190,6 +189,8 @@ Open items by area; finished work is under **Completed** at the bottom (same hea
 ### Linux and Windows
 - [x] cdrdao or `xorriso -as cdrecord` for MP3 discs: decided, `cdrdao` (2026-11-24: it burned an audio disc with CD-TEXT and two MP3 discs on the CDJ test drive, and is bundled in the AppImage); `xorriso` is not needed.
 - [x] The Linux AppImage runs on a real desktop (Arch, Wayland, 2026-11-24, built here with `cdrdao` bundled): opens, plays, burns and syncs.
+- [x] The test suite on Windows 11 (a VM here, 2026-11-24): 2,720 tests, one failure (a `str(Path('/dev/sr0'))` in a test: Windows spells it with backslashes), fixed; the two earlier causes stay fixed.
+- [x] Windows build, first real run (2026-11-24, a Windows 11 VM): ffmpeg and LAME build in MSYS2; `cdrdao` builds in MSYS2's MSYS shell (the Cygwin-compatible one; a native MinGW build fails on its Unix calls) and is bundled with `msys-2.0.dll` and `msys-iconv-2.dll`; Nuitka needs the Visual Studio Build Tools; the installer installs without a prompt, passes the smoke test installed, and uninstalls. Found and fixed: `git describe` on a repository with no tags stopped the script under Windows PowerShell 5.1.
 
 - [x] Linux audio CD and MP3 CD burns, both on the CDJ-1000MK3 (owner, reported 2026-11-24): both written with `cdrdao` on Linux, with no permission trouble; both load in the player and the CD-TEXT appears as expected. The MP3 disc: loaded a little slower than the audio disc (not very noticeable), the display showed the ID3 tags, the file order was Dubcrate's order, and no track had trouble playing, so ffmpeg's Info frame is fine (`-write_xing 0` not needed). **Without pre-written waveforms the player drew them at about real-time speed; the waveforms Dubcrate wrote to the card removed that wait.** This finishes "Try on a real Linux machine + drive", the MP3 disc's CDJ check and the `cdrdao` drive-access check ([linux-test-plan.md](dev_docs/linux-test-plan.md), [burning.md](dev_docs/burning.md)).
 - [x] Finder page, Tagged in the iPhone viewer app Sitecase (owner, reported 2026-11-24): the tagged tracks survive closing the app, so `localStorage` is kept there (before, only checked in headless Brave and node).

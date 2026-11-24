@@ -198,9 +198,9 @@ def _check_tools() -> str:
     ):
         found.append(_exercise_bundled_tools())
     burner = tools.find_tool("cdrdao")
-    if built and sys.platform.startswith(
-        "linux"
-    ):  # (the AppImage carries it; the Mac uses DiscRecording)
+    if built and (
+        sys.platform.startswith("linux") or sys.platform == "win32"
+    ):  # (the AppImage and the installer carry it; the Mac uses DiscRecording)
         assert burner is not None and burner.bundled, (
             f"cdrdao is not bundled in the app: {burner.path if burner else 'not found'}"
         )
