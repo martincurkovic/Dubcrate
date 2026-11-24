@@ -5,14 +5,11 @@ Open items by area; finished work is under **Completed** at the bottom (same hea
 ## General
 
 - [ ] Auto download update (maybe once code signing in place...)
-- [ ] Windows burn support
-  - [ ] Spike on a real Windows machine (cdrdao + CD-TEXT)
-- [ ] Linux: run the CI AppImage build (`build.yml`, now with `cdrdao` bundled) once, and try the AppImage on a real desktop (see below)
-- [ ] Windows build: runs and installs in a Windows 11 VM (2026-11-24); run the CI `build.yml` job once to confirm (it needs the MSYS shell packages for `cdrdao`), then see "Linux and Windows" below
+- [ ] Run the CI AppImage build (`build.yml`) once: it now bundles `cdrdao` (the AppImage built here runs on the owner's desktop)
+- [ ] Run the Windows build in CI (`build.yml` by hand) once: the VM built and installed it (2026-11-24), CI needs the MSYS shell packages for `cdrdao`
 - [ ] Mixxx library support
 - [ ] Engine DJ library support
 - [ ] Serato library support
-- [ ] Linux / Windows (they use the system ffmpeg for now) (follow-up to: Bundle dependencies)
 - [ ] Drop `experimental` from the Windows leg in test.yml once happy (follow-up to: CI test legs for Linux, macOS, Windows)
 - [ ] Homebrew packaging once first release public
 - [ ] Maybe use some real songs, not fake ones (follow-up to: Screenshot staging)
@@ -22,10 +19,9 @@ Open items by area; finished work is under **Completed** at the bottom (same hea
 
 - [ ] Find out what unit `DRPreGapLengthKey` uses before trusting the 1, 2 and 3 s "Between tracks" options ([burning.md](dev_docs/burning.md)).
 - [ ] Compare the drive's reported free blocks on a 74 and an 80 minute disc (expect about 333,000 and 359,850) to confirm the capacity check ([burning.md](dev_docs/burning.md)).
-- [ ] MP3 cue timing on the CDJ: after counting the Info frame for ffmpeg-made files (`cue_timing.player_lead_ms`) a new cue is "significantly closer" to where it should be (2026-11-24). Left: a click-track disc to measure it, and maybe rounding positions to the nearest MP3 frame ([card-sync.md](dev_docs/card-sync.md)).
+- [ ] MP3 cue timing: much closer since the Info frame counts for ffmpeg-made files (2026-11-24). Left: a click-track disc to measure it, maybe rounding cues to the nearest MP3 frame ([card-sync.md](dev_docs/card-sync.md), [cdj1000mk3-card.md](dev_docs/cdj1000mk3-card.md) section 6).
 - [ ] MP3 discs: Mac/DiscRecording burns aren't recorded, the Disc ID window can't read a disc on macOS and Windows, and discs with another label are refused ([card-sync.md](dev_docs/card-sync.md)).
-- [ ] MP3 sync follow-ups: cue marks and which waveforms the card already has in the Sync tab's tracks table (it shows the library's waveform only); Import Cues from an MP3 card (reading is built, mapping back to tracks is not); nested folders and non-MPEG-1 Layer III files are refused.
-- [ ] Finish decoding the MP3 disc's card files: cue timing against audio time (click-track disc), the four bytes at +112 of a cue entry ([cdj1000mk3-card.md](dev_docs/cdj1000mk3-card.md) section 6).
+- [ ] MP3 sync follow-ups: cue marks and card waveform state in the Sync tab's tracks table; Import Cues from an MP3 card (mapping back to tracks); nested folders and non-MPEG-1 Layer III files are refused.
 - [ ] Try MP3 disc folders on the CDJ, starting with two nested folders, then the 999-file and 8-level limits and whether `MAX_DEPTH` should be 9 ([burning.md](dev_docs/burning.md)).
 - [ ] Check the rekordbox bits no sample covered: rekordbox 6 libraries, cue points and the "mid" and "low" mood phrase names ([rekordbox-analysis.md](dev_docs/rekordbox-analysis.md)).
 
@@ -40,10 +36,10 @@ Open items by area; finished work is under **Completed** at the bottom (same hea
 
 ### Features and app polish
 
-- [ ] Finder page: try drag-reorder, Filter, the waveform and cue view and Clear on the phone with the real library (how long does the first waveform export take?); then the played tick, by-disc grouping and share / copy list.
+- [ ] Finder page ideas: by-disc grouping, and a share / copy list.
 - [ ] Try the drive picker with two real drives (the check after a burn is skipped for any but the first).
 - [ ] Read a rekordbox USB stick's own database (`export.pdb`, `USBANLZ`) so a stick imports with BPM, key, cues and beat grids (today only `master.db` or a folder of audio).
-- [ ] Burn through the USB-C hub for real with the `generic-mmc` retry: behind the hub the default `cdrdao` driver was refused and a write then stalled (2026-11-24); direct on the computer it burned fine. Not yet seen: the retry itself writing a disc ([burning.md](dev_docs/burning.md)).
+- [ ] Burn through the USB-C hub once, to see the `generic-mmc` retry write a disc (the default driver was refused behind the hub, 2026-11-24) ([burning.md](dev_docs/burning.md)).
 - [ ] Try disc and card auto-detection on macOS and Windows (Linux works; Windows listed a card with a PIONEER folder, and a blank one after a fix, 2026-11-24).
 - [ ] Make it clear when a Sync has finished (it is a status-bar message that the list refresh replaces within seconds): a banner in the Sync tab that stays until the next action was suggested, not decided.
 - [ ] Cancel the writing of a burn itself (needs a confirmation: a stopped write ruins the disc).
@@ -56,18 +52,15 @@ Open items by area; finished work is under **Completed** at the bottom (same hea
 ### Linux and Windows
 
 - [ ] Run the Linux AppImage on an older glibc (needs 2.39+), Ubuntu or Fedora ([linux-test-plan.md](dev_docs/linux-test-plan.md)). (It works on the owner's Arch desktop, 2026-11-24, a build made here.)
-- [ ] **Windows testing without a Windows PC**: a Windows 11 VM on the Linux machine runs the tests, the build, the installer and a smoke test (2026-11-24). USB passthrough of the burner and the card reader would let it try drives, card formatting and burning.
-- [ ] Run the Windows build in CI (`build.yml` by hand) to match what the VM showed (2026-11-24: ffmpeg, `cdrdao`, Nuitka, the installer and both smoke tests all passed; it needs Visual Studio Build Tools, which the CI runner has).
-- [ ] Install the built installer on Windows and look at the real window: a VM here installs it with no prompt, runs its smoke test and uninstalls it (2026-11-24); not yet seen on a display: the app opens and plays a preview, Settings > Library shows the bundled ffmpeg, Export Disc as Files, and an upgrade over the old one keeps its settings.
-- [ ] Try eject and the disc TOC reader on a real Windows machine (Linux works) ([cross-platform.md](dev_docs/cross-platform.md)).
-- [ ] Burn an MP3 disc from `dubcrate export`'s `disc.iso` (Brasero, Finder, `cdrdao`), play it in a CDJ and a car player; try 8 folders deep ([cross-platform.md](dev_docs/cross-platform.md)).
-- [ ] Format a Card on Windows: works through the app and the CDJ accepts the card (2026-11-24); not tried: a card in the laptop's own slot (it needs another passthrough), or a second format over a card the player has written.
+- [ ] Install the new installer over an older one on Windows: does the upgrade keep the library and settings? Does Settings > Library show the bundled ffmpeg? (A VM installs, runs and uninstalls it, 2026-11-24.)
+- [ ] Try the disc TOC reader and disc-in-drive detection on Windows (`drive_toc.py`; eject works, and the burn's read-back goes through `cdrdao`) ([cross-platform.md](dev_docs/cross-platform.md)).
+- [ ] Burn an MP3 disc from `dubcrate export`'s `disc.iso` (Brasero, Finder, `cdrdao`) and play it in a car player ([cross-platform.md](dev_docs/cross-platform.md)).
+- [ ] Format a Card on Windows: also try a card in the laptop's own slot, and a second format over a card the player has written (the first works and the CDJ accepts it).
 - [ ] Try the Linux drive permission message on a real machine (`cdrdao.access_problem`; stand-ins only).
 - [ ] Check the Explorer's real drive lists on Linux and Windows, which are only tested with fake folders ([cross-platform.md](dev_docs/cross-platform.md)).
-- [ ] Burning on Windows needs an administrator account (a standard user can't open the drive: 2026-11-24, a throwaway account in the VM): Dubcrate says so now; an elevated burn (UAC prompt, as Format a Card does) is not built, and what it would show for progress is unsettled.
-- [ ] Use IMAPI2 for MP3 discs on Windows, which needs no extra program but a COM dependency (`comtypes` or `pywin32`) and a notices entry ([cross-platform.md](dev_docs/cross-platform.md)).
-- [ ] Update `README.md`, `CONTRIBUTING.md` and the guide per OS now that every OS has a build job (`BUILDING.md` is done; the guide and CONTRIBUTING still talk about a Mac in places) ([cross-platform.md](dev_docs/cross-platform.md)).
-- [ ] Check what `pyrekordbox`'s SQLCipher needs on Windows and Intel Linux by letting CI run its first full pass ([cross-platform.md](dev_docs/cross-platform.md)).
+- [ ] Windows burning needs an administrator account (a standard user can't open the drive): Dubcrate says so; an elevated burn (a UAC prompt) is not built.
+- [ ] Update `README.md`, `CONTRIBUTING.md` and the guide per OS (they still talk about a Mac in places) ([cross-platform.md](dev_docs/cross-platform.md)).
+- [ ] Check what `pyrekordbox`'s SQLCipher needs on Intel Linux (Windows passes its smoke test) ([cross-platform.md](dev_docs/cross-platform.md)).
 
 ## Completed
 
@@ -93,6 +86,8 @@ Open items by area; finished work is under **Completed** at the bottom (same hea
 - [x] Try the Sync tab itself on a real card (the command line is proven on hardware; the tab shares its write) (follow-up to: SD card sync metadata tab)
 - [x] Try Sync's waveforms (always written now: the "Write waveforms" box is gone) on a Dubcrate-burned disc and the real card (the CDJ should load every track with its waveform drawn, none analysed) (follow-up to: SD card sync metadata tab)
 - [x] Try `dubcrate card format` (or Sync > Format a Card…, built) on a spare 2 GB card (dev_docs/card-sync.md, "Formatting a card": does the player accept it, and cues synced straight onto it?)
+- [x] Windows burn support: a real audio CD with CD-TEXT and an MP3 disc burn through the bundled `cdrdao.exe` (2026-11-24, see Linux and Windows below).
+- [x] Bundled ffmpeg on Linux and Windows too (the AppImage and the installer carry ffmpeg, ffprobe and `cdrdao`).
 
 ### Hardware checks (Mac and the CDJ-1000MK3)
 
@@ -148,6 +143,7 @@ Open items by area; finished work is under **Completed** at the bottom (same hea
 - [x] Delete `spikes/burn_spike.py` once nothing needs it, since the window and CLI now do what it does ([roadmap.md](dev_docs/roadmap.md)).
 - [x] Refresh dev notes that have gone stale, such as `command-line.md` saying burning is CLI-only ([command-line.md](dev_docs/command-line.md)).
 - [x] Read a finished burn back and check it against the disc it was burned from ([roadmap.md](dev_docs/roadmap.md)).
+- [x] Finder page on iOS (2026-11-24): drag-reorder, Filter, the waveform and cue view and Clear work on the owner's phone with the real library; the first waveform export takes about 5 seconds for 400 tracks (on a Mac); un-tagging a played track with the star works as the played mark.
 
 ### Player (rbxport-style)
 
