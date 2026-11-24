@@ -508,3 +508,18 @@ def test_a_cancel_kills_a_running_ffmpeg_at_once_rather_than_waiting_for_it():
     assert (
         time.monotonic() - started < 10 and status != 0
     )  # (not the minute it would have slept)
+
+
+def test_a_missing_file_on_windows_with_a_very_long_path_says_so(monkeypatch):
+    from dubcrate import build
+
+    short = "C:\\music\\a.mp3"
+    long = "C:\\" + "\\".join(["a" * 60] * 5) + "\\b.mp3"
+    monkeypatch.setattr(build.sys, "platform", "win32")
+    assert build._missing_file_text(short) == f"file not found ({short})"
+    said = build._missing_file_text(long)
+    assert f"its path is {len(long)} characters" in said and "shorter path" in said
+    monkeypatch.setattr(build.sys, "platform", "linux")
+    assert (
+        build._missing_file_text(long) == f"file not found ({long})"
+    )  # (only Windows has the limit)

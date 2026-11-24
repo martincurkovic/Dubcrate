@@ -264,6 +264,17 @@ def explain_failure(
         or "cannot determine disk status" in low
     ):
         return "There is no usable blank disc in the drive. Put in a blank CD-R."
+    if (
+        sys.platform == "win32"
+        and "please use option '--device" in low
+        and "cannot setup device" in low
+    ):
+        # A standard (non-administrator) account can see the drive's letter but not open it for SCSI pass-through:
+        # `scanbus` then lists "E:\\ : , ," and every command says to use --device (seen 2026-11-24).
+        return (
+            "Windows won't let this account use the drive. Burning needs an administrator account: "
+            "sign in as an administrator, or right-click Dubcrate and choose Run as administrator."
+        )
     if "not supported by device" in low and "writing speed" in low:
         return (
             "The drive can't write at that speed. Choose another in Settings > Burning."
@@ -333,7 +344,13 @@ class CdrdaoBurner:
     def drives(self) -> list[Drive]:
         """The drives `cdrdao scanbus` lists: the id is the device (`/dev/sr0`), the name what it says about it."""
         return [
-            Drive(device, f"{description} ({device})")
+            Drive(
+                device,
+                # (a drive this account may not open has no description: "E:\\ : , ,")
+                f"{description} ({device})"
+                if any(c.isalnum() for c in description)
+                else device,
+            )
             for device, description in scan_devices()
         ]
 

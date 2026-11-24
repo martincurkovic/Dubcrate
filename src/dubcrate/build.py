@@ -53,7 +53,7 @@ def disc_problems(lib: Library, disc_id: int) -> list[str]:
         if e.track.stale:
             problems.append(f"{label}: no longer in its source")
         if e.track.missing:
-            problems.append(f"{label}: file not found ({e.track.path})")
+            problems.append(f"{label}: {_missing_file_text(e.track.path)}")
     if summary.kind == "mp3":
         dirs = {d.id: d.name for d in lib.disc_dirs(disc_id)}
         counts: dict[int | None, int] = {}
@@ -315,6 +315,17 @@ def remember_rendered(
 
 
 WINDOWS_PATH_LIMIT = 259  # MAX_PATH is 260, counting the terminating NUL
+
+
+def _missing_file_text(path: str) -> str:
+    """Why a track's file is not found; on Windows a path past the limit is the likely reason (Windows says "not
+    found" for a file it can't open by a path that long, which the library lists happily: seen 2026-11-24)."""
+    if sys.platform == "win32" and len(path) > WINDOWS_PATH_LIMIT:
+        return (
+            f"file not found, but its path is {len(path)} characters and Windows stops at {WINDOWS_PATH_LIMIT} "
+            f"({path}). Move the file (or its folders) somewhere with a shorter path."
+        )
+    return f"file not found ({path})"
 
 
 def path_too_long(paths: Iterable[Path]) -> Path | None:

@@ -438,3 +438,14 @@ def test_the_toc_names_files_in_the_form_this_cdrdao_wants(tmp_path, monkeypatch
     monkeypatch.setattr(module, "cygwin_path", lambda p: "/cygdrive/x/" + Path(p).name)
     monkeypatch.setattr(module.sys, "platform", "win32")
     assert 'DATAFILE "/cygdrive/x/disc.iso"' in module.build_data_toc(iso)
+
+
+def test_windows_a_standard_account_that_cannot_open_the_drive_is_told_so(monkeypatch):
+    monkeypatch.setattr("sys.platform", "win32")
+    text = "ERROR: Please use option '--device device', e.g. --device /dev/cdrom\nERROR: Cannot setup device E:\\.\n"
+    said = explain_failure(text, "E:\\", 1)
+    assert "administrator" in said and "Run as administrator" in said
+    monkeypatch.setattr("sys.platform", "linux")
+    assert "administrator" not in explain_failure(
+        text, "/dev/sr0", 1
+    )  # (only Windows has this problem)

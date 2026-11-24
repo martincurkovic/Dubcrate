@@ -182,23 +182,29 @@ goes with it, and the host loses the device until the VM stops). Everything belo
 - **Burns:** an audio CD with CD-TEXT (6 tracks, 24x) and an MP3 disc with one folder (16x) were written, and the TOC was
   read back and checked ("exactly as planned"); both play on the CDJ-1000MK3, and the MP3 disc kept its image record, so Sync made
   the card's entry with no play first. The PDF label export worked.
-- **Administrator rights are not needed** by an administrator's ordinary (UAC, not elevated) session; a *standard* user's account
-  is **[not tried]**.
+- **Administrator rights:** an administrator's ordinary (UAC, not elevated) session needs none. **A standard (non-administrator)
+  account cannot use the drive** (2026-11-24, a throwaway local user in the Users group, run through a scheduled task): `cdrdao
+  scanbus` still lists the letter but with no description (`E:\\ : , ,`) and every command says "Please use option '--device
+  device'" and "Cannot setup device", because the SCSI pass-through can't be opened. Dubcrate now turns that into "Windows won't let
+  this account use the drive. Burning needs an administrator account..." and names such a drive by its letter alone. Offering an
+  elevated burn (as Format a Card does with `-Verb RunAs`) is not built.
 - **A real bug in the eject script:** after the Shell "Eject" verb the script polled `Test-Path` for the drive to go; as the card left,
   Windows answered "access denied" instead of "no", which stopped the script and reported an eject that had worked as a failure.
   Fixed (that error means the drive is leaving).
 - **Format a Card failed once, then worked after a fix:** `Clear-Disk -RemoveData` leaves a removable card as an empty MBR
   (not RAW), so `Initialize-Disk` said "The disk has already been initialized" and the card was left cleared and unformatted. The
   script now reads the partition style again and initialises only a RAW disk. The result: one FAT partition labelled `DISK_IMG`,
-  but of type 0x0E (FAT16 LBA) at 64 KB, where the player's own format is 0x06 from sector 32 (`card_format_linux.py`); whether
-  the CDJ accepts it is **[not tried]**.
+  but of type 0x0E (FAT16 LBA) at 64 KB, where the player's own format is 0x06 from sector 32 (`card_format_linux.py`); **the
+  CDJ-1000MK3 accepts it** (2026-11-24: a card formatted in the app on Windows works in the player).
 - **A blank or freshly formatted card did not show in the Sync tab on Windows:** its card list only offers a card it can find a
   `PIONEER` folder on, and the "not set up yet" list (with Format…) skipped any disk whose listing doesn't say where it is mounted,
   which was every Windows disk. The disk listing now adds each disk's drive letters and whether it has partitions
   (`Get-Partition`), so a blank card, or one with only Windows' own folders, is listed with a Format… button.
-- **Still [not tried] on Windows:** Windows 10, a standard (non-administrator) user, the Disc ID window's read
-  from a drive (Linux only), the CI `build.yml` job, a desktop with sound for previews (the VM has no audio device), and a long
-  path (over 259 characters).
+- **Sound works:** audio previews play on Windows with no crackles or pops at the default buffer size (the owner, 2026-11-24).
+- **A long path (305 characters, with Windows' long-path setting off):** the folder import lists the file, but opening it fails, so
+  the library marks it missing and an export says "file not found". It now says the path is over 259 characters and to move the file.
+- **Still [not tried] on Windows:** Windows 10, the Disc ID window's read from a drive (Linux only), the CI `build.yml` job, and an
+  upgrade of the installed app over an older one.
 
 ## Audit of what is still macOS-only (2026-11-15)
 
