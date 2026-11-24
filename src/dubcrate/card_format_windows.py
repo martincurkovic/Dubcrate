@@ -35,10 +35,13 @@ BUSES = frozenset(
 )  # what a card or a reader reports; internal disks are SATA / NVMe
 
 LIST_COMMAND = (
-    "Get-Disk | Select-Object Number, FriendlyName, Size, "
-    "@{n='BusType';e={[string]$_.BusType}}, IsSystem, IsBoot, IsReadOnly "
-    "| ConvertTo-Json -Compress"
-)
+    "Get-Disk | ForEach-Object { "
+    "$parts = @(Get-Partition -DiskNumber $_.Number -ErrorAction SilentlyContinue); "
+    "[pscustomobject]@{ Number = $_.Number; FriendlyName = $_.FriendlyName; Size = $_.Size; "
+    "BusType = [string]$_.BusType; IsSystem = $_.IsSystem; IsBoot = $_.IsBoot; IsReadOnly = $_.IsReadOnly; "
+    "Letters = @($parts | Where-Object { $_.DriveLetter } | ForEach-Object { [string]$_.DriveLetter }); "
+    "Partitions = $parts.Count } } | ConvertTo-Json -Compress"
+)  # (the drive letters say where a disk's file systems are mounted, as `diskutil list` does on a Mac)
 
 FORMAT_SCRIPT = """\
 param([int]$Number, [uint64]$Size, [uint64]$Max, [string]$Label, [string]$Out)
@@ -87,6 +90,26 @@ def _flag(value: object) -> bool:
     return value in (True, 1, "True", "true")
 
 
+def _mounts(row: dict) -> tuple[str, ...] | None:
+    """Where the disk's file systems are mounted (`D:\\`), or None if the listing doesn't say (an older listing)."""
+    letters = row.get("Letters")
+    if letters is None:
+        return None
+    if isinstance(letters, str):  # (one letter can come as a bare string)
+        letters = [letters]
+    return tuple(
+        f"{str(letter).strip().upper()}:\\" for letter in letters if str(letter).strip()
+    )
+
+
+def _has_partitions(row: dict) -> bool:
+    """Some partition: with no drive letter that is a card Windows has let go of, not a blank one."""
+    try:
+        return int(row.get("Partitions") or 0) > 0
+    except (TypeError, ValueError):
+        return False
+
+
 def parse_get_disk(data: str) -> list[CardDisk]:
     """`Get-Disk ... | ConvertTo-Json` as disks: one disk comes as an object, several as a list."""
     if not data.strip():
@@ -114,6 +137,8 @@ def parse_get_disk(data: str) -> list[CardDisk]:
                     virtual="virtual" in bus.lower(),
                     system=_flag(row.get("IsSystem")) or _flag(row.get("IsBoot")),
                     writable=not _flag(row.get("IsReadOnly")),
+                    mounts=_mounts(row),
+                    has_filesystem=_has_partitions(row),
                 )
             )
         except (AttributeError, KeyError, TypeError, ValueError) as exc:

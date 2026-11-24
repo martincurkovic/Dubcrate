@@ -31,6 +31,42 @@ def row(number=3, size=PLAIN, **extra):
     return values
 
 
+def test_the_drive_letters_say_where_a_card_is_mounted(tmp_path):
+
+    (blank,) = win.parse_get_disk(json.dumps(row(Letters=[], Partitions=0)))
+    assert (
+        blank.mounts == () and not blank.has_filesystem
+    )  # (a blank card: nothing mounted, nothing on it)
+    (set_up,) = win.parse_get_disk(json.dumps(row(Letters=["d"], Partitions=1)))
+    assert set_up.mounts == ("D:\\",) and set_up.has_filesystem
+    (one,) = win.parse_get_disk(
+        json.dumps(row(Letters="E", Partitions=1))
+    )  # (one letter as a bare string)
+    assert one.mounts == ("E:\\",)
+    (let_go,) = win.parse_get_disk(json.dumps(row(Letters=[], Partitions=1)))
+    assert (
+        let_go.mounts == () and let_go.has_filesystem
+    )  # (a partition but no letter: ejected, not blank)
+    (old,) = win.parse_get_disk(
+        json.dumps(row())
+    )  # (a listing that says nothing about mounts)
+    assert old.mounts is None
+
+
+def test_a_blank_card_on_windows_is_offered_for_setting_up():
+    from dubcrate import card_format as cf
+
+    blank = json.dumps(row(Letters=[], Partitions=0))
+    (unset,) = cf.unset_cards(lambda *a, **kw: finished(blank))
+    assert (
+        unset.disk.device == "disk3" and unset.has_files is None
+    )  # (blank, unmounted: unknown)
+    gone = json.dumps(row(Letters=[], Partitions=1))
+    assert (
+        cf.unset_cards(lambda *a, **kw: finished(gone)) == []
+    )  # (let go by Windows: nothing to set up)
+
+
 def test_a_plain_card_in_a_usb_reader_may_be_formatted():
     (disk,) = win.parse_get_disk(json.dumps(row()))  # one disk is an object, not a list
     assert (disk.device, disk.name, disk.protocol) == (

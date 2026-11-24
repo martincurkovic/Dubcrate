@@ -44,7 +44,7 @@ Open items by area; finished work is under **Completed** at the bottom (same hea
 - [ ] Try the drive picker with two real drives (the check after a burn is skipped for any but the first).
 - [ ] Read a rekordbox USB stick's own database (`export.pdb`, `USBANLZ`) so a stick imports with BPM, key, cues and beat grids (today only `master.db` or a folder of audio).
 - [ ] Burn through the USB-C hub for real with the `generic-mmc` retry: behind the hub the default `cdrdao` driver was refused and a write then stalled (2026-11-24); direct on the computer it burned fine. Not yet seen: the retry itself writing a disc ([burning.md](dev_docs/burning.md)).
-- [ ] Try disc and card auto-detection on macOS and Windows (Linux works).
+- [ ] Try disc and card auto-detection on macOS and Windows (Linux works; Windows listed a card with a PIONEER folder, and a blank one after a fix, 2026-11-24).
 - [ ] Make it clear when a Sync has finished (it is a status-bar message that the list refresh replaces within seconds): a banner in the Sync tab that stays until the next action was suggested, not decided.
 - [ ] Cancel the writing of a burn itself (needs a confirmation: a stopped write ruins the disc).
 - [ ] Try dragging an MP3 folder in the Discs list by hand (the feel, and dropping on a collapsed disc).

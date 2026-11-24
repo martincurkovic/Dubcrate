@@ -192,6 +192,10 @@ goes with it, and the host loses the device until the VM stops). Everything belo
   script now reads the partition style again and initialises only a RAW disk. The result: one FAT partition labelled `DISK_IMG`,
   but of type 0x0E (FAT16 LBA) at 64 KB, where the player's own format is 0x06 from sector 32 (`card_format_linux.py`); whether
   the CDJ accepts it is **[not tried]**.
+- **A blank or freshly formatted card did not show in the Sync tab on Windows:** its card list only offers a card it can find a
+  `PIONEER` folder on, and the "not set up yet" list (with Format…) skipped any disk whose listing doesn't say where it is mounted,
+  which was every Windows disk. The disk listing now adds each disk's drive letters and whether it has partitions
+  (`Get-Partition`), so a blank card, or one with only Windows' own folders, is listed with a Format… button.
 - **Still [not tried] on Windows:** Windows 10, a standard (non-administrator) user, the Disc ID window's read
   from a drive (Linux only), the CI `build.yml` job, a desktop with sound for previews (the VM has no audio device), and a long
   path (over 259 characters).
