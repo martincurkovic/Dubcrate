@@ -106,7 +106,7 @@ Follow the hardware check in [burning.md](burning.md): a short disc first, 10x t
 ## 6. A real MP3 disc
 
 - [ ] **Burn… on an MP3 disc** (the cdrdao path: ISO, then one `MODE1` data track).
-- [ ] If that does not work, the alternative is `xorriso -as cdrecord -v dev=/dev/sr0 speed=10 disc.iso`
+- [x] (not needed: `cdrdao` works, 2026-11-24) If that does not work, the alternative is `xorriso -as cdrecord -v dev=/dev/sr0 speed=10 disc.iso`
       on the exported image: record which one works on this drive and on the CDJ.
 - [ ] The CDJ reads it, file order is right, long names show.
 

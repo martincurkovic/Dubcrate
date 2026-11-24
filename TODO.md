@@ -22,7 +22,7 @@ Open items by area; finished work is under **Completed** at the bottom (same hea
 
 - [ ] Find out what unit `DRPreGapLengthKey` uses before trusting the 1, 2 and 3 s "Between tracks" options ([burning.md](dev_docs/burning.md)).
 - [ ] Compare the drive's reported free blocks on a 74 and an 80 minute disc (expect about 333,000 and 359,850) to confirm the capacity check ([burning.md](dev_docs/burning.md)).
-- [ ] **MP3 cue timing on the CDJ** (2026-11-24): the CDJ's readouts agree with a player that lands on the start of an MP3 frame (within 2 CD frames). A cue on a LAME file (lead 51 ms) sounded right; on an ffmpeg-made file (25 ms) about 5 frames early, so the card now counts the Info frame for those too (`cue_timing.player_lead_ms`, +26 ms). Check on the CDJ with a **new** cue on an ffmpeg-made track (the card keeps cues it already has); a click-track disc would settle the rest, and rounding the position to the nearest MP3 frame is an idea ([card-sync.md](dev_docs/card-sync.md)).
+- [ ] MP3 cue timing on the CDJ: after counting the Info frame for ffmpeg-made files (`cue_timing.player_lead_ms`) a new cue is "significantly closer" to where it should be (2026-11-24). Left: a click-track disc to measure it, and maybe rounding positions to the nearest MP3 frame ([card-sync.md](dev_docs/card-sync.md)).
 - [ ] MP3 discs: Mac/DiscRecording burns aren't recorded, the Disc ID window can't read a disc on macOS and Windows, and discs with another label are refused ([card-sync.md](dev_docs/card-sync.md)).
 - [ ] MP3 sync follow-ups: cue marks and which waveforms the card already has in the Sync tab's tracks table (it shows the library's waveform only); Import Cues from an MP3 card (reading is built, mapping back to tracks is not); nested folders and non-MPEG-1 Layer III files are refused.
 - [ ] Finish decoding the MP3 disc's card files: cue timing against audio time (click-track disc), the four bytes at +112 of a cue entry ([cdj1000mk3-card.md](dev_docs/cdj1000mk3-card.md) section 6).
@@ -55,7 +55,7 @@ Open items by area; finished work is under **Completed** at the bottom (same hea
 
 ### Linux and Windows
 
-- [ ] Run the Linux AppImage on a real desktop (Ubuntu or Fedora) and an older glibc (needs 2.39+) ([linux-test-plan.md](dev_docs/linux-test-plan.md)).
+- [ ] Run the Linux AppImage on an older glibc (needs 2.39+), Ubuntu or Fedora ([linux-test-plan.md](dev_docs/linux-test-plan.md)). (It works on the owner's Arch desktop, 2026-11-24, a build made here.)
 - [ ] **Windows testing without a Windows PC**: use a Windows VM (Docker/QEMU/KVM) to run the tests, `scripts/build_windows.ps1` and look at the app over RDP. Burning, card formatting and drive probes need USB passthrough; `cdrdao` for Windows is unsolved.
 - [ ] Run the Windows build again (`build.yml` by hand): not yet seen are the smoke test, installer, icon and console mode ([cross-platform.md](dev_docs/cross-platform.md), Phase 5).
 - [ ] Install the built installer on a clean Windows 10 or 11: no admin prompt, app opens, bundled ffmpeg, Export Disc as Files, uninstall, upgrade keeps settings.
@@ -65,7 +65,6 @@ Open items by area; finished work is under **Completed** at the bottom (same hea
 - [ ] Try a long path on Windows (the 259-character limit is refused up front; whether longer would really fail is unchecked).
 - [ ] Try Format a Card on a spare 2 GB card on Windows (Linux works).
 - [ ] Try the Linux drive permission message on a real machine (`cdrdao.access_problem`; stand-ins only).
-- [ ] Decide between `cdrdao` and `xorriso -as cdrecord` for writing MP3 discs by trying both on a real drive ([linux-test-plan.md](dev_docs/linux-test-plan.md)).
 - [ ] Check the Explorer's real drive lists on Linux and Windows, which are only tested with fake folders ([cross-platform.md](dev_docs/cross-platform.md)).
 - [ ] Find a trustworthy `cdrdao.exe` (build it with MSYS2 or Cygwin in CI) and find out whether it needs administrator rights ([cross-platform.md](dev_docs/cross-platform.md)).
 - [ ] Use IMAPI2 for MP3 discs on Windows, which needs no extra program but a COM dependency (`comtypes` or `pywin32`) and a notices entry ([cross-platform.md](dev_docs/cross-platform.md)).
@@ -189,6 +188,8 @@ Open items by area; finished work is under **Completed** at the bottom (same hea
 - [x] Hot cues and loops: edit hot cues in the player and write them to rekordbox (`dev_docs/rekordbox-cue-writes.md` has the `Kind` numbers; only memory cues are written so far).
 
 ### Linux and Windows
+- [x] cdrdao or `xorriso -as cdrecord` for MP3 discs: decided, `cdrdao` (2026-11-24: it burned an audio disc with CD-TEXT and two MP3 discs on the CDJ test drive, and is bundled in the AppImage); `xorriso` is not needed.
+- [x] The Linux AppImage runs on a real desktop (Arch, Wayland, 2026-11-24, built here with `cdrdao` bundled): opens, plays, burns and syncs.
 
 - [x] Linux audio CD and MP3 CD burns, both on the CDJ-1000MK3 (owner, reported 2026-11-24): both written with `cdrdao` on Linux, with no permission trouble; both load in the player and the CD-TEXT appears as expected. The MP3 disc: loaded a little slower than the audio disc (not very noticeable), the display showed the ID3 tags, the file order was Dubcrate's order, and no track had trouble playing, so ffmpeg's Info frame is fine (`-write_xing 0` not needed). **Without pre-written waveforms the player drew them at about real-time speed; the waveforms Dubcrate wrote to the card removed that wait.** This finishes "Try on a real Linux machine + drive", the MP3 disc's CDJ check and the `cdrdao` drive-access check ([linux-test-plan.md](dev_docs/linux-test-plan.md), [burning.md](dev_docs/burning.md)).
 - [x] Finder page, Tagged in the iPhone viewer app Sitecase (owner, reported 2026-11-24): the tagged tracks survive closing the app, so `localStorage` is kept there (before, only checked in headless Brave and node).
