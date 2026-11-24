@@ -1464,6 +1464,10 @@ class MainWindow(QMainWindow):
                 menu.addAction(
                     "TOC Manager…", lambda: self.sync_view.open_toc_manager(disc_id)
                 )
+            else:
+                menu.addAction(
+                    "Disc ID…", lambda: self.sync_view.open_disc_image(disc_id)
+                )
             menu.addSeparator()
             menu.addAction("Delete…", lambda: self.disc_view.delete_disc(disc_id))
         elif kind == "disc_dir":

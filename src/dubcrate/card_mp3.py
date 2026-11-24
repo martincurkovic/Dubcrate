@@ -202,8 +202,10 @@ def _made_id(
     date, so its ID is the burned one's, **if the disc is as it was burned**: the label and the numbers the ID has
     in it must be what was recorded at the burn, else the disc was edited (or rendered differently) since, and an
     entry made now would be for a disc that doesn't exist."""
+    # (the label is the Joliet one as written; a record made by the first version kept the playlist's name instead,
+    # which is the same label as far as this builder goes)
     now = (
-        label,
+        recorded.label if recorded.label in (layout.label, label) else layout.label,
         layout.file_count,
         layout.folders,
         layout.last_file_start,

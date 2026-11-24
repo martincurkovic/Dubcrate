@@ -192,6 +192,20 @@ def _no_modal_question(monkeypatch):
 
     monkeypatch.setattr("dubcrate.ui.sync_view.ask_import", refuse_import)
 
+    def refuse_image_file(*_a, **_k):
+        raise AssertionError("a test opened the disc image file chooser")
+
+    monkeypatch.setattr(
+        "dubcrate.ui.disc_image_dialog.ask_open_image", refuse_image_file
+    )
+
+    def refuse_drive_image(*_a, **_k):
+        raise AssertionError("a test read the drive; pass read_drive to the dialog")
+
+    monkeypatch.setattr(
+        "dubcrate.ui.disc_image_dialog.read_drive_image", refuse_drive_image
+    )
+
     def refuse_howto(*_a, **_k):
         raise AssertionError(
             "a test opened the 'how to open the track finder' box; patch track_finder_ui.show_how_to_open"

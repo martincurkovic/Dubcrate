@@ -2036,6 +2036,10 @@ class Library:
                 ),
             )
 
+    def clear_disc_image(self, disc_id: int) -> None:
+        with self._conn:
+            self._conn.execute("DELETE FROM disc_image WHERE disc_id = ?", (disc_id,))
+
     def disc_image(self, disc_id: int) -> DiscImage | None:
         row = self._conn.execute(
             "SELECT created, label, file_count, folders, last_file_start, sectors FROM disc_image WHERE disc_id = ?",

@@ -78,6 +78,7 @@ from dubcrate.mp3_sync import (
 
 from . import theme
 from .card_import_dialog import ask_import
+from .disc_image_dialog import DiscImageDialog
 from .explorer import DrivePoller, mounted_volumes
 from .format_card_dialog import FormatCardDialog
 from .glyph_widgets import GlyphButton, GlyphIcon, close_glyph, eject_glyph, ink
@@ -775,6 +776,7 @@ class SyncView(QWidget):
         )  # (a card plugged in, not a folder)
         self._writing = False
         self._toc_dialog: TocManagerDialog | None = None
+        self._image_dialog: DiscImageDialog | None = None
         self._card_path: Path | None = None
         self._card: tuple[cc.IndexFile, Mapping[str, cc.TrackFile | None]] | None = None
         self._card_note = ""  # why the card couldn't be read, if it couldn't
@@ -1279,7 +1281,21 @@ class SyncView(QWidget):
         toc.setEnabled(
             self._current_disc_id() in self._surveys
         )  # (an audio disc: the TOC is its ID)
+        image = menu.addAction("Disc ID…", self.open_disc_image)
+        image.setEnabled(
+            self._current_disc_id() in self._mp3_rows
+        )  # (an MP3 disc: its ID is made from its image)
         return menu
+
+    def open_disc_image(self, disc_id: int | None = None) -> None:
+        """The Disc ID window for an MP3 disc (the picked one by default); the discs are looked at again when it
+        changes, so a disc that can now be synced gets its tick box."""
+        disc_id = disc_id if disc_id is not None else self._current_disc_id()
+        if disc_id is None:
+            return
+        self._image_dialog = DiscImageDialog(self._lib, disc_id, self)
+        self._image_dialog.changed.connect(self.refresh)
+        self._image_dialog.open()
 
     def open_toc_manager(self, disc_id: int | None = None) -> None:
         """The TOC Manager for a disc (the picked one by default); the discs are looked at again when it changes."""

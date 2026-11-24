@@ -1281,6 +1281,40 @@ def _toc_manager_empty(ctx):
     return _toc_manager(ctx, filled=False)
 
 
+def _disc_image(ctx, *, recorded=True):
+    from dubcrate.library.models import DiscImage
+    from dubcrate.ui.disc_image_dialog import DiscImageDialog
+
+    disc_id = ctx.temp_disc("Banger Finishers 002", kind="mp3")
+    ctx.lib.add_to_disc(
+        disc_id, [e.track.id for e in ctx.lib.disc_entries(ctx.demo.discs["peak"])]
+    )
+    if recorded:
+        ctx.lib.set_disc_image(
+            disc_id,
+            DiscImage(
+                "2026-11-23T19:47:51+11:00", "BANGER FINISHERS 0", 15, 3, 80245, 84029
+            ),
+        )
+    dialog = DiscImageDialog(ctx.lib, disc_id, None)
+    dialog.show()
+    ctx.on_cleanup(dialog.close)
+    ctx.settle(8)
+    return dialog
+
+
+@scene("disc-image", "Sync tab", "Disc ID: an MP3 disc's image recorded", sizes=(NATURAL,), kind="dialog",
+       about="An MP3 disc burned here: the image's date, label and numbers the CDJ's ID is made from.")  # fmt: skip
+def _disc_image_recorded(ctx):
+    return _disc_image(ctx)
+
+
+@scene("disc-image-empty", "Sync tab", "Disc ID: nothing recorded", sizes=(NATURAL,), kind="dialog",
+       about="A disc burned before the record was kept: read it from the disc in the drive or an image file.")  # fmt: skip
+def _disc_image_empty(ctx):
+    return _disc_image(ctx, recorded=False)
+
+
 def _format_disks():
     from dubcrate import card_format as cf
 

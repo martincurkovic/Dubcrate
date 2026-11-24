@@ -17,7 +17,7 @@ The image was checked by listing it with `xorriso` and `isoinfo` (Joliet and Roc
 import logging
 import unicodedata
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pycdlib
@@ -156,9 +156,10 @@ class ImageLayout:
 
     sectors: int
     files: tuple[ImageFile, ...]
-    folders: int = (
-        0  # the folders under the root (what the CDJ counts: the root is not)
-    )
+    # the folders under the root (what the CDJ counts: the root is not)
+    folders: int = 0
+    # the Joliet volume label as written (what the CDJ's ID sums), which is not always the name asked for
+    label: str = ""
 
     @property
     def file_count(self) -> int:
@@ -218,7 +219,12 @@ def image_layout(image: Path, folder: Path) -> ImageLayout:
             iso.close()
         except PyCdlibException:
             pass
-    return ImageLayout(image.stat().st_size // SECTOR, tuple(files), len(top_dirs))
+    return ImageLayout(
+        image.stat().st_size // SECTOR,
+        tuple(files),
+        len(top_dirs),
+        joliet_label(joliet_descriptor(image)),
+    )
 
 
 def joliet_descriptor(image: Path) -> bytes:
@@ -236,3 +242,109 @@ def joliet_descriptor(image: Path) -> bytes:
     except OSError as exc:
         raise IsoError(f"The disc image couldn't be read: {exc}") from exc
     raise IsoError("The disc image has no Joliet volume descriptor.")
+
+
+def joliet_label(svd: bytes) -> str:
+    """The Joliet volume label of a descriptor (UCS-2, big endian), without its padding."""
+    return svd[40:72].decode("utf-16-be", errors="replace").rstrip(" \x00")
+
+
+def joliet_label_field(label: str) -> bytes:
+    """The 32 bytes `build_iso` (pycdlib) writes for a Joliet label: UCS-2 and then UCS-2 spaces. The CDJ's ID sums
+    these bytes, so a disc whose field is anything else (another maker's padding) can't have its ID made here."""
+    text = label.encode("utf-16-be")
+    return text + b"\x00\x20" * ((32 - len(text)) // 2)
+
+
+@dataclass(frozen=True)
+class ImageSummary:
+    """What an image (a file, or the disc in a drive) says about itself, as far as the CDJ's ID goes."""
+
+    created: datetime  # the volume's creation date, in its own zone
+    label: str  # the Joliet label
+    label_as_ours: bool  # its 32 bytes are what `build_iso` writes for that label
+    file_count: int  # the MP3 files (what the CDJ counts)
+    folders: int  # the folders under the root
+    last_file_start: int  # the first sector of the file that starts last
+    sectors: int  # the image's size in sectors
+
+
+NESTED = "Folders inside folders aren't supported on the card yet: how the player numbers them isn't known."
+
+
+def read_image(path: Path) -> ImageSummary:
+    """Read an image or a drive's disc (`path` is an `.iso` or a device), only what is needed (the descriptors and
+    the directories, not the files). One level of folders, as `image_layout`. Raises `IsoError`."""
+    iso = pycdlib.PyCdlib()
+    try:
+        with path.open("rb") as fp:
+            svd = _joliet_from(fp)
+            iso.open_fp(fp)
+            try:
+                size = iso.pvd.space_size
+                files: list[int] = []
+                folders = 0
+                for child in iso.list_children(iso_path="/"):
+                    if child.is_dot() or child.is_dotdot():
+                        continue
+                    if child.is_dir():
+                        folders += 1
+                        name = child.file_identifier().decode("ascii")
+                        inside = [
+                            c
+                            for c in iso.list_children(iso_path=f"/{name}")
+                            if not (c.is_dot() or c.is_dotdot())
+                        ]
+                        if any(c.is_dir() for c in inside):
+                            raise IsoError(NESTED)
+                        files += [c.extent_location() for c in inside if _is_mp3(c)]
+                    elif _is_mp3(child):
+                        files.append(child.extent_location())
+            finally:
+                iso.close()
+    except (PyCdlibException, OSError, UnicodeError) as exc:
+        raise IsoError(f"The disc couldn't be read: {exc}") from exc
+    label = joliet_label(svd)
+    return ImageSummary(
+        _descriptor_date(svd),
+        label,
+        svd[40:72] == joliet_label_field(label),
+        len(files),
+        folders,
+        max(files, default=0),
+        size,
+    )
+
+
+def _is_mp3(record) -> bool:
+    name = record.file_identifier().decode("ascii", errors="replace").upper()
+    return name.endswith((".MP3;1", ".MP3"))
+
+
+def _joliet_from(fp) -> bytes:
+    for sector in range(16, 32):
+        fp.seek(sector * SECTOR)
+        block = fp.read(SECTOR)
+        if len(block) < SECTOR or block[1:6] != b"CD001" or block[0] == 255:
+            break
+        if block[0] == 2:
+            return block
+    raise IsoError(
+        "The disc has no Joliet volume descriptor (it is not an MP3 disc made like ours)."
+    )
+
+
+def _descriptor_date(svd: bytes) -> datetime:
+    digits = svd[813:829]
+    if not digits.isdigit():
+        raise IsoError("The disc's creation date is not a date.")
+    quarters = int.from_bytes(svd[829:830], "big", signed=True)
+    zone = timezone(timedelta(minutes=15 * quarters))
+    parts = [
+        int(digits[a:b])
+        for a, b in ((0, 4), (4, 6), (6, 8), (8, 10), (10, 12), (12, 14))
+    ]
+    try:
+        return datetime(*parts, tzinfo=zone)
+    except ValueError as exc:
+        raise IsoError("The disc's creation date is not a date.") from exc

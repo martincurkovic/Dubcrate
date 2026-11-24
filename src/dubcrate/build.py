@@ -342,7 +342,7 @@ def image_record(disc: DataDisc) -> DiscImage | None:
     layout = disc.layout
     return DiscImage(
         disc.created.isoformat(timespec="seconds"),
-        disc.title,
+        layout.label or disc.title,
         layout.file_count,
         layout.folders,
         layout.last_file_start,

@@ -28,6 +28,7 @@ import subprocess
 import sys
 import time
 from collections.abc import Callable, Sequence
+from pathlib import Path
 from typing import NamedTuple
 
 from dubcrate import cdj_card as cc
@@ -39,6 +40,19 @@ RETRY_SECONDS = 2.0
 
 class DriveTocError(RuntimeError):
     """The drive's TOC can't be read (an expected error: the message says why, in plain words)."""
+
+
+def data_disc_device(exists: Callable[[str], bool] = os.path.exists) -> Path:
+    """The drive's device, for reading a data disc's own files (the MP3 disc's image). Only Linux can say: the other
+    systems mount a data disc, and the raw device needs a name and rights there that aren't worked out."""
+    if sys.platform.startswith("linux"):
+        path = next((d for d in LINUX_DEVICES if exists(d)), None)
+        if path is not None:
+            return Path(path)
+        raise DriveTocError("No optical drive was found.")
+    raise DriveTocError(
+        "Reading the disc in the drive isn't built for this system yet: choose its image file instead."
+    )
 
 
 def can_read_toc() -> bool:
