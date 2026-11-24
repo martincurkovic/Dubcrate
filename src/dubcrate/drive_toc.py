@@ -197,10 +197,6 @@ def linux_entries(
     """The TOC from the kernel's CD-ROM driver (no tool needed). `device` defaults to the first of
     `/dev/cdrom`, `/dev/sr0`, `/dev/sr1` that exists. Raises `DriveTocError` (an empty drive is the
     retried `_NoDisc`)."""
-    if ioctl is None:
-        import fcntl
-
-        ioctl = fcntl.ioctl
     path = device or next((d for d in LINUX_DEVICES if exists(d)), None)
     if path is None:
         raise DriveTocError(
@@ -267,10 +263,6 @@ def disc_state(
 
 
 def _linux_disc_state(device, os_open, ioctl, exists) -> str | None:
-    if ioctl is None:
-        import fcntl
-
-        ioctl = fcntl.ioctl
     path = device if device and device.startswith("/dev/") else None
     path = path or next((d for d in LINUX_DEVICES if exists(d)), None)
     if path is None:
@@ -280,6 +272,10 @@ def _linux_disc_state(device, os_open, ioctl, exists) -> str | None:
     except OSError:
         return None  # (not allowed, or gone: the full check says why)
     try:
+        if ioctl is None:
+            import fcntl  # (Linux only: imported when there is a drive to ask)
+
+            ioctl = fcntl.ioctl
         status = ioctl(fd, CDROM_DRIVE_STATUS, CDSL_CURRENT)
     except OSError:
         return None

@@ -833,7 +833,9 @@ def test_hot_cues_are_shown_as_the_memory_cues_they_become_on_the_card(lib):
         Cue("loop", 170.0, end=174.0, slot=3),  # a hot cue saved as a loop: neither
         Cue("memory", -1.0),  # before the track starts
     ]
-    tables = {"/rb/master.db": {"42": cues}}
+    tables = {
+        str(Path("/rb/master.db")): {"42": cues}
+    }  # the key is a Path as the OS spells it
     [shown] = tf.collect(lib, cue_tables=tables).discs[0].tracks
     assert shown.cues == (
         (32.0, "Drop", "A"),
@@ -848,7 +850,7 @@ def test_hot_cues_travel_in_the_page_data(lib):
 
     lib.replace_source("rekordbox", "/rb/master.db", "RB", [TrackRecord(ext_id="1", path="/m/t.mp3", title="T", file_size=10, duration=100.0)])  # fmt: skip
     lib.add_to_disc(lib.create_disc("D"), [lib.tracks(sort="path")[0].id])
-    tables = {"/rb/master.db": {"1": [Cue("hot", 12.0, slot=3, label="Go")]}}
+    tables = {str(Path("/rb/master.db")): {"1": [Cue("hot", 12.0, slot=3, label="Go")]}}  # fmt: skip
     page = tf.html_text(tf.collect(lib, cue_tables=tables), MADE)
     assert embedded_data(page)["discs"][0]["tracks"][0][12] == [
         [12.0, "Go", "C", 0, 0, 0]

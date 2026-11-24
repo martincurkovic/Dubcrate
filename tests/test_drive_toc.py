@@ -350,6 +350,7 @@ def test_linux_opens_the_drive_without_blocking_and_ignores_a_drive_that_is_not_
         return 5
 
     monkeypatch.setattr("os.close", lambda fd: None)
+    monkeypatch.setattr("os.O_NONBLOCK", 0o4000, raising=False)  # Windows has none
     drive_toc.disc_state(
         "disk3", os_open=open_, ioctl=lambda *a: 4, exists=lambda p: p == "/dev/sr0"
     )  # (a macOS-style name: fall back to the first drive found)
