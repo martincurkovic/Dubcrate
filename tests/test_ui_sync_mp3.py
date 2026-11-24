@@ -175,7 +175,35 @@ def test_picking_the_row_explains_it_in_the_middle_pane(view, lib, tmp_path):
     assert browser.title.text() == "Warm-up"
     assert "The player must have played this disc once" in browser.message.text()
     assert "worked out when you press Sync" in browser.message.text()
-    assert browser.rows == []  # (no tracks table: the explanation is what is shown)
+    assert [r.number for r in browser.rows] == [
+        1,
+        2,
+        3,
+        4,
+    ]  # (the tracks, as for an audio disc)
+    assert all(r.state == "pending" or r.values for r in browser.rows) and browser.table.topLevelItemCount() == 4  # fmt: skip
+
+
+def test_the_tracks_table_shows_each_track_with_its_folder_and_waveform_state(
+    view, lib, tmp_path
+):
+    ids = {t.title: t.id for t in lib.tracks()}
+    lib.set_waveform(ids["One"], [3] * 100)
+    rows = card_mp3.mp3_wave_rows(lib, lib.disc_id)
+    assert [r.number for r in rows] == [1, 2, 3, 4]
+    assert [r.name for r in rows] == [
+        "One",
+        "Two",
+        "[Folder A] Three",
+        "[Folder A] Four",
+    ]
+    assert all(r.seconds > 0 for r in rows)
+    assert (rows[0].state, len(rows[0].values)) == (
+        "write",
+        100,
+    )  # (the one the library has)
+    pending = rows[1:]
+    assert all(r.state == "pending" and r.note == "worked out when you sync" and not r.values for r in pending)  # fmt: skip
 
 
 # -- the Sync button -------------------------------------------------------------------------------

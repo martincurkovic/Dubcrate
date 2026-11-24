@@ -24,7 +24,7 @@ Open items by area; finished work is under **Completed** at the bottom (same hea
 - [ ] Compare the drive's reported free blocks on a 74 and an 80 minute disc (expect about 333,000 and 359,850) to confirm the capacity check ([burning.md](dev_docs/burning.md)).
 - [ ] **MP3 cue timing on the CDJ** (2026-11-24): the CDJ's readouts agree with a player that lands on the start of an MP3 frame (within 2 CD frames). A cue on a LAME file (lead 51 ms) sounded right; on an ffmpeg-made file (25 ms) about 5 frames early, so the card now counts the Info frame for those too (`cue_timing.player_lead_ms`, +26 ms). Check on the CDJ with a **new** cue on an ffmpeg-made track (the card keeps cues it already has); a click-track disc would settle the rest, and rounding the position to the nearest MP3 frame is an idea ([card-sync.md](dev_docs/card-sync.md)).
 - [ ] MP3 discs: Mac/DiscRecording burns aren't recorded, the Disc ID window can't read a disc on macOS and Windows, and discs with another label are refused ([card-sync.md](dev_docs/card-sync.md)).
-- [ ] MP3 sync follow-ups: a tracks table with waveform state in the Sync tab's middle pane; Import Cues from an MP3 card (reading is built, mapping back to tracks is not); nested folders and non-MPEG-1 Layer III files are refused.
+- [ ] MP3 sync follow-ups: cue marks and which waveforms the card already has in the Sync tab's tracks table (it shows the library's waveform only); Import Cues from an MP3 card (reading is built, mapping back to tracks is not); nested folders and non-MPEG-1 Layer III files are refused.
 - [ ] Finish decoding the MP3 disc's card files: cue timing against audio time (click-track disc), the four bytes at +112 of a cue entry ([cdj1000mk3-card.md](dev_docs/cdj1000mk3-card.md) section 6).
 - [ ] Try MP3 disc folders on the CDJ, starting with two nested folders, then the 999-file and 8-level limits and whether `MAX_DEPTH` should be 9 ([burning.md](dev_docs/burning.md)).
 - [ ] Check the rekordbox bits no sample covered: rekordbox 6 libraries, cue points and the "mid" and "low" mood phrase names ([rekordbox-analysis.md](dev_docs/rekordbox-analysis.md)).
@@ -127,6 +127,7 @@ Open items by area; finished work is under **Completed** at the bottom (same hea
 
 ### Features and app polish
 - [x] The burn window greys out speeds above the drive's top writing speed (`cdrdao drive-info`: 24x on the test drive; it offered 48x and `cdrdao` quietly wrote at 24x). Tried on the real drive: 4234 kB/s reads as 24x; the window itself is untried.
+- [x] The Sync tab's middle pane lists an MP3 disc's tracks (folder, artist, length) with the picked track's waveform, as for an audio disc.
 
 - [x] Let Export Disc as Files… be cancelled (2026-11-17): the Cancel button stops it between tracks and removes the half-made folder.
 - [x] Year on labels (2026-11-16): **Show year** in the label window, off by default, between key and time; from rekordbox or the file's tags. (The album was asked for and skipped: not wanted.)

@@ -1142,6 +1142,28 @@ def _sync_wave(ctx):
     return window
 
 
+@scene("sync-mp3-disc", "Sync tab", "Sync: an MP3 disc picked, its tracks and folders", sizes=(LAPTOP,),
+       about="An MP3 disc in the list: its tracks (with their folders) in the middle, and the waveform the library has for the picked one.")  # fmt: skip
+def _sync_mp3(ctx):
+    window = _sync_window(ctx)
+    view = window.sync_view
+    lib = view._lib
+    ids = [t.id for t in lib.tracks()][:8]
+    disc = lib.create_disc("Folders Test", kind="mp3")
+    folder_a = lib.create_disc_dir(disc, "Folder A")
+    folder_b = lib.create_disc_dir(disc, "Folder B")
+    lib.add_to_disc(disc, ids[:2])
+    lib.add_to_disc(disc, ids[2:5], dir_id=folder_a)
+    lib.add_to_disc(disc, ids[5:8], dir_id=folder_b)
+    view.refresh()
+    ctx.settle(12)
+    for item in view._disc_items():
+        if view._id(item) == disc:
+            view.tree.setCurrentItem(item)
+    ctx.settle(8)
+    return window
+
+
 @scene("sync-no-card", "Sync tab", "Sync: no card connected", sizes=(LAPTOP,),
        about="Nothing in the card list.")  # fmt: skip
 def _sync_none(ctx):

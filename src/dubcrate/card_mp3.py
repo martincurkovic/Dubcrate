@@ -29,7 +29,13 @@ from dubcrate.audio.decode import DecodeError
 from dubcrate.build import BuildError, BurnPlan, plan_burn, render_plan
 from dubcrate.burn.base import DataDisc
 from dubcrate.cancel import CancelToken
-from dubcrate.card_discs import RekordboxCues
+from dubcrate.card_discs import (
+    WAVE_NONE,
+    WAVE_PENDING,
+    WAVE_WRITE,
+    RekordboxCues,
+    WaveRow,
+)
 from dubcrate.card_sync import map_cues
 from dubcrate.library import Library
 from dubcrate.library.models import DiscImage, DiscSummary
@@ -290,8 +296,7 @@ class Mp3DiscRow:
             )
         elif not self.problems:
             out.append(
-                "What a sync adds is worked out when you press Sync (the disc's files are made as a burn makes them "
-                "to find where each is). "
+                "Waveforms and cues are worked out when you press Sync. "
                 + (
                     "Burned here: the card's entry for it is made if the player hasn't seen it yet."
                     if self.can_make
@@ -327,6 +332,39 @@ def survey_mp3_discs(
                 card_has_mp3,
                 (last or {}).get(disc.id, ""),
                 lib.disc_image(disc.id) is not None,
+            )
+        )
+    return rows
+
+
+def mp3_wave_rows(lib: Library, disc_id: int) -> list[WaveRow]:
+    """The Sync tab's tracks table for an MP3 disc: each track with its folder, length and waveform.
+
+    Which waveforms the card needs isn't known until the disc's files are made (that needs the card's entry), so a
+    track shows the waveform the library already has (what a sync writes if the card has none for it) or says it is
+    worked out when you sync."""
+    folders = {d.id: d.name for d in lib.disc_dirs(disc_id)}
+    rows = []
+    for entry in lib.disc_entries(disc_id):
+        folder = folders.get(entry.dir_id) if entry.dir_id is not None else None
+        title = " – ".join(p for p in (entry.artist, entry.title) if p) or "Untitled"
+        own = entry.track.waveform
+        if entry.track.missing:
+            state, values, note = WAVE_NONE, (), "its file is missing"
+        elif own is not None:
+            state, values, note = WAVE_WRITE, tuple(own), "analysed: written if the card has none"  # fmt: skip
+        else:
+            state, values, note = WAVE_PENDING, (), "worked out when you sync"
+        rows.append(
+            WaveRow(
+                entry.position + 1,
+                title,
+                state,
+                values,
+                note,
+                name=f"[{folder}] {entry.title}" if folder else entry.title,
+                artist=entry.artist,
+                seconds=float(entry.track.duration or 0),
             )
         )
     return rows

@@ -57,6 +57,7 @@ from dubcrate.card_mp3 import (
     Mp3DiscRow,
     Mp3SyncError,
     collect_request,
+    mp3_wave_rows,
     survey_mp3_discs,
 )
 from dubcrate.card_mp3 import (
@@ -1202,8 +1203,15 @@ class SyncView(QWidget):
         """The middle for the disc picked on the right: its tracks and the picked track's waveform."""
         survey = self._surveys.get(self._current_disc_id() or -1)
         row = self._mp3_rows.get(self._current_disc_id() or -1)
-        if row is not None:
+        if row is not None and row.problems:
             self.browser.show_message("\n".join(row.detail()[1:]), title=row.disc.name)
+        elif row is not None:
+            self.browser.show_disc(
+                row.disc.id,
+                row.disc.name,
+                "\n".join(row.detail()[1:]),
+                mp3_wave_rows(self._lib, row.disc.id),
+            )
         elif survey is None:
             self.browser.show_message(
                 "No discs yet. Make one, or open the Library, and it is listed on the right."
