@@ -543,3 +543,78 @@ def test_the_command_line_recognises_a_moved_stick(tmp_path, capsys):
     assert cli.main(["--library", str(db), "import-usb", str(again)]) == 0
     out = capsys.readouterr().out
     assert "added 0" in out and "was moved here" in out
+
+
+# -- review fixes: the schema fallback, and moving a source in one transaction -----------------------------------------
+
+
+def test_the_schema_upgrade_rebuilds_the_table_when_its_definition_cannot_be_edited(
+    tmp_path, monkeypatch
+):
+    from dubcrate.library import store
+
+    path = tmp_path / "old.db"
+    full = store._MIGRATIONS
+    store._MIGRATIONS = full[:19]
+    try:
+        old = Library.open(path)
+        a = old.replace_source("folder", "/f", "F", [TrackRecord(ext_id=str(n), path=f"/f/{n}.mp3", title=f"T{n}") for n in (1, 2)])  # fmt: skip
+        disc = old.create_disc("D")
+        old.add_to_disc(disc, [t.id for t in old.tracks()])
+        old.close()
+    finally:
+        store._MIGRATIONS = full
+    monkeypatch.setattr(
+        store, "_edit_source_check", lambda *args: False
+    )  # (as on a build that locks the schema)
+    with Library.open(path) as lib:
+        assert [t.title for t in lib.tracks(sort="path")] == [
+            "T1",
+            "T2",
+        ]  # (no track lost to the cascade)
+        assert len(lib.disc_entries(disc)) == 2
+        assert (
+            lib._conn.execute("PRAGMA foreign_keys").fetchone()[0] == 1
+        )  # (and they are back on)
+        assert lib._conn.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
+        assert lib._conn.execute("PRAGMA foreign_key_check").fetchall() == []
+        lib.replace_source("rekordbox_usb", "/Volumes/X", "X", [TrackRecord(ext_id="1", path="/Volumes/X/b.mp3", title="B")])  # fmt: skip
+        lib.replace_source(
+            "rekordbox_xml",
+            "/x/r.xml",
+            "R",
+            [TrackRecord(ext_id="1", path="/x/c.mp3", title="C")],
+        )
+        assert sorted(s.kind for s in lib.sources()) == [
+            "folder",
+            "rekordbox_usb",
+            "rekordbox_xml",
+        ]
+        with pytest.raises(sqlite3.IntegrityError):
+            lib._conn.execute("INSERT INTO source (kind, path, name, imported_at) VALUES ('nope', 'p', 'n', 't')")  # fmt: skip
+        lib.remove_source(
+            a.source_id, force=True
+        )  # (the cascade still works on the new table)
+        assert [t.title for t in lib.tracks(sort="path")] == ["B", "C"]
+    with Library.open(path) as again:
+        assert again._conn.execute("PRAGMA user_version").fetchone()[0] == len(full)
+
+
+def test_moving_a_source_and_reading_it_again_is_one_transaction(tmp_path):
+    stick = make_stick(tmp_path)
+    with Library.open(":memory:") as lib:
+        import_stick(lib, stick)
+        before = [(t.ext_id, t.path) for t in lib.tracks(sort="path")]
+        source = lib.sources()[0]
+
+        def breaks():
+            yield TrackRecord(ext_id="1", path="/Volumes/New/Contents/a.mp3", title="x")
+            raise RuntimeError("the read failed half way")
+
+        with pytest.raises(RuntimeError):
+            lib.replace_source(
+                "rekordbox_usb", "/Volumes/New", "N", breaks(), move_from=source.id
+            )
+        # (nothing moved: the source and its tracks are exactly where they were)
+        assert lib.sources()[0].path == source.path
+        assert [(t.ext_id, t.path) for t in lib.tracks(sort="path")] == before

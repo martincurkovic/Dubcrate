@@ -441,3 +441,48 @@ def test_a_disc_the_card_cannot_be_matched_to_shows_the_librarys_own(lib, burned
     )  # five tracks: no longer the record's disc
     rows = rows_for(lib, disc, image, wave_file(played=[((0, 1), bytes([0x21] * 50))]))
     assert all(r.state == "pending" for r in rows)
+
+
+# -- review fixes: the card lookup, and reading the MP3 files off the GUI thread ----------------------------------------
+
+
+def test_the_card_lookup_says_why_a_disc_has_no_file_there(lib, burned):
+    disc, image = burned
+    entries, dirs = lib.disc_entries(disc), lib.disc_dirs(disc)
+    file = wave_file()
+    found, why = card_mp3.card_file_for(lib, disc, card_for(image, file), entries, dirs)
+    assert found is file and why == ""
+    other = m3.Mp3Index([m3.Mp3IndexEntry("MPJ00001", entry_id(9, 1, 2))])
+    assert card_mp3.card_file_for(lib, disc, (other, {}), entries, dirs) == (
+        None,
+        card_mp3.NOT_ON_CARD,
+    )
+    lib.add_to_disc(disc, [lib.tracks(sort="path")[0].id])
+    changed = card_mp3.card_file_for(
+        lib, disc, card_for(image, file), lib.disc_entries(disc), lib.disc_dirs(disc)
+    )
+    assert changed == (None, card_mp3.CHANGED)
+    lib.clear_disc_image(disc)
+    assert card_mp3.card_file_for(lib, disc, card_for(image, file), entries, dirs) == (
+        None,
+        card_mp3.NOT_RECORDED,
+    )
+
+
+def test_the_leads_can_be_worked_out_ahead_so_the_window_does_not_read_every_file(
+    tmp_path,
+):
+    files = []
+    for n in (1, 2):
+        f = tmp_path / f"{n}.mp3"
+        f.write_bytes(b"not really an mp3" * 10)
+        files.append(f)
+    items = [(str(f), None) for f in files] + [(str(tmp_path / "gone.mp3"), None)]
+    assert card_mp3.leads_ready(items) is False  # (nothing worked out yet)
+    card_mp3.warm_leads(items)  # (what a worker does)
+    assert (
+        card_mp3.leads_ready(items) is True
+    )  # (a file that can't be read has no lead to wait for)
+    f = files[0]
+    f.write_bytes(b"changed" * 30)  # a changed file's lead is worked out again
+    assert card_mp3.leads_ready(items) is False

@@ -390,3 +390,80 @@ def test_the_command_line_imports_an_xml_file(xml_file, tmp_path, capsys):
         cli.main(["--library", str(db), "import-xml", str(tmp_path / "nope.xml")]) == 1
     )
     assert "isn't a file" in capsys.readouterr().err
+
+
+# -- review fixes: which source is a track's twin ---------------------------------------------------------------
+
+
+def test_the_computers_library_is_a_files_twin_before_an_xml_export_or_a_stick():
+    """An XML export (or a stick) imported FIRST must not become the twin of the same file in master.db: it has no
+    analysis, and the cue cache would read the XML and the editor would stop writing to rekordbox."""
+    with Library.open(":memory:") as lib:
+        lib.replace_source(
+            "rekordbox_xml",
+            "/x/r.xml",
+            "X",
+            [TrackRecord(ext_id="1", path="/m/a.mp3", title="a")],
+        )
+        lib.replace_source(
+            "rekordbox_usb",
+            "/Volumes/S",
+            "S",
+            [TrackRecord(ext_id="2", path="/m/a.mp3", title="a")],
+        )
+        lib.replace_source("rekordbox", "/rb/master.db", "RB", [TrackRecord(ext_id="9", path="/m/a.mp3", title="a", analysis_path="/PIONEER/x/ANLZ0000.DAT")])  # fmt: skip
+        by_ext = {t.ext_id: t for t in lib.tracks()}
+        assert (
+            lib.rekordbox_twin(by_ext["9"]) is None
+        )  # (the master.db track has no twin of its own)
+        assert (
+            lib.rekordbox_twin(by_ext["1"]).ext_id == "9"
+        )  # (the XML's takes the computer's analysis)
+        assert lib.rekordbox_twin(by_ext["2"]).ext_id == "9"
+        lib.replace_source(
+            "folder", "/m", "M", [TrackRecord(ext_id="f", path="/m/a.mp3", title="a")]
+        )
+        folder = next(t for t in lib.tracks() if t.ext_id == "f")
+        assert lib.rekordbox_twin(folder).analysis_path == "/PIONEER/x/ANLZ0000.DAT"
+
+
+def test_without_a_computers_library_a_stick_comes_before_an_xml_file():
+    with Library.open(":memory:") as lib:
+        lib.replace_source(
+            "rekordbox_xml",
+            "/x/r.xml",
+            "X",
+            [TrackRecord(ext_id="1", path="/m/a.mp3", title="a")],
+        )
+        lib.replace_source(
+            "rekordbox_usb",
+            "/Volumes/S",
+            "S",
+            [TrackRecord(ext_id="2", path="/m/a.mp3", title="a")],
+        )
+        lib.replace_source(
+            "folder", "/m", "M", [TrackRecord(ext_id="f", path="/m/a.mp3", title="a")]
+        )
+        folder = next(t for t in lib.tracks() if t.ext_id == "f")
+        assert lib.rekordbox_twin(folder).ext_id == "2"
+
+
+# -- review fixes: which reader a cue source gets ----------------------------------------------------------------
+
+
+def test_a_master_db_copy_with_any_name_is_still_read_as_a_master_db(tmp_path):
+    from dubcrate.library import rekordbox_sources as rs
+
+    copy = tmp_path / "master.db.bak"
+    copy.write_bytes(b"x")
+    seen = []
+    rs.read_cues_at(copy, lambda p: seen.append(p) or {})
+    odd = tmp_path / "master_backup.sqlite"
+    odd.write_bytes(b"x")
+    rs.read_cues_at(odd, lambda p: seen.append(p) or {})
+    assert seen == [copy, odd]
+    # a folder, a stick's own database and a drive that isn't there now are sticks
+    for stick in (tmp_path, tmp_path / "Volumes" / "Gone"):
+        with pytest.raises(RekordboxError, match="isn't a rekordbox USB stick"):
+            rs.read_cues_at(stick, lambda p: seen.append(p) or {})
+    assert seen == [copy, odd]

@@ -499,7 +499,7 @@ def test_from_drive_is_refused_before_any_audio_disc_is_written(lib, tmp_path, c
 
 
 def test_import_cues_brings_in_what_was_set_on_the_player_for_an_mp3_disc(
-    view, lib, tmp_path, monkeypatch
+    view, lib, tmp_path, monkeypatch, wait_for
 ):
     """The player wrote a cue for the second file of "Folder A" (the disc's fourth track): Import Cues names the
     track and gives the time in audio time. Needs the image's record, which is how the card's entry is found."""
@@ -535,6 +535,7 @@ def test_import_cues_brings_in_what_was_set_on_the_player_for_an_mp3_disc(
     monkeypatch.setattr(sync_view, "ask_import", lambda _p, found: shown.extend(found))
     assert view.view.import_button.isEnabled()
     view.view.import_from_card()
+    assert wait_for(lambda: shown)  # (the MP3 files are read on a worker first)
     [finding] = shown
     [only] = finding.tracks
     assert (only.number, only.title) == (4, "Four")
@@ -543,15 +544,15 @@ def test_import_cues_brings_in_what_was_set_on_the_player_for_an_mp3_disc(
 
 
 def test_import_cues_says_so_when_an_mp3_disc_has_no_record_of_its_image(
-    view, lib, tmp_path
+    view, lib, tmp_path, wait_for
 ):
     view.look(make_card(tmp_path, lib))
     view.view.import_from_card()
-    assert "1 MP3 disc couldn't be checked" in view.said[-1]
+    assert wait_for(lambda: "1 MP3 disc couldn't be checked" in " ".join(view.said))
 
 
 def test_the_tracks_table_shows_what_the_card_has_for_a_disc_with_a_recorded_image(
-    view, lib, tmp_path
+    view, lib, tmp_path, wait_for
 ):
     """With the disc's image recorded the card's file is found without rendering: the table shows the player's own
     waveform for a track and marks the cue it set."""
@@ -584,7 +585,10 @@ def test_the_tracks_table_shows_what_the_card_has_for_a_disc_with_a_recorded_ima
 
     view.look(card)
     view.view.tree.setCurrentItem(view.view._disc_items()[0])
-    rows = view.view.browser.rows
+    browser = view.view.browser
+    # (the files are read on a worker first: the plain table shows now, then the one with the card's records)
+    assert wait_for(lambda: [r.state for r in browser.rows][1:2] == ["card"])
+    rows = browser.rows
     assert [r.state for r in rows][:2] == ["pending", "card"]
     assert rows[1].values[:2] == (4, 5) and len(rows[1].marks) == 1
     assert "already on the card" in rows[1].note

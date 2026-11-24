@@ -287,6 +287,43 @@ def rendered_lead_ms(path: str | Path, bitrate: int | None) -> int:
     return _leads[key]
 
 
+def _lead_key(path: str | Path, bitrate: int | None) -> tuple[str, int, int, int]:
+    info = Path(path).stat()
+    return (
+        str(Path(path)),
+        info.st_size,
+        info.st_mtime_ns,
+        bitrate or mp3.DEFAULT_BITRATE,
+    )
+
+
+def lead_items(entries: Sequence[DiscEntry]) -> list[tuple[str, int | None]]:
+    """(file, the disc's top bitrate) for every track whose lead `mp3_slots` will ask for."""
+    return [(e.track.path, e.mp3_bitrate) for e in entries if not e.track.missing]
+
+
+def leads_ready(items: Sequence[tuple[str, int | None]]) -> bool:
+    """Whether every lead in `items` is already worked out (a file that can't be read counts as ready: it has no
+    lead to wait for). Cheap: a `stat` each."""
+    for path, bitrate in items:
+        try:
+            if _lead_key(path, bitrate) not in _leads:
+                return False
+        except OSError:
+            continue
+    return True
+
+
+def warm_leads(items: Sequence[tuple[str, int | None]]) -> None:
+    """Work out the leads in `items`, which reads each MP3 in full. **Run this on a worker**: with it done
+    `mp3_slots` is quick, which is what the GUI thread needs. Touches no library, and ignores unreadable files."""
+    for path, bitrate in items:
+        try:
+            rendered_lead_ms(path, bitrate)
+        except OSError:
+            continue
+
+
 def player_frame(seconds: float, lead_ms: int) -> int:
     """A time in audio as the player's position (1/75 s): later by the lead, as `positions` puts it."""
     return round((seconds + lead_ms / 1000.0) * 75)
@@ -449,7 +486,7 @@ def mp3_wave_rows(
     file = None
     slots_of: dict[int, tuple[tuple[int, int], Mp3Slot]] = {}
     if card is not None:
-        file = _card_file(lib, disc_id, card, entries, dirs)
+        file, _why = card_file_for(lib, disc_id, card, entries, dirs)
         if file is not None:
             slots_of = {
                 s.track: (key, s) for key, s in mp3_slots(entries, dirs).items()
@@ -500,21 +537,30 @@ def mp3_wave_rows(
     return rows
 
 
-def _card_file(
+NOT_RECORDED = "no record of the image the disc was burned from"
+CHANGED = "the disc has changed since it was burned"
+NOT_ON_CARD = "the card has no file for it"
+
+
+def card_file_for(
     lib: Library,
     disc_id: int,
     card: tuple[m3.Mp3Index, dict[str, m3.Mp3TrackFile | None]],
     entries: Sequence[DiscEntry],
     dirs: Sequence[DiscDir],
-) -> m3.Mp3TrackFile | None:
-    """The card's file for this disc, found by the image it was burned from, or None (no record, the disc has
-    changed since, or the card has no file for it). Nothing is rendered."""
+) -> tuple[m3.Mp3TrackFile | None, str]:
+    """(the card's file for this disc, "") or (None, why): found by the image the disc was burned from, without
+    rendering anything. `why` is `NOT_RECORDED`, `CHANGED` (its file or folder count no longer matches the record)
+    or `NOT_ON_CARD`. The one rule the Sync tab's table and Import Cues both go by."""
     image = lib.disc_image(disc_id)
-    if image is None or (len(entries), len(dirs)) != (image.file_count, image.folders):
-        return None
+    if image is None:
+        return None, NOT_RECORDED
+    if (len(entries), len(dirs)) != (image.file_count, image.folders):
+        return None, CHANGED
     index, files = card
     found = index.find(image.file_count, image.last_file_start, image.sectors)
-    return files.get(found[0].name) if len(found) == 1 else None
+    file = files.get(found[0].name) if len(found) == 1 else None
+    return (file, "") if file is not None else (None, NOT_ON_CARD)
 
 
 def _card_wave(file: m3.Mp3TrackFile, key: tuple[int, int]) -> cc.WaveRecord | None:

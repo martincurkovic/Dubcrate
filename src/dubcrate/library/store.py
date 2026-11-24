@@ -409,26 +409,64 @@ CREATE TABLE disc_image (
 """
 
 
-def _allow_source_kind(conn: sqlite3.Connection, before: str, after: str) -> None:
-    """Relax the `source.kind` check from `before` to `after` (the lists inside `CHECK (kind IN (...))`).
-
-    SQLite can't change a CHECK, and rebuilding `source` would, with foreign keys on, delete every track through the
-    cascade. A check that is only RELAXED can be changed in the stored table definition (SQLite's own documented way:
-    `PRAGMA writable_schema`), which touches no row. The schema version is bumped so every connection reads it again."""
+def _edit_source_check(conn: sqlite3.Connection, before: str, after: str) -> bool:
+    """Relax the `source.kind` check from `before` to `after` by editing the stored table definition (SQLite's own
+    documented way for a CHECK that is only RELAXED: it touches no row). False if it could not be done (a build with
+    `writable_schema` locked, or a definition that isn't the one this code made)."""
     version = conn.execute("PRAGMA schema_version").fetchone()[0]
-    conn.execute("PRAGMA writable_schema = ON")
     try:
+        conn.execute("PRAGMA writable_schema = ON")
         changed = conn.execute(
             "UPDATE sqlite_master SET sql = replace(sql, ?, ?) WHERE type = 'table' AND name = 'source'",
             (f"CHECK (kind IN ({before}))", f"CHECK (kind IN ({after}))"),
         ).rowcount
-        if changed != 1:
-            raise RuntimeError(
-                "the library's source table has an unexpected definition"
-            )
+    except sqlite3.Error:
+        return False
     finally:
-        conn.execute("PRAGMA writable_schema = OFF")
-    conn.execute(f"PRAGMA schema_version = {version + 1}")
+        try:
+            conn.execute("PRAGMA writable_schema = OFF")
+        except sqlite3.Error:  # pragma: no cover
+            pass
+    if changed != 1:
+        return False
+    conn.execute(
+        f"PRAGMA schema_version = {version + 1}"
+    )  # (so every connection reads the new definition)
+    return True
+
+
+def _rebuild_source_table(conn: sqlite3.Connection, kinds: str) -> None:
+    """The slow way, when the stored definition can't be edited: make `source` again with the wider check. SQLite's
+    "other kinds of schema change" recipe: with foreign keys off (dropping `source` would otherwise delete every
+    track through the cascade), copy into a new table, swap it in and check nothing is left dangling. Foreign keys
+    are turned on again by `Library._migrate` once this has been committed."""
+    conn.commit()  # (`PRAGMA foreign_keys` does nothing inside a transaction)
+    conn.execute("PRAGMA foreign_keys = OFF")
+    conn.execute("BEGIN")
+    conn.execute(
+        "CREATE TABLE source_new (id INTEGER PRIMARY KEY,"
+        f" kind TEXT NOT NULL CHECK (kind IN ({kinds})),"
+        " path TEXT NOT NULL, name TEXT NOT NULL, imported_at TEXT NOT NULL,"
+        " hidden INTEGER NOT NULL DEFAULT 0, UNIQUE (kind, path))"
+    )
+    conn.execute(
+        "INSERT INTO source_new (id, kind, path, name, imported_at, hidden)"
+        " SELECT id, kind, path, name, imported_at, hidden FROM source"
+    )
+    conn.execute("DROP TABLE source")
+    conn.execute("ALTER TABLE source_new RENAME TO source")
+    if conn.execute("PRAGMA foreign_key_check").fetchall():
+        raise RuntimeError("rebuilding the source table left tracks without a source")
+
+
+def _allow_source_kind(conn: sqlite3.Connection, before: str, after: str) -> None:
+    """Let `source.kind` be any of `after` (the lists inside `CHECK (kind IN (...))`): edit the stored definition,
+    or if that can't be done rebuild the table. Either way no row is lost."""
+    if not _edit_source_check(conn, before, after):
+        log.warning(
+            "the source table's check could not be edited in place: rebuilding it"
+        )
+        _rebuild_source_table(conn, after)
 
 
 def _migrate_to_v20(conn: sqlite3.Connection) -> None:
@@ -582,6 +620,9 @@ class Library:
                             if statement.strip():
                                 self._conn.execute(statement)
                     self._conn.execute(f"PRAGMA user_version = {target}")
+        self._conn.execute(
+            "PRAGMA foreign_keys = ON"
+        )  # (a rebuild of a table turns them off while it works)
 
     # -- sources ---------------------------------------------------------
 
@@ -619,6 +660,11 @@ class Library:
         return len(changed)
 
     def move_source(self, source_id: int, new_path: str) -> None:
+        """A source whose folder is now somewhere else (see `_move_source_rows`), in a transaction of its own."""
+        with self._conn:
+            self._move_source_rows(source_id, new_path)
+
+    def _move_source_rows(self, source_id: int, new_path: str) -> None:
         """A source whose folder is now somewhere else (a USB stick that came back under another name): its path and
         every track's path under it change, **and so do the things kept by a file's path** (memory cue and loop edits,
         the kept preview waveforms), which would otherwise be left behind. Raises `LibraryError` if another source
@@ -635,22 +681,21 @@ class Library:
             "SELECT 1 FROM source WHERE kind = ? AND path = ?", (row["kind"], new_path)
         ).fetchone():
             raise LibraryError("another source is already there")
-        with self._conn:
-            for track in self._conn.execute(
-                "SELECT id, path FROM track WHERE source_id = ?", (source_id,)
-            ).fetchall():
-                path = track["path"]
-                if not path.startswith(old):
-                    continue
-                moved = new_path + path[len(old) :]
-                self._conn.execute("UPDATE track SET path = ? WHERE id = ?", (moved, track["id"]))  # fmt: skip
-                before, after = path_key(path), path_key(moved)
-                for table in ("memory_cue_set", "memory_cue", "memory_loop", "memory_loop_removed", "preview_cache"):  # fmt: skip
-                    self._conn.execute(
-                        f"UPDATE OR IGNORE {table} SET path_key = ? WHERE path_key = ?",
-                        (after, before),
-                    )
-            self._conn.execute("UPDATE source SET path = ? WHERE id = ?", (new_path, source_id))  # fmt: skip
+        for track in self._conn.execute(
+            "SELECT id, path FROM track WHERE source_id = ?", (source_id,)
+        ).fetchall():
+            path = track["path"]
+            if not path.startswith(old):
+                continue
+            moved = new_path + path[len(old) :]
+            self._conn.execute("UPDATE track SET path = ? WHERE id = ?", (moved, track["id"]))  # fmt: skip
+            before, after = path_key(path), path_key(moved)
+            for table in ("memory_cue_set", "memory_cue", "memory_loop", "memory_loop_removed", "preview_cache"):  # fmt: skip
+                self._conn.execute(
+                    f"UPDATE OR IGNORE {table} SET path_key = ? WHERE path_key = ?",
+                    (after, before),
+                )
+        self._conn.execute("UPDATE source SET path = ? WHERE id = ?", (new_path, source_id))  # fmt: skip
         log.info("source %s moved from %s to %s", source_id, old, new_path)
 
     def remove_source(self, source_id: int, *, force: bool = False) -> None:
@@ -683,10 +728,16 @@ class Library:
         tracks: Iterable[TrackRecord],
         nodes: Iterable[NodeRecord] = (),
         notes: Iterable[str] = (),
+        *,
+        move_from: int | None = None,
     ) -> ImportSummary:
-        """Create or sync the source at (`kind`, `path`) in one transaction."""
+        """Create or sync the source at (`kind`, `path`) in one transaction. With `move_from` (the id of a source of
+        this kind whose folder is now `path`: a stick that came back under another name) that source is moved here
+        first, **in the same transaction**, so a failure part way leaves it where it was."""
         now = datetime.now(UTC).isoformat(timespec="seconds")
         with self._conn:
+            if move_from is not None:
+                self._move_source_rows(move_from, path)
             row = self._conn.execute(
                 "SELECT id FROM source WHERE kind = ? AND path = ?", (kind, path)
             ).fetchone()
@@ -2224,7 +2275,10 @@ class Library:
         found: dict[str, sqlite3.Row] = {}
         for r in self._conn.execute(
             "SELECT t.* FROM track t JOIN source s ON s.id = t.source_id"
-            " WHERE s.kind IN ('rekordbox', 'rekordbox_usb', 'rekordbox_xml') AND t.stale = 0 ORDER BY t.id"
+            " WHERE s.kind IN ('rekordbox', 'rekordbox_usb', 'rekordbox_xml') AND t.stale = 0"
+            # (the computer's library first: a file in it takes ITS analysis and cues, even if an XML export or a
+            # stick that was imported earlier has the same file)
+            " ORDER BY CASE s.kind WHEN 'rekordbox' THEN 0 WHEN 'rekordbox_usb' THEN 1 ELSE 2 END, t.id"
         ):
             found.setdefault(path_key(r["path"]), r)
         self._rekordbox_files = (changes, found)

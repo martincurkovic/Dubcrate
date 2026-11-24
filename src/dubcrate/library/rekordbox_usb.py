@@ -274,10 +274,9 @@ def store_stick(
 ) -> ImportSummary:
     """Put a stick that was read into the library. If it is the stick of a source whose drive is gone (it came back
     under another name), that source is moved to the new place first, so its track ids, the discs that use them and
-    the cue edits made on them are kept, and it keeps its name unless one is given."""
+    the cue edits made on them are kept, and it keeps its name unless one is given. The move and the re-read are one
+    transaction."""
     moved = find_moved_source(lib, usb)
-    if moved is not None:
-        lib.move_source(moved.id, str(usb.source))
     summary = lib.replace_source(
         "rekordbox_usb",
         str(usb.source),
@@ -285,6 +284,7 @@ def store_stick(
         usb.tracks,
         usb.nodes,
         usb.notes,
+        move_from=moved.id if moved else None,  # (moved and re-read in one transaction)
     )
     if moved is not None:
         return replace(

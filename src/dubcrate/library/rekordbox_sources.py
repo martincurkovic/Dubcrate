@@ -50,6 +50,17 @@ def cue_database(kind: str, path: str | Path) -> Path:
     )
 
 
+def _is_stick(where: Path) -> bool:
+    """A stick is given as its root (a folder, or a drive that isn't there now, which has no suffix) or as its own
+    `exportLibrary.db`. Anything else is a `master.db`, **whatever it is called** (a copy named `master.db.bak` is
+    still one)."""
+    return (
+        where.name == rekordbox_usb.DB_NAME
+        or where.is_dir()
+        or (not where.exists() and where.suffix == "")
+    )
+
+
 def read_cues_at(
     path: str | Path,
     master_reader: Callable[[Path], Mapping[str, Sequence[Cue]]] = read_cues,
@@ -60,6 +71,6 @@ def read_cues_at(
     where = Path(path)
     if where.suffix.lower() == ".xml":
         return rekordbox_xml.read_xml_cues(where)
-    if where.name == rekordbox_usb.DB_NAME or where.suffix != ".db":
+    if _is_stick(where):
         return rekordbox_usb.read_usb_cues(where)
     return master_reader(where)

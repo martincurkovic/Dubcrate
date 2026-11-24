@@ -14,6 +14,7 @@ The library belongs to the GUI thread, so reading rekordbox's database and probi
 
 import logging
 import shutil
+import sqlite3
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -57,8 +58,11 @@ from dubcrate.card_mp3 import (
     Mp3DiscRow,
     Mp3SyncError,
     collect_request,
+    lead_items,
+    leads_ready,
     mp3_wave_rows,
     survey_mp3_discs,
+    warm_leads,
 )
 from dubcrate.card_mp3 import (
     prepare_disc as prepare_mp3_disc,
@@ -1213,6 +1217,25 @@ class SyncView(QWidget):
 
     # -- the words -------------------------------------------------------------------
 
+    def _import_again(self) -> None:
+        """Import Cues, after the MP3 files were read on a worker (nothing to do if the window has gone since)."""
+        try:
+            self.import_from_card()
+        except (
+            RuntimeError,
+            sqlite3.ProgrammingError,
+        ):  # (closed while the files were being read)
+            pass
+
+    def _redraw_if_picked(self, disc_id: int) -> None:
+        """The MP3 files of the picked disc have been read: show its table again, now with the card's waveforms and
+        cues (only if that disc is still the one picked, and the window is still there)."""
+        try:
+            if self._current_disc_id() == disc_id:
+                self._show_detail()
+        except RuntimeError:  # (the window was closed while the files were being read)
+            pass
+
     def _show_detail(self) -> None:
         """The middle for the disc picked on the right: its tracks and the picked track's waveform."""
         survey = self._surveys.get(self._current_disc_id() or -1)
@@ -1220,6 +1243,8 @@ class SyncView(QWidget):
         if row is not None and row.problems:
             self.browser.show_message("\n".join(row.detail()[1:]), title=row.disc.name)
         elif row is not None:
+            items = lead_items(self._lib.disc_entries(row.disc.id))
+            ready = leads_ready(items)
             self.browser.show_disc(
                 row.disc.id,
                 row.disc.name,
@@ -1227,10 +1252,19 @@ class SyncView(QWidget):
                 mp3_wave_rows(
                     self._lib,
                     row.disc.id,
-                    self._mp3_card_files(),
+                    self._mp3_card_files() if ready else None,
                     RekordboxCues(self._lib, load=self._cue_loader),
                 ),
             )
+            if not ready:
+                # (reading every MP3 for its lead takes seconds on a big disc: the plain table shows now, and the
+                # one with the card's waveforms and cues replaces it when the files have been read on a worker)
+                picked = row.disc.id
+                run_async(
+                    lambda: warm_leads(items),
+                    lambda _r: self._redraw_if_picked(picked),
+                    lambda _text: None,
+                )
         elif survey is None:
             self.browser.show_message(
                 "No discs yet. Make one, or open the Library, and it is listed on the right."
@@ -1362,6 +1396,21 @@ class SyncView(QWidget):
         Reads the card's files as already read; writes nothing."""
         if self._card is None or not (self._surveys or self._mp3_rows):
             self.message.emit("Choose a card first")
+            return
+        items = [
+            item
+            for row in self._mp3_rows.values()
+            for item in lead_items(self._lib.disc_entries(row.disc.id))
+        ]
+        if self._mp3_rows and not leads_ready(items):
+            self.message.emit("Reading the MP3 files…")
+            run_async(
+                lambda: warm_leads(items),
+                lambda _r: (
+                    self._import_again()
+                ),  # (the leads are known now: it won't wait this time)
+                lambda _text: self.message.emit("The MP3 files couldn't be read"),
+            )
             return
         cues = RekordboxCues(self._lib, load=self._cue_loader)
         findings = survey_new_cues(

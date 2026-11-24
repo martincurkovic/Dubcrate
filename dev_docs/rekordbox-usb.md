@@ -93,6 +93,21 @@ and `msg-usb-not-a-stick` (the main window's `mounted_volumes` is stubbed in eve
   `missing_tracks`, the command line) and `tests/test_ui_window.py` (unplug and replug, a stick missing at start-up). **Tried in tests only**: I could not
   unplug the owner's stick from here.
 
+## Fixes after a code review (2026-11-24)
+
+- **Which source is a file's twin** (`Library._rekordbox_rows_by_file`): the computer's `master.db` first, then a stick, then an XML file, then by id. Before, whichever was imported
+  first won, so an XML export imported before `master.db` became the twin of the same file there: the player lost that track's rekordbox waveform and beat grid, the cue cache read the XML,
+  and `RekordboxCueCache.database_for` (what the editor writes to) found no `master.db`, so memory-cue edits stopped being saved into rekordbox without a word. A test imports all three in the bad order.
+- **A moved stick is one transaction**: `replace_source(.., move_from=id)` moves the source and re-reads it together (`store_stick` uses it), so a failure half way leaves it where it was.
+- **The schema upgrade has a fallback** (`_allow_source_kind`): if the stored definition can't be edited (`writable_schema` locked, or a definition that isn't the expected text) the
+  `source` table is rebuilt the slow, documented way (foreign keys off, copy, swap, `foreign_key_check`; `_migrate` turns them on again), losing no row. A test forces it.
+- **A cue source is a stick only if it looks like one** (`rekordbox_sources._is_stick`): its own `exportLibrary.db`, a folder, or a drive that isn't there now (no suffix). A
+  `master.db` copy with any other name (`master.db.bak`) is still a `master.db`.
+- **The MP3 files are read on a worker** (`card_mp3.lead_items` / `leads_ready` / `warm_leads`): each MP3's lead means reading it in full, which on a big disc froze the window for seconds
+  when a disc was picked in Sync or Import Cues was pressed. The table now shows the plain version at once and the one with the card's records when the files have been read; Import Cues
+  says "Reading the MP3 files…" and carries on. **Not done: the stick's presence probe (`check_usb_sticks`, one `stat` every 2 s) is still on the GUI thread**, as the Explorer's drive poller
+  is: a half-ejected stick could stall it. `RekordboxCueCache.cue_file_for` and `database_for` still resolve the twin twice (one reads, one writes); a single resolver would be tidier.
+
 ## Not done / open
 
 - **Looked at in tests, a script and the offscreen gallery only, not in the running window:** the menu, the player, the track list's flags and Sync with a stick's tracks.

@@ -42,9 +42,12 @@ from dubcrate import cdj_card_mp3 as m3
 from dubcrate.analysis import Cue
 from dubcrate.card_discs import DiscSurvey, RekordboxCues
 from dubcrate.card_mp3 import (
+    CHANGED,
+    NOT_RECORDED,
     Mp3DiscRow,
     Mp3Slot,
     Mp3SyncError,
+    card_file_for,
     mp3_slots,
     player_frame,
 )
@@ -566,26 +569,18 @@ def survey_new_mp3_cues(
     ID is checked by), which is why one with no record can't be looked at, and neither can one whose files no longer
     add up to the record (it was changed since: the player's file and folder numbers would not be its tracks').
     A disc the card has no file for is left out without a word: there is nothing on the card to bring in."""
-    index, files = card
     out = Mp3Survey()
     for row in discs:
         if row.problems:
             continue
-        image = lib.disc_image(row.disc.id)
-        if image is None:
-            out.unchecked.append(row.disc.name)
-            continue
-        found_entries = index.find(
-            image.file_count, image.last_file_start, image.sectors
-        )
-        file = files.get(found_entries[0].name) if len(found_entries) == 1 else None
-        if file is None:
-            continue
         entries = lib.disc_entries(row.disc.id)
         dirs = lib.disc_dirs(row.disc.id)
-        if (len(entries), len(dirs)) != (image.file_count, image.folders):
+        file, why = card_file_for(lib, row.disc.id, card, entries, dirs)
+        if why in (NOT_RECORDED, CHANGED):
             out.unchecked.append(row.disc.name)
             continue
+        if file is None:
+            continue  # (the card has nothing for it: nothing to bring in)
         try:
             slots = mp3_slots(entries, dirs)
         except Mp3SyncError:  # (a folder inside a folder)
