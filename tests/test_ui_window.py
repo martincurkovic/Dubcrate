@@ -1354,3 +1354,78 @@ def test_a_stick_that_is_not_plugged_in_is_not_reimported(window, tmp_path):
     win.refresh_sources(select=("source", next(s.id for s in lib.sources() if s.kind == "rekordbox_usb")))  # fmt: skip
     win.reimport_selected()
     assert not win._busy and "no longer there" in win.shown[0][2]
+
+
+# -- File > Import Rekordbox USB ---------------------------------------------------------------------
+
+
+def usb_actions(win):
+    win.usb_menu.aboutToShow.emit()
+    return {a.text(): a for a in win.usb_menu.actions() if a.text()}
+
+
+def test_the_usb_menu_lists_the_sticks_that_are_plugged_in_and_imports_the_one_picked(
+    window, tmp_path, monkeypatch, wait_for
+):
+    from test_library_rekordbox_usb import make_stick
+
+    win, lib = window
+    stick = make_stick(tmp_path)
+    monkeypatch.setattr(main_window, "mounted_volumes", lambda: [tmp_path, stick])
+    actions = usb_actions(win)
+    assert list(actions) == ["stick", "Choose Folder…"]  # (the other drive is no stick)
+    assert actions["stick"].toolTip() == str(stick)
+    actions["stick"].trigger()
+    assert wait_for(lambda: not win._busy)
+    assert [s.kind for s in lib.sources() if s.kind == "rekordbox_usb"] == [
+        "rekordbox_usb"
+    ]
+    assert "read again" in usb_actions(win)["stick"].toolTip()  # (it has been imported)
+
+
+def test_the_usb_menu_says_when_no_stick_is_plugged_in_and_still_offers_a_folder(
+    window,
+):
+    win, _ = window
+    actions = usb_actions(win)
+    assert list(actions) == ["No rekordbox USB stick found", "Choose Folder…"]
+    assert not actions["No rekordbox USB stick found"].isEnabled()
+    assert actions["Choose Folder…"].isEnabled()
+
+
+def test_a_chosen_folder_is_imported_when_it_is_a_stick_and_explained_when_not(
+    window, tmp_path, monkeypatch, wait_for
+):
+    from test_library_rekordbox_usb import make_stick
+
+    win, lib = window
+    stick = make_stick(tmp_path)
+    ask = []
+
+    def chooser(*a, **k):
+        ask.append(a)
+        return ask_result[0]
+
+    ask_result = [str(tmp_path / "music")]
+    monkeypatch.setattr(QFileDialog, "getExistingDirectory", staticmethod(chooser))
+    usb_actions(win)["Choose Folder…"].trigger()
+    assert not win._busy and win.shown[-1][0] == "warning"
+    assert win.shown[-1][1] == "Not a rekordbox USB stick"
+    assert "isn't a rekordbox USB stick" in win.shown[-1][2]
+    ask_result[0] = ""  # (cancelled)
+    before = len(win.shown)
+    win.import_usb()
+    assert not win._busy and len(win.shown) == before
+    ask_result[0] = str(stick / "PIONEER")  # (the Pioneer folder is enough)
+    win.import_usb()
+    assert wait_for(lambda: not win._busy)
+    [source] = [s for s in lib.sources() if s.kind == "rekordbox_usb"]
+    assert source.path == str(stick) and source.track_count == 2
+
+
+def test_the_usb_menu_waits_while_something_is_being_imported(window, tmp_path):
+    win, _ = window
+    win._set_busy(True, "Working…", None)
+    assert not win.usb_menu.menuAction().isEnabled()
+    win._set_busy(False)
+    assert win.usb_menu.menuAction().isEnabled()

@@ -96,6 +96,13 @@ def _unsupported(root: Path) -> RekordboxError:
     )
 
 
+def problem(path: Path) -> str:
+    """Why `path` can't be imported as a stick, in plain words; "" if it can."""
+    if stick_root(path) is not None:
+        return ""
+    return str(_unsupported(Path(path).expanduser()))
+
+
 def _snapshot(db: Path, dest: Path) -> Path:
     """Copy the database (and any sidecars) into `dest`; returns the copy."""
     target = dest / db.name

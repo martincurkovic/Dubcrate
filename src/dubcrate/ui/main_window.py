@@ -52,7 +52,7 @@ from dubcrate.library.rekordbox import (
     read_master_db,
 )
 from dubcrate.library.rekordbox_sources import analysis_root, carries_rekordbox_data
-from dubcrate.library.rekordbox_usb import read_usb
+from dubcrate.library.rekordbox_usb import find_sticks, problem, read_usb, stick_root
 from dubcrate.library.store import LibraryError
 
 from . import theme, track_finder_ui, wave_style
@@ -60,7 +60,7 @@ from .about_dialog import AboutDialog, NoticesDialog
 from .burn_dialog import BurnDialog, BurnerFactory
 from .disc_tree import COLUMN_WIDTH, DiscTree
 from .disc_view import DiscView
-from .explorer import ExplorerTree, needs_polling, volume_parents
+from .explorer import ExplorerTree, mounted_volumes, needs_polling, volume_parents
 from .help_dialog import show_help_dialog
 from .label_dialog import LabelDialog
 from .models import (
@@ -532,6 +532,9 @@ class MainWindow(QMainWindow):
             self.import_rekordbox,
             QKeySequence("Ctrl+Shift+O"),
         )
+        self.usb_menu = file_menu.addMenu("Import rekordbox &USB")
+        self.usb_menu.setToolTipsVisible(True)
+        self.usb_menu.aboutToShow.connect(self._fill_usb_menu)
         file_menu.addSeparator()
         self.act_reimport = file_menu.addAction(
             "Re-import Selected &Source",
@@ -559,6 +562,7 @@ class MainWindow(QMainWindow):
         self._import_actions = [
             self.act_import_folder,
             self.act_import_rekordbox,
+            self.usb_menu.menuAction(),
             self.act_reimport,
             self.act_remove_source,
         ]
@@ -1604,6 +1608,46 @@ class MainWindow(QMainWindow):
                 return
             path = Path(chosen)
         self.start_import("rekordbox", path)
+
+    def _fill_usb_menu(self) -> None:
+        """File > Import rekordbox USB: the sticks that are plugged in (looked for each time the menu opens), then
+        a way to choose a folder (a stick that isn't listed, or a copy of one)."""
+        self.usb_menu.clear()
+        sticks = find_sticks(mounted_volumes())
+        imported = {s.path for s in self._lib.sources() if s.kind == "rekordbox_usb"}
+        for stick in sticks:
+            action = self.usb_menu.addAction(
+                stick.name, lambda _checked=False, path=stick: self.import_usb(path)
+            )
+            action.setToolTip(
+                f"{stick}: read again" if str(stick) in imported else str(stick)
+            )
+        if not sticks:
+            self.usb_menu.addAction("No rekordbox USB stick found").setEnabled(False)
+        self.usb_menu.addSeparator()
+        self.usb_menu.addAction(
+            "Choose Folder…", lambda _checked=False: self.import_usb()
+        )
+
+    def import_usb(self, path: Path | None = None) -> None:
+        """Import a rekordbox USB stick (read-only): the stick at `path`, or one chosen in a folder dialog. A folder
+        that isn't a stick with an `exportLibrary.db` is explained here rather than failing on the worker."""
+        if path is None:
+            parents = volume_parents()
+            chosen = QFileDialog.getExistingDirectory(
+                self,
+                "Choose the rekordbox USB stick",
+                str(parents[0] if parents and parents[0].is_dir() else Path.home()),
+            )
+            if not chosen:
+                return
+            path = Path(chosen)
+        if why := problem(path):
+            self._warn("Not a rekordbox USB stick", why)
+            return
+        root = stick_root(path)
+        assert root is not None
+        self.start_import("rekordbox_usb", root)
 
     def start_import(self, kind: str, path: Path, name: str | None = None) -> None:
         """Read a source on a worker thread, then store it here on the GUI thread."""

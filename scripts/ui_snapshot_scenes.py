@@ -16,6 +16,7 @@ The scene list is also the checklist of the app's windows: when a window or dial
 
 import json
 from dataclasses import dataclass
+from pathlib import Path
 
 import screenshot_recipes as recipes
 from screenshot_recipes import BROWSE, GARAGE, SIZE, SOURCE, WARM_UP  # noqa: F401 - scenes use them
@@ -1483,8 +1484,29 @@ for _id, _tab in (
 # Each of these calls the real code that raises the box; the recorder photographs it and answers No / Cancel.
 
 
-def _plain_window(ctx):
+def _plain_window(ctx, volumes=()):
+    """The main window on a laptop screen. File > Import Rekordbox USB lists `volumes` (none by default: never the
+    real drives of the machine the gallery is made on)."""
+    from unittest import mock
+
+    patch = mock.patch(
+        "dubcrate.ui.main_window.mounted_volumes", return_value=list(volumes)
+    )
+    patch.start()
+    ctx.on_cleanup(patch.stop)
     return ctx.window((LAPTOP[1], LAPTOP[2]))
+
+
+def _pretend_stick(ctx):
+    """A folder that looks like a rekordbox stick to `find_sticks` (an empty `exportLibrary.db`), named like one."""
+    import tempfile
+
+    folder = tempfile.TemporaryDirectory(prefix="dubcrate-gallery-")
+    ctx.on_cleanup(folder.cleanup)
+    stick = Path(folder.name) / "DJ STICK"
+    (stick / "PIONEER" / "rekordbox").mkdir(parents=True)
+    (stick / "PIONEER" / "rekordbox" / "exportLibrary.db").write_bytes(b"")
+    return stick, Path(folder.name)
 
 
 def _message_scene(id, title, about, trigger):
@@ -1703,6 +1725,28 @@ def _menu_bar(ctx, window):
 
 
 _menu_scene("menus-bar", "The menu bar's menus", "File, Disc, View and Help, with their submenus.", _menu_bar)  # fmt: skip
+
+
+@scene("menus-file-usb", "Menus", "File > Import rekordbox USB", kind="menu",
+       about="The submenu with a stick plugged in (a pretend one), and with none.")  # fmt: skip
+def _usb_menu(ctx):
+    stick, _folder = _pretend_stick(ctx)
+    window = _plain_window(ctx, volumes=[stick])
+    window.usb_menu.aboutToShow.emit()
+    ctx.snap_menu("with a stick plugged in", window.usb_menu)
+    from unittest import mock
+
+    with mock.patch("dubcrate.ui.main_window.mounted_volumes", return_value=[]):
+        window.usb_menu.aboutToShow.emit()
+        ctx.snap_menu("with none", window.usb_menu)
+
+
+def _not_a_stick(ctx, window):
+    _stick, folder = _pretend_stick(ctx)
+    window.import_usb(folder)  # (a folder with no PIONEER/rekordbox/exportLibrary.db)
+
+
+_message_scene("msg-usb-not-a-stick", "Not a rekordbox USB stick", "Choosing a folder that has no exportLibrary.db.", _not_a_stick)  # fmt: skip
 
 
 def _disc_tree_menus(ctx, window):

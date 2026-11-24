@@ -1,7 +1,7 @@
 # Reading a rekordbox USB stick (2026-11-24)
 
 The "read a rekordbox USB stick" item. **Read-only on the stick, always.** Step 1 (the reader and the command line) and step 2 (everything
-that reads rekordbox's cues and analysis can read a stick) are built, 2026-11-24; step 3 (the window's import with detected sticks) is not.
+that reads rekordbox's cues and analysis can read a stick) are built, 2026-11-24; step 3 (the window's File > Import rekordbox USB) is built too, 2026-11-24. All three are done.
 
 ## The decisions (the owner, 2026-11-24: "defaults")
 
@@ -63,10 +63,20 @@ Dubcrate's own table (it is never queued for a write); it still shows in the pla
 beat grid (929 beats), 26 phrases and the 47,730-column detail waveform; its cues came through `RekordboxCues` in audio time (this file's lead is
 25 ms, so hot A at 0.027 s became 0.002 s).
 
+## Step 3: the window (2026-11-24)
+
+**File > Import rekordbox USB** is a submenu filled each time it opens (`MainWindow._fill_usb_menu`): one entry per plugged-in stick
+(`find_sticks(mounted_volumes())`, named for the drive; the tooltip says "read again" for one already imported), "No rekordbox USB stick found" when
+there is none, and **Choose Folder…** (`import_usb()` with no path: a folder dialog starting in `/Volumes` where there is one). The root, its
+`PIONEER` folder or the database all do. A folder that is no stick gets a plain box on the GUI thread (`rekordbox_usb.problem`), not a failure on the
+worker. It reads on a worker with Cancel, like any import (`start_import("rekordbox_usb", root)`), and waits with the other import actions while something
+is being read. Tests: `tests/test_ui_window.py` (the menu, the choice, the cancel, the explanation, busy); gallery scenes `menus-file-usb`
+and `msg-usb-not-a-stick` (the main window's `mounted_volumes` is stubbed in every test and in the gallery, so a real drive is never listed there).
+
 ## Not done / open
 
-- **Looked at in tests and a script only, not in the running window:** the player, the track list's flags and Sync with a stick's tracks.
+- **Looked at in tests, a script and the offscreen gallery only, not in the running window:** the menu, the player, the track list's flags and Sync with a stick's tracks.
 - A stick that mounts under another name (`/Volumes/Martin 1`) is a different source path: Re-import says it is no longer there, and importing it again makes a second source (the tracks' paths are absolute).
-- Step 3: the window's import, with detected sticks and Choose Folder…; a re-import when a stick is plugged in.
+- A re-read when a stick is plugged in (it is read when you choose it, or Re-import while it is there; nothing watches for it).
 - Never tried: a stick with a different rekordbox version, a Windows/FAT32/exFAT stick, a stick with only `export.pdb`.
 - Tracks on a stick are copies of files that are also in the computer's library; they are not matched as twins (different paths).
