@@ -6,7 +6,7 @@ from pathlib import Path
 from PySide6.QtCore import QObject, Signal
 
 from dubcrate import settings
-from dubcrate.analysis import Analysis, Cue, read_analysis, share_root
+from dubcrate.analysis import Analysis, Cue, read_analysis
 from dubcrate.artwork import read_artwork
 from dubcrate.audio.decode import DecodedAudio, decode_file
 from dubcrate.audio.player import AudioPlayer
@@ -24,6 +24,7 @@ from dubcrate.library.cue_edits import (
     memory_list,
 )
 from dubcrate.library.models import Track
+from dubcrate.library.rekordbox_sources import analysis_root, carries_rekordbox_data
 from dubcrate.waveform import PREVIEW_COLUMNS, Waveform, compute_waveform
 
 from .cue_cache import RekordboxCueCache
@@ -619,8 +620,8 @@ class PreviewController(QObject):
     def _analysis_root(self, track: Track) -> Path | None:
         source = next((s for s in self._lib.sources() if s.id == track.source_id), None)
         return (
-            share_root(source.path)
-            if source is not None and source.kind == "rekordbox"
+            analysis_root(source.kind, source.path)
+            if source is not None and carries_rekordbox_data(source.kind)
             else None
         )
 

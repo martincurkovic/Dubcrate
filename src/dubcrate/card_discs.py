@@ -27,6 +27,7 @@ from dubcrate.library import Library
 from dubcrate.library.cue_edits import with_edits
 from dubcrate.library.models import DiscEntry, DiscSummary, Track
 from dubcrate.library.rekordbox import RekordboxError, read_cues
+from dubcrate.library.rekordbox_sources import carries_rekordbox_data, read_cues_at
 
 Toc = tuple[
     list[int], int
@@ -129,10 +130,12 @@ class RekordboxCues:
         source = next(
             (s for s in self._lib.sources() if s.id == analysed.source_id), None
         )
-        if source is None or source.kind != "rekordbox":
+        if source is None or not carries_rekordbox_data(source.kind):
             return ()
         if source.id not in self._by_source:
-            self._by_source[source.id] = (self._load or read_cues)(Path(source.path))
+            self._by_source[source.id] = (
+                self._load or (lambda p: read_cues_at(p, read_cues))
+            )(Path(source.path))
         return self._by_source[source.id].get(analysed.ext_id, ())
 
 

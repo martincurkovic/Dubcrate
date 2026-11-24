@@ -68,6 +68,7 @@ from dubcrate.library import Library
 from dubcrate.library.lengths import needs_measuring, probe_lengths
 from dubcrate.library.models import Track
 from dubcrate.library.rekordbox import RekordboxError, read_cues
+from dubcrate.library.rekordbox_sources import carries_rekordbox_data, read_cues_at
 from dubcrate.library.waves import measure_waveforms, store_waveforms
 from dubcrate.mp3_sync import (
     Mp3Status,
@@ -745,7 +746,7 @@ def _read_all(paths: Sequence[Path]) -> dict[Path, Mapping[str, Sequence[Cue]] |
     found: dict[Path, Mapping[str, Sequence[Cue]] | str] = {}
     for path in paths:
         try:
-            found[path] = read_cues(path)
+            found[path] = read_cues_at(path, read_cues)
         except RekordboxError as exc:
             found[path] = str(exc)
     return found
@@ -910,7 +911,9 @@ class SyncView(QWidget):
                 self._card = cc.read_card(self._card_path)
             except cc.CardFormatError as exc:
                 self._card_note = str(exc)
-        databases = [Path(s.path) for s in self._lib.sources() if s.kind == "rekordbox"]
+        databases = [
+            Path(s.path) for s in self._lib.sources() if carries_rekordbox_data(s.kind)
+        ]
         if not databases:
             self._look_at_discs({})
             return

@@ -29,7 +29,7 @@ from pathlib import Path
 import numpy as np
 
 from dubcrate import card_sync, cdj_card, keys, labels
-from dubcrate.analysis import Cue, read_beat_grid, read_preview, share_root
+from dubcrate.analysis import Cue, read_beat_grid, read_preview
 from dubcrate.audio.decode import DecodeError, decode_file
 from dubcrate.barcount import nearest_beat
 from dubcrate.cancel import Cancelled, CancelToken, cancellable_map
@@ -39,6 +39,11 @@ from dubcrate.library import Library
 from dubcrate.library.cue_edits import is_memory
 from dubcrate.library.models import DiscDir, Track
 from dubcrate.library.rekordbox import read_cues
+from dubcrate.library.rekordbox_sources import (
+    analysis_root,
+    carries_rekordbox_data,
+    read_cues_at,
+)
 from dubcrate.playlist_export import ordered
 from dubcrate.waveform import PREVIEW_COLUMNS, Waveform, compute_waveform
 
@@ -157,7 +162,9 @@ class _Waves:
     def __init__(self, lib: Library) -> None:
         self._lib = lib
         self._roots = {
-            s.id: share_root(s.path) for s in lib.sources() if s.kind == "rekordbox"
+            s.id: analysis_root(s.kind, s.path)
+            for s in lib.sources()
+            if carries_rekordbox_data(s.kind)
         }
 
     def detailed(self, track: Track, kept: dict[int, Waveform]) -> Waveform | None:
@@ -248,7 +255,7 @@ def store_waves(
 
 def rekordbox_databases(lib: Library) -> list[str]:
     """The paths of the imported rekordbox databases (their memory cues are read from a snapshot)."""
-    return [s.path for s in lib.sources() if s.kind == "rekordbox"]
+    return [s.path for s in lib.sources() if carries_rekordbox_data(s.kind)]
 
 
 def read_cue_tables(paths: Sequence[str]) -> tuple[CueTables, str]:
@@ -257,7 +264,7 @@ def read_cue_tables(paths: Sequence[str]) -> tuple[CueTables, str]:
     tables: dict[str, Mapping[str, Sequence[Cue]]] = {}
     for path in paths:
         try:
-            tables[str(Path(path))] = read_cues(Path(path))
+            tables[str(Path(path))] = read_cues_at(Path(path), read_cues)
         except Exception as exc:  # a database we can't read must not stop the export
             log.warning(
                 "track finder: could not read cues from %s", path, exc_info=True
@@ -325,7 +332,11 @@ def beat_sources(
     """Where each listed track's rekordbox beat grid is: {track id: (analysis folder, analysis path)}, through
     the rekordbox twin for a file that is also a folder track. A track with no rekordbox analysis is not in
     it, and has no bars and beats (a tempo alone can't say where the first beat is). Library thread only."""
-    roots = {s.id: share_root(s.path) for s in lib.sources() if s.kind == "rekordbox"}
+    roots = {
+        s.id: analysis_root(s.kind, s.path)
+        for s in lib.sources()
+        if carries_rekordbox_data(s.kind)
+    }
     found: dict[int, tuple[Path, str]] = {}
     for track in _disc_tracks(lib, disc_id):
         analysed = track if track.analysis_path else lib.rekordbox_twin(track)

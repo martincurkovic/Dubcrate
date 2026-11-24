@@ -35,7 +35,7 @@ from PySide6.QtWidgets import (
 )
 
 from dubcrate import logsetup, settings
-from dubcrate.analysis import read_preview, share_root
+from dubcrate.analysis import read_preview
 from dubcrate.audio.player import AudioPlayer
 from dubcrate.cancel import CancelToken
 from dubcrate.library import Library
@@ -51,6 +51,8 @@ from dubcrate.library.rekordbox import (
     default_master_db,
     read_master_db,
 )
+from dubcrate.library.rekordbox_sources import analysis_root, carries_rekordbox_data
+from dubcrate.library.rekordbox_usb import read_usb
 from dubcrate.library.store import LibraryError
 
 from . import theme, track_finder_ui, wave_style
@@ -1613,6 +1615,11 @@ class MainWindow(QMainWindow):
 
             def work(report):
                 return scan_folder(path, progress=report, cancel=token)
+        elif kind == "rekordbox_usb":
+            label = f"Reading {path.name}…"
+
+            def work(_report):
+                return read_usb(path, cancel=token)
         else:
             label = "Reading the rekordbox library…"
 
@@ -1656,9 +1663,10 @@ class MainWindow(QMainWindow):
             )
         else:
             summary = self._lib.replace_source(
-                "rekordbox",
+                "rekordbox_usb" if kind == "rekordbox_usb" else "rekordbox",
                 str(result.source),
-                name or "rekordbox",
+                name
+                or (result.source.name if kind == "rekordbox_usb" else "rekordbox"),
                 result.tracks,
                 result.nodes,
                 result.notes,
@@ -1889,9 +1897,9 @@ class MainWindow(QMainWindow):
         last = self.track_table.rowAt(self.track_table.viewport().height() - 1)
         last = model.rowCount() - 1 if last < 0 else last
         roots = {
-            s.id: share_root(s.path)
+            s.id: analysis_root(s.kind, s.path)
             for s in self._lib.sources()
-            if s.kind == "rekordbox"
+            if carries_rekordbox_data(s.kind)
         }
         from_audio = []  # tracks with no rekordbox analysis: their strip may be in the library's cache
         for row in range(

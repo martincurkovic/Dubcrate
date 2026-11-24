@@ -19,6 +19,11 @@ from dubcrate.library import Library
 from dubcrate.library.cue_edits import with_edits
 from dubcrate.library.models import Track
 from dubcrate.library.rekordbox import RekordboxError, read_cues
+from dubcrate.library.rekordbox_sources import (
+    carries_rekordbox_data,
+    cue_database,
+    read_cues_at,
+)
 
 from .tasks import TaskError, run_async
 
@@ -43,7 +48,7 @@ def _stamp(master_db: Path) -> tuple[int, ...]:
 def _read(master_db: Path) -> Cues:
     """On a worker: every cue in the database, a failure turned into plain words."""
     try:
-        return read_cues(master_db)
+        return read_cues_at(master_db, read_cues)
     except RekordboxError as exc:
         raise TaskError(f"Couldn't read rekordbox's cues: {exc}") from exc
 
@@ -80,6 +85,18 @@ class RekordboxCueCache(QObject):
             return None
         return Path(source.path)
 
+    def cue_file_for(self, track: Track) -> Path | None:
+        """The file the track's rekordbox cues are read from: its `master.db`, or a USB stick's `exportLibrary.db`
+        (itself or through its twin); None: it has none. **Reading only**: a stick is never written, so what
+        writes (`database_for`) does not use this."""
+        analysed = self._lib.rekordbox_twin(track) or track
+        source = next(
+            (s for s in self._lib.sources() if s.id == analysed.source_id), None
+        )
+        if source is None or not carries_rekordbox_data(source.kind):
+            return None
+        return cue_database(source.kind, source.path)
+
     def is_current(self, database: Path) -> bool:
         """Whether what is held for the database was read from its files as they are now."""
         held = self._held.get(database)
@@ -99,7 +116,7 @@ class RekordboxCueCache(QObject):
         A file that is also in rekordbox (same path) takes rekordbox's cues, as it takes its waveform.
         """
         analysed = self._lib.rekordbox_twin(track) or track
-        database = self.database_for(track)
+        database = self.cue_file_for(track)
         if database is None:
             return ()
         held = self._held.get(database)

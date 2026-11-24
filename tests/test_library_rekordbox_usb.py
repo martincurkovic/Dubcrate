@@ -278,3 +278,125 @@ def test_shutil_is_only_used_to_copy():
         and "rmtree" not in source
     )
     assert shutil
+
+
+# -- a stick's tracks in the places that read rekordbox ---------------------------------------------
+
+
+@pytest.fixture
+def lib_with_stick(stick):
+    with Library.open(":memory:") as lib:
+        read = ru.read_usb(stick)
+        lib.replace_source(
+            "rekordbox_usb", str(read.source), "Stick", read.tracks, read.nodes
+        )
+        yield lib, stick
+
+
+def test_the_sources_module_says_where_each_kind_keeps_things(stick, tmp_path):
+    from dubcrate.library import rekordbox_sources as rs
+
+    assert rs.carries_rekordbox_data("rekordbox") and rs.carries_rekordbox_data(
+        "rekordbox_usb"
+    )
+    assert not rs.carries_rekordbox_data("folder")
+    assert rs.analysis_root("rekordbox_usb", stick) == stick
+    assert (
+        rs.analysis_root("rekordbox", tmp_path / "rb" / "master.db")
+        == tmp_path / "rb" / "share"
+    )
+    assert (
+        rs.cue_database("rekordbox_usb", stick)
+        == stick / "PIONEER" / "rekordbox" / ru.DB_NAME
+    )
+    gone = rs.cue_database(
+        "rekordbox_usb", tmp_path / "unplugged"
+    )  # (where it would be)
+    assert gone.name == ru.DB_NAME and not gone.exists()
+    assert (
+        rs.cue_database("rekordbox", tmp_path / "master.db") == tmp_path / "master.db"
+    )
+    # any of the three things a cue source can be pointed at
+    for given in (stick, stick / "PIONEER" / "rekordbox" / ru.DB_NAME):
+        assert set(rs.read_cues_at(given)) == {"1"}
+    seen = []
+    rs.read_cues_at(tmp_path / "master.db", lambda p: seen.append(p) or {})
+    assert seen == [tmp_path / "master.db"]
+
+
+def test_cues_for_the_card_come_from_the_stick(lib_with_stick):
+    from dubcrate.card_discs import RekordboxCues
+
+    lib, _stick = lib_with_stick
+    track = next(t for t in lib.tracks() if t.ext_id == "1")
+    cues = RekordboxCues(lib).for_track(track)
+    # (the synthetic stick has no audio files, so no lead is taken off)
+    assert [(c.kind, c.time, c.slot) for c in cues] == [
+        ("memory", 0.027, None),
+        ("hot", 43.936, 1),
+        ("loop", 60.0, None),
+        ("hot", 90.0, 4),
+    ]
+    other = next(t for t in lib.tracks() if t.ext_id == "2")
+    assert list(RekordboxCues(lib).for_track(other)) == []
+
+
+def test_a_folder_track_at_a_sticks_path_has_the_stick_track_as_its_twin(
+    lib_with_stick,
+):
+    lib, stick = lib_with_stick
+    on_stick = next(t for t in lib.tracks() if t.ext_id == "1")
+    lib.replace_source(
+        "folder",
+        str(stick / "Contents"),
+        "Contents",
+        [TrackRecord(ext_id="f", path=on_stick.path, title="Same file")],
+    )
+    folder_track = next(t for t in lib.tracks() if t.title == "Same file")
+    assert lib.rekordbox_twin(folder_track).id == on_stick.id
+    assert lib.rekordbox_twin(on_stick) is None
+
+
+def test_the_cue_cache_reads_a_stick_but_the_writer_never_sees_it(
+    lib_with_stick, qapp, wait_for
+):
+    from dubcrate.ui import cue_cache
+
+    lib, stick = lib_with_stick
+    cache = cue_cache.RekordboxCueCache(lib)
+    track = next(t for t in lib.tracks() if t.ext_id == "1")
+    changes = []
+    cache.changed.connect(lambda: changes.append(1))
+    assert cache.cues_for(track) is None  # (being read)
+    assert wait_for(lambda: changes)
+    assert [c.kind for c in cache.cues_for(track)] == ["memory", "hot", "loop", "hot"]
+    assert cache.cue_file_for(track) == stick / "PIONEER" / "rekordbox" / ru.DB_NAME
+    assert (
+        cache.database_for(track) is None
+    )  # (what the editor writes to: only a computer's master.db)
+
+
+def test_nothing_that_writes_to_rekordbox_knows_about_sticks():
+    root = Path(ru.__file__).parents[1]
+    for name in ("rekordbox_write.py", "ui/rekordbox_editor.py"):
+        text = (root / name).read_text(encoding="utf-8")
+        assert "rekordbox_usb" not in text and "rekordbox_sources" not in text and "cue_file_for" not in text, name  # fmt: skip
+    assert 'kind == "rekordbox"' in (root / "ui" / "rekordbox_editor.py").read_text(encoding="utf-8")  # fmt: skip
+
+
+def test_the_finder_finds_a_sticks_beat_grids_and_cue_tables(lib_with_stick):
+    from dubcrate import track_finder
+
+    lib, stick = lib_with_stick
+    disc = lib.create_disc("D")
+    ids = [t.id for t in lib.tracks()]
+    lib.add_to_disc(disc, ids)
+    found = track_finder.beat_sources(lib, disc_id=disc)
+    assert {root for root, _ in found.values()} == {stick}
+    assert {path for _, path in found.values()} == {
+        "/PIONEER/USBANLZ/P000/00000001/ANLZ0000.DAT",
+        "/PIONEER/USBANLZ/P000/00000002/ANLZ0000.DAT",
+    }
+    assert track_finder.rekordbox_databases(lib) == [str(stick)]
+    tables, problem = track_finder.read_cue_tables([str(stick)])
+    assert problem == "" and set(tables[str(stick)]) == {"1"}

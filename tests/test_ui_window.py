@@ -1327,3 +1327,30 @@ def test_file_menu_offers_to_save_the_memory_cues_waiting_for_rekordbox(window):
     editor.write_waiting = lambda: called.append(1)
     win.act_save_waiting.trigger()
     assert called == [1]
+
+
+def test_a_rekordbox_usb_stick_is_imported_and_reimported_as_its_own_kind(
+    window, tmp_path, wait_for
+):
+    from test_library_rekordbox_usb import make_stick
+
+    win, lib = window
+    stick = make_stick(tmp_path)
+    win.start_import("rekordbox_usb", stick)
+    assert wait_for(lambda: not win._busy)
+    source = next(s for s in lib.sources() if s.kind == "rekordbox_usb")
+    assert (source.name, source.path, source.track_count) == ("stick", str(stick), 2)
+    ids = {t.ext_id: t.id for t in lib.tracks(source_id=source.id)}
+    win.reimport_selected()  # (the import selected it)
+    assert wait_for(lambda: not win._busy)
+    assert {t.ext_id: t.id for t in lib.tracks(source_id=source.id)} == ids
+    assert not [s for s in lib.sources() if s.kind == "rekordbox"]
+    assert [kind for kind, *_ in win.shown if kind == "warning"] == []
+
+
+def test_a_stick_that_is_not_plugged_in_is_not_reimported(window, tmp_path):
+    win, lib = window
+    lib.replace_source("rekordbox_usb", str(tmp_path / "gone"), "Gone", [TrackRecord(ext_id="1", path="/x/a.mp3", title="A")])  # fmt: skip
+    win.refresh_sources(select=("source", next(s.id for s in lib.sources() if s.kind == "rekordbox_usb")))  # fmt: skip
+    win.reimport_selected()
+    assert not win._busy and "no longer there" in win.shown[0][2]

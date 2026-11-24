@@ -1,7 +1,7 @@
 # Reading a rekordbox USB stick (2026-11-24)
 
-Step 1 of the "read a rekordbox USB stick" item: the pure reader and the command line. **Read-only on the stick, always.**
-Steps 2 and 3 (the preview, Sync and cue cache for a stick's tracks, then the window) are not built.
+The "read a rekordbox USB stick" item. **Read-only on the stick, always.** Step 1 (the reader and the command line) and step 2 (everything
+that reads rekordbox's cues and analysis can read a stick) are built, 2026-11-24; step 3 (the window's import with detected sticks) is not.
 
 ## The decisions (the owner, 2026-11-24: "defaults")
 
@@ -45,10 +45,28 @@ that the source has no `commit(` / `.add(` / `delete(`, and that nothing is move
 rebuilding the table would delete every track through the foreign-key cascade) and is tested on a v19 library with data.
 CLI: `dubcrate import-usb PATH [--name N]`; `dubcrate sources` lists the kind.
 
+## Step 2: a stick's tracks where rekordbox's data is read (2026-11-24)
+
+`library/rekordbox_sources.py` is the ONE place that says what differs per source kind (`KINDS`, `carries_rekordbox_data`, `analysis_root`,
+`cue_database`, `read_cues_at`); everything that READS rekordbox's cues, beat grids or waveforms asks it instead of testing `kind == "rekordbox"`:
+`card_discs.RekordboxCues` (Sync, the card, Import Cues, the finder), `ui/cue_cache.py` (the player, the track list's cue flags: `cue_file_for`),
+`ui/preview.py` (`_analysis_root`: the beat grid, phrases and waveform), `ui/main_window.py` (the track list's Preview column), `track_finder.py`
+(waveforms, beat grids, cue tables) and the Sync tab's cue loader. `Library.rekordbox_twin` includes sticks, so a file browsed in the Explorer
+(or a folder source) at a stick's path takes the stick's BPM, key, cues and analysis. `read_cues_at(path, master_reader)` keeps each module's own
+`read_cues` as the seam tests replace. The window's Re-import handles a stick (`start_import("rekordbox_usb", ...)`).
+
+**What stays master.db-only, on purpose, and is tested (`test_nothing_that_writes_to_rekordbox_knows_about_sticks`):** `rekordbox_write.py`,
+`ui/rekordbox_editor.py` and `RekordboxCueCache.database_for` (what the editor writes to). A memory cue edited on a stick's track stays in
+Dubcrate's own table (it is never queued for a write); it still shows in the player and goes to the card.
+
+**Measured on the owner's stick (read-only):** a track loaded the way the player loads it (`load_media(path, stick root, analysis path)`) gave its
+beat grid (929 beats), 26 phrases and the 47,730-column detail waveform; its cues came through `RekordboxCues` in audio time (this file's lead is
+25 ms, so hot A at 0.027 s became 0.002 s).
+
 ## Not done / open
 
-- Step 2: `RekordboxCues`, `ui/cue_cache.py`, the preview's analysis root (`PreviewController._analysis_root`), the track list's preview column and
-  `track_finder` need to read a stick's cues and analysis (a per-kind reader and root; `share_root(source.path)` is `master.db`'s).
+- **Looked at in tests and a script only, not in the running window:** the player, the track list's flags and Sync with a stick's tracks.
+- A stick that mounts under another name (`/Volumes/Martin 1`) is a different source path: Re-import says it is no longer there, and importing it again makes a second source (the tracks' paths are absolute).
 - Step 3: the window's import, with detected sticks and Choose Folder…; a re-import when a stick is plugged in.
 - Never tried: a stick with a different rekordbox version, a Windows/FAT32/exFAT stick, a stick with only `export.pdb`.
 - Tracks on a stick are copies of files that are also in the computer's library; they are not matched as twins (different paths).

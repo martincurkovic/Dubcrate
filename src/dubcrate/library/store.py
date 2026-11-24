@@ -2154,7 +2154,7 @@ class Library:
         found: dict[str, sqlite3.Row] = {}
         for r in self._conn.execute(
             "SELECT t.* FROM track t JOIN source s ON s.id = t.source_id"
-            " WHERE s.kind = 'rekordbox' AND t.stale = 0 ORDER BY t.id"
+            " WHERE s.kind IN ('rekordbox', 'rekordbox_usb') AND t.stale = 0 ORDER BY t.id"
         ):
             found.setdefault(path_key(r["path"]), r)
         self._rekordbox_files = (changes, found)
