@@ -24,6 +24,14 @@ def test_a_file_ffmpeg_made_is_ahead_by_the_delay_alone():
     assert ct.lead_samples(frame(maker=b"Lavf")) == (576 + 529, 44100)
 
 
+def test_the_player_counts_the_info_frame_of_a_file_ffmpeg_made_too():
+    assert ct.lead_samples(frame(maker=b"Lavf"), player=True) == (1152 + 576 + 529, 44100)  # fmt: skip
+    assert ct.lead_samples(frame(), player=True) == ct.lead_samples(
+        frame()
+    )  # (LAME: the same)
+    assert ct.lead_samples(bytes([0xFF, 0xFB, 0x90, 0x00]) + bytes(400), player=True) == (0, 0)  # fmt: skip
+
+
 def test_no_info_frame_no_lead():
     plain = bytes([0xFF, 0xFB, 0x90, 0x00]) + bytes(400)  # audio from the first frame
     assert ct.lead_samples(plain) == (0, 0)

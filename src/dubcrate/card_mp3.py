@@ -101,8 +101,8 @@ def positions(
     cues: Sequence[Cue], lead_seconds: float, length_frames: int
 ) -> tuple[list[tuple[int, int]], list[str]]:
     """Cues in audio time as (position, end) in 1/75 s frames **in the player's time for this file**: later by
-    `lead_seconds`, which is the Info frame the player counts as audio (and for a file with an encoder delay the
-    delay too, `cue_timing`). A memory cue, a hot cue (any slot) and a loop all become memory cues and loops, as for an
+    `lead_seconds`, which is the Info frame the player counts as audio (for any file that has one) and the encoder
+    delay too (`cue_timing.player_lead_ms`). A memory cue, a hot cue (any slot) and a loop all become memory cues and loops, as for an
     audio disc (`card_sync.map_cues`, which also drops what can't be placed). **The player's time is not yet measured
     against ours** (a click track would): this is the rekordbox convention, and may be a few tens of milliseconds off."""
     shifted = [
@@ -170,7 +170,7 @@ def prepare_disc(
             table = m3.frame_table(path)
         except m3.Mp3FrameError as exc:
             raise Mp3SyncError(f"“{planned.title}”: {exc}") from exc
-        lead = cue_timing.lead_ms(path) / 1000.0
+        lead = cue_timing.player_lead_ms(path) / 1000.0
         cue_positions, notes = positions(
             request.cues.get(planned.track_id, ()), lead, table.length_frames
         )

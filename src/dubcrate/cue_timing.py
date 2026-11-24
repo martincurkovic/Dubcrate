@@ -74,9 +74,14 @@ def _tag(head: bytes) -> _Tag | None:
 _KNOWN_MAKERS = (b"LAME", b"Lavc", b"Lavf")
 
 
-def lead_samples(head: bytes) -> tuple[int, int]:
+def lead_samples(head: bytes, player: bool = False) -> tuple[int, int]:
     """(samples, sample rate) rekordbox's timeline is ahead of ffmpeg's for an MP3 starting `head` (its first
-    bytes after any ID3v2 tag). (0, 0): no Info / Xing frame, so no lead."""
+    bytes after any ID3v2 tag), or with `player`, the CDJ's. (0, 0): no Info / Xing frame, so no lead.
+
+    The player counts the Info frame for any file that has one, an ffmpeg-made file too (rekordbox leaves that
+    one out): **measured 2026-11-24, one file each**: a LAME file's cue, shifted by 51 ms, sounded right on the
+    CDJ; an ffmpeg file's, shifted by 25 ms, sounded 5 frames early, about the Info frame (26 ms) and the
+    player's rounding down to an MP3 frame (up to 26 ms) short."""
     found = _tag(head)
     if found is None or found.maker not in _KNOWN_MAKERS or found.delay is None:
         return (
@@ -88,7 +93,7 @@ def lead_samples(head: bytes) -> tuple[int, int]:
     ):  # (a handful of files, which did not agree with each other: left alone)
         return 0, 0
     # rekordbox counts a LAME file's Info frame as well (an ffmpeg file's it leaves out); both count the delay.
-    counted = found.frame if found.maker == b"LAME" else 0
+    counted = found.frame if found.maker == b"LAME" or player else 0
     return counted + found.delay + _DECODER_DELAY, found.rate
 
 
@@ -111,13 +116,13 @@ def _head(path: Path) -> bytes:
     return data[start:] if start >= 0 else b""
 
 
-_held: dict[tuple[str, int, int], int] = {}
+_held: dict[tuple[str, int, int, bool], int] = {}
 
 
 _HELD_LIMIT = 20000  # files remembered at once (a changed file leaves a dead entry): then start again
 
 
-def lead_or_none(path: str | os.PathLike[str]) -> int | None:
+def lead_or_none(path: str | os.PathLike[str], player: bool = False) -> int | None:
     """`lead_ms`, but None for an MP3 that can't be read just now (a drive that is unplugged): a caller that
     would write a time must not take that for "no lead". Kept per file until it changes."""
     where = Path(path)
@@ -125,11 +130,11 @@ def lead_or_none(path: str | os.PathLike[str]) -> int | None:
         return 0
     try:
         info = where.stat()
-        key = (str(where), info.st_size, info.st_mtime_ns)
+        key = (str(where), info.st_size, info.st_mtime_ns, player)
         if key not in _held:
             if len(_held) >= _HELD_LIMIT:
                 _held.clear()
-            samples, rate = lead_samples(_head(where))
+            samples, rate = lead_samples(_head(where), player)
             _held[key] = round(samples * 1000 / rate) if rate else 0
         return _held[key]
     except OSError:
@@ -140,6 +145,12 @@ def lead_ms(path: str | os.PathLike[str]) -> int:
     """How many milliseconds later rekordbox's time is than the audio ffmpeg renders for this file (0 for any
     file that isn't an MP3 with an Info / Xing frame, or that can't be read: never raises)."""
     return lead_or_none(path) or 0
+
+
+def player_lead_ms(path: str | os.PathLike[str]) -> int:
+    """How many milliseconds later the CDJ's time is than the audio for this file: `lead_ms`, with the Info
+    frame counted for an ffmpeg-made file too (0 for a file with no Info frame, or one that can't be read)."""
+    return lead_or_none(path, player=True) or 0
 
 
 def to_audio(cues: Sequence[Cue], lead: int) -> list[Cue]:
