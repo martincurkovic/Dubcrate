@@ -423,5 +423,7 @@ def test_the_card_ready_box_names_the_card_and_says_to_eject(qapp, monkeypatch):
     )
     fcd.announce_ready(None, "DISK_IMG")
     ((title, text),) = shown
-    assert title == "Card Ready" and "“DISK_IMG”" in text
-    assert "sync" in text and "Eject" in text
+    assert title == "Card Ready"
+    assert (
+        text == "“DISK_IMG” is formatted and ready for the CDJ-1000MK3."
+    )  # (short: nothing more to say)

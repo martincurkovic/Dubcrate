@@ -71,9 +71,7 @@ def announce_ready(parent: QWidget | None, name: str) -> None:
     QMessageBox.information(
         parent,
         "Card Ready",
-        f"“{name}” is formatted and ready for the CDJ-1000MK3.\n\n"
-        "It is picked in the card list, so you can sync your discs to it now. "
-        "Eject it before you take it out.",
+        f"“{name}” is formatted and ready for the CDJ-1000MK3.",
     )
 
 
