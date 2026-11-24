@@ -11,6 +11,7 @@ from dubcrate.library import ImportSummary, Library
 from dubcrate.library.folder import scan_folder
 from dubcrate.library.rekordbox import RekordboxError, read_master_db
 from dubcrate.library.rekordbox_usb import read_usb, store_stick
+from dubcrate.library.rekordbox_xml import read_xml
 
 log = logging.getLogger(__name__)
 
@@ -86,6 +87,26 @@ def cmd_import_usb(lib: Library, args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_import_xml(lib: Library, args: argparse.Namespace) -> int:
+    path = Path(args.path).expanduser()
+    try:
+        xml = read_xml(path, progress=lambda msg: print(msg, file=sys.stderr))
+    except RekordboxError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    _report(
+        lib.replace_source(
+            "rekordbox_xml",
+            str(xml.source),
+            args.name or path.stem,
+            xml.tracks,
+            xml.nodes,
+            xml.notes,
+        )
+    )
+    return 0
+
+
 def cmd_sources(lib: Library, _: argparse.Namespace) -> int:
     for s in lib.sources():
         print(
@@ -147,6 +168,14 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("path", help="the stick (its root, or its PIONEER folder)")
     p.add_argument("--name", help="display name (default: the stick's name)")
     p.set_defaults(fn=cmd_import_usb)
+
+    p = sub.add_parser(
+        "import-xml",
+        help="import a rekordbox XML file (read-only; tracks, playlists, cues)",
+    )
+    p.add_argument("path", help="the exported .xml file")
+    p.add_argument("--name", help="display name (default: the file's name)")
+    p.set_defaults(fn=cmd_import_xml)
 
     sub.add_parser("sources", help="list imported sources").set_defaults(fn=cmd_sources)
 

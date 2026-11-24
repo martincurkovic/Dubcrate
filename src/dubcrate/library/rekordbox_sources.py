@@ -4,6 +4,8 @@
   folder beside it, and its cues in the database.
 - `rekordbox_usb`: a USB stick (the source's path is the stick's root). Its analysis files are under the root, and
   its cues in `PIONEER/rekordbox/exportLibrary.db`.
+- `rekordbox_xml`: an exported XML file (the source's path is that file). It has cues but **no analysis files** (its tracks
+  have no `analysis_path`, so `analysis_root` is never used for them).
 
 Whatever READS rekordbox's cues, beat grids or waveforms asks here, so a stick works the same as `master.db`. **Whatever
 WRITES to rekordbox (`rekordbox_write`, `ui/rekordbox_editor.py`) must not**: it acts on `kind == "rekordbox"` only, and
@@ -14,12 +16,13 @@ from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 
 from dubcrate.analysis import Cue, share_root
-from dubcrate.library import rekordbox_usb
+from dubcrate.library import rekordbox_usb, rekordbox_xml
 from dubcrate.library.rekordbox import read_cues
 
 KINDS = (
     "rekordbox",
     "rekordbox_usb",
+    "rekordbox_xml",
 )  # the kinds of source that carry rekordbox's data
 
 
@@ -29,14 +32,18 @@ def carries_rekordbox_data(kind: str) -> bool:
 
 def analysis_root(kind: str, path: str | Path) -> Path:
     """The folder rekordbox's analysis paths (`/PIONEER/USBANLZ/...`) are relative to, for a source of this kind."""
-    return Path(path) if kind == "rekordbox_usb" else share_root(path)
+    if kind == "rekordbox_usb":
+        return Path(path)
+    if kind == "rekordbox_xml":
+        return Path(path).parent  # (no analysis files: nothing is read from it)
+    return share_root(path)
 
 
 def cue_database(kind: str, path: str | Path) -> Path:
     """The file a source's cues are read from (and the one whose size and date say they changed): `master.db`, or a
     stick's `exportLibrary.db` (where it would be, if the stick is not plugged in)."""
     if kind != "rekordbox_usb":
-        return Path(path)
+        return Path(path)  # (`master.db`, or the XML file itself)
     root = Path(path)
     return rekordbox_usb.library_file(root) or (
         root / rekordbox_usb.PIONEER_NAMES[0] / "rekordbox" / rekordbox_usb.DB_NAME
@@ -51,6 +58,8 @@ def read_cues_at(
     own module's `read_cues` stays the one place a test replaces), an `exportLibrary.db`, or a stick's root.
     Read-only (a snapshot copy), raises `RekordboxError` in plain words."""
     where = Path(path)
+    if where.suffix.lower() == ".xml":
+        return rekordbox_xml.read_xml_cues(where)
     if where.name == rekordbox_usb.DB_NAME or where.suffix != ".db":
         return rekordbox_usb.read_usb_cues(where)
     return master_reader(where)

@@ -45,8 +45,6 @@ Open items by area; finished work is under **Completed** at the bottom (same hea
 - [ ] Cancel the writing of a burn itself (needs a confirmation: a stopped write ruins the disc).
 - [ ] Try dragging an MP3 folder in the Discs list by hand (the feel, and dropping on a collapsed disc).
 - [ ] Give each app library its own Library tab once a second library exists ([roadmap.md](dev_docs/roadmap.md)).
-- [ ] Try `tinytag` as a faster folder scan, since `ffprobe` per file manages about 120 files a second ([roadmap.md](dev_docs/roadmap.md)).
-- [ ] Add rekordbox XML export as an import path with no SQLCipher dependency ([roadmap.md](dev_docs/roadmap.md)).
 - [ ] Read rekordbox's `PWV3` and `PWV5` directly for exact waveform matches on rekordbox tracks ([rekordbox-analysis.md](dev_docs/rekordbox-analysis.md)).
 
 ### Linux and Windows
@@ -118,6 +116,8 @@ Open items by area; finished work is under **Completed** at the bottom (same hea
 - [x] Read the third-party notices carefully, since they name each licence but don't reproduce the full texts ([roadmap.md](dev_docs/roadmap.md)).
 
 ### Features and app polish
+- [x] Try `tinytag` as a faster folder scan (2026-11-24: tried, **not adopted**: 2.7x faster than ffprobe at best, and it misread one file's duration, 14.6 s for 337.6 s, on 400 real files; [roadmap.md](dev_docs/roadmap.md)).
+- [x] Rekordbox XML as an import path with no SQLCipher dependency (2026-11-24: `rekordbox_xml.py`, source kind `rekordbox_xml` (schema v21), File > Import rekordbox XML…, `dubcrate import-xml`; tracks, playlists and cues, no waveform or beat grid; read from the owner's own Dubcrate export, not from a rekordbox-made file: [rekordbox-xml.md](dev_docs/rekordbox-xml.md)).
 - [x] The burn window greys out speeds above the drive's top writing speed (`cdrdao drive-info`: 24x on the test drive; it offered 48x and `cdrdao` quietly wrote at 24x). Tried on the real drive: 4234 kB/s reads as 24x; the window itself is untried.
 - [x] The Sync tab's middle pane lists an MP3 disc's tracks (folder, artist, length) with the picked track's waveform, as for an audio disc.
 

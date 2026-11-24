@@ -1475,3 +1475,57 @@ def test_the_window_follows_a_stick_that_is_not_there_at_start_up(
     assert (
         "unplugged" not in win.statusBar().currentMessage()
     )  # (the first look says nothing)
+
+
+# -- File > Import rekordbox XML ---------------------------------------------------------------------------
+
+
+def test_a_rekordbox_xml_file_is_imported_and_reimported_as_its_own_kind(
+    window, tmp_path, wait_for
+):
+    from test_library_rekordbox_xml import XML
+
+    win, lib = window
+    xml = tmp_path / "gig.xml"
+    xml.write_text(XML, encoding="utf-8")
+    win.import_xml(xml)
+    assert wait_for(lambda: not win._busy)
+    source = next(s for s in lib.sources() if s.kind == "rekordbox_xml")
+    assert (source.name, source.path, source.track_count) == ("gig", str(xml), 3)
+    ids = {t.ext_id: t.id for t in lib.tracks(source_id=source.id)}
+    win.reimport_selected()  # (the import selected it)
+    assert wait_for(lambda: not win._busy)
+    assert {t.ext_id: t.id for t in lib.tracks(source_id=source.id)} == ids
+    assert not [s for s in lib.sources() if s.kind == "rekordbox"]
+    assert [kind for kind, *_ in win.shown if kind == "warning"] == []
+
+
+def test_the_xml_import_asks_for_a_file_explains_a_wrong_one_and_waits_while_busy(
+    window, tmp_path, monkeypatch, wait_for
+):
+    from test_library_rekordbox_xml import XML
+
+    win, lib = window
+    answer = [""]
+    monkeypatch.setattr(
+        QFileDialog, "getOpenFileName", staticmethod(lambda *a, **k: (answer[0], ""))
+    )
+    win.act_import_xml.trigger()  # (cancelled)
+    assert not win._busy and not win.shown
+    bad = tmp_path / "words.xml"
+    bad.write_text("not xml at all", encoding="utf-8")
+    answer[0] = str(bad)
+    win.import_xml()
+    assert not win._busy and win.shown[-1][0] == "warning"
+    assert win.shown[-1][1] == "Not a rekordbox XML file"
+    assert "isn't a rekordbox XML file" in win.shown[-1][2]
+    good = tmp_path / "good.xml"
+    good.write_text(XML, encoding="utf-8")
+    answer[0] = str(good)
+    win.import_xml()
+    assert not win.act_import_xml.isEnabled()  # (reading: the import actions wait)
+    assert wait_for(lambda: not win._busy)
+    assert win.act_import_xml.isEnabled()
+    assert [s.kind for s in lib.sources() if s.kind == "rekordbox_xml"] == [
+        "rekordbox_xml"
+    ]

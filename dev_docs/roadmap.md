@@ -137,8 +137,8 @@ done and have nothing left to say are in "Decisions so far".
   v7). See Decisions, and [burning.md](burning.md) for the hardware check. The editor is built (2026-11-16): split a list across MP3 discs from the window,
   make / rename / move / delete folders, and the + asks for the kind. Still to do: whatever the first real burn shows about the CDJ.
   (Writing an MP3 disc with the `cdrdao` backend is built, from a `pycdlib` image, and not tried either.)
-- Rekordbox XML export as an import path with no SQLCipher dependency (a fallback if
-  `pyrekordbox` ever lags behind a rekordbox update).
+- Rekordbox XML as an import path with no SQLCipher dependency: **built 2026-11-24** (`library/rekordbox_xml.py`, source kind `rekordbox_xml`, File > Import rekordbox XML…,
+  `dubcrate import-xml`; tracks, playlists and cues, no waveform or beat grid): [rekordbox-xml.md](rekordbox-xml.md).
 - Windows and Linux burn backends behind the existing `Burner` interface: the plan, the
   decision to use `cdrdao`, and what is unverified are in [cross-platform.md](cross-platform.md).
 - Music/iTunes as a source (decided to skip for now; it needs an exported library XML
@@ -292,7 +292,10 @@ done and have nothing left to say are in "Decisions so far".
 
 - Imports, length measuring, waveform analysis and level measuring can be cancelled (`cancel.py`, 2026-11-15: a Cancel button in the status bar, the Sync tab and the burn window) and show "n of N"; a folder scan or one very long file is only stopped between files.
 - A folder scan runs at about 120 files a second (ffprobe per file), so 50,000 files
-  would take several minutes. `tinytag` (MIT) would be the faster fallback.
+  would take several minutes. **`tinytag` was tried and measured 2026-11-24, and not adopted:** on 400 of the owner's files (1,096 of 1,123 are MP3) it ran at about 350 files a
+  second on one thread against ffprobe's 135 (which stops scaling past 8 workers: it is process-spawn bound), so 2.7x, not 10x; and it **misread one file's duration (14.6 s for a
+  337.6 s track)**, read a different genre or comment for 16 of 400 (ID3v1 against v2), and has no BPM or key attribute (they are in `other`). A CD planner that works to the
+  sector can't take a wrong length for a 2.7x. A re-import could skip unchanged files (as `scan_directory` does by size), at the cost of missing a tag edited without a size change: not done.
 - A computed Preview strip is saved (`preview_cache`, schema v12, keyed by the file's path and size, at most
   `MAX_CACHED_PREVIEWS`, so it outlives the track's row), so a folder track keeps it across sessions
   (rekordbox tracks read theirs from rekordbox's own files).

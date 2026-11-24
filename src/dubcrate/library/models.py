@@ -7,7 +7,7 @@ from dubcrate import mp3
 from dubcrate.cd import estimate_sectors
 from dubcrate.loudness import Loudness
 
-SourceKind = Literal["folder", "rekordbox", "rekordbox_usb"]
+SourceKind = Literal["folder", "rekordbox", "rekordbox_usb", "rekordbox_xml"]
 # An audio CD is limited by minutes; an MP3 CD is a data disc, limited by bytes.
 DiscKind = Literal["audio", "mp3"]
 

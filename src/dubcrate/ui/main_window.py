@@ -62,6 +62,8 @@ from dubcrate.library.rekordbox_usb import (
     stick_root,
     store_stick,
 )
+from dubcrate.library.rekordbox_xml import problem as xml_problem
+from dubcrate.library.rekordbox_xml import read_xml
 from dubcrate.library.store import LibraryError
 
 from . import theme, track_finder_ui, wave_style
@@ -552,6 +554,9 @@ class MainWindow(QMainWindow):
             self.import_rekordbox,
             QKeySequence("Ctrl+Shift+O"),
         )
+        self.act_import_xml = file_menu.addAction(
+            "Import rekordbox &XML…", self.import_xml
+        )
         self.usb_menu = file_menu.addMenu("Import rekordbox &USB")
         self.usb_menu.setToolTipsVisible(True)
         self.usb_menu.aboutToShow.connect(self._fill_usb_menu)
@@ -582,6 +587,7 @@ class MainWindow(QMainWindow):
         self._import_actions = [
             self.act_import_folder,
             self.act_import_rekordbox,
+            self.act_import_xml,
             self.usb_menu.menuAction(),
             self.act_reimport,
             self.act_remove_source,
@@ -1698,6 +1704,24 @@ class MainWindow(QMainWindow):
             "Choose Folder…", lambda _checked=False: self.import_usb()
         )
 
+    def import_xml(self, path: Path | None = None) -> None:
+        """File > Import rekordbox XML: read an exported rekordbox XML file (read-only): the file at `path`, or one
+        chosen in a file dialog. A file that isn't one is explained here rather than failing on the worker."""
+        if path is None:
+            chosen, _ = QFileDialog.getOpenFileName(
+                self,
+                "Choose a rekordbox XML file",
+                str(Path.home()),
+                "rekordbox XML (*.xml)",
+            )
+            if not chosen:
+                return
+            path = Path(chosen)
+        if why := xml_problem(path):
+            self._warn("Not a rekordbox XML file", why)
+            return
+        self.start_import("rekordbox_xml", path)
+
     def import_usb(self, path: Path | None = None) -> None:
         """Import a rekordbox USB stick (read-only): the stick at `path`, or one chosen in a folder dialog. A folder
         that isn't a stick with an `exportLibrary.db` is explained here rather than failing on the worker."""
@@ -1728,6 +1752,11 @@ class MainWindow(QMainWindow):
 
             def work(report):
                 return scan_folder(path, progress=report, cancel=token)
+        elif kind == "rekordbox_xml":
+            label = f"Reading {path.name}…"
+
+            def work(_report):
+                return read_xml(path, cancel=token)
         elif kind == "rekordbox_usb":
             label = f"Reading {path.name}…"
 
@@ -1777,6 +1806,15 @@ class MainWindow(QMainWindow):
         else:
             if kind == "rekordbox_usb":
                 summary = store_stick(self._lib, result, name)
+            elif kind == "rekordbox_xml":
+                summary = self._lib.replace_source(
+                    "rekordbox_xml",
+                    str(result.source),
+                    name or result.source.stem,
+                    result.tracks,
+                    result.nodes,
+                    result.notes,
+                )
             else:
                 summary = self._lib.replace_source(
                     "rekordbox",

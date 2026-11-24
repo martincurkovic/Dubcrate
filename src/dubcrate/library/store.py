@@ -409,8 +409,8 @@ CREATE TABLE disc_image (
 """
 
 
-def _migrate_to_v20(conn: sqlite3.Connection) -> None:
-    """A source may be a rekordbox USB stick (`rekordbox_usb`): the `source.kind` check allows it.
+def _allow_source_kind(conn: sqlite3.Connection, before: str, after: str) -> None:
+    """Relax the `source.kind` check from `before` to `after` (the lists inside `CHECK (kind IN (...))`).
 
     SQLite can't change a CHECK, and rebuilding `source` would, with foreign keys on, delete every track through the
     cascade. A check that is only RELAXED can be changed in the stored table definition (SQLite's own documented way:
@@ -420,10 +420,7 @@ def _migrate_to_v20(conn: sqlite3.Connection) -> None:
     try:
         changed = conn.execute(
             "UPDATE sqlite_master SET sql = replace(sql, ?, ?) WHERE type = 'table' AND name = 'source'",
-            (
-                "CHECK (kind IN ('folder', 'rekordbox'))",
-                "CHECK (kind IN ('folder', 'rekordbox', 'rekordbox_usb'))",
-            ),
+            (f"CHECK (kind IN ({before}))", f"CHECK (kind IN ({after}))"),
         ).rowcount
         if changed != 1:
             raise RuntimeError(
@@ -434,11 +431,27 @@ def _migrate_to_v20(conn: sqlite3.Connection) -> None:
     conn.execute(f"PRAGMA schema_version = {version + 1}")
 
 
+def _migrate_to_v20(conn: sqlite3.Connection) -> None:
+    """A source may be a rekordbox USB stick (`rekordbox_usb`)."""
+    _allow_source_kind(
+        conn, "'folder', 'rekordbox'", "'folder', 'rekordbox', 'rekordbox_usb'"
+    )
+
+
+def _migrate_to_v21(conn: sqlite3.Connection) -> None:
+    """A source may be a rekordbox XML file (`rekordbox_xml`)."""
+    _allow_source_kind(
+        conn,
+        "'folder', 'rekordbox', 'rekordbox_usb'",
+        "'folder', 'rekordbox', 'rekordbox_usb', 'rekordbox_xml'",
+    )
+
+
 _MIGRATIONS = (
     _SCHEMA_V1, _SCHEMA_V2, _SCHEMA_V3, _SCHEMA_V4, _SCHEMA_V5, _migrate_to_v6,
     _SCHEMA_V7, _SCHEMA_V8, _SCHEMA_V9, _SCHEMA_V10, _SCHEMA_V11, _SCHEMA_V12,
     _SCHEMA_V13, _SCHEMA_V14, _SCHEMA_V15, _SCHEMA_V16, _SCHEMA_V17, _SCHEMA_V18,
-    _SCHEMA_V19, _migrate_to_v20,
+    _SCHEMA_V19, _migrate_to_v20, _migrate_to_v21,
 )  # fmt: skip
 
 MAX_CACHED_PREVIEWS = 20_000  # about 40 MB; past it the oldest are forgotten
@@ -2211,7 +2224,7 @@ class Library:
         found: dict[str, sqlite3.Row] = {}
         for r in self._conn.execute(
             "SELECT t.* FROM track t JOIN source s ON s.id = t.source_id"
-            " WHERE s.kind IN ('rekordbox', 'rekordbox_usb') AND t.stale = 0 ORDER BY t.id"
+            " WHERE s.kind IN ('rekordbox', 'rekordbox_usb', 'rekordbox_xml') AND t.stale = 0 ORDER BY t.id"
         ):
             found.setdefault(path_key(r["path"]), r)
         self._rekordbox_files = (changes, found)
