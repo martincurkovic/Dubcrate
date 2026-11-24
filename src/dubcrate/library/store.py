@@ -408,11 +408,37 @@ CREATE TABLE disc_image (
 )
 """
 
+
+def _migrate_to_v20(conn: sqlite3.Connection) -> None:
+    """A source may be a rekordbox USB stick (`rekordbox_usb`): the `source.kind` check allows it.
+
+    SQLite can't change a CHECK, and rebuilding `source` would, with foreign keys on, delete every track through the
+    cascade. A check that is only RELAXED can be changed in the stored table definition (SQLite's own documented way:
+    `PRAGMA writable_schema`), which touches no row. The schema version is bumped so every connection reads it again."""
+    version = conn.execute("PRAGMA schema_version").fetchone()[0]
+    conn.execute("PRAGMA writable_schema = ON")
+    try:
+        changed = conn.execute(
+            "UPDATE sqlite_master SET sql = replace(sql, ?, ?) WHERE type = 'table' AND name = 'source'",
+            (
+                "CHECK (kind IN ('folder', 'rekordbox'))",
+                "CHECK (kind IN ('folder', 'rekordbox', 'rekordbox_usb'))",
+            ),
+        ).rowcount
+        if changed != 1:
+            raise RuntimeError(
+                "the library's source table has an unexpected definition"
+            )
+    finally:
+        conn.execute("PRAGMA writable_schema = OFF")
+    conn.execute(f"PRAGMA schema_version = {version + 1}")
+
+
 _MIGRATIONS = (
     _SCHEMA_V1, _SCHEMA_V2, _SCHEMA_V3, _SCHEMA_V4, _SCHEMA_V5, _migrate_to_v6,
     _SCHEMA_V7, _SCHEMA_V8, _SCHEMA_V9, _SCHEMA_V10, _SCHEMA_V11, _SCHEMA_V12,
     _SCHEMA_V13, _SCHEMA_V14, _SCHEMA_V15, _SCHEMA_V16, _SCHEMA_V17, _SCHEMA_V18,
-    _SCHEMA_V19,
+    _SCHEMA_V19, _migrate_to_v20,
 )  # fmt: skip
 
 MAX_CACHED_PREVIEWS = 20_000  # about 40 MB; past it the oldest are forgotten

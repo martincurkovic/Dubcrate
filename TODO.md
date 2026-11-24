@@ -38,7 +38,7 @@ Open items by area; finished work is under **Completed** at the bottom (same hea
 
 - [ ] Finder page ideas: by-disc grouping, and a share / copy list.
 - [ ] Try the drive picker with two real drives (the check after a burn is skipped for any but the first).
-- [ ] Read a rekordbox USB stick's own database (`export.pdb`, `USBANLZ`) so a stick imports with BPM, key, cues and beat grids (today only `master.db` or a folder of audio).
+- [ ] Read a rekordbox USB stick (`exportLibrary.db`, `USBANLZ`): step 1 is built (2026-11-24: `rekordbox_usb.py`, `dubcrate import-usb`, schema v20, tried on the owner's stick: [rekordbox-usb.md](dev_docs/rekordbox-usb.md)). Left: step 2 (preview, cue cache, Sync and the finder read a stick's cues and beat grids) and step 3 (the window's import, with detected sticks); `export.pdb`-only sticks are refused.
 - [ ] Burn through the USB-C hub once, to see the `generic-mmc` retry write a disc (the default driver was refused behind the hub, 2026-11-24) ([burning.md](dev_docs/burning.md)).
 - [ ] Try disc and card auto-detection on macOS and Windows (Linux works; Windows listed a card with a PIONEER folder, and a blank one after a fix, 2026-11-24).
 - [ ] Make it clear when a Sync has finished (it is a status-bar message that the list refresh replaces within seconds): a banner in the Sync tab that stays until the next action was suggested, not decided.

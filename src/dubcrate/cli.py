@@ -10,6 +10,7 @@ from dubcrate.cd import format_msf
 from dubcrate.library import ImportSummary, Library
 from dubcrate.library.folder import scan_folder
 from dubcrate.library.rekordbox import RekordboxError, read_master_db
+from dubcrate.library.rekordbox_usb import read_usb
 
 log = logging.getLogger(__name__)
 
@@ -74,10 +75,30 @@ def cmd_import_rekordbox(lib: Library, args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_import_usb(lib: Library, args: argparse.Namespace) -> int:
+    path = Path(args.path).expanduser()
+    try:
+        usb = read_usb(path, progress=lambda msg: print(msg, file=sys.stderr))
+    except RekordboxError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    _report(
+        lib.replace_source(
+            "rekordbox_usb",
+            str(usb.source),
+            args.name or usb.source.name,
+            usb.tracks,
+            usb.nodes,
+            usb.notes,
+        )
+    )
+    return 0
+
+
 def cmd_sources(lib: Library, _: argparse.Namespace) -> int:
     for s in lib.sources():
         print(
-            f"{s.id:3d}  {s.kind:9s}  {s.track_count:6d} tracks  {s.name}  ({s.path})"
+            f"{s.id:3d}  {s.kind:13s}  {s.track_count:6d} tracks  {s.name}  ({s.path})"
         )
     return 0
 
@@ -128,6 +149,13 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--db", help="path to master.db (default: installed rekordbox)")
     p.add_argument("--name", help="display name (default: rekordbox)")
     p.set_defaults(fn=cmd_import_rekordbox)
+
+    p = sub.add_parser(
+        "import-usb", help="import a rekordbox USB stick (read-only; exportLibrary.db)"
+    )
+    p.add_argument("path", help="the stick (its root, or its PIONEER folder)")
+    p.add_argument("--name", help="display name (default: the stick's name)")
+    p.set_defaults(fn=cmd_import_usb)
 
     sub.add_parser("sources", help="list imported sources").set_defaults(fn=cmd_sources)
 
