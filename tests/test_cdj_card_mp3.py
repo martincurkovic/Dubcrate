@@ -323,3 +323,50 @@ def test_a_file_that_is_not_mpeg1_layer_3_or_not_clean_is_refused(tmp_path):
 
 def test_the_constants_agree_with_the_audio_disc_module():
     assert m3.HOT_SLOTS == cc.HOT_CUE_SLOTS and m3.KIND_LOOP == cc.KIND_LOOP and m3.RECORD == cc._RECORD  # fmt: skip
+
+
+def _svd(label: str, sectors: int, created: bytes) -> bytes:
+    """A Joliet descriptor with just the fields the disc ID reads."""
+    sector = bytearray(2048)
+    sector[0:6] = b"\x02CD001"
+    text = label.encode("utf-16-be")
+    field = text + b"\x00\x20" * ((32 - len(text)) // 2)  # padded with UCS-2 spaces
+    sector[40:72] = field
+    sector[80:84] = sectors.to_bytes(4, "little")
+    sector[84:88] = sectors.to_bytes(4, "big")
+    sector[813:830] = created
+    return bytes(sector)
+
+
+def test_the_disc_id_is_made_from_the_image_as_the_player_makes_it():
+    """The one real disc: "MP3 Linux Test" (84,029 sectors, 3 folders and 15 files, last file at 80,245), whose
+    image was made at 19:47:51 on 2026-11-23 (the burn log) and whose ID the player wrote on the card."""
+    seen = bytes.fromhex(
+        (DATA / "MPJINDX0.PDJ").read_bytes()[24:].hex()
+    )  # the entry: its name, then the ID
+    made = m3.Mp3DiscId.made_from(
+        _svd("MP3 LINUX TEST", 84029, b"2026112319475100,"),
+        file_count=15,
+        folder_count=3,
+        last_file_start=80245,
+    )
+    assert made.raw == seen[
+        8:24
+    ] and made.raw.hex() == "052c060f338745e70139750148 3d0000".replace(" ", "")
+
+
+def test_a_different_label_or_second_changes_the_id():
+    base = {"file_count": 15, "folder_count": 3, "last_file_start": 80245}
+    one = m3.Mp3DiscId.made_from(_svd("A", 84029, b"2026112319475100,"), **base)
+    other_label = m3.Mp3DiscId.made_from(_svd("B", 84029, b"2026112319475100,"), **base)
+    other_second = m3.Mp3DiscId.made_from(
+        _svd("A", 84029, b"2026112319475200,"), **base
+    )
+    assert one.raw[:2] != other_label.raw[:2] and one.raw[4:8] != other_second.raw[4:8]
+
+
+def test_a_descriptor_that_is_not_joliet_is_refused():
+    with pytest.raises(m3.Mp3CardError):
+        m3.Mp3DiscId.made_from(
+            bytes(2048), file_count=1, folder_count=0, last_file_start=0
+        )

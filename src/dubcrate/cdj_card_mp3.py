@@ -60,15 +60,9 @@ class Mp3FrameError(RuntimeError):
 
 @dataclass(frozen=True)
 class Mp3DiscId:
-    """The 16 bytes the player keeps for a disc. Only three fields are understood, so an ID can be
-    **recognised** (does this card entry belong to this disc image?) but not yet **made**:
-
-    - byte 3: the number of files (15 on the disc seen);
-    - bytes 8 to 10: the start sector of the last file on the image;
-    - bytes 11 to 13: the size of the image in sectors.
-
-    The rest (`05 2c 06` at the start, four bytes `33 87 45 e7`, and two zero bytes) is not decoded: copy it
-    from the card's own entry, never invent it."""
+    """The 16 bytes the player keeps for a disc. **Made from the image** by `made_from` (the firmware's own
+    recipe, 2026-11-24); the properties below read three fields back out: byte 3 the file count (15 on the
+    disc seen), bytes 8 to 10 the start sector of the last file, bytes 11 to 13 the size of the image."""
 
     raw: bytes
 
@@ -87,6 +81,53 @@ class Mp3DiscId:
     @property
     def image_sectors(self) -> int:
         return int.from_bytes(self.raw[11:14], "big")
+
+    @classmethod
+    def made_from(
+        cls,
+        svd: bytes,
+        *,
+        file_count: int,
+        folder_count: int,
+        last_file_start: int,
+    ) -> Mp3DiscId:
+        """The ID the player makes for an image, read off its firmware (2.20, `FUN_ac10916c` and `FUN_ac1094c2`,
+        2026-11-24) and checked against the one real disc we have (every field, the date to the second against
+        the burn log). `svd` is the image's Joliet Supplementary Volume Descriptor (the 2048-byte sector, type 2).
+        Layout, big endian: a 16-bit sum of the descriptor's bytes 40 to 87 (the label as UCS-2, 8 unused bytes,
+        the volume size both-endian); 7 bits of the folder count (the root left out) then 9 bits of the file
+        count; a 32-bit number of seconds from the volume's creation date,
+        `(((year % 100) * 372 + (month - 1) * 31 + day) * 86400) + h * 3600 + m * 60 + s`; the last file's first
+        sector in 3 bytes; the volume's size in sectors in 3 bytes; two zero bytes. **The creation date is in the
+        ID, so the image that is burned must be the one the ID was made from** (`build_iso` must be given the
+        date, see `iso.py`). Not yet tried on a player: only compared with the ID it wrote for one disc."""
+        if len(svd) < 830 or svd[0] != 2 or svd[1:6] != b"CD001":
+            raise Mp3CardError("That is not a Joliet volume descriptor.")
+        digits = svd[813:829]
+        if not digits.isdigit():
+            raise Mp3CardError("The volume's creation date is not a date.")
+        year, month, day, hour, minute, second = (
+            int(digits[a:b])
+            for a, b in ((0, 4), (4, 6), (6, 8), (8, 10), (10, 12), (12, 14))
+        )
+        checksum = sum(svd[40:88]) & 0xFFFF
+        counts = ((folder_count & 0x7F) << 9) | (file_count & 0x1FF)
+        seconds = (
+            ((year % 100) * 372 + (month - 1) * 31 + day) * 86400
+            + hour * 3600
+            + minute * 60
+            + second
+        ) & 0xFFFFFFFF
+        size = int.from_bytes(svd[80:84], "little")
+        raw = (
+            checksum.to_bytes(2, "big")
+            + counts.to_bytes(2, "big")
+            + seconds.to_bytes(4, "big")
+            + (last_file_start & 0xFFFFFF).to_bytes(3, "big")
+            + (size & 0xFFFFFF).to_bytes(3, "big")
+            + b"\x00\x00"
+        )
+        return cls(raw)
 
     def matches(
         self, file_count: int, last_file_start: int, image_sectors: int
