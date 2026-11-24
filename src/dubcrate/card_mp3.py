@@ -23,7 +23,7 @@ from datetime import datetime
 from pathlib import Path
 
 from dubcrate import cdj_card_mp3 as m3
-from dubcrate import cue_timing, iso
+from dubcrate import cue_timing, iso, mp3
 from dubcrate.analysis import Cue
 from dubcrate.audio.decode import DecodeError
 from dubcrate.build import BuildError, BurnPlan, plan_burn, render_plan
@@ -38,8 +38,9 @@ from dubcrate.card_discs import (
 )
 from dubcrate.card_sync import map_cues
 from dubcrate.library import Library
-from dubcrate.library.models import DiscImage, DiscSummary
+from dubcrate.library.models import DiscDir, DiscEntry, DiscImage, DiscSummary
 from dubcrate.mp3_sync import Mp3DiscInput, Mp3TrackInput
+from dubcrate.render import copies_mp3
 
 log = logging.getLogger(__name__)
 
@@ -241,6 +242,76 @@ def _made_id(
         )
     except (m3.Mp3CardError, iso.IsoError) as exc:
         return None, f"The player's ID for the disc couldn't be made: {exc}"
+
+
+# The player's lead (`cue_timing.player_lead_ms`) for a file `render_mp3` ENCODES (any source that isn't a
+# constant-bitrate MP3 within the disc's rate): ffmpeg writes its own Info frame. Measured 2026-11-24 with a WAV, a
+# FLAC and a variable-bitrate MP3 as the source: 51 ms for each. A file it COPIES keeps its source's Info frame, so
+# its lead is the source's own (checked on 12 of the owner's MP3s: the same before and after).
+ENCODED_LEAD_MS = 51
+
+
+@dataclass(frozen=True)
+class Mp3Slot:
+    """Where a track of an MP3 disc is on the card: the player names a file by (folder, file), and `track` is its
+    1-based place on the disc. `lead_ms` is how much later the player's time is than the audio in the rendered
+    file, and `length_frames` (1/75 s, 0 if unknown) is about how long the track is: a card entry says how long the
+    track was when it was made, so a cue whose length is far from it belongs to another track."""
+
+    track: int
+    lead_ms: int
+    length_frames: int = 0
+
+
+def rendered_lead_ms(path: str | Path, bitrate: int | None) -> int:
+    """The player's lead for the file `render_mp3` makes from `path` at this disc's top bitrate, without rendering:
+    a file that is copied has its source's, one that is encoded has `ENCODED_LEAD_MS`."""
+    rate = bitrate or mp3.DEFAULT_BITRATE
+    if copies_mp3(Path(path), rate):
+        return cue_timing.player_lead_ms(path)
+    return ENCODED_LEAD_MS
+
+
+def mp3_slots(
+    entries: Sequence[DiscEntry], dirs: Sequence[DiscDir]
+) -> dict[tuple[int, int], Mp3Slot]:
+    """Each (folder, file) the player will name on this disc, from the disc as it is now, with no rendering.
+
+    The numbers are what `iso.image_layout` finds on the burned image: folder 0 is the root and the others count
+    from 1 in the order of their written names (`mp3.dir_name`, A to Z without case), a file counts from 1 in its
+    folder in the order of its written name (`mp3.file_name`, which starts with its place in the folder). A track
+    whose file can't be read has no slot (its lead isn't known). Raises `Mp3SyncError` for a folder inside a folder,
+    which isn't supported."""
+    if any(d.parent_id is not None for d in dirs):
+        raise Mp3SyncError("Folders inside folders aren't supported on the card yet.")
+    folder_numbers = {
+        d.id: n
+        for n, d in enumerate(
+            sorted(dirs, key=lambda d: mp3.dir_name(d.name).casefold()), 1
+        )
+    }
+    groups: dict[int | None, list[DiscEntry]] = {}
+    for entry in sorted(entries, key=lambda e: e.position):
+        groups.setdefault(entry.dir_id, []).append(entry)
+    slots: dict[tuple[int, int], Mp3Slot] = {}
+    for dir_id, inside in groups.items():
+        folder = folder_numbers.get(dir_id, 0) if dir_id is not None else 0
+        written = sorted(
+            (
+                (mp3.file_name(n, e.artist, e.title).casefold(), e)
+                for n, e in enumerate(inside, 1)
+            ),
+            key=lambda pair: pair[0],
+        )
+        for file, (_name, entry) in enumerate(written, 1):
+            track = entry.track
+            try:
+                lead = rendered_lead_ms(track.path, entry.mp3_bitrate)
+            except OSError:
+                continue  # (the file can't be read just now: its lead isn't known, so its cues are left alone)
+            frames = track.cd_sectors or round((track.duration or 0) * 75)
+            slots[(folder, file)] = Mp3Slot(entry.position + 1, lead, frames)
+    return slots
 
 
 @dataclass

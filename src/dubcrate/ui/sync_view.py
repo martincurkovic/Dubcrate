@@ -52,7 +52,7 @@ from dubcrate.card_discs import (
     survey_discs,
     wave_rows,
 )
-from dubcrate.card_import import survey_new_cues
+from dubcrate.card_import import survey_new_cues, survey_new_mp3_cues
 from dubcrate.card_mp3 import (
     Mp3DiscRow,
     Mp3SyncError,
@@ -1268,7 +1268,9 @@ class SyncView(QWidget):
         self.cancel_button.setVisible(self._measuring or self._analysing)
         self._update_analyse()
         self.import_button.setEnabled(
-            self._card is not None and bool(self._surveys) and not busy
+            self._card is not None
+            and bool(self._surveys or self._mp3_rows)
+            and not busy
         )
         self.sync_button.setEnabled(
             WRITING_ENABLED
@@ -1339,17 +1341,33 @@ class SyncView(QWidget):
         """Find what changed on the card that Dubcrate doesn't have (cues and loops set on the player, and, after a
         recorded sync, cues deleted or moved there), let the user pick, and hand the choices on (`cues_chosen`).
         Reads the card's files as already read; writes nothing."""
-        if self._card is None or not self._surveys:
+        if self._card is None or not (self._surveys or self._mp3_rows):
             self.message.emit("Choose a card first")
             return
+        cues = RekordboxCues(self._lib, load=self._cue_loader)
         findings = survey_new_cues(
-            self._lib,
-            self._card,
-            RekordboxCues(self._lib, load=self._cue_loader),
-            list(self._surveys.values()),
+            self._lib, self._card, cues, list(self._surveys.values())
         )
+        unchecked: list[str] = []
+        if self._mp3_rows and self._card_path is not None:
+            try:
+                mp3_card = m3.read_mp3_card(self._card_path)
+            except m3.Mp3CardError:
+                mp3_card = None  # (no MP3 disc files on the card: nothing to bring in)
+            if mp3_card is not None:
+                looked = survey_new_mp3_cues(
+                    self._lib, mp3_card, cues, list(self._mp3_rows.values())
+                )
+                findings += looked.findings
+                unchecked = looked.unchecked
         if not findings:
-            self.message.emit("Nothing new on the card")
+            said = "Nothing new on the card"
+            if unchecked:
+                said += (
+                    f" ({len(unchecked)} MP3 disc{'s' if len(unchecked) != 1 else ''} "
+                    "couldn't be checked: Disc ID… records how a disc was burned)"
+                )
+            self.message.emit(said)
             return
         chosen = ask_import(self, findings)
         if chosen:

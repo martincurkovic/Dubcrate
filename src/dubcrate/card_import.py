@@ -26,14 +26,22 @@ counted in `over_limit`.
 
 `survey_new_cues` is the library half: it maps a card's cues on to the Dubcrate discs the card holds.
 `dev_docs/card-sync.md`, "Importing cues from the card". **Not tried with cues set on a real player.**
+
+**MP3 discs** (`changes_on_mp3_card`, `survey_new_mp3_cues`) are the same review with two differences. The player
+names a track by (folder, file) and not by a position on the disc, so the tracks are numbered as the burned image
+numbers them (`card_mp3.mp3_slots`); and its time counts the Info frame, so a card time is turned into audio time by
+taking off the file's lead (`cue_timing`). **No baseline is kept for an MP3 disc yet**, so only additions can be
+found: cues and loops set on the player and its hot cues (not ticked); a deletion or a move is not noticed.
 """
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 
 from dubcrate import cdj_card as cc
+from dubcrate import cdj_card_mp3 as m3
 from dubcrate.analysis import Cue
 from dubcrate.card_discs import DiscSurvey, RekordboxCues
+from dubcrate.card_mp3 import Mp3DiscRow, Mp3Slot, Mp3SyncError, mp3_slots
 from dubcrate.card_sync import DUPLICATE_FRAMES, WantedCue
 from dubcrate.library import Library
 from dubcrate.library.cue_edits import MAX_MEMORY_CUES, memory_count
@@ -413,6 +421,206 @@ def survey_new_cues(
         if finding.tracks:
             findings.append(finding)
     return findings
+
+
+# A card entry says how long its track was (1/75 s); the library's length is only as good as its duration (whole
+# seconds for rekordbox) or a measure of the decoded audio, so a track is taken as the same within this.
+LENGTH_TOLERANCE_FRAMES = 113  # 1.5 s
+
+
+def _player_frame(seconds: float, lead_ms: int) -> int:
+    """A time in audio as the player's position (1/75 s): later by the lead, as `card_mp3.positions` puts it."""
+    return round((seconds + lead_ms / 1000.0) * cc.FRAMES_PER_SECOND)
+
+
+def _audio_ms(position: int, lead_ms: int) -> int:
+    """The player's position (1/75 s) as milliseconds of audio: earlier by the lead, never before 0."""
+    return max(0, round(position * 1000 / cc.FRAMES_PER_SECOND) - lead_ms)
+
+
+def changes_on_mp3_card(
+    file: m3.Mp3TrackFile,
+    slots: Mapping[tuple[int, int], Mp3Slot],
+    known: Mapping[int, Sequence[Cue]],
+) -> CardCues:
+    """What the player added to an MP3 disc's `file`, against `known` (Dubcrate's cues in audio time, by 1-based
+    track). `slots` says which (folder, file) is which track and its lead (`card_mp3.mp3_slots`).
+
+    New memory cues, new loops and the player's hot cues (not ticked) are found, as for an audio disc. A card
+    time is in the player's time: the file's lead off it gives audio time, and Dubcrate's cues are compared as
+    the player's positions (within `DUPLICATE_FRAMES`). Nothing is found for a deletion or a move: **an MP3 disc
+    has no baseline**, so a cue that is gone from the card is not noticed. An entry for a (folder, file) the disc
+    doesn't have, or whose length is far from its track's, is counted in `outside`."""
+    found = CardCues()
+    # Dubcrate's cues as player positions, per track: (position, end position, 0 for a cue)
+    held: dict[int, list[tuple[int, int]]] = {}
+
+    def of_track(slot: Mp3Slot) -> list[tuple[int, int]]:
+        if slot.track not in held:
+            held[slot.track] = [
+                (
+                    _player_frame(c.time, slot.lead_ms),
+                    _player_frame(c.end, slot.lead_ms) if c.end else 0,
+                )
+                for c in known.get(slot.track, ())
+            ]
+        return held[slot.track]
+
+    def slot_of(entry: m3.Mp3Entry) -> Mp3Slot | None:
+        slot = slots.get((entry.folder, entry.file))
+        if slot is None:
+            return None
+        if (
+            slot.length_frames
+            and entry.length
+            and abs(entry.length - slot.length_frames) > LENGTH_TOLERANCE_FRAMES
+        ):
+            return None  # (the disc has been changed since: another track is in that place)
+        return slot
+
+    rows: dict[int, list[Row]] = {}
+    taken: dict[int, list[int]] = {}
+    taken_loops: dict[int, list[tuple[int, int]]] = {}
+    card_cues = [(e.folder, e.file, e.position) for e in file.cues if not e.is_loop]
+
+    for entry in file.cues:
+        slot = slot_of(entry)
+        if slot is None:
+            found.outside += 1
+            continue
+        mine = of_track(slot)
+        if entry.is_loop:
+            if entry.end <= entry.position:
+                continue
+            span = (entry.position, entry.end)
+            if any(
+                q and _near(span[0], p) and _near(span[1], q) for p, q in mine
+            ) or any(
+                _near(span[0], p) and _near(span[1], q)
+                for p, q in taken_loops.get(slot.track, [])
+            ):
+                continue
+            taken_loops.setdefault(slot.track, []).append(span)
+            rows.setdefault(slot.track, []).append(
+                Row(
+                    LOOP,
+                    _audio_ms(span[0], slot.lead_ms),
+                    _audio_ms(span[1], slot.lead_ms),
+                )
+            )
+            continue
+        if any(_near(entry.position, p) for p, q in mine if not q) or any(
+            _near(entry.position, p) for p in taken.get(slot.track, [])
+        ):
+            continue
+        taken.setdefault(slot.track, []).append(entry.position)
+        rows.setdefault(slot.track, []).append(
+            Row(ADD, _audio_ms(entry.position, slot.lead_ms))
+        )
+
+    for number, hot in enumerate(file.hot, 1):
+        if hot is None or hot.is_loop:
+            continue
+        slot = slot_of(hot)
+        if slot is None:
+            found.outside += 1
+            continue
+        if (
+            any(_near(hot.position, p) for p, _q in of_track(slot))
+            or any(
+                (f, n) == (hot.folder, hot.file) and _near(hot.position, p)
+                for f, n, p in card_cues
+            )
+            or any(_near(hot.position, p) for p in taken.get(slot.track, []))
+        ):
+            continue  # (Dubcrate has a cue there, or the player has a memory cue there already)
+        taken.setdefault(slot.track, []).append(hot.position)
+        rows.setdefault(slot.track, []).append(
+            Row(HOT, _audio_ms(hot.position, slot.lead_ms), slot=number, ticked=False)
+        )
+
+    for track in sorted(rows):
+        found.by_track[track] = _paired(rows[track])
+    return found
+
+
+@dataclass
+class Mp3Survey:
+    """`survey_new_mp3_cues`' answer: what was found, and the MP3 discs it couldn't look at (`unchecked`: no
+    record of the image they were burned from, or a disc that no longer matches it)."""
+
+    findings: list["DiscFinding"] = field(default_factory=list)
+    unchecked: list[str] = field(default_factory=list)
+
+
+def survey_new_mp3_cues(
+    lib: Library,
+    card: tuple[m3.Mp3Index, Mapping[str, m3.Mp3TrackFile | None]],
+    cues: RekordboxCues,
+    discs: Sequence[Mp3DiscRow],
+) -> Mp3Survey:
+    """For each MP3 disc the card has a file for: what the player added since Dubcrate's sync, as `DiscFinding`s.
+
+    A disc is found on the card by the image it was burned from (`Library.disc_image`: the three numbers the player's
+    ID is checked by), which is why one with no record can't be looked at, and neither can one whose files no longer
+    add up to the record (it was changed since: the player's file and folder numbers would not be its tracks').
+    A disc the card has no file for is left out without a word: there is nothing on the card to bring in."""
+    index, files = card
+    out = Mp3Survey()
+    for row in discs:
+        if row.problems:
+            continue
+        image = lib.disc_image(row.disc.id)
+        if image is None:
+            out.unchecked.append(row.disc.name)
+            continue
+        found_entries = index.find(
+            image.file_count, image.last_file_start, image.sectors
+        )
+        file = files.get(found_entries[0].name) if len(found_entries) == 1 else None
+        if file is None:
+            continue
+        entries = lib.disc_entries(row.disc.id)
+        dirs = lib.disc_dirs(row.disc.id)
+        if (len(entries), len(dirs)) != (image.file_count, image.folders):
+            out.unchecked.append(row.disc.name)
+            continue
+        try:
+            slots = mp3_slots(entries, dirs)
+        except Mp3SyncError:  # (a folder inside a folder)
+            out.unchecked.append(row.disc.name)
+            continue
+        known = {e.position + 1: cues.for_track(e.track) for e in entries}
+        found = changes_on_mp3_card(file, slots, known)
+        finding = DiscFinding(
+            row.disc.id,
+            row.disc.name,
+            row.path,
+            kept=found.kept,
+            outside=found.outside,
+            has_baseline=False,
+        )
+        for e in entries:
+            rows = found.by_track.get(e.position + 1)
+            if not rows:
+                continue
+            room = max(0, MAX_MEMORY_CUES - memory_count(known[e.position + 1]))
+            kept_rows, over = [], 0
+            for r in rows:
+                if r.kind in (ADD, LOOP):
+                    if room <= 0:
+                        over += 1
+                        continue
+                    room -= 1
+                kept_rows.append(r)
+            finding.tracks.append(
+                TrackFinding(
+                    e.track, e.position + 1, e.title, e.artist, kept_rows, over
+                )
+            )
+        if finding.tracks:
+            out.findings.append(finding)
+    return out
 
 
 @dataclass

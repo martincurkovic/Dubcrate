@@ -493,3 +493,58 @@ def test_from_drive_is_refused_before_any_audio_disc_is_written(lib, tmp_path, c
         sorted(p.name for p in (card / "PIONEER").rglob("*")) == before
         and not (tmp_path / "bk").exists()
     )
+
+
+# -- Import Cues from the card ---------------------------------------------------------------------
+
+
+def test_import_cues_brings_in_what_was_set_on_the_player_for_an_mp3_disc(
+    view, lib, tmp_path, monkeypatch
+):
+    """The player wrote a cue for the second file of "Folder A" (the disc's fourth track): Import Cues names the
+    track and gives the time in audio time. Needs the image's record, which is how the card's entry is found."""
+    from dubcrate.library.models import DiscImage
+
+    card = make_card(tmp_path, lib)
+    again = tmp_path / "again"  # (`make_card` used `tmp_path / "layout"` already)
+    again.mkdir()
+    layout = layout_of(lib, again)
+    lib.set_disc_image(
+        lib.disc_id,
+        DiscImage(
+            "2026-11-24T10:00:00+00:00",
+            "Warm-up",
+            layout.file_count,
+            1,
+            layout.last_file_start,
+            layout.image_sectors,
+        ),
+    )
+    entries = lib.disc_entries(lib.disc_id)
+    fourth = entries[3].track  # "Four", 9 s: file 2 of folder 1 ("Folder A")
+    length = round(fourth.duration * 75) + 2
+    mpj = card / "PIONEER" / "MPJ"
+    index = m3.Mp3Index.parse((mpj / "MPJINDX0.PDJ").read_bytes())
+    file = m3.Mp3TrackFile.new(index.entries[0].disc_id)
+    file.cues = [m3.Mp3Entry(m3.KIND_CUE, 1, 2, 300, 0, length, 0, 0, 0, 0)]
+    file.cue_indexes = [0]
+    (mpj / "MPJ00001.PDJ").write_bytes(file.to_bytes())
+
+    view.look(card)
+    shown = []
+    monkeypatch.setattr(sync_view, "ask_import", lambda _p, found: shown.extend(found))
+    assert view.view.import_button.isEnabled()
+    view.view.import_from_card()
+    [finding] = shown
+    [only] = finding.tracks
+    assert (only.number, only.title) == (4, "Four")
+    lead = card_mp3.rendered_lead_ms(fourth.path, None)
+    assert [(r.kind, r.ms) for r in only.rows] == [("add", 4000 - lead)]
+
+
+def test_import_cues_says_so_when_an_mp3_disc_has_no_record_of_its_image(
+    view, lib, tmp_path
+):
+    view.look(make_card(tmp_path, lib))
+    view.view.import_from_card()
+    assert "1 MP3 disc couldn't be checked" in view.said[-1]

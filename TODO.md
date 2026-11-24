@@ -21,7 +21,7 @@ Open items by area; finished work is under **Completed** at the bottom (same hea
 - [ ] Compare the drive's reported free blocks on a 74 and an 80 minute disc (expect about 333,000 and 359,850) to confirm the capacity check ([burning.md](dev_docs/burning.md)).
 - [ ] MP3 cue timing: much closer since the Info frame counts for ffmpeg-made files (2026-11-24). Left: a click-track disc to measure it, maybe rounding cues to the nearest MP3 frame, and the four bytes at +112 of a cue entry ([card-sync.md](dev_docs/card-sync.md), [cdj1000mk3-card.md](dev_docs/cdj1000mk3-card.md) section 6).
 - [ ] MP3 discs: Mac/DiscRecording burns aren't recorded, the Disc ID window can't read a disc on macOS and Windows, and discs with another label are refused ([card-sync.md](dev_docs/card-sync.md)).
-- [ ] MP3 sync follow-ups: cue marks and card waveform state in the Sync tab's tracks table; Import Cues from an MP3 card (mapping back to tracks); nested folders and non-MPEG-1 Layer III files are refused.
+- [ ] MP3 sync follow-ups: cue marks and card waveform state in the Sync tab's tracks table; Import Cues from an MP3 card: deletions and moves (additions are built 2026-11-24; an MP3 disc has no baseline); nested folders and non-MPEG-1 Layer III files are refused.
 - [ ] Try MP3 disc folders on the CDJ, starting with two nested folders, then the 999-file and 8-level limits and whether `MAX_DEPTH` should be 9 ([burning.md](dev_docs/burning.md)).
 - [ ] Check the rekordbox bits no sample covered: rekordbox 6 libraries, cue points and the "mid" and "low" mood phrase names ([rekordbox-analysis.md](dev_docs/rekordbox-analysis.md)).
 

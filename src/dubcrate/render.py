@@ -268,6 +268,15 @@ def _run_ffmpeg(cmd: list[str], cancel: CancelToken | None) -> tuple[int, str]:
                     return -1, ""
 
 
+def copies_mp3(src: Path, max_bitrate: int) -> bool:
+    """Whether `render_mp3` copies `src` frame for frame (a constant-bitrate MP3 at or under `max_bitrate`) rather
+    than encoding it again. Mirrors `_mp3_plan`; it reads the file but never runs ffmpeg."""
+    if not is_mp3(src):
+        return False
+    scan = scan_mp3(src)
+    return scan is not None and scan.cbr and scan.bitrate <= max_bitrate
+
+
 def _mp3_plan(src: Path, max_bitrate: int) -> int | None:
     """None to copy `src` as it is, else the constant bitrate (kbit/s) to encode it at."""
     if is_mp3(src):

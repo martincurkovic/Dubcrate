@@ -323,6 +323,29 @@ that Dubcrate doesn't have any more was **deleted or moved in Dubcrate** after t
   stores a cue set while a track is cued, a cue's rounding to frames, whether the player ever rewrites the cues Dubcrate wrote, and what a delete or a move on the player does to
   the file (the "Deleting" item in `cdj1000mk3-card.md`, section 4, is still untried) are the open questions.
 
+### Importing from an MP3 disc (built 2026-11-24; `changes_on_mp3_card`, `survey_new_mp3_cues`)
+
+The same review (`DiscFinding`, `ask_import`, `PreviewController.import_memory`), read from `PIONEER/MPJ`. **Additions only:** cues, loops and
+the player's hot cues (not ticked). **No baseline is kept for an MP3 disc** (the audio baseline is keyed by the TOC; `sync_mp3` records nothing), so a cue
+deleted or moved on the player is not noticed. Differences from an audio disc:
+
+- **Which track.** The player names a track by (folder, file), not a position. `card_mp3.mp3_slots` numbers the disc as it is NOW, with no rendering, the
+  way `iso.image_layout` numbers the burned image: folders from 1 in the order of their written names (`mp3.dir_name`, A to Z without case), files from 1 in
+  the order of their written names (`mp3.file_name`). **That is not always the disc's order**: over 99 files in a folder, `100` sorts before `11`
+  (`tests/test_card_import_mp3.py` builds a real ISO and checks the numbers against `image_layout`). A folder inside a folder is refused.
+- **Which disc.** Found on the card by the three numbers of the image it was burned from (`Library.disc_image`), so **a disc with no record can't be
+  looked at** (the status line says how many; the Disc ID window records one) and neither can a disc whose file or folder count no longer matches its record.
+- **A disc changed since it was burned** is guarded as far as it can be without rendering: each card entry says how long its track was (`Mp3Entry.length`,
+  1/75 s), and one more than 1.5 s from the track's length (`LENGTH_TOLERANCE_FRAMES`, measured `cd_sectors` or the duration) is another track: counted
+  in `outside`, not offered. A reorder among tracks of the same length would pass; the review names each track.
+- **Time.** The player's time counts the Info frame, so a card time minus the file's lead is audio time (`card_import._audio_ms`), and Dubcrate's cues are
+  compared as player positions (audio + lead, within `DUPLICATE_FRAMES`). The lead is worked out **without rendering** (`card_mp3.rendered_lead_ms`):
+  a file `render_mp3` copies (a constant-bitrate MP3 within the disc's rate: `render.copies_mp3`) keeps its source's lead, one it encodes has
+  `ENCODED_LEAD_MS` = 51. **Measured 2026-11-24** on 12 of the owner's MP3s (copied: the source's lead and the rendered file's agreed every time) and on a
+  WAV, a FLAC and a VBR MP3 (encoded: 51 ms each). A track whose file can't be read has no slot, so its cues are left alone.
+- Tests: `tests/test_card_import_mp3.py` (over the player's own `MPJ00001_all_folders.PDJ`), `tests/test_ui_sync_mp3.py` (the button). **Not tried with
+  cues set on a real player and a card**, and the lead is not measured against the player's time (the click-track disc is still open).
+
 ## Order of work
 
 ### Phase 0: on the hardware (the owner; about half an hour, none of it destructive)
@@ -455,7 +478,7 @@ writes it (tested on the player's own files, `tests/data/cdj_card/mp3/`). **Noth
    Dubcrate's cues are in audio time, so this means `cue_timing.to_rekordbox`-style conversion back, not none.
 5. **Where**: `mp3_sync.py` (pure planning, like `card_sync`), a `dubcrate card sync` path for MP3 discs (a dry run unless
    `--yes`, backing the card up first, run on a **copy** of a card first), then the Sync tab listing MP3 discs next to the
-   audio ones. Import Cues from an MP3 disc is the same reading in reverse and comes after.
+   audio ones. Import Cues from an MP3 disc is the same reading in reverse: built 2026-11-24, see "Importing from an MP3 disc".
 
 **Out of scope for v1**: a disc with no card entry yet; hot cues; a file that is not MPEG-1 Layer III at 44.1, 48 or 32 kHz
 (refused with a message: `Mp3FrameError`); and anything about the rest of the disc ID.
