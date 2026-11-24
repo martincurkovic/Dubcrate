@@ -225,6 +225,32 @@ def test_a_failed_burn_says_why_in_words(fake, tmp_path):
 
 
 @pytestmark_posix
+def test_a_drive_that_refuses_its_write_settings_is_tried_with_the_plain_mmc_driver(
+    fake, tmp_path, monkeypatch
+):
+    monkeypatch.setattr("dubcrate.burn.cdrdao.RETRY_WAIT", 0)
+    fake.say("write.txt", "ERROR: Cannot set write parameters mode page.\nERROR: Writing failed.\n")  # fmt: skip
+    fake.say("rc", "1")
+    said = []
+    with pytest.raises(BurnError, match="Writing failed"):
+        CdrdaoBurner().burn(disc(tmp_path), BurnOptions(device="/dev/sr0"), said.append)
+    assert len([c for c in fake.calls() if c.startswith("write")]) == 2
+    first, second = [c for c in fake.calls() if c.startswith("write")]
+    assert "--driver" not in first and "--driver generic-mmc " in second
+    assert any("plain MMC driver" in line for line in said)
+
+
+@pytestmark_posix
+def test_other_failures_are_not_retried(fake, tmp_path, monkeypatch):
+    monkeypatch.setattr("dubcrate.burn.cdrdao.RETRY_WAIT", 0)
+    fake.say("write.txt", "Medium in recorder device is not empty and not appendable.\n")  # fmt: skip
+    fake.say("rc", "1")
+    with pytest.raises(BurnError):
+        CdrdaoBurner().burn(disc(tmp_path), BurnOptions(device="/dev/sr0"), print)
+    assert len([c for c in fake.calls() if c.startswith("write")]) == 1
+
+
+@pytestmark_posix
 def test_a_track_under_four_seconds_is_refused_before_cdrdao_is_run(fake, tmp_path):
     with pytest.raises(BurnError, match=r"Track 2 “T2” is shorter than 4 seconds"):
         CdrdaoBurner().burn(disc(tmp_path, seconds=(10, 3)), BurnOptions(device="/dev/sr0"), print)  # fmt: skip

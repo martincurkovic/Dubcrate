@@ -148,6 +148,7 @@ class MainWindow(QMainWindow):
         self._lib = lib
         self._burner_factory = burner_factory
         self.burn_dialog: BurnDialog | None = None
+        self.burn_done_box: QMessageBox | None = None
         self._help_dialog = None
         # one update check at a time: the Help menu's, About's and the start-up one
         self.updates = UpdateChecker(self)
@@ -891,10 +892,26 @@ class MainWindow(QMainWindow):
 
     def _on_burned(self, disc_id: int) -> None:
         self.refresh_discs()  # the disc's tooltip now says when it was burned
-        name = self._lib.disc(disc_id).name
+        disc = self._lib.disc(disc_id)
+        name = disc.name
         self.statusBar().showMessage(
             f"Burn finished: “{name}” is marked as burned", 10000
         )
+        count = len(self._lib.disc_entries(disc_id))
+        what = "MP3 files" if disc.kind == "mp3" else "tracks"
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Icon.Information)
+        box.setWindowTitle("Burn finished")
+        box.setText(f"“{name}” was burned successfully.")
+        box.setInformativeText(
+            f"{count} {what} were written and the disc is marked as burned."
+        )
+        box.addButton(QMessageBox.StandardButton.Ok)
+        labels = box.addButton("Print Labels…", QMessageBox.ButtonRole.ActionRole)
+        labels.clicked.connect(lambda: self.print_labels(disc_id))
+        box.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
+        self.burn_done_box = box  # (for tests: it is shown without blocking)
+        box.open()
 
     def _notify(self, title: str, text: str) -> None:
         QMessageBox.information(self, title, text)

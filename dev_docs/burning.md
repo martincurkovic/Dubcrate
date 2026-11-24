@@ -131,6 +131,11 @@ Magnetics CD-Rs. Nothing below needed a change to the burner code.
   and `generic-mmc-raw` all simulated to "Simulation finished successfully". The disc had just been loaded ("Unit not
   ready" a minute earlier), so a drive still settling is the guess; no cause was found. If it comes back,
   `generic-mmc-raw` is a proven way round it. **Open.**
+- **[hardware 2026-11-24]** It came back, **every time** (burn window twice, then by hand), with the burner behind a USB-C
+  hub (USB 2 speed; the only change from the working runs). `cdrdao simulate` with the default driver, any speed:
+  refused. `--driver generic-mmc` (and `generic-mmc:0x0`) and `generic-mmc-raw` simulated fine for an audio disc with
+  CD-TEXT and for an MP3 disc's MODE1 TOC. `CdrdaoBurner._write` now retries once with `--driver generic-mmc` when the
+  refusal is seen (nothing is written by then). **Not yet written for real.**
 - **[hardware 2026-11-23]** A **real audio burn from the burn window** (10 tracks, 552 MB, 54:45:14) completed:
   `cdrdao write --device /dev/sr0 -n --speed 48 disc.toc`. The window asked for 48x (the top of its list) and
   **cdrdao said `Starting write at speed 24...`**: cdrdao or the drive clamps the speed, Dubcrate does not know the

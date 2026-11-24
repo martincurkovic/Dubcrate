@@ -818,6 +818,8 @@ class BurnDialog(QDialog):
         self.status_label.setText("Burn finished. The disc is marked as burned.")
         self._update()
         self.burned.emit(self._disc_id)
+        # the main window says so in a box of its own (with Print Labels…): this window has done its job
+        QTimer.singleShot(0, self.accept)
 
     def _print_labels(self) -> None:
         """Print Labels… after a burn: close this window (so the label window isn't opened over a modal one) and ask

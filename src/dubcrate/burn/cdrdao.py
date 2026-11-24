@@ -10,6 +10,7 @@ import re
 import subprocess
 import sys
 import tempfile
+import time
 from datetime import datetime
 from pathlib import Path
 
@@ -36,6 +37,10 @@ log = logging.getLogger(__name__)
 # The CD standard wants every track to be at least 4 seconds long, and cdrdao refuses a shorter one
 # ("Use option --force to ignore the warnings"), so a burn says so before it starts.
 MIN_TRACK_SECTORS = 4 * SECTORS_PER_SECOND
+
+
+_SETUP_REFUSED = "cannot set write parameters mode page"
+RETRY_WAIT = 1.0  # seconds before asking the drive again
 
 
 def find_cdrdao() -> str | None:
@@ -369,7 +374,29 @@ class CdrdaoBurner:
         if options.eject:
             cmd.append("--eject")
         cmd.append(str(toc))
-        progress(f"$ {' '.join(cmd)}")
+        for attempt in range(2):
+            progress(f"$ {' '.join(cmd)}")
+            status, lines = self._run_once(cmd, progress)
+            output = "\n".join(lines)
+            if status == 0:
+                return
+            # Some drives refuse the settings cdrdao's default driver asks for (BURN-Proof,
+            # JustSpeed): seen 2026-11-24 on the CDJ-test burner behind a USB-C hub, every run,
+            # where it had burned without the hub. The plain `generic-mmc` driver writes the same
+            # discs (simulated: audio with CD-TEXT, and an MP3 disc). Nothing was written, so
+            # try that.
+            if attempt == 0 and _SETUP_REFUSED in output.lower():
+                progress(
+                    "The drive refused the write settings: trying again with the plain MMC driver…"
+                )
+                cmd[2:2] = ["--driver", "generic-mmc"]
+                time.sleep(RETRY_WAIT)
+                continue
+            raise BurnError(explain_failure(output, device, status))
+
+    @staticmethod
+    def _run_once(cmd: list[str], progress: Progress) -> tuple[int, list[str]]:
+        """Run cdrdao once: (its exit status, its output lines)."""
         # (stdin is closed: cdrdao asks "hit enter" when it wants a disc, and nobody is typing)
         proc = subprocess.Popen(
             cmd,
@@ -385,5 +412,4 @@ class CdrdaoBurner:
         for line in proc.stdout:  # (text mode: a "\r" ends a line too)
             seen.append(line.rstrip())
             filtered.feed(line)
-        if proc.wait() != 0:
-            raise BurnError(explain_failure("\n".join(seen), device, proc.returncode))
+        return proc.wait(), seen

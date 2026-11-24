@@ -185,7 +185,7 @@ def tick(view_):
     view_._disc_items()[0].setCheckState(COL_NAME, Qt.CheckState.Checked)
 
 
-def test_the_sync_button_writes_the_discs_waveforms_after_asking(view, lib, tmp_path):
+def test_the_sync_button_writes_the_discs_waveforms_without_asking(view, lib, tmp_path):
     card = make_card(tmp_path, lib)
     view.look(card)
     tick(view.view)
@@ -193,9 +193,8 @@ def test_the_sync_button_writes_the_discs_waveforms_after_asking(view, lib, tmp_
     view.view.sync_button.click()
     assert view.finished()
     assert (
-        len(view.asked) == 1 and "to add to MPJ00001.PDJ: 4 waveforms" in view.asked[0]
-    )
-    assert "copied to" in view.asked[0] and "Not tried on a player yet" in view.asked[0]
+        view.asked == []
+    )  # (no question: the card's files are copied aside, nothing is changed)
     written = m3.read_mp3_card(card)[1]["MPJ00001"]
     assert [w.key for w in written.coarse] == [
         (0, 1),
@@ -221,30 +220,63 @@ def test_a_second_sync_finds_nothing_to_do_and_does_not_ask(view, lib, tmp_path)
     view.look(card)
     tick(view.view)
     view.view.sync_button.click()
-    assert view.finished() and len(view.asked) == 1
+    assert view.finished()
     view.view._disc_items()[0].setCheckState(COL_NAME, Qt.CheckState.Checked)
     view.view.sync_button.click()
     assert view.finished()
-    assert len(view.asked) == 1  # (not asked again)
+    assert view.asked == []
     assert any("already has everything" in m for m in view.said)
     assert "In sync" in view.view._disc_items()[0].toolTip(COL_NAME)
 
 
-def test_declining_writes_nothing(view, lib, tmp_path):
+def test_the_sync_ejects_the_card_when_the_box_says_so(
+    view, lib, tmp_path, monkeypatch
+):
+    ejected = []
+    monkeypatch.setattr(sync_view, "eject_card", ejected.append)
     card = make_card(tmp_path, lib)
     view.look(card)
+    view.view._can_eject = lambda _p: True
+    view.view._update_buttons()
+    view.view.eject_check.setChecked(True)
     tick(view.view)
-    view.answer["yes"] = False
-    before = sorted(p.name for p in (card / "PIONEER" / "MPJ").iterdir())
     view.view.sync_button.click()
     assert view.finished()
-    assert (
-        sorted(p.name for p in (card / "PIONEER" / "MPJ").iterdir()) == before
-    )  # no file made, nothing changed
-    assert (
-        any("Nothing was written" in m for m in view.said)
-        and not (tmp_path / "bk").exists()
+    assert ejected == [card]
+    assert any("Ejected" in m for m in view.said)
+
+
+def test_the_sync_leaves_the_card_in_when_the_box_is_not_ticked(
+    view, lib, tmp_path, monkeypatch
+):
+    ejected = []
+    monkeypatch.setattr(sync_view, "eject_card", ejected.append)
+    card = make_card(tmp_path, lib)
+    view.look(card)
+    view.view._can_eject = lambda _p: True
+    view.view._update_buttons()
+    view.view.eject_check.setChecked(False)
+    tick(view.view)
+    view.view.sync_button.click()
+    assert view.finished() and ejected == []
+
+
+def test_the_progress_bar_shows_while_a_sync_works_and_goes_when_it_is_done(
+    view, lib, tmp_path
+):
+    card = make_card(tmp_path, lib)
+    view.look(card)
+    panel = view.view.disc_panel
+    assert not view.view.progress.isVisibleTo(panel)
+    tick(view.view)
+    seen = []
+    view.view.busy_changed.connect(
+        lambda _b: seen.append(view.view.progress.isVisibleTo(panel))
     )
+    view.view.sync_button.click()
+    assert view.finished()
+    assert seen and seen[0] is True  # (it showed when the work began)
+    assert not view.view.progress.isVisibleTo(panel)
 
 
 def test_a_disc_the_player_has_not_played_is_explained_and_nothing_is_written(
@@ -279,7 +311,9 @@ def test_the_sync_button_does_the_mp3_discs_first_and_then_calls_what_comes_next
     assert m3.read_mp3_card(card)[1]["MPJ00001"].coarse
 
 
-def test_a_second_disc_is_synced_in_the_same_run_with_one_question(view, lib, tmp_path):
+def test_a_second_disc_is_synced_in_the_same_run_and_the_one_that_cannot_be_is_explained(
+    view, lib, tmp_path
+):
     ids = {t.title: t.id for t in lib.tracks()}
     second = lib.create_disc("Second", kind="mp3")
     lib.add_to_disc(second, [ids["One"], ids["Four"]])
@@ -287,13 +321,12 @@ def test_a_second_disc_is_synced_in_the_same_run_with_one_question(view, lib, tm
     view.look(card)
     view.view.sync_mp3(card, [lib.disc_id, second])
     assert view.finished()
-    assert len(view.asked) == 1  # one question for both
-    text = view.asked[0]
-    assert "“Warm-up”: to add to MPJ00001.PDJ" in text  # the first is written ...
-    assert (
-        "“Second”" in text and "Play the disc in the player once" in text
-    )  # ... the second is explained in it
-    assert view.problems == []  # (no second dialog)
+    assert view.asked == []
+    ((title, text),) = (
+        view.problems
+    )  # (one box, for the disc that could not be written)
+    assert title == "Couldn't Sync Every Disc"
+    assert "“Second”" in text and "Play the disc in the player once" in text
     assert m3.read_mp3_card(card)[1]["MPJ00001"].coarse
 
 
@@ -375,7 +408,7 @@ def test_a_right_click_sync_on_another_card_makes_it_the_shown_card_first(
     assert not (
         first / "PIONEER" / "MPJ" / "MPJ00001.PDJ"
     ).exists()  # the one shown before was left alone
-    assert len(view.asked) == 1
+    assert view.asked == []
 
 
 def test_a_write_that_reads_back_differently_is_explained_with_the_backup_not_a_crash(

@@ -31,6 +31,7 @@ from PySide6.QtWidgets import (
     QListWidgetItem,
     QMenu,
     QMessageBox,
+    QProgressBar,
     QPushButton,
     QSizePolicy,
     QTreeWidget,
@@ -817,6 +818,13 @@ class SyncView(QWidget):
         self.subtitle = unsized(QLabel())
         self.subtitle.setObjectName("mutedLabel")
         panel.addWidget(self.subtitle)
+        self.progress = (
+            QProgressBar()
+        )  # shows the sync is doing something (it can take a few seconds)
+        self.progress.setTextVisible(False)
+        self.progress.setMaximumHeight(8)
+        self.progress.hide()
+        panel.addWidget(self.progress)
         self.search = QLineEdit()
         self.search.setPlaceholderText("Search discs")
         self.search.setClearButtonEnabled(True)
@@ -1219,6 +1227,18 @@ class SyncView(QWidget):
             )
         self._update_analyse()
 
+    def _show_progress(self) -> None:
+        """The bar is there while something works on the card or the discs; it keeps moving back and forth until
+        a step knows how far it is (`_step`)."""
+        busy = self._measuring or self._writing or self._analysing
+        if busy and not self.progress.isVisibleTo(self.disc_panel):
+            self.progress.setRange(0, 0)
+        self.progress.setVisible(busy)
+
+    def _step(self, done: int, total: int) -> None:
+        self.progress.setRange(0, max(total, 1))
+        self.progress.setValue(min(done, total))
+
     def _update_buttons(self) -> None:
         writable = [
             s for s in (*self._surveys.values(), *self._mp3_rows.values()) if s.writable
@@ -1236,6 +1256,7 @@ class SyncView(QWidget):
             )
         self._update_header_tick()
         busy = self._measuring or self._writing or self._analysing
+        self._show_progress()
         self.cancel_button.setVisible(self._measuring or self._analysing)
         self._update_analyse()
         self.import_button.setEnabled(
@@ -1350,6 +1371,7 @@ class SyncView(QWidget):
     def _set_writing(self, writing: bool) -> None:
         """A sync is (or is no longer) writing and ejecting: the card list must leave the card alone."""
         self._writing = writing
+        self._show_progress()
         self.busy_changed.emit(writing)
 
     def sync_to(self, card: Path) -> None:
@@ -1380,10 +1402,10 @@ class SyncView(QWidget):
 
         Each disc's files are rendered the way a burn makes them (on a worker: a track is a second or so, more for
         a file that has to be encoded), the image's layout found, and the card's entry for the disc matched by the
-        three numbers of its ID that are understood, so the disc must have been played in the player once. Then one
-        question for all of them, and one file written for each (the card's MP3 files are copied aside first; what
-        the card has is never changed). `then`, if given, runs when this is done and the card is not ejected here
-        (the audio discs' sync comes next). **Not tried on a player yet** (`dev_docs/card-sync.md`, "MP3 discs")."""
+        ID the player makes for it (from the card's entry, or made here from the image recorded at the burn). No
+        question is asked: one file is written for each disc (the card's MP3 files are copied aside first; what
+        the card has is never changed), and the card is ejected if the box says so. `then`, if given, runs when this is done and the card is not ejected here
+        (the audio discs' sync comes next). (`dev_docs/card-sync.md`, "MP3 discs")."""
         if self._writing or self._measuring or self._analysing:
             self.message.emit("Wait for the card to finish first.")
             return
@@ -1400,6 +1422,11 @@ class SyncView(QWidget):
         except (Mp3SyncError, RekordboxError) as exc:
             show_problem(self, "Couldn't Sync to the Card", str(exc))
             return
+        eject = (
+            then is None
+            and self.eject_check.isChecked()
+            and self.eject_check.isEnabled()
+        )  # (asked before the sync disables the box: it is the answer when the sync began)
         self._set_writing(True)
         self._analysing = True  # (the Cancel button is for the rendering below)
         token = self._cancel = CancelToken()
@@ -1429,6 +1456,8 @@ class SyncView(QWidget):
                     except Mp3SyncError as exc:
                         raise TaskError(f"“{request.name}”: {exc}") from exc
             return found
+
+        skipped: list[str] = []
 
         def finish(problem: str | None = None) -> None:
             self._analysing = False
@@ -1502,27 +1531,15 @@ class SyncView(QWidget):
                 ):  # (the audio discs ticked with them still go ahead)
                     then()
                 return
-            eject = (
-                then is None
-                and self.eject_check.isChecked()
-                and self.eject_check.isEnabled()
-            )
-            lines = [
-                line
-                for r, _disc, plan in plans
-                for line in describe_mp3_plan(plan, r.name)
-            ]
-            text = (
-                f"Write {len(ready)} MP3 disc{'s' if len(ready) != 1 else ''} to “{card.name or card}”?\n\n"
-                + "\n".join(lines)
-                + f"\n\nThe card's MP3 files are copied to {self._backup_dir} first. A waveform or cue the card "
-                "has is never changed, and hot cues are never touched."
-                + (" The card is ejected afterwards." if eject else "")
-                + "\n\nNot tried on a player yet: please check the disc on the CDJ."
-            )
-            if not ask_sync_confirmation(self, text):
-                finish("Nothing was written to the card.")
-                return
+            self.progress.setRange(
+                0, 0
+            )  # (the write takes a few seconds, and has no count)
+            skipped.extend(
+                line for r, plan in blocked for line in describe_mp3_plan(plan, r.name)
+            )  # (a disc that can't be written is explained once the others are done)
+            self.progress.setRange(
+                0, 0
+            )  # (the write has no count, and takes a few seconds)
             self.subtitle.setText("Writing to the card…")
 
             def write():
@@ -1552,6 +1569,8 @@ class SyncView(QWidget):
             )
             self._analysing = False
             self._cancel = None
+            if skipped:
+                show_problem(self, "Couldn't Sync Every Disc", "\n".join(skipped))
             if eject:
                 self._eject_card(card, said)
                 return
@@ -1581,8 +1600,9 @@ class SyncView(QWidget):
             work,
             done,
             failed,
-            on_progress=lambda n, total: self.subtitle.setText(
-                f"Reading {names}: {n} of {total}"
+            on_progress=lambda n, total: (
+                self.subtitle.setText(f"Reading {names}: {n} of {total}"),
+                self._step(n, total),
             ),
             on_cancel=cancelled,
         )
@@ -1699,8 +1719,9 @@ class SyncView(QWidget):
             lambda report: measure_waveforms(todo, report, cancel=token),
             done,
             failed,
-            on_progress=lambda n, total: self.subtitle.setText(
-                f"Analysing waveforms: {n} of {total}"
+            on_progress=lambda n, total: (
+                self.subtitle.setText(f"Analysing waveforms: {n} of {total}"),
+                self._step(n, total),
             ),
             on_cancel=cancelled,
         )
@@ -1849,8 +1870,9 @@ class SyncView(QWidget):
             lambda report: probe_lengths(todo, report, cancel=token),
             done,
             failed,
-            on_progress=lambda n, total: self.subtitle.setText(
-                f"Measuring lengths: {n} of {total}"
+            on_progress=lambda n, total: (
+                self.subtitle.setText(f"Measuring lengths: {n} of {total}"),
+                self._step(n, total),
             ),
             on_cancel=cancelled,
         )

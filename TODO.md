@@ -23,11 +23,10 @@ Open items by area; finished work is under **Completed** at the bottom (same hea
 - [ ] Find out what unit `DRPreGapLengthKey` uses before trusting the 1, 2 and 3 s "Between tracks" options ([burning.md](dev_docs/burning.md)).
 - [ ] Compare the drive's reported free blocks on a 74 and an 80 minute disc (expect about 333,000 and 359,850) to confirm the capacity check ([burning.md](dev_docs/burning.md)).
 - [ ] **Try MP3 cues on the CDJ**: set a memory cue in Dubcrate, sync, check it lands right. Only tried on synthetic discs; the player's time against audio time is unmeasured (needs a click-track disc) ([card-sync.md](dev_docs/card-sync.md)).
-- [ ] **MP3 sync without playing the disc: the rest on hardware**: burn an MP3 disc with this version (nearly full, with folders) and sync it to a card that already has MP3 discs (index numbering). Open: Mac/DiscRecording burns aren't recorded, reading the disc on macOS and Windows, discs with another label ([card-sync.md](dev_docs/card-sync.md)).
+- [ ] MP3 discs: Mac/DiscRecording burns aren't recorded, the Disc ID window can't read a disc on macOS and Windows, and discs with another label are refused ([card-sync.md](dev_docs/card-sync.md)).
 - [ ] MP3 sync follow-ups: a tracks table with waveform state in the Sync tab's middle pane; Import Cues from an MP3 card (reading is built, mapping back to tracks is not); nested folders and non-MPEG-1 Layer III files are refused.
 - [ ] Finish decoding the MP3 disc's card files: cue timing against audio time (click-track disc), the four bytes at +112 of a cue entry ([cdj1000mk3-card.md](dev_docs/cdj1000mk3-card.md) section 6).
 - [ ] Try MP3 disc folders on the CDJ, starting with two nested folders, then the 999-file and 8-level limits and whether `MAX_DEPTH` should be 9 ([burning.md](dev_docs/burning.md)).
-- [ ] Burn a nearly full MP3 disc to check the size estimate and `FILESYSTEM_OVERHEAD_SECTORS` ([burning.md](dev_docs/burning.md)).
 - [ ] Check the rekordbox bits no sample covered: rekordbox 6 libraries, cue points and the "mid" and "low" mood phrase names ([rekordbox-analysis.md](dev_docs/rekordbox-analysis.md)).
 
 ### Build and release
@@ -44,7 +43,7 @@ Open items by area; finished work is under **Completed** at the bottom (same hea
 - [ ] Finder page: try drag-reorder, Filter, the waveform and cue view and Clear on the phone with the real library (how long does the first waveform export take?); then the played tick, by-disc grouping and share / copy list.
 - [ ] Try the drive picker with two real drives (the check after a burn is skipped for any but the first).
 - [ ] Read a rekordbox USB stick's own database (`export.pdb`, `USBANLZ`) so a stick imports with BPM, key, cues and beat grids (today only `master.db` or a folder of audio).
-- [ ] Find out why one simulated burn on Linux failed with `Cannot set write parameters mode page` (2026-11-23, not seen again) ([burning.md](dev_docs/burning.md)).
+- [ ] Burn through the USB-C hub for real with the `generic-mmc` retry: behind the hub the default `cdrdao` driver was refused and a write then stalled (2026-11-24); direct on the computer it burned fine. Not yet seen: the retry itself writing a disc ([burning.md](dev_docs/burning.md)).
 - [ ] Ask the drive for its top write speed: the burn window offered 48x and `cdrdao` quietly wrote at 24x (the log says so, the window does not).
 - [ ] Try disc and card auto-detection on macOS and Windows (Linux works).
 - [ ] Make it clear when a Sync has finished (it is a status-bar message that the list refresh replaces within seconds): a banner in the Sync tab that stays until the next action was suggested, not decided.
@@ -111,6 +110,7 @@ Open items by area; finished work is under **Completed** at the bottom (same hea
 - [x] Try the things only simulated so far by hand: the Explorer (permission prompts, slow or unplugged drives), pinned tab dragging, drag-to-change spin boxes, trackpad pinch in the label preview and mouse drag and drop ([roadmap.md](dev_docs/roadmap.md)).
 - [x] Look at the app on a real display in all four looks, including the splash and the label window in System 6 ([roadmap.md](dev_docs/roadmap.md)).
 - [x] MP3 sync without playing the disc first (2026-11-24): the CDJ's disc ID is decoded from the firmware (`Mp3DiscId.made_from`); a burn pins and keeps the image date; Sync makes the card's index entry, and a CDJ took one on a card with no MPJ folder. Disc ID… window (Discs and Sync lists) records an already-burned disc from the drive or an image file, checked on the real disc ([card-sync.md](dev_docs/card-sync.md)).
+- [x] Almost full MP3 disc with four folders (2026-11-24, 64 files, 350,179 of 359,846 sectors, burned with the new version via `cdrdao`): the CDJ plays it, the size estimate held, and Sync made the card's entry from the burn's own record with no play: waveforms appear instantly on the CDJ ([card-sync.md](dev_docs/card-sync.md), [burning.md](dev_docs/burning.md)).
 
 ### Build and release
 

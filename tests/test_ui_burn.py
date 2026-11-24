@@ -644,6 +644,22 @@ def test_a_finished_burn_leaves_the_disc_open_and_the_tree_says_when_it_was_burn
     assert index.data(SELECTION_ROLE) == ("disc", disc_id)
 
 
+def test_a_finished_burn_closes_its_window_and_a_box_says_it_worked(
+    window, disc_id, wait_for
+):
+    window.disc_view.burn_button.click()
+    dialog = window.burn_dialog
+    assert wait_for(lambda: not dialog._busy)
+    burn(dialog, wait_for)
+    assert wait_for(lambda: not dialog.isVisible())  # it closed itself
+    box = window.burn_done_box
+    assert box is not None and box.isVisible()
+    assert "burned successfully" in box.text()
+    assert "marked as burned" in box.informativeText()
+    assert "Print Labels…" in [b.text() for b in box.buttons()]
+    box.close()
+
+
 def test_burning_with_no_disc_just_says_to_make_one(qapp, monkeypatch):
     shown = []
     monkeypatch.setattr(
