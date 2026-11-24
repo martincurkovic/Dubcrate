@@ -38,7 +38,7 @@ The first release, for the CDJ-1000MK3 and other players that read CDs. It runs 
 
 - **Print index labels** for the case, to a printer or a PDF. *Only checked by saving PDFs so far.*
 - **Export Track Finder** makes one web page for your phone. Type part of a title and it tells you which disc and track.
-  It works with no signal. It was used at a gig on an iPhone.
+  It works with no signal. You can star tracks, group them by disc and share the list as text. The search was used at a gig on an iPhone.
 - **Export Playlists** saves your discs as rekordbox XML or M3U files.
 
 ### Also

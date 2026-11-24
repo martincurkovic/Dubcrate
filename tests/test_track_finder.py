@@ -261,7 +261,9 @@ const els = { data: { textContent: data }, q: node("input"), status: node("div")
               related: node("section"), relback: node("button"), reltitle: node("div"),
               reltol: node("select"), relhalf: node("button"), relenergy: node("button"),
               relgenre: node("button"), relsort: node("select"), rellast: node("button"),
-              sort: node("select"), dir: node("button") };
+              sort: node("select"), dir: node("button"), tagbar: node("div"), bydisc: node("button"),
+              share: node("button"), sharebox: node("section"), sharetext: node("textarea"),
+              shareclose: node("button") };
 els.reltol.value = "6";
 els.q.value = "";
 const header = Object.assign(node("header"), { offsetHeight: 90 });
@@ -1615,3 +1617,174 @@ def test_the_beat_grid_is_moved_into_audio_time_with_the_cues(monkeypatch):
     assert tf.in_audio_time(None, "/m/a.mp3") is None
     monkeypatch.setattr(tf, "lead_ms", lambda _path: 0)
     assert tf.in_audio_time(grid, "/m/a.mp3") is grid
+
+
+# The same stand-in again: Tagged grouped by disc, and the list shared as text.
+GROUP_SHARE_TAIL = r"""
+const mode = process.argv[3];
+const cards = () => els.results.children.filter(c => c.className.startsWith("hit"));
+const part = (c, cls) => c.children.find(x => x.className.split(" ")[0] === cls);
+const titleOf = c => part(c, "what").children[0].textContent;
+const starOf = t => part(cards().find(c => titleOf(c) === t), "star");
+const view = () => ({
+  titles: cards().map(titleOf),
+  headings: els.results.children.filter(c => c.className === "group").map(c => c.textContent),
+  grips: cards().filter(c => part(c, "grip")).length,
+  status: els.status.textContent,
+  tagbarHidden: els.tagbar.hidden,
+});
+(async () => {
+  els.sortrow.hidden = true;
+  const out = {};
+  if (mode !== "show") {
+    els.all.handlers.click();
+    for (const t of ["Beta1", "Alpha2", "Beta2", "Alpha1"]) starOf(t).handlers.click();
+  }
+  els.tagged.handlers.click();
+  if (mode === "empty") {
+    els.clear.handlers.click(); els.clear.handlers.click();
+    out.cleared = view();
+  }
+  if (mode === "group" || mode === "show") {
+    out.start = view();
+    if (mode === "group") {
+      els.bydisc.handlers.click();
+      out.grouped = view();
+      els.bydisc.handlers.click();
+      out.flatAgain = view();
+      els.bydisc.handlers.click();  // (left grouped, for the next visit)
+    }
+  }
+  if (mode === "share") {
+    const copied = [], shared = [];
+    const clipboard = { writeText: async text => { copied.push(text); } };
+    sandbox.navigator = { share: async data => { shared.push(data); }, clipboard };
+    await els.share.handlers.click();
+    out.shared = shared.slice(); out.sharedCopied = copied.length;
+    els.bydisc.handlers.click();
+    shared.length = 0;
+    await els.share.handlers.click();
+    out.sharedGrouped = shared.slice();
+    els.bydisc.handlers.click();
+    // the sheet was closed without sending: nothing else happens
+    sandbox.navigator = { share: async () => { const e = new Error("closed"); e.name = "AbortError"; throw e; }, clipboard };
+    await els.share.handlers.click();
+    out.abortCopied = copied.length; out.abortBox = els.sharebox.hidden;
+    // the sheet failed: the list is copied instead
+    sandbox.navigator = { share: async () => { throw new Error("no"); }, clipboard };
+    await els.share.handlers.click();
+    out.failCopied = copied.length; out.failStatus = els.status.textContent;
+    // no share sheet: copied
+    sandbox.navigator = { clipboard };
+    await els.share.handlers.click();
+    out.copied = copied.slice(); out.copyStatus = els.status.textContent;
+    sandbox.timers.at(-1)();  // the "Copied" note lapses
+    out.lapsed = els.status.textContent;
+    // neither: the text is put in a box to copy by hand
+    sandbox.navigator = {};
+    await els.share.handlers.click();
+    out.boxHidden = els.sharebox.hidden; out.boxText = els.sharetext.value;
+    els.shareclose.handlers.click();
+    out.boxClosed = els.sharebox.hidden;
+  }
+  console.log(JSON.stringify(out));
+})();
+"""
+
+
+def group_share_page(lib, tmp_path):
+    lib.replace_source(
+        "folder",
+        "/m",
+        "M",
+        [
+            TrackRecord(ext_id=str(i), path=f"/m/{i}.mp3", title=t, artist=a)
+            for i, (t, a) in enumerate(
+                [("Alpha1", "X"), ("Alpha2", ""), ("Beta1", "Y"), ("Beta2", "Y")]
+            )
+        ],
+    )
+    ids = [t.id for t in lib.tracks(sort="path")]
+    lib.add_to_disc(lib.create_disc("Disc A"), ids[:2])
+    lib.add_to_disc(lib.create_disc("Disc B"), ids[2:])
+    page = tmp_path / "finder.html"
+    tf.write_html(tf.collect(lib), page, MADE)
+    harness = tmp_path / "harness.js"
+    harness.write_text(NODE_HARNESS.split("const out = {};")[0] + GROUP_SHARE_TAIL, encoding="utf-8")  # fmt: skip
+    return page, harness
+
+
+def run_group_share(page, harness, mode, storage=None):
+    env = {**os.environ, **({"FINDER_STORAGE": str(storage)} if storage else {})}
+    done = subprocess.run(
+        ["node", str(harness), str(page), mode],
+        check=True,
+        capture_output=True,
+        encoding="utf-8",
+        errors="replace",
+        env=env,
+    )
+    return json.loads(done.stdout)
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="needs node")
+def test_tagged_can_be_grouped_by_disc(lib, tmp_path):
+    page, harness = group_share_page(lib, tmp_path)
+    storage = tmp_path / "storage.json"
+    got = run_group_share(page, harness, "group", storage)
+    # tagged in this order: Beta1, Alpha2, Beta2, Alpha1, with a drag handle on each
+    assert got["start"]["titles"] == ["Beta1", "Alpha2", "Beta2", "Alpha1"]
+    assert got["start"]["grips"] == 4 and got["start"]["headings"] == []
+    assert got["start"]["tagbarHidden"] is False
+    # by disc: the discs in their order, each disc's picks in the order tagged; no handles, a heading each
+    assert got["grouped"]["titles"] == ["Alpha2", "Alpha1", "Beta1", "Beta2"]
+    assert got["grouped"]["headings"] == ["Disc A", "Disc B"]
+    assert got["grouped"]["grips"] == 0 and "by disc" in got["grouped"]["status"]
+    # and back: the order tagged is untouched
+    assert got["flatAgain"]["titles"] == ["Beta1", "Alpha2", "Beta2", "Alpha1"]
+    assert (
+        got["flatAgain"]["grips"] == 4 and "by disc" not in got["flatAgain"]["status"]
+    )
+    # the choice (left on) and the tags are kept for the next visit
+    again = run_group_share(page, harness, "show", storage)
+    assert again["start"]["headings"] == ["Disc A", "Disc B"]
+    assert again["start"]["titles"] == ["Alpha2", "Alpha1", "Beta1", "Beta2"]
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="needs node")
+def test_the_tagged_buttons_go_with_the_list(lib, tmp_path):
+    page, harness = group_share_page(lib, tmp_path)
+    got = run_group_share(page, harness, "empty")
+    assert got["cleared"]["titles"] == [] and got["cleared"]["tagbarHidden"] is True
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="needs node")
+def test_the_tagged_list_is_shared_as_text_or_copied(lib, tmp_path):
+    page, harness = group_share_page(lib, tmp_path)
+    got = run_group_share(page, harness, "share")
+    flat = (
+        "1. Y – Beta1 (Disc B, track 1)\n2. Alpha2 (Disc A, track 2)\n"
+        "3. Y – Beta2 (Disc B, track 2)\n4. X – Alpha1 (Disc A, track 1)"
+    )
+    grouped = (
+        "Disc A\n  2. Alpha2\n  1. X – Alpha1\n\nDisc B\n  1. Y – Beta1\n  2. Y – Beta2"
+    )
+    # the phone's share sheet is used when there is one, and nothing is copied
+    assert (
+        got["shared"] == [{"title": "Tagged tracks", "text": flat}]
+        and got["sharedCopied"] == 0
+    )
+    assert got["sharedGrouped"] == [{"title": "Tagged tracks", "text": grouped}]
+    # closing the sheet is not a failure: no copy, no box
+    assert got["abortCopied"] == 0 and got["abortBox"] is True
+    # a sheet that fails falls back to copying
+    assert got["failCopied"] == 1 and "Copied 4 tracks" in got["failStatus"]
+    # no sheet: copied, said for a few seconds
+    assert got["copied"][-1] == flat and "Copied 4 tracks" in got["copyStatus"]
+    assert "Copied" not in got["lapsed"] and "4 tagged" in got["lapsed"]
+    # neither works here: the text is shown to copy by hand, and can be closed
+    assert (
+        got["boxHidden"] is False
+        and got["boxText"] == flat
+        and got["boxClosed"] is True
+    )

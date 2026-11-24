@@ -35,7 +35,6 @@ Open items by area; finished work is under **Completed** at the bottom (same hea
 
 ### Features and app polish
 
-- [ ] Finder page ideas: by-disc grouping, and a share / copy list.
 - [ ] Try the drive picker with two real drives (the check after a burn is skipped for any but the first).
 - [ ] Read a rekordbox USB stick (`exportLibrary.db`, `USBANLZ`): built (2026-11-24: `rekordbox_usb.py`, `dubcrate import-usb`, schema v20, the player, cue cache, Sync and the finder reading a stick, and File > Import rekordbox USB; [rekordbox-usb.md](dev_docs/rekordbox-usb.md)). Also done: an unplugged stick's tracks are marked "file not found" and back, and a stick that returns under another name is recognised. Left: try it all in the running app with the stick (tested offscreen and from scripts only: unplug and replug it, and plug it back as a second mount); `export.pdb`-only sticks are refused by decision.
 - [ ] Burn through the USB-C hub once, to see the `generic-mmc` retry write a disc (the default driver was refused behind the hub, 2026-11-24) ([burning.md](dev_docs/burning.md)).
@@ -115,6 +114,7 @@ Open items by area; finished work is under **Completed** at the bottom (same hea
 - [x] Read the third-party notices carefully, since they name each licence but don't reproduce the full texts ([roadmap.md](dev_docs/roadmap.md)).
 
 ### Features and app polish
+- [x] Finder page: **By disc** (the tagged tracks under a heading per disc) and **Share list** (the phone's share sheet, else copy, else the text in a box) (2026-11-24; node and headless Brave only: try the share sheet and copy in the viewer app on the phone). The played tick is still not built.
 - [x] Try `tinytag` as a faster folder scan (2026-11-24: tried, **not adopted**: 2.7x faster than ffprobe at best, and it misread one file's duration, 14.6 s for 337.6 s, on 400 real files; [roadmap.md](dev_docs/roadmap.md)).
 - [x] Rekordbox XML as an import path with no SQLCipher dependency (2026-11-24: `rekordbox_xml.py`, source kind `rekordbox_xml` (schema v21), File > Import rekordbox XML…, `dubcrate import-xml`; tracks, playlists and cues, no waveform or beat grid; read from the owner's own Dubcrate export, not from a rekordbox-made file: [rekordbox-xml.md](dev_docs/rekordbox-xml.md)).
 - [x] The burn window greys out speeds above the drive's top writing speed (`cdrdao drive-info`: 24x on the test drive; it offered 48x and `cdrdao` quietly wrote at 24x). Tried on the real drive: 4234 kB/s reads as 24x; the window itself is untried.

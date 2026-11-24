@@ -685,6 +685,12 @@ PAGE = """<!DOCTYPE html>
          color: #fff; }
   .sortrow { display: flex; gap: 8px; flex: 1; min-width: 0; }
   .sortrow select { flex: 1; min-width: 0; }
+  #sharebox { padding: 8px 0 4px; }
+  #sharebox textarea { width: 100%; box-sizing: border-box; font: inherit; font-size: 15px; padding: 9px 12px;
+                       border-radius: 6px; border: 1px solid var(--border); background: var(--input);
+                       color: var(--bright); margin: 6px 0; }
+  #sharebox button { font: inherit; font-size: 15px; border: 1px solid var(--border); background: var(--input);
+                     color: var(--bright); border-radius: 6px; padding: 6px 12px; min-height: 38px; }
   #filters { padding: 10px 0 2px; }
   .frow { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
   .frow .l { width: 50px; color: var(--muted); font-size: 15px; }
@@ -798,8 +804,17 @@ PAGE = """<!DOCTYPE html>
       <button id="dir" type="button" aria-label="Reverse the order">\u2191</button>
     </span>
   </div>
+  <div class="bar" id="tagbar" hidden>
+    <button id="bydisc" type="button" aria-pressed="false">By disc</button>
+    <button id="share" type="button">Share list</button>
+  </div>
 </header>
 <div class="note" id="status"></div>
+<section id="sharebox" hidden>
+  <div class="note">Couldn't copy it from here. Press and hold in the box, select all and copy.</div>
+  <textarea id="sharetext" readonly rows="8" aria-label="The tagged tracks as text"></textarea>
+  <button id="shareclose" type="button">Close</button>
+</section>
 <section id="related" hidden>
   <div class="relhead"><button id="relback" type="button">‹ Back</button><div id="reltitle"></div></div>
   <div class="frow"><span class="l">BPM</span>
@@ -930,6 +945,85 @@ function showTagCount() {
   tagButton.textContent = tags.length ? "Tagged " + tags.length : "Tagged";
 }
 
+// By disc: the tagged tracks under a heading for each disc (the discs in their order, each disc's picks in
+// the order they were tagged), for walking along a shelf of CDs. The order you dragged them into is kept, but
+// it can't be changed while the list is grouped (a drag would have to cross the headings). Kept on the device.
+const BYDISC_KEY = "dubcrate-finder-bydisc";
+const byDiscButton = document.getElementById("bydisc");
+let byDisc = false;
+try { byDisc = localStorage.getItem(BYDISC_KEY) === "1"; } catch (e) { byDisc = false; }
+function taggedRows() {
+  const list = tags.map(id => byId.get(id));
+  if (!byDisc) return list;
+  return list.map((r, i) => [r, i]).sort((a, b) => a[0].disc.index - b[0].disc.index || a[1] - b[1]).map(x => x[0]);
+}
+byDiscButton.addEventListener("click", () => {
+  byDisc = !byDisc;
+  try { localStorage.setItem(BYDISC_KEY, byDisc ? "1" : "0"); } catch (e) { /* kept for this visit only */ }
+  scrollUp();
+  show();
+});
+
+// Share list: the tagged tracks as plain text, through the phone's share sheet if it has one, else copied.
+// A viewer app may allow neither, so the last resort is the text in a box to copy by hand.
+const shareButton = document.getElementById("share");
+const shareBox = document.getElementById("sharebox");
+const shareText = document.getElementById("sharetext");
+let shareNote = "", shareTimer = 0;
+function tagText() {
+  const name = r => (r.artist ? r.artist + " \u2013 " : "") + r.title;
+  const list = taggedRows();
+  const out = [];
+  if (byDisc) {
+    let last = null;
+    for (const r of list) {
+      if (r.disc !== last) { if (out.length) out.push(""); out.push(r.disc.name); last = r.disc; }
+      out.push("  " + r.number + ". " + name(r) + (r.folder ? " (" + r.folder + ")" : ""));
+    }
+  } else {
+    list.forEach((r, i) => out.push((i + 1) + ". " + name(r) + " (" +
+      [r.disc.name, r.folder, "track " + r.number].filter(Boolean).join(", ") + ")"));
+  }
+  return out.join("\\n");
+}
+function sayShared(text) {
+  shareNote = text;
+  showStatus();
+  clearTimeout(shareTimer);
+  shareTimer = setTimeout(() => { shareNote = ""; showStatus(); }, 4000);
+}
+async function copyText(text) {
+  try {
+    if (typeof navigator !== "undefined" && navigator.clipboard && navigator.clipboard.writeText) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch (e) { /* not allowed here: try the older way */ }
+  try {
+    const area = el("textarea");
+    area.value = text;
+    area.setAttribute("readonly", "");
+    document.body.append(area);
+    area.select();
+    const ok = document.execCommand("copy");
+    area.remove();
+    return !!ok;
+  } catch (e) { return false; }
+}
+shareButton.addEventListener("click", async () => {
+  const text = tagText(), count = tags.length;
+  if (!count) return;
+  if (typeof navigator !== "undefined" && navigator.share) {
+    try { await navigator.share({ title: "Tagged tracks", text }); return; }
+    catch (e) { if (e && e.name === "AbortError") return; /* closed the sheet: nothing more to do */ }
+  }
+  if (await copyText(text)) { sayShared("Copied " + count + " track" + (count === 1 ? "" : "s")); return; }
+  shareText.value = text;
+  shareBox.hidden = false;
+  try { shareText.focus(); shareText.select(); } catch (e) { /* the box is there to copy from by hand */ }
+});
+document.getElementById("shareclose").addEventListener("click", () => { shareBox.hidden = true; });
+
 // Filters: BPM and year ranges (a track with no BPM or year is left out while that range is set),
 // one key and one genre. They narrow search and All tracks together, never the Tagged list.
 const filterButton = document.getElementById("filter");
@@ -987,6 +1081,7 @@ function passes(r, f) {
 // Clear the Tagged list: two taps, so a slip of the thumb can't wipe a set (the first one asks, and
 // goes back to Clear after a few seconds; some viewer apps have no confirm box, so this makes its own).
 const clearButton = document.getElementById("clear");
+const tagBar = document.getElementById("tagbar");
 let clearArmed = false, clearTimer = 0;
 function resetClear() {
   clearArmed = false;
@@ -1327,7 +1422,7 @@ function card(r) {
   if (r.info.length) what.append(el("div", "info", r.info.join(" · ")));
   if (related() && r.relNote) what.append(el("div", "relnote", r.relNote));
   const where = el("div", "where");
-  where.append(el("div", "disc", r.disc.name));
+  if (!(tagView && byDisc && !related())) where.append(el("div", "disc", r.disc.name));  // (the heading has it)
   where.append(el("div", "num", "Track " + r.number));
   if (r.folder) where.append(el("div", "sub", r.folder));
   if (r.disc.where) where.append(el("div", "sub", r.disc.where));
@@ -1368,7 +1463,7 @@ function card(r) {
   });
   paint();
   hit._rid = r.id;
-  if (tagView && !related()) {
+  if (tagView && !related() && !byDisc) {
     // Hold the handle and move: the card follows the finger and the others make room.
     const grip = el("div", "grip", "≡");
     grip.setAttribute("aria-label", "Drag to move");
@@ -1459,7 +1554,8 @@ let pending = [], heading = null, shown = 0;
 function draw(upTo = 0) {
   if (watcher) watcher.unobserve(sentinel);
   sentinel.remove();
-  const group = related() ? (r => TIERS[r.tier]) : listing ? SORTS[activeSort].group : null;
+  const group = related() ? (r => TIERS[r.tier]) : listing ? SORTS[activeSort].group :
+                tagView && byDisc ? (r => r.disc.name) : null;
   const end = watcher ? Math.min(pending.length, Math.max(shown + CHUNK, upTo + 1)) : pending.length;
   for (; shown < end; shown++) {
     const r = pending[shown];
@@ -1491,7 +1587,7 @@ function showStatus() {
   } else if (tagView) {
     const note = storageOk ? "kept on this device" : "NOT kept: this app can't save them";
     status.textContent = tags.length
-      ? tags.length + " tagged · " + note
+      ? (shareNote ? shareNote + " · " : "") + tags.length + " tagged" + (byDisc ? " · by disc" : "") + " · " + note
       : "Nothing tagged yet: tap the star on a track · " + note;
   } else if (!listing) {
     status.textContent = rows.length + " tracks on " + data.discs.length +
@@ -1521,12 +1617,15 @@ function show() {
     el("span", "", src.title + (src.artist ? " – " + src.artist : "")),
     el("small", "", "Related to " + src.info.join(" · ")));
   clearButton.hidden = !(tagView && tags.length) || src !== null;
+  tagBar.hidden = clearButton.hidden;
+  byDiscButton.setAttribute("aria-pressed", String(byDisc));
+  if (clearButton.hidden) shareBox.hidden = true;
   showRelLast();
   if (clearButton.hidden) resetClear();
   activeSort = sortKey === "match" && !text ? "title" : sortKey;
   let found;
   if (src) found = relatedTo(src);
-  else if (tagView) found = tags.map(id => byId.get(id));
+  else if (tagView) found = taggedRows();
   else if (listing) {
     const pool = filtering ? rows.filter(r => passes(r, f)) : rows;
     found = sorted(text ? matching(text, pool) : pool.slice(), activeSort);
