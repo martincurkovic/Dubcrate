@@ -176,3 +176,21 @@ def test_discrecording_lists_its_drives_by_bsd_name_and_display_name(monkeypatch
         ("disk3", "LITE-ON eSAU108"),
         ("disk4", "disk4"),  # (no display name: the BSD name is all there is)
     ]
+
+
+def test_a_drive_remembered_by_name_is_found_whether_or_not_the_account_could_describe_it():
+    from dubcrate.burn.base import Drive
+
+    described = Drive("E:\\", "slimtype, eSAU108   3, HL09 (E:\\)")
+    bare = Drive("E:\\", "E:\\")  # (what a standard Windows account is shown)
+    other = Drive("F:\\", "F:\\")
+    assert burn.choose_drive([other, described], remembered=described.name) is described
+    assert (
+        burn.choose_drive([other, bare], remembered=described.name) is bare
+    )  # (remembered as an administrator)
+    assert (
+        burn.choose_drive([other, described], remembered=bare.name) is described
+    )  # (and the other way round)
+    assert (
+        burn.choose_drive([other, described], remembered="gone") is other
+    )  # (nothing matches: the first)

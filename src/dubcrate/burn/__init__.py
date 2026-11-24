@@ -62,9 +62,22 @@ def choose_drive(
         if current is not None and drive.id == current:
             return drive
     for drive in drives:
-        if remembered is not None and drive.name == remembered:
+        if remembered is not None and _same_drive(remembered, drive):
             return drive
     return drives[0]
+
+
+def _same_drive(remembered: str, drive: Drive) -> bool:
+    """Whether the name remembered is this drive's: its name, or the same drive named another way. A `cdrdao` drive
+    is "DESCRIPTION (E:\\)" when the account may open it and just "E:\\" when it may not (Windows), so a drive
+    remembered in one kind of session is found in the other by the id inside the name."""
+    if remembered == drive.name:
+        return True
+    return (
+        remembered == drive.id
+        and drive.name.endswith(f"({drive.id})")
+        or (remembered.endswith(f"({drive.id})") and drive.name == drive.id)
+    )
 
 
 def get_burner(name: str) -> Burner:

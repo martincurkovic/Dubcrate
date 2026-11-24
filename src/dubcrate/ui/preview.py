@@ -11,6 +11,7 @@ from dubcrate.artwork import read_artwork
 from dubcrate.audio.decode import DecodedAudio, decode_file
 from dubcrate.audio.player import AudioPlayer
 from dubcrate.beatjump import jump_time
+from dubcrate.build import missing_file_text
 from dubcrate.card_import import ImportChoice, ImportResult
 from dubcrate.cue_timing import analysis_to_audio, lead_ms
 from dubcrate.deck import Deck
@@ -665,7 +666,7 @@ class PreviewController(QObject):
         self._strip.show_track(track)
         if track.missing:
             self._strip.show_error("File not found")
-            self.message.emit(f"{track.title}: file not found")
+            self.message.emit(f"{track.title}: {missing_file_text(str(track.path))}")
             return
         # a file that is also in rekordbox (same path) uses rekordbox's waveform and beat grid
         analysed = self._lib.rekordbox_twin(track) or track

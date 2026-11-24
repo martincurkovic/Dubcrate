@@ -441,10 +441,29 @@ def test_the_toc_names_files_in_the_form_this_cdrdao_wants(tmp_path, monkeypatch
 
 
 def test_windows_a_standard_account_that_cannot_open_the_drive_is_told_so(monkeypatch):
+    from dubcrate.burn import cdrdao as module
+
     monkeypatch.setattr("sys.platform", "win32")
+    monkeypatch.setattr(module, "find_cdrdao", lambda: "cdrdao.exe")
     text = "ERROR: Please use option '--device device', e.g. --device /dev/cdrom\nERROR: Cannot setup device E:\\.\n"
+
+    def listed(*pairs):
+        monkeypatch.setattr(module, "scan_devices", lambda: list(pairs))
+
+    listed(("E:\\", ", ,"))  # (listed with no description: this account can't open it)
     said = explain_failure(text, "E:\\", 1)
     assert "administrator" in said and "Run as administrator" in said
+    listed()  # (not listed at all: unplugged, or the letter moved)
+    said = explain_failure(text, "E:\\", 1)
+    assert "no drive at E:" in said and "administrator" not in said
+    listed(
+        ("E:\\", "slimtype, eSAU108   3, HL09")
+    )  # (opens fine: the account is not the cause)
+    assert "administrator" not in explain_failure(text, "E:\\", 1)
+    monkeypatch.setattr(
+        module, "find_cdrdao", lambda: None
+    )  # (can't be asked: no guess)
+    assert "administrator" not in explain_failure(text, "E:\\", 1)
     monkeypatch.setattr("sys.platform", "linux")
     assert "administrator" not in explain_failure(
         text, "/dev/sr0", 1

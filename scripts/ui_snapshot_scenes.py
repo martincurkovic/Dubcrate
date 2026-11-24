@@ -1379,14 +1379,23 @@ def _format_ready(ctx):
 def _format_working(ctx):
     import threading
 
+    from dubcrate import card_format as cf
+
     gate = threading.Event()
-    ctx.on_cleanup(gate.set)  # (lets the stand-in finish when the scene is over)
 
     def formatter(device, disk):
         gate.wait(30)
-        raise RuntimeError("scene over")
+        raise cf.FormatError(
+            "scene over"
+        )  # (an expected error: the dialog says it, not a traceback)
 
     dialog = _format_dialog(ctx, formatter=formatter)
+
+    def finish():  # (let the stand-in end and its answer arrive while the dialog is still there)
+        gate.set()
+        ctx.wait_for(lambda: not dialog._busy)
+
+    ctx.on_cleanup(finish)
     dialog.understand.setChecked(True)
     dialog.format_button.click()
     ctx.settle(6)

@@ -238,6 +238,20 @@ def access_problem(device: str) -> str | None:
     )
 
 
+def _windows_drive_state(device: str | None) -> str | None:
+    """What `cdrdao scanbus` says of a Windows drive: "unreadable" (listed with no description: this account can't
+    open it), "missing" (not listed), "fine" (listed and described), or None when it can't be told."""
+    if not device or find_cdrdao() is None:
+        return None
+    try:
+        found = dict(scan_devices())
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if device not in found:
+        return "missing"
+    return "unreadable" if not any(c.isalnum() for c in found[device]) else "fine"
+
+
 def explain_failure(
     output: str, device: str | None = None, status: int | None = None
 ) -> str:
@@ -270,11 +284,16 @@ def explain_failure(
         and "cannot setup device" in low
     ):
         # A standard (non-administrator) account can see the drive's letter but not open it for SCSI pass-through:
-        # `scanbus` then lists "E:\\ : , ," and every command says to use --device (seen 2026-11-24).
-        return (
-            "Windows won't let this account use the drive. Burning needs an administrator account: "
-            "sign in as an administrator, or right-click Dubcrate and choose Run as administrator."
-        )
+        # `scanbus` then lists "E:\\ : , ," and every command says to use --device (seen 2026-11-24). The same text
+        # comes from an unplugged drive or one another program holds, so the listing decides which this is.
+        state = _windows_drive_state(device)
+        if state == "unreadable":
+            return (
+                "Windows won't let this account use the drive. Burning needs an administrator account: "
+                "sign in as an administrator, or right-click Dubcrate and choose Run as administrator."
+            )
+        if state == "missing":
+            return f"There is no drive at{where or ' that address'}. Is the burner plugged in and switched on?"
     if "not supported by device" in low and "writing speed" in low:
         return (
             "The drive can't write at that speed. Choose another in Settings > Burning."
