@@ -25,6 +25,7 @@ from PySide6.QtWidgets import (
     QListWidget,
     QListWidgetItem,
     QMessageBox,
+    QProgressBar,
     QPushButton,
     QVBoxLayout,
     QWidget,
@@ -118,6 +119,13 @@ class FormatCardDialog(QDialog):
         self.status.setObjectName("mutedLabel")
         self.status.setWordWrap(True)
         layout.addWidget(self.status)
+        # something moving while the card is erased, initialised and formatted (a few seconds with nothing else to see)
+        self.progress = QProgressBar()
+        self.progress.setRange(0, 0)
+        self.progress.setTextVisible(False)
+        self.progress.setMaximumHeight(8)
+        self.progress.hide()
+        layout.addWidget(self.progress)
         self.list = QListWidget()
         self.list.setWordWrap(True)  # a reason is a sentence, not a word
         self.list.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
@@ -249,6 +257,7 @@ class FormatCardDialog(QDialog):
             if disk is None
             else f"Everything on “{disk.name or disk.device}” ({card_format.size_text(disk.size)}, {disk.device}) will be erased."
         )
+        self.progress.setVisible(self._busy)
         self.understand.setEnabled(free and disk is not None)
         self.list.setEnabled(free)
         self.refresh_button.setEnabled(free)
@@ -268,7 +277,10 @@ class FormatCardDialog(QDialog):
             return
         self._busy = True
         self.result.setText("")
-        self.status.setText(f"Formatting {disk.device}… don't take the card out.")
+        self.status.setText(
+            f"Erasing and formatting “{disk.name or disk.device}”… this can take a few seconds. "
+            "Don't take the card out."
+        )
         self._update()
 
         def work() -> Formatted:

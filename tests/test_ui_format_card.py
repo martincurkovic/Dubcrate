@@ -172,11 +172,13 @@ def test_the_window_is_busy_while_formatting_and_will_not_start_twice(make, wait
     assert not dialog.list.isEnabled() and not dialog.refresh_button.isEnabled()
     assert (
         not dialog.close_button.isEnabled()
-        and "Formatting disk4" in dialog.status.text()
+        and "Erasing and formatting" in dialog.status.text()
     )
+    assert dialog.progress.isVisibleTo(dialog)  # (something moves while it works)
     dialog.start()  # (ignored)
     gate.append(1)
     assert wait_for(lambda: dialog._done)
+    assert not dialog.progress.isVisibleTo(dialog)
 
 
 # -- the card panel -----------------------------------------------------------------------------

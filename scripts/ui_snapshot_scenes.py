@@ -1374,6 +1374,25 @@ def _format_ready(ctx):
     return dialog
 
 
+@scene("format-card-working", "Sync tab", "Format a Card: erasing and formatting", sizes=(NATURAL,), kind="dialog",
+       about="While the card is erased and formatted (a stand-in formatter that waits): the moving bar and the message.")  # fmt: skip
+def _format_working(ctx):
+    import threading
+
+    gate = threading.Event()
+    ctx.on_cleanup(gate.set)  # (lets the stand-in finish when the scene is over)
+
+    def formatter(device, disk):
+        gate.wait(30)
+        raise RuntimeError("scene over")
+
+    dialog = _format_dialog(ctx, formatter=formatter)
+    dialog.understand.setChecked(True)
+    dialog.format_button.click()
+    ctx.settle(6)
+    return dialog
+
+
 @scene("format-card-none", "Sync tab", "Format a Card: no card found", sizes=(NATURAL,), kind="dialog",
        about="No removable disk at all.")  # fmt: skip
 def _format_none(ctx):
