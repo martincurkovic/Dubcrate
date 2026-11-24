@@ -22,6 +22,7 @@ from dataclasses import dataclass, field, replace
 from datetime import datetime
 from pathlib import Path
 
+from dubcrate import cdj_card as cc
 from dubcrate import cdj_card_mp3 as m3
 from dubcrate import cue_timing, iso, mp3
 from dubcrate.analysis import Cue
@@ -30,6 +31,7 @@ from dubcrate.build import BuildError, BurnPlan, plan_burn, render_plan
 from dubcrate.burn.base import DataDisc
 from dubcrate.cancel import CancelToken
 from dubcrate.card_discs import (
+    WAVE_CARD,
     WAVE_NONE,
     WAVE_PENDING,
     WAVE_WRITE,
@@ -39,7 +41,7 @@ from dubcrate.card_discs import (
 from dubcrate.card_sync import map_cues
 from dubcrate.library import Library
 from dubcrate.library.models import DiscDir, DiscEntry, DiscImage, DiscSummary
-from dubcrate.mp3_sync import Mp3DiscInput, Mp3TrackInput
+from dubcrate.mp3_sync import Mp3DiscInput, Mp3TrackInput, has_cue
 from dubcrate.render import copies_mp3
 
 log = logging.getLogger(__name__)
@@ -263,13 +265,31 @@ class Mp3Slot:
     length_frames: int = 0
 
 
+_leads: dict[tuple[str, int, int, int], int] = {}
+
+
 def rendered_lead_ms(path: str | Path, bitrate: int | None) -> int:
     """The player's lead for the file `render_mp3` makes from `path` at this disc's top bitrate, without rendering:
-    a file that is copied has its source's, one that is encoded has `ENCODED_LEAD_MS`."""
+    a file that is copied has its source's, one that is encoded has `ENCODED_LEAD_MS`. Kept per file until it changes
+    (reading a file's frames is the slow part). Raises `OSError` if the file can't be read."""
     rate = bitrate or mp3.DEFAULT_BITRATE
-    if copies_mp3(Path(path), rate):
-        return cue_timing.player_lead_ms(path)
-    return ENCODED_LEAD_MS
+    where = Path(path)
+    info = where.stat()
+    key = (str(where), info.st_size, info.st_mtime_ns, rate)
+    if key not in _leads:
+        if len(_leads) > 20000:
+            _leads.clear()
+        _leads[key] = (
+            cue_timing.player_lead_ms(where)
+            if copies_mp3(where, rate)
+            else ENCODED_LEAD_MS
+        )
+    return _leads[key]
+
+
+def player_frame(seconds: float, lead_ms: int) -> int:
+    """A time in audio as the player's position (1/75 s): later by the lead, as `positions` puts it."""
+    return round((seconds + lead_ms / 1000.0) * 75)
 
 
 def mp3_slots(
@@ -408,34 +428,134 @@ def survey_mp3_discs(
     return rows
 
 
-def mp3_wave_rows(lib: Library, disc_id: int) -> list[WaveRow]:
-    """The Sync tab's tracks table for an MP3 disc: each track with its folder, length and waveform.
+def mp3_wave_rows(
+    lib: Library,
+    disc_id: int,
+    card: tuple[m3.Mp3Index, dict[str, m3.Mp3TrackFile | None]] | None = None,
+    cues: RekordboxCues | None = None,
+) -> list[WaveRow]:
+    """The Sync tab's tracks table for an MP3 disc: each track with its folder, length, waveform and cues.
 
-    Which waveforms the card needs isn't known until the disc's files are made (that needs the card's entry), so a
-    track shows the waveform the library already has (what a sync writes if the card has none for it) or says it is
-    worked out when you sync."""
-    folders = {d.id: d.name for d in lib.disc_dirs(disc_id)}
+    Without the card, which waveforms it needs isn't known until the disc's files are made, so a track shows the
+    waveform the library has (what a sync writes if the card has none) or says it is worked out when you sync.
+    **With the card** (`card` is the MP3 index and files, `cues` is where Dubcrate's cues come from) and the disc's
+    recorded image, which is how the card's file for it is found without rendering, a track shows **the waveform the
+    card already has** for it (the player draws that one) and its cues: the ones on the card, red marks along the
+    strip for them and for the ones a sync would add (as `mp3_sync` decides: within `DUPLICATE_FRAMES` is the same
+    cue). A disc that isn't on the card, has no recorded image or no longer matches it shows what it can."""
+    entries = lib.disc_entries(disc_id)
+    dirs = lib.disc_dirs(disc_id)
+    folders = {d.id: d.name for d in dirs}
+    file = None
+    slots_of: dict[int, tuple[tuple[int, int], Mp3Slot]] = {}
+    if card is not None:
+        file = _card_file(lib, disc_id, card, entries, dirs)
+        if file is not None:
+            slots_of = {
+                s.track: (key, s) for key, s in mp3_slots(entries, dirs).items()
+            }
     rows = []
-    for entry in lib.disc_entries(disc_id):
+    for entry in entries:
         folder = folders.get(entry.dir_id) if entry.dir_id is not None else None
         title = " – ".join(p for p in (entry.artist, entry.title) if p) or "Untitled"
+        number = entry.position + 1
         own = entry.track.waveform
-        if entry.track.missing:
+        here = slots_of.get(number)
+        theirs = _card_wave(file, here[0]) if file is not None and here else None
+        if entry.track.missing and theirs is None:
             state, values, note = WAVE_NONE, (), "its file is missing"
+        elif theirs is not None:
+            state, values = WAVE_CARD, tuple(theirs.time_values())
+            note = (
+                "already on the card: kept"
+                if all(theirs.data)
+                else "the player has part of it: a sync fills in the rest"
+            )
         elif own is not None:
-            state, values, note = WAVE_WRITE, tuple(own), "analysed: written if the card has none"  # fmt: skip
+            state, values = WAVE_WRITE, tuple(own)
+            note = "" if file is not None else "analysed: written if the card has none"
         else:
             state, values, note = WAVE_PENDING, (), "worked out when you sync"
+        seconds = float(entry.track.duration or 0)
+        text, marks = "", ()
+        if cues is not None:
+            text, marks, said = _cue_state(
+                file, here, cues.for_track(entry.track), seconds
+            )
+            note = "; ".join(p for p in (note, said) if p)
         rows.append(
             WaveRow(
-                entry.position + 1,
+                number,
                 title,
                 state,
                 values,
                 note,
                 name=f"[{folder}] {entry.title}" if folder else entry.title,
                 artist=entry.artist,
-                seconds=float(entry.track.duration or 0),
+                seconds=seconds,
+                cues=text,
+                marks=marks,
             )
         )
     return rows
+
+
+def _card_file(
+    lib: Library,
+    disc_id: int,
+    card: tuple[m3.Mp3Index, dict[str, m3.Mp3TrackFile | None]],
+    entries: Sequence[DiscEntry],
+    dirs: Sequence[DiscDir],
+) -> m3.Mp3TrackFile | None:
+    """The card's file for this disc, found by the image it was burned from, or None (no record, the disc has
+    changed since, or the card has no file for it). Nothing is rendered."""
+    image = lib.disc_image(disc_id)
+    if image is None or (len(entries), len(dirs)) != (image.file_count, image.folders):
+        return None
+    index, files = card
+    found = index.find(image.file_count, image.last_file_start, image.sectors)
+    return files.get(found[0].name) if len(found) == 1 else None
+
+
+def _card_wave(file: m3.Mp3TrackFile, key: tuple[int, int]) -> cc.WaveRecord | None:
+    """The player's (or an earlier sync's) fine waveform for a track, as a record to draw, or None."""
+    for record in file.fine:
+        if record.key == key and any(record.data):
+            return cc.WaveRecord(0, record.data)
+    return None
+
+
+def _cue_state(
+    file: m3.Mp3TrackFile | None,
+    here: tuple[tuple[int, int], Mp3Slot] | None,
+    wanted: Sequence[Cue],
+    seconds: float,
+) -> tuple[str, tuple[float, ...], str]:
+    """(the track's cues in a word, marks 0 to 1 along it, a note) for the table: Dubcrate's `wanted` cues against
+    what the card has for the track. With no card file, only how many a sync would write."""
+    if file is None or here is None:
+        count = len(wanted)
+        return (str(count) if count else "–"), (), ""
+    key, slot = here
+    shifted = [
+        (
+            player_frame(c.time, slot.lead_ms),
+            player_frame(c.end, slot.lead_ms) if c.end else 0,
+        )
+        for c in wanted
+    ]
+    missing = [(p, e) for p, e in shifted if not has_cue(file, key, p, e)]
+    on_card = [e for e in (*file.cues, *file.hot) if e is not None and (e.folder, e.file) == key]  # fmt: skip
+    # where things fall in the track: the card's cues (its time is the player's, so the lead comes off) and ours to add
+    lead = round(slot.lead_ms * 75 / 1000)
+    span = (seconds * 75) or slot.length_frames
+    places = [e.position - lead for e in on_card] + [p - lead for p, _e in missing]
+    marks = tuple(sorted({round(min(1.0, max(0.0, p / span)), 4) for p in places})) if span else ()  # fmt: skip
+    if missing:
+        text = f"{len(missing)} to add"
+        said = f"{len(missing)} cue{'s' if len(missing) != 1 else ''} to add"
+    elif wanted:
+        text, said = "on the card", "cues are on the card"
+    else:
+        text, said = "–", ""
+    return text, marks, said

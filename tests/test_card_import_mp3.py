@@ -263,6 +263,7 @@ def library_survey(lib, disc, card, cues=None, discs=None):
 def burned(lib, lead51):
     """A disc of four tracks (two in the root, two in "A folder"), its image recorded, durations measured."""
     disc = make_disc(lib, n=2, folders=("A folder",), per_folder=2)
+    lib._conn.execute("UPDATE track SET missing = 0")  # (as if the files were there)
     entries = lib.disc_entries(disc)
     for e in entries:
         lib.set_cd_sectors(e.track.id, 7500 + 75 * e.position)  # 100 s and a bit
@@ -327,3 +328,116 @@ def test_a_track_keeps_room_for_ten_memory_cues(lib, burned):
     [finding] = library_survey(lib, disc, card_for(image, file)).findings
     [only] = finding.tracks
     assert len(only.rows) == 2 and only.over_limit == 2
+
+
+# -- the Sync tab's tracks table, with the card -----------------------------------------------------
+
+
+def wave_file(*, played=(), cues=(), hot=()):
+    """A card file for the `burned` disc (four tracks: root 1 and 2, then folder 1's two files) with these records
+    (as (folder, file) -> 50 bytes), cues (folder, file, position) and hot cues."""
+    file = m3.Mp3TrackFile.new(entry_id(4, 1234, 5678))
+    for key, data in played:
+        file.coarse.append(m3.Mp3Wave(*key, data))
+        file.fine.append(m3.Mp3Wave(*key, data))
+    file.cues = [cue(f, n, pos, 0) for f, n, pos in cues]
+    file.cue_indexes = list(range(len(file.cues)))
+    for slot, (f, n, pos) in enumerate(hot):
+        file.hot[slot] = cue(f, n, pos, 0)
+    return file
+
+
+def rows_for(lib, disc, image, file, cues=None):
+    return card_mp3.mp3_wave_rows(
+        lib,
+        disc,
+        card_for(image, file),
+        cues or card_import.RekordboxCues(lib, load=lambda _p: {}),
+    )
+
+
+def test_a_track_shows_the_waveform_the_card_already_has(lib, burned):
+    disc, image = burned
+    full = bytes([0x21] * 50)
+    file = wave_file(played=[((0, 2), full), ((1, 1), bytes(40) + bytes([0x31] * 10))])
+    rows = rows_for(lib, disc, image, file)
+    assert (
+        rows[0].state == "pending"
+    )  # the card has none for track 1, the library neither
+    assert (rows[1].state, rows[1].note) == ("card", "already on the card: kept")
+    assert rows[1].values == (1, 2) * 50  # the low nibble is the earlier column
+    assert rows[2].state == "card" and "part of it" in rows[2].note
+    assert rows[3].state == "pending"
+
+
+def test_a_waveform_the_library_has_and_the_card_has_not_is_what_a_sync_writes(
+    lib, burned
+):
+    disc, image = burned
+    lib.set_waveform(lib.disc_entries(disc)[0].track.id, [3] * 100)
+    row = rows_for(lib, disc, image, wave_file())[0]
+    assert (row.state, row.note) == ("write", "")  # the card is known to have none
+
+
+def test_cues_dubcrate_would_add_are_counted_and_marked_along_the_track(lib, burned):
+    disc, image = burned
+    first = lib.disc_entries(disc)[0].track
+    lib.set_memory_cues(first.path, [(10000, "a"), (20000, "b")])
+    # the card has the first one (at the player's time: audio + the 51 ms lead), and a cue set on the player
+    there = round(10.051 * 75)
+    file = wave_file(cues=[(0, 1, there), (0, 1, 3000)])
+    row = rows_for(lib, disc, image, file)[0]
+    assert row.cues == "1 to add"
+    assert row.note == "worked out when you sync; 1 cue to add"
+    seconds = first.duration
+    assert row.marks == tuple(
+        sorted(
+            round(x, 4)
+            for x in (
+                (there - 4) / (seconds * 75),
+                (3000 - 4) / (seconds * 75),
+                (round(20.051 * 75) - 4) / (seconds * 75),
+            )
+        )
+    )
+
+
+def test_cues_that_are_all_on_the_card_say_so_and_a_hot_cue_counts(lib, burned):
+    disc, image = burned
+    first = lib.disc_entries(disc)[0].track
+    lib.set_memory_cues(first.path, [(10000, "a")])
+    file = wave_file(
+        hot=[(0, 1, round(10.051 * 75) + 1)]
+    )  # (a hot cue there is the same cue)
+    row = rows_for(lib, disc, image, file)[0]
+    assert row.cues == "on the card"
+    assert row.note.endswith("cues are on the card")
+
+
+def test_a_track_with_no_cues_has_a_dash(lib, burned):
+    disc, image = burned
+    assert rows_for(lib, disc, image, wave_file())[0].cues == "–"
+
+
+def test_without_the_card_a_track_shows_how_many_cues_would_be_written(lib, burned):
+    disc, _image = burned
+    first = lib.disc_entries(disc)[0].track
+    lib.set_memory_cues(first.path, [(10000, "a")])
+    rows = card_mp3.mp3_wave_rows(
+        lib, disc, None, card_import.RekordboxCues(lib, load=lambda _p: {})
+    )
+    assert rows[0].cues == "1" and rows[1].cues == "–" and rows[0].marks == ()
+
+
+def test_a_disc_the_card_cannot_be_matched_to_shows_the_librarys_own(lib, burned):
+    disc, image = burned
+    other = m3.Mp3Index([m3.Mp3IndexEntry("MPJ00001", entry_id(9, 1, 2))])
+    rows = card_mp3.mp3_wave_rows(
+        lib, disc, (other, {}), card_import.RekordboxCues(lib, load=lambda _p: {})
+    )
+    assert all(r.state == "pending" and r.marks == () for r in rows)
+    lib.add_to_disc(
+        disc, [lib.tracks(sort="path")[0].id]
+    )  # five tracks: no longer the record's disc
+    rows = rows_for(lib, disc, image, wave_file(played=[((0, 1), bytes([0x21] * 50))]))
+    assert all(r.state == "pending" for r in rows)

@@ -971,6 +971,17 @@ class SyncView(QWidget):
             if self._card_path is not None:
                 self.sync_mp3(self._card_path, [disc_id])
 
+    def _mp3_card_files(
+        self,
+    ) -> tuple[m3.Mp3Index, dict[str, m3.Mp3TrackFile | None]] | None:
+        """The card's MP3 disc index and files (a few kilobytes), or None: no card, or none of the player's files."""
+        if self._card_path is None:
+            return None
+        try:
+            return m3.read_mp3_card(self._card_path)
+        except m3.Mp3CardError:
+            return None
+
     def _mp3_card_state(self) -> tuple[bool, bool]:
         """(a card is chosen, it has MP3 disc files): the player makes them when it first plays an MP3 disc."""
         if self._card_path is None:
@@ -1210,7 +1221,12 @@ class SyncView(QWidget):
                 row.disc.id,
                 row.disc.name,
                 "\n".join(row.detail()[1:]),
-                mp3_wave_rows(self._lib, row.disc.id),
+                mp3_wave_rows(
+                    self._lib,
+                    row.disc.id,
+                    self._mp3_card_files(),
+                    RekordboxCues(self._lib, load=self._cue_loader),
+                ),
             )
         elif survey is None:
             self.browser.show_message(

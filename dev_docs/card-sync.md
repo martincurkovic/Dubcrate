@@ -323,6 +323,15 @@ that Dubcrate doesn't have any more was **deleted or moved in Dubcrate** after t
   stores a cue set while a track is cued, a cue's rounding to frames, whether the player ever rewrites the cues Dubcrate wrote, and what a delete or a move on the player does to
   the file (the "Deleting" item in `cdj1000mk3-card.md`, section 4, is still untried) are the open questions.
 
+### The Sync tab's tracks table for an MP3 disc (built 2026-11-24; `card_mp3.mp3_wave_rows`)
+
+`mp3_wave_rows(lib, disc, card, cues)`: the card's MP3 files and the disc's recorded image (`_card_file`, the same lookup Import Cues uses: no rendering) say which file is
+the disc's. Each track then shows the waveform **the card already has** for its (folder, file) (`WAVE_CARD`; a record with a zero column says the player has only part
+of it and a sync fills the rest), else the library's (`WAVE_WRITE`), else pending; its cues are counted against the card with `mp3_sync.has_cue` (the sync's own test,
+within `DUPLICATE_FRAMES`, a hot cue counting) as "N to add" or "on the card", and the strip's red marks are the card's cues and the ones to add (the lead is taken off
+the card's player time). No record, no card, or a changed disc: what the library has, as before. `rendered_lead_ms` is cached per file (it reads the file's frames).
+Tests: `tests/test_card_import_mp3.py`, `tests/test_ui_sync_mp3.py`. Looked at in tests only.
+
 ### Importing from an MP3 disc (built 2026-11-24; `changes_on_mp3_card`, `survey_new_mp3_cues`)
 
 The same review (`DiscFinding`, `ask_import`, `PreviewController.import_memory`), read from `PIONEER/MPJ`. **Additions only:** cues, loops and

@@ -548,3 +548,43 @@ def test_import_cues_says_so_when_an_mp3_disc_has_no_record_of_its_image(
     view.look(make_card(tmp_path, lib))
     view.view.import_from_card()
     assert "1 MP3 disc couldn't be checked" in view.said[-1]
+
+
+def test_the_tracks_table_shows_what_the_card_has_for_a_disc_with_a_recorded_image(
+    view, lib, tmp_path
+):
+    """With the disc's image recorded the card's file is found without rendering: the table shows the player's own
+    waveform for a track and marks the cue it set."""
+    from dubcrate.library.models import DiscImage
+
+    card = make_card(tmp_path, lib)
+    again = tmp_path / "again"
+    again.mkdir()
+    layout = layout_of(lib, again)
+    lib.set_disc_image(
+        lib.disc_id,
+        DiscImage(
+            "2026-11-24T10:00:00+00:00",
+            "Warm-up",
+            layout.file_count,
+            1,
+            layout.last_file_start,
+            layout.image_sectors,
+        ),
+    )
+    mpj = card / "PIONEER" / "MPJ"
+    index = m3.Mp3Index.parse((mpj / "MPJINDX0.PDJ").read_bytes())
+    file = m3.Mp3TrackFile.new(index.entries[0].disc_id)
+    file.coarse = [m3.Mp3Wave(0, 2, bytes([7] * 50))]
+    file.fine = [m3.Mp3Wave(0, 2, bytes([0x54] * 50))]
+    length = round(lib.disc_entries(lib.disc_id)[1].track.duration * 75) + 2
+    file.cues = [m3.Mp3Entry(m3.KIND_CUE, 0, 2, 300, 0, length, 0, 0, 0, 0)]
+    file.cue_indexes = [0]
+    (mpj / "MPJ00001.PDJ").write_bytes(file.to_bytes())
+
+    view.look(card)
+    view.view.tree.setCurrentItem(view.view._disc_items()[0])
+    rows = view.view.browser.rows
+    assert [r.state for r in rows][:2] == ["pending", "card"]
+    assert rows[1].values[:2] == (4, 5) and len(rows[1].marks) == 1
+    assert "already on the card" in rows[1].note

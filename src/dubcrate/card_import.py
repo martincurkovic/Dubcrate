@@ -41,7 +41,13 @@ from dubcrate import cdj_card as cc
 from dubcrate import cdj_card_mp3 as m3
 from dubcrate.analysis import Cue
 from dubcrate.card_discs import DiscSurvey, RekordboxCues
-from dubcrate.card_mp3 import Mp3DiscRow, Mp3Slot, Mp3SyncError, mp3_slots
+from dubcrate.card_mp3 import (
+    Mp3DiscRow,
+    Mp3Slot,
+    Mp3SyncError,
+    mp3_slots,
+    player_frame,
+)
 from dubcrate.card_sync import DUPLICATE_FRAMES, WantedCue
 from dubcrate.library import Library
 from dubcrate.library.cue_edits import MAX_MEMORY_CUES, memory_count
@@ -428,11 +434,6 @@ def survey_new_cues(
 LENGTH_TOLERANCE_FRAMES = 113  # 1.5 s
 
 
-def _player_frame(seconds: float, lead_ms: int) -> int:
-    """A time in audio as the player's position (1/75 s): later by the lead, as `card_mp3.positions` puts it."""
-    return round((seconds + lead_ms / 1000.0) * cc.FRAMES_PER_SECOND)
-
-
 def _audio_ms(position: int, lead_ms: int) -> int:
     """The player's position (1/75 s) as milliseconds of audio: earlier by the lead, never before 0."""
     return max(0, round(position * 1000 / cc.FRAMES_PER_SECOND) - lead_ms)
@@ -459,8 +460,8 @@ def changes_on_mp3_card(
         if slot.track not in held:
             held[slot.track] = [
                 (
-                    _player_frame(c.time, slot.lead_ms),
-                    _player_frame(c.end, slot.lead_ms) if c.end else 0,
+                    player_frame(c.time, slot.lead_ms),
+                    player_frame(c.end, slot.lead_ms) if c.end else 0,
                 )
                 for c in known.get(slot.track, ())
             ]

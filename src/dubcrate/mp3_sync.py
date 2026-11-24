@@ -204,7 +204,7 @@ def plan_mp3_disc(
                     f"A cue of “{track.title}” is past the end of the track and was left out."
                 )
                 continue
-            if _present(work, here, position, end):
+            if has_cue(work, here, position, end):
                 plan.cues_already += 1
                 continue
             if len(work.cues) >= cc.MAX_CUES:
@@ -228,7 +228,7 @@ def plan_mp3_disc(
     return plan
 
 
-def _present(
+def has_cue(
     file: m3.Mp3TrackFile, key: tuple[int, int], position: int, end: int
 ) -> bool:
     """Whether the card already has this cue: a memory cue or loop of this track at the same place, or (for a
