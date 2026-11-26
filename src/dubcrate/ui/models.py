@@ -714,13 +714,16 @@ def _disc_tooltip(disc) -> str:
     return "\n".join(lines)
 
 
-def build_source_model(lib: Library) -> QStandardItemModel:
+def build_source_model(
+    lib: Library, *, show_unplugged: bool = True
+) -> QStandardItemModel:
     """The tree of sources with their folders and playlists beneath them.
 
     Two columns: the name, and the number of tracks in it, right-aligned. With a single source
     its own row is left out: its folders and playlists come straight after "All Tracks" (which
     is the same set of tracks), as they do in rekordbox. With several, each keeps its row, to
-    tell them apart.
+    tell them apart. A rekordbox USB stick that is unplugged says so and is dimmed; unless `show_unplugged`,
+    "All Tracks" leaves its tracks out (its own row still lists them).
     """
     model = QStandardItemModel()
     root = model.invisibleRootItem()
@@ -729,9 +732,13 @@ def build_source_model(lib: Library) -> QStandardItemModel:
     everything.setData(("all",), SELECTION_ROLE)
     everything.setData("All Tracks", NAME_ROLE)
     everything.setEditable(False)
-    root.appendRow([everything, _count_item(lib.count_tracks())])
+    root.appendRow(
+        [everything, _count_item(lib.count_tracks(hide_offline=not show_unplugged))]
+    )
 
     sources = lib.sources()
+    offline = lib.offline_source_ids()
+    dim = QColor(theme.current_palette()["text_disabled"])
     if (
         len(sources) == 1
     ):  # (its row, which carried its path as a tooltip, is not shown)
@@ -740,12 +747,19 @@ def build_source_model(lib: Library) -> QStandardItemModel:
         if len(sources) == 1:
             item = root  # no row of its own: what is in it goes at the top level
         else:
-            item = QStandardItem(source.name)
+            away = source.id in offline
+            item = QStandardItem(f"{source.name} (unplugged)" if away else source.name)
             item.setData(("source", source.id), SELECTION_ROLE)
             item.setData(source.name, NAME_ROLE)
             item.setIcon(_source_icon())
             item.setEditable(False)
-            item.setToolTip(source.path)
+            item.setToolTip(
+                f"{source.path}\nUnplugged: its tracks are not in All Tracks until it is back"
+                if away and not show_unplugged
+                else source.path
+            )
+            if away:
+                item.setForeground(dim)
             root.appendRow([item, _count_item(source.track_count)])
         parents: dict[int | None, QStandardItem] = {None: item}
         for node in lib.nodes(source.id):
@@ -759,6 +773,8 @@ def build_source_model(lib: Library) -> QStandardItemModel:
                 child.setIcon(_folder_icon())
             else:
                 child.setIcon(_playlist_icon())
+            if source.id in offline:
+                child.setForeground(dim)
             parents.get(node.parent_id, item).appendRow(
                 [child, _count_item(node.track_count)]
             )

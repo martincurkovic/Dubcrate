@@ -82,6 +82,17 @@ and `msg-usb-not-a-stick` (the main window's `mounted_volumes` is stubbed in eve
   blocked with that reason, the player says so instead of failing in the decoder. The status bar says "“Name” was unplugged..." / "is plugged in
   again" (nothing on the first look at start-up). **It does not re-read the stick on plug-in**: its tracks come back from the stored copy; Re-import (or
   File > Import rekordbox USB) reads it again. Master.db sources on an unplugged drive still have the old behaviour (flags only change at an import).
+- **Unplugged sticks out of All Tracks (2026-11-26)**: `Library.offline_source_ids()` is the rekordbox USB sources whose tracks are ALL `missing` (what
+  `set_missing` leaves when a stick is away; a folder with a few missing files is not "offline"); `tracks` / `count_tracks(hide_offline=True)` leave them
+  out of the "All Tracks" query only (a source's or playlist's own list still shows them; the default is False, so the CLI and the finder are unchanged).
+  `MainWindow._hide_unplugged()` is that flag (off with the Settings key `library/show_unplugged`, `settings.get_show_unplugged`; **never with one
+  source**, whose row isn't shown, so an unplugged stick that is the whole library can still be looked at). The library tree dims an offline stick's row
+  and its playlists and writes "(unplugged)" after the name (`build_source_model(show_unplugged=)`, `NAME_ROLE` keeps the plain name); `_usb_checked`
+  rebuilds the tree. **Right-click on the library tree** (`MainWindow.tree_menu`): on a source or anything in it, Re-import (off while the stick is away)
+  and Remove, the same code and question as the File menu (`reimport_source` / `remove_source`); a tick item **Show Tracks from Unplugged Drives**
+  (tree and track list menus, only when a stick is imported). Tests: `tests/test_ui_window.py` ("an unplugged stick's tracks stay out of All Tracks").
+  Decided with the owner: no separate tab for a stick (tabs are ways of browsing, and a stick's tracks used on discs need a home). Tried in tests and
+  the offscreen window only.
 - **A stick that comes back under another name** (`Martin` -> `Martin 1`): `rekordbox_usb.store_stick` (used by the window and `import-usb`) first
   looks for a stick source whose drive is not there now (`find_moved_source`) and where at least half of the smaller track list is the same
   (content id, path from the stick's root): such a stick is the same one, because a stick has no id of its own (`deviceName` is the drive's name, `masterDbId`

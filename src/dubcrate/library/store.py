@@ -561,6 +561,13 @@ def _like_escape(term: str) -> str:
     return term.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
 
+# A rekordbox USB stick whose tracks are all "file not found": it is unplugged (`Library.set_missing`).
+_OFFLINE_SOURCES = (
+    "SELECT s.id FROM source s WHERE s.kind = 'rekordbox_usb' AND NOT EXISTS"
+    " (SELECT 1 FROM track x WHERE x.source_id = s.id AND x.missing = 0)"
+)
+
+
 class Library:
     """Handle to the SQLite library. Not thread-safe; open one per thread."""
 
@@ -645,6 +652,12 @@ class Library:
                 "SELECT id, path FROM track WHERE source_id = ?", (source_id,)
             )
         ]
+
+    def offline_source_ids(self) -> set[int]:
+        """The rekordbox USB sticks that are not there: every one of their tracks is marked "file not found" (what
+        `set_missing` does when the stick is unplugged). Only a stick can be away; a folder with a missing file or
+        two is still a source you are using."""
+        return {r["id"] for r in self._conn.execute(_OFFLINE_SOURCES)}
 
     def set_missing(self, source_id: int, missing_ids: Iterable[int]) -> int:
         """Mark exactly `missing_ids` of the source's tracks as "file not found" and the rest as found (what an
@@ -1022,6 +1035,7 @@ class Library:
         node_id: int | None,
         search: str | None,
         include_stale: bool = False,
+        hide_offline: bool = False,
     ) -> tuple[str, list]:
         sql = f"SELECT {select} FROM track t"
         where: list[str] = [] if include_stale else ["t.stale = 0"]
@@ -1037,6 +1051,10 @@ class Library:
             node_id is None
         ):  # "All Tracks": the Explorer's tracks are not part of the library
             where.append("t.source_id NOT IN (SELECT id FROM source WHERE hidden = 1)")
+            if (
+                hide_offline
+            ):  # (an unplugged stick's tracks: its own row still lists them)
+                where.append(f"t.source_id NOT IN ({_OFFLINE_SOURCES})")
         for term in (search or "").split():
             like = f"%{_like_escape(term)}%"
             where.append(
@@ -1055,9 +1073,10 @@ class Library:
         node_id: int | None = None,
         search: str | None = None,
         include_stale: bool = False,
+        hide_offline: bool = False,
     ) -> int:
         sql, params = self._track_query(
-            "COUNT(*)", source_id, node_id, search, include_stale
+            "COUNT(*)", source_id, node_id, search, include_stale, hide_offline
         )
         return self._conn.execute(sql, params).fetchone()[0]
 
@@ -1072,6 +1091,7 @@ class Library:
         limit: int | None = None,
         offset: int = 0,
         include_stale: bool = False,
+        hide_offline: bool = False,
     ) -> list[Track]:
         """Tracks matching the filters.
 
@@ -1082,7 +1102,7 @@ class Library:
         if sort is not None and sort not in _SORTS:
             raise ValueError(f"unknown sort {sort!r}; choose from {sorted(_SORTS)}")
         sql, params = self._track_query(
-            "t.*", source_id, node_id, search, include_stale
+            "t.*", source_id, node_id, search, include_stale, hide_offline
         )
         direction = "DESC" if descending else "ASC"
         if sort:

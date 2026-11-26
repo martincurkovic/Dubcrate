@@ -10,7 +10,7 @@ The first release, for the CDJ-1000MK3 and other players that read CDs. It runs 
 
 - Read your **rekordbox 7 library**, a **rekordbox USB stick** or a **rekordbox XML file**, or any **folder** of music. Dubcrate only reads them.
 - Browse folders and drives in the **Explorer** without importing, and pin the ones you use.
-- A USB stick you unplug stays in the library, greyed out, and comes back when you plug it in.
+- A USB stick you unplug stays in the library and comes back when you plug it in. While it's away its tracks stay out of All Tracks (a tick in the right-click menu brings them back), and right-click a source to re-import or remove it.
 
 ### Discs and burning
 

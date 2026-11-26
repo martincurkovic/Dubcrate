@@ -276,6 +276,8 @@ class MainWindow(QMainWindow):
         self.tree.setAlternatingRowColors(False)
         # (a click on the item that is already current changes nothing for Qt, so it needs this)
         self.tree.clicked.connect(self._on_tree_clicked)
+        self.tree.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.tree.customContextMenuRequested.connect(self._show_tree_menu)
         library_page = QWidget()
         library_layout = QVBoxLayout(library_page)
         library_layout.setContentsMargins(12, 12, 12, 12)
@@ -970,7 +972,7 @@ class MainWindow(QMainWindow):
         """
         target = select or self._library_selection
         expanded = self._expanded_keys(self.tree)
-        model = build_source_model(self._lib)
+        model = build_source_model(self._lib, show_unplugged=not self._hide_unplugged())
         self.tree.setModel(model)
         tree_header = self.tree.header()
         tree_header.setStretchLastSection(False)
@@ -1561,6 +1563,70 @@ class MainWindow(QMainWindow):
         self.open_disc(disc_id)
         self.burn_current_disc()
 
+    def _hide_unplugged(self) -> bool:
+        """Whether "All Tracks" leaves out an unplugged USB stick's tracks: the default, switched off by the
+        "Show Tracks from Unplugged Drives" menu item. Never with one source, whose row isn't shown (an unplugged
+        stick that is all there is would have no way to be looked at)."""
+        return not settings.get_show_unplugged() and len(self._lib.sources()) != 1
+
+    def _has_usb_stick(self) -> bool:
+        return any(s.kind == "rekordbox_usb" for s in self._lib.sources())
+
+    def _add_unplugged_toggle(self, menu: QMenu) -> None:
+        """The tick item that brings an unplugged stick's tracks back into All Tracks (only in a library that has
+        a stick: nothing else can be unplugged)."""
+        if not self._has_usb_stick():
+            return
+        if not menu.isEmpty():
+            menu.addSeparator()
+        action = menu.addAction("Show Tracks from Unplugged Drives")
+        action.setCheckable(True)
+        action.setChecked(settings.get_show_unplugged())
+        action.toggled.connect(self.set_show_unplugged)
+
+    def set_show_unplugged(self, on: bool) -> None:
+        settings.set_show_unplugged(bool(on))
+        self.refresh_sources(reload=False)
+        self.refresh_tracks()
+
+    def tree_menu(self, index: QModelIndex) -> QMenu:
+        """What a right-click on the library tree offers: on a source (or a folder or playlist in it), Re-import
+        and Remove; a stick that is unplugged can't be read again. With a stick imported, the tick item that
+        shows or hides unplugged drives' tracks in All Tracks."""
+        selection = (
+            index.siblingAtColumn(0).data(SELECTION_ROLE) if index.isValid() else None
+        )
+        source_id = None
+        if selection and selection[0] == "source":
+            source_id = selection[1]
+        elif selection and selection[0] == "node":
+            source_id = selection[2]
+        elif selection and selection[0] == "all":
+            sources = self._lib.sources()
+            source_id = sources[0].id if len(sources) == 1 else None
+        menu = QMenu(self)
+        source = next((s for s in self._lib.sources() if s.id == source_id), None)
+        if source is not None:
+            away = source.id in self._lib.offline_source_ids()
+            again = menu.addAction(
+                f"Re-import “{source.name}”",
+                lambda: self.reimport_source(source_id),
+            )
+            again.setEnabled(not self._busy and not away)
+            if away:
+                again.setToolTip("It is unplugged")
+            remove = menu.addAction(
+                f"Remove “{source.name}”…", lambda: self.remove_source(source_id)
+            )
+            remove.setEnabled(not self._busy)
+        self._add_unplugged_toggle(menu)
+        return menu
+
+    def _show_tree_menu(self, position) -> None:
+        menu = self.tree_menu(self.tree.indexAt(position))
+        if not menu.isEmpty():
+            menu.popup(self.tree.viewport().mapToGlobal(position))
+
     def selected_source_id(self) -> int | None:
         """The source that Re-import and Remove act on: the one the pick is in. With a single
         source its row is not shown, and "All Tracks" is that source."""
@@ -1673,6 +1739,7 @@ class MainWindow(QMainWindow):
             sqlite3.ProgrammingError
         ):  # (the library was closed while the files were being looked at)
             return
+        self.refresh_sources(reload=False)  # (the stick's row says unplugged, or not)
         self.refresh_tracks()
         self.disc_view.reload()
         self.refresh_discs()
@@ -1848,7 +1915,9 @@ class MainWindow(QMainWindow):
             self._notify("Import notes", "\n".join(shown))
 
     def reimport_selected(self) -> None:
-        source_id = self.selected_source_id()
+        self.reimport_source(self.selected_source_id())
+
+    def reimport_source(self, source_id: int | None) -> None:
         source = next((s for s in self._lib.sources() if s.id == source_id), None)
         if source is None:
             return
@@ -1859,7 +1928,9 @@ class MainWindow(QMainWindow):
         self.start_import(source.kind, path, name=source.name)
 
     def remove_selected_source(self) -> None:
-        source_id = self.selected_source_id()
+        self.remove_source(self.selected_source_id())
+
+    def remove_source(self, source_id: int | None) -> None:
         source = next((s for s in self._lib.sources() if s.id == source_id), None)
         if source is None:
             return
@@ -1909,6 +1980,7 @@ class MainWindow(QMainWindow):
                 search=self.search.text() or None,
                 sort=key,
                 descending=descending,
+                hide_offline=self._hide_unplugged(),
                 **filters,
             )
         self.track_model.set_tracks(tracks)
@@ -1947,6 +2019,7 @@ class MainWindow(QMainWindow):
         menu.addSeparator()
         load = menu.addAction("Load in Player", self.load_highlighted_track)
         load.setEnabled(picked)
+        self._add_unplugged_toggle(menu)
         return menu
 
     def _show_track_menu(self, position) -> None:

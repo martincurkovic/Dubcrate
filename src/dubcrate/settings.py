@@ -250,6 +250,16 @@ def _as_bool(value: object, default: bool) -> bool:
     return bool(value) if value is not None else default
 
 
+def get_show_unplugged() -> bool:
+    """Whether "All Tracks" and the search also list the tracks of a rekordbox USB stick that is unplugged (off:
+    they are greyed "file not found" tracks in the way; the stick's own row in the library still lists them)."""
+    return _as_bool(_qs().value("library/show_unplugged", False), False)
+
+
+def set_show_unplugged(on: bool) -> None:
+    _qs().setValue("library/show_unplugged", bool(on))
+
+
 def get_hide_finder_howto() -> bool:
     """Whether the box that says how to open the track finder on a phone is left out after an export (the
     "Don't show this again" tick; Help > Track Finder on a Phone… still shows it)."""

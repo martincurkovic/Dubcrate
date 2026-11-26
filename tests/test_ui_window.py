@@ -1529,3 +1529,148 @@ def test_the_xml_import_asks_for_a_file_explains_a_wrong_one_and_waits_while_bus
     assert [s.kind for s in lib.sources() if s.kind == "rekordbox_xml"] == [
         "rekordbox_xml"
     ]
+
+
+# -- an unplugged stick's tracks stay out of All Tracks ------------------------------------------------------
+
+
+def add_stick(win, lib, tmp_path, *, plugged: bool):
+    """A rekordbox USB stick source with two tracks, marked found or "file not found" as the window's poll would."""
+    root = tmp_path / "stick"
+    records = [
+        TrackRecord(ext_id=f"s{i}", path=str(root / f"s{i}.mp3"), title=f"Stick {i}")
+        for i in range(2)
+    ]
+    lib.replace_source("rekordbox_usb", str(root), "STICK", records)
+    source = next(s for s in lib.sources() if s.kind == "rekordbox_usb")
+    lib.set_missing(
+        source.id, [] if plugged else [t.id for t in lib.tracks(source_id=source.id)]
+    )
+    win.refresh_sources()
+    return source
+
+
+def shown_titles(win):
+    return {win.track_model.track_at(r).title for r in range(win.track_model.rowCount())}  # fmt: skip
+
+
+def row_texts(win):
+    model = win.tree.model()
+    return [model.index(r, 0).data() for r in range(model.rowCount())]
+
+
+def test_an_unplugged_sticks_tracks_leave_all_tracks_until_it_is_back(window, tmp_path):
+    win, lib = window
+    source = add_stick(win, lib, tmp_path, plugged=True)
+    assert "Stick 0" in shown_titles(win)  # (plugged in: listed with the rest)
+    assert win.tree.model().index(0, 1).data() == "8"
+    lib.set_missing(source.id, [t.id for t in lib.tracks(source_id=source.id)])
+    win.refresh_sources()
+    assert shown_titles(win) == {f"Song {i}" for i in range(6)}
+    assert win.tree.model().index(0, 1).data() == "6"
+    assert "STICK (unplugged)" in row_texts(win)
+    win.search.setText("Stick")  # (nor does a search find them)
+    win._search_timer.stop()
+    win.refresh_tracks()
+    assert shown_titles(win) == set()
+    lib.set_missing(source.id, [])  # plugged in again
+    win.refresh_sources()
+    assert "STICK" in row_texts(win) and "STICK (unplugged)" not in row_texts(win)
+    assert shown_titles(win) == {"Stick 0", "Stick 1"}
+
+
+def test_the_sticks_own_row_still_lists_its_tracks_while_it_is_away(window, tmp_path):
+    win, lib = window
+    source = add_stick(win, lib, tmp_path, plugged=False)
+    win._selection = ("source", source.id)
+    win.refresh_tracks()
+    assert shown_titles(win) == {"Stick 0", "Stick 1"}
+    assert all(
+        win.track_model.track_at(r).missing for r in range(win.track_model.rowCount())
+    )
+
+
+def test_a_stick_that_is_the_only_source_is_never_hidden(qapp, tmp_path):
+    lib = Library.open(":memory:")
+    win = MainWindow(lib)
+    try:
+        add_stick(win, lib, tmp_path, plugged=False)
+        assert shown_titles(win) == {
+            "Stick 0",
+            "Stick 1",
+        }  # (no row of its own to find them by)
+        assert win.tree.model().index(0, 1).data() == "2"
+    finally:
+        win.close()
+        win.deleteLater()
+        lib.close()
+
+
+def test_the_show_unplugged_tick_brings_the_tracks_back_and_is_remembered(
+    window, tmp_path
+):
+    win, lib = window
+    add_stick(win, lib, tmp_path, plugged=False)
+    assert "Stick 0" not in shown_titles(win)
+    menu = win.track_menu()
+    [tick] = [a for a in menu.actions() if a.text().startswith("Show Tracks")]
+    assert tick.isCheckable() and not tick.isChecked()
+    tick.toggle()
+    assert settings.get_show_unplugged() is True
+    assert {"Stick 0", "Stick 1"} <= shown_titles(win)
+    assert win.tree.model().index(0, 1).data() == "8"
+    [tick] = [a for a in win.tree_menu(QModelIndex()).actions() if a.isCheckable()]
+    assert tick.isChecked()
+    tick.toggle()
+    assert settings.get_show_unplugged() is False
+    assert "Stick 0" not in shown_titles(win)
+
+
+def test_there_is_no_show_unplugged_tick_without_a_stick(window):
+    win, _ = window
+    assert not [a for a in win.track_menu().actions() if a.isCheckable()]
+    assert win.tree_menu(QModelIndex()).isEmpty()
+
+
+def test_the_tree_menu_reimports_and_removes_the_source_that_was_clicked(
+    window, tmp_path, monkeypatch, wait_for
+):
+    win, lib = window
+    source = add_stick(win, lib, tmp_path, plugged=True)
+    model = win.tree.model()
+    index = find_selection(model, ("source", source.id))
+    actions = {a.text(): a for a in win.tree_menu(index).actions() if a.text()}
+    assert set(actions) >= {"Re-import “STICK”", "Remove “STICK”…"}
+    asked = []
+    monkeypatch.setattr(
+        QMessageBox,
+        "question",
+        staticmethod(lambda _p, title, text: asked.append(title) or YES),
+    )
+    actions["Remove “STICK”…"].trigger()
+    assert asked == ["Remove Source"]  # (the same question as File > Remove)
+    assert not [s for s in lib.sources() if s.kind == "rekordbox_usb"]
+    assert "STICK" not in row_texts(win)
+
+
+def test_a_playlist_in_a_source_offers_that_sources_actions_and_all_tracks_with_two_sources_none(
+    window, tmp_path
+):
+    win, lib = window
+    add_stick(win, lib, tmp_path, plugged=True)
+    crate = next(s for s in lib.sources() if s.kind == "folder")
+    node = lib.nodes(crate.id)[0]
+    index = find_selection(win.tree.model(), ("node", node.id, crate.id))
+    texts = [a.text() for a in win.tree_menu(index).actions()]
+    assert "Remove “Crate”…" in texts
+    everything = find_selection(win.tree.model(), ("all",))
+    assert not [t for t in (a.text() for a in win.tree_menu(everything).actions()) if t.startswith(("Re-import", "Remove"))]  # fmt: skip
+
+
+def test_an_unplugged_stick_cannot_be_reimported_from_the_menu(window, tmp_path):
+    win, lib = window
+    source = add_stick(win, lib, tmp_path, plugged=False)
+    index = find_selection(win.tree.model(), ("source", source.id))
+    actions = {a.text(): a for a in win.tree_menu(index).actions() if a.text()}
+    assert not actions["Re-import “STICK”"].isEnabled()
+    assert actions["Remove “STICK”…"].isEnabled()

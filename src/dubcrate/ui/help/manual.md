@@ -66,13 +66,13 @@ On Windows and Linux, ⌘ is **Ctrl** and ⇧ is **Shift**. Dubcrate comes with 
 | **File > Import rekordbox XML…** | Read a rekordbox XML file (in rekordbox: File > Export Collection in xml format). You get tracks, playlists and cues, but no waveforms or beat grids. |
 | **File > Import rekordbox USB** | Read a rekordbox USB stick: pick one that is plugged in, or **Choose Folder…**. You get tracks, playlists, cues, beat grids and waveforms. |
 | **File > Re-import Selected Source** (⇧⌘R) | Bring a source up to date after you add or move music. |
-| **File > Remove Selected Source…** | Forget a source. Your music files are not touched. |
+| **File > Remove Selected Source…** | Forget a source. Your music files are not touched. The same two are in the right-click menu of a source in the library list. |
 
 **Your music is never changed, and importing never changes your rekordbox library.** Dubcrate reads a temporary copy of the rekordbox database and only reads your audio files. (The one thing it can write to rekordbox, if you allow it, is the memory cues you edit in the player.) It keeps its own library of track information and your discs.
 
 **Your rekordbox library is kept up to date by itself.** When Dubcrate starts, a splash screen shows while it re-reads a rekordbox library you have already imported. It never imports one on its own, and it doesn't re-scan folders (use ⇧⌘R for those). A track you deleted in rekordbox is removed here too, unless it is on one of your discs: that one is kept and marked, so no disc ever loses a track. Turn this off under **Settings > Library**, or start with `dubcrate-gui --no-import`.
 
-**USB sticks.** The stick needs rekordbox 7's `exportLibrary.db` (in its `PIONEER/rekordbox` folder). Sticks made by older rekordbox versions can't be read yet. A stick is its own source, named after the drive. While it's unplugged, its tracks stay in your library but are greyed out as “File not found”. Plug it in and they come back. If a stick comes back under a different drive name, Dubcrate knows it's the same one. Memory cues you edit on a stick's tracks stay in Dubcrate. They are never written to the stick.
+**USB sticks.** The stick needs rekordbox 7's `exportLibrary.db` (in its `PIONEER/rekordbox` folder). Sticks made by older rekordbox versions can't be read yet. A stick is its own source, named after the drive. While it's unplugged, its row in the library list says “(unplugged)” and its tracks are left out of **All Tracks** and the search, so they don't clutter them. Click the stick's own row to see them (greyed out as “File not found”), or right-click and tick **Show Tracks from Unplugged Drives** to bring them back into **All Tracks**. Plug the stick in and they return by themselves. If a stick comes back under a different drive name, Dubcrate knows it's the same one. Memory cues you edit on a stick's tracks stay in Dubcrate. They are never written to the stick.
 
 **XML files** are kept as their own source too. **Re-import Selected Source** reads the file again after you export a new one. Dubcrate's own **Export Playlists** files can be imported this way.
 
