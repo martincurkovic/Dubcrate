@@ -347,7 +347,7 @@ def path_too_long_message(path: Path) -> str:
 
 def image_record(disc: DataDisc) -> DiscImage | None:
     """What to keep of the image an MP3 disc was just burned from (`Library.set_disc_image`), or None when the
-    burner didn't say (it has no layout: DiscRecording makes its own image, whose date we don't control)."""
+    burner didn't say (it has no layout: the image had a folder inside a folder, or the burner made its own)."""
     if disc.layout is None or disc.created is None:
         return None
     layout = disc.layout

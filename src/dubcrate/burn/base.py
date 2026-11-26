@@ -58,8 +58,8 @@ class DataDisc:
     # The image's creation date, which the CDJ puts in the disc's ID: set when the disc is staged, used by the
     # burner that makes the image, and kept (`Library.set_disc_image`) so Sync can make the same ID later.
     created: datetime | None = None
-    # What the burner's image looked like, filled in by a burner that makes it with `build_iso` (None for one that
-    # doesn't, such as DiscRecording, whose image has dates we don't control).
+    # What the burner's image looked like, filled in by a burner that makes it with `build_iso` (both do; None for
+    # a disc with a folder inside a folder, whose layout isn't read).
     layout: "ImageLayout | None" = None
 
 

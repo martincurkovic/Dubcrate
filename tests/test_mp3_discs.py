@@ -795,23 +795,7 @@ def test_the_capacity_bar_says_megabytes_for_an_mp3_disc(window):
     assert "MB" in text and "MP3 CD" in text and "of 703 MB" in text
 
 
-# -- DiscRecording, without a drive -------------------------------------------
-
-
-@pytest.mark.skipif(sys.platform != "darwin", reason="DiscRecording is macOS only")
-def test_discrecording_makes_a_data_track_of_the_staged_folder(tmp_path):
-    from dubcrate.burn.discrecording import build_data_track
-
-    folder = tmp_path / "VOLUME"
-    folder.mkdir()
-    (folder / "01 A - B.mp3").write_bytes(b"x" * 5000)
-    track = build_data_track(DataDisc("VOLUME", folder, [folder / "01 A - B.mp3"], 0))
-    estimate = int(track.estimateLength())
-    assert (
-        mp3.FILESYSTEM_OVERHEAD_SECTORS
-        <= estimate
-        < mp3.FILESYSTEM_OVERHEAD_SECTORS + 20
-    )
+# -- the cdrdao backend, without a drive --------------------------------------
 
 
 def test_the_cdrdao_backend_burns_an_mp3_disc_from_an_image_or_says_why_not(

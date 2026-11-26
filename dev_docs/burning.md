@@ -168,7 +168,16 @@ Magnetics CD-Rs. Nothing below needed a change to the burner code.
 An MP3 disc (`disc.kind = "mp3"`) is staged by `build.render_plan` as a folder of numbered
 MP3s (`render.render_mp3`: an MP3 is copied with fresh tags, anything else encoded with
 libmp3lame at the disc's bitrate) and written by `DiscRecordingBurner.burn_data` as one data
-track: `DRFolder` with `explicitFilesystemMask` ISO 9660 | Joliet, `DRTrack.trackForRootFolder_`.
+track. **Since 2026-11-26 the image is Dubcrate's own** (`iso.build_iso` with the pinned date, as for a `cdrdao`
+burn, so `build.image_record` keeps it and Sync can make the card's entry before the CDJ has seen the disc), burned
+with **`drutil burn`** (`drutil_burn_command`: `-notest|-test`, `-noverify|-verify`, `-eject|-mount`, `-noappendable`,
+`-speed N`, the image's path; **`drutil` ignores an option it doesn't know**, so each is spelled as its man page does;
+the drive is `-drive N`, its 1-based place in `drutil list`, which is the order of `DRDevice.devices()`). **Not tried
+on a real burn**: what `drutil burn` prints and what it returns on a failure (the burner takes a non-zero exit or any
+line with "fail" in it as a failure), that it burns the .iso as given and closes the disc, and the drive number with
+two drives. The older way (`DRFolder` with `explicitFilesystemMask` ISO 9660 | Joliet, `DRTrack.trackForRootFolder_`,
+which DiscRecording turns into its own filesystem) was tried on the Mac and the disc played on the CDJ; DiscRecording
+has no "burn this image file" track in PyObjC (`trackForImageAtPath_` is absent), only a hand-written track producer.
 
 - **[tests]** Sizes and file names, the library and conversion, staging with real ffmpeg, the
   burn window with a fake burner, and that DiscRecording builds the data track from a folder

@@ -5,7 +5,13 @@ session-at-once mode (the CD equivalent of disc-at-once) so CD-TEXT can be
 written and there are no gaps between tracks.
 """
 
+import logging
+import re
+import subprocess
 import sys
+import tempfile
+from datetime import datetime
+from pathlib import Path
 
 if sys.platform != "darwin":  # pragma: no cover
     raise ImportError("DiscRecording is only available on macOS")
@@ -23,6 +29,9 @@ from dubcrate.burn.base import (
     Progress,
 )
 from dubcrate.cd import cdtext_clean
+from dubcrate.iso import IsoError, build_iso, image_layout
+
+log = logging.getLogger(__name__)
 
 _POLL_SECONDS = 0.5
 
@@ -104,20 +113,46 @@ def build_tracks(disc: Disc, pregap_sectors: int = 0) -> list:
     return tracks
 
 
-def build_data_track(disc: DataDisc):
-    """A DRTrack for the staging folder, written as ISO 9660 and Joliet (long names).
+def drutil_burn_command(image: Path, drive: int, options: BurnOptions) -> list[str]:
+    """The `drutil` command that burns the disc image at `image` as it is (`drutil` says of a file argument: "valid
+    image files only: .dmg, .iso, ...: the contents of the image file are burned"). `drive` is its 1-based number in
+    `drutil list`. Every option is spelled as `drutil`'s manual spells it: **it ignores one it doesn't know**, so a
+    wrong spelling would burn with the default instead of failing. The disc is closed (`-noappendable`): a CDJ
+    won't read an open one. **NOT tried on a real burn yet.**"""
+    cmd = ["drutil", "-drive", str(drive), "burn"]
+    cmd.append("-test" if options.simulate else "-notest")
+    cmd.append("-verify" if options.verify else "-noverify")
+    cmd.append("-eject" if options.eject else "-mount")
+    cmd.append("-noappendable")
+    if options.speed:
+        cmd += ["-speed", str(options.speed)]
+    cmd.append(str(image))
+    return cmd
 
-    The folder's name is the volume's, so the disc is named after the staged folder."""
-    root = DR.DRFolder.folderWithPath_(str(disc.folder.resolve()))
-    if root is None:
-        raise BurnError(f"DiscRecording could not open {disc.folder}")
-    root.setExplicitFilesystemMask_(
-        DR.DRFilesystemInclusionMaskISO9660 | DR.DRFilesystemInclusionMaskJoliet
-    )
-    track = DR.DRTrack.trackForRootFolder_(root)
-    if track is None:
-        raise BurnError(f"DiscRecording could not make a data track of {disc.folder}")
-    return track
+
+class _DrutilProgress:
+    """`drutil`'s output as progress lines: a line with a percentage is passed on each time it passes a multiple of
+    ten (it redraws a bar many times a second), any other line once, as it is."""
+
+    def __init__(self, progress: Progress) -> None:
+        self._progress = progress
+        self._last_text = ""
+        self._last_tenth = -1
+
+    def feed(self, line: str) -> None:
+        text = line.strip()
+        if not text:
+            return
+        percent = re.search(r"(\d+(?:\.\d+)?)\s*%", text)
+        if percent:
+            tenth = int(float(percent.group(1))) // 10
+            if tenth != self._last_tenth:
+                self._last_tenth = tenth
+                self._progress(f"burning {tenth * 10}%")
+            return
+        if text != self._last_text:
+            self._last_text = text
+            self._progress(text)
 
 
 class DiscRecordingBurner:
@@ -174,21 +209,71 @@ class DiscRecordingBurner:
     def burn_data(
         self, disc: DataDisc, options: BurnOptions, progress: Progress
     ) -> None:
-        """Write an MP3 CD: the staging folder as one data track (ISO 9660 + Joliet)."""
+        """Write an MP3 CD: Dubcrate's own ISO 9660 + Joliet image of the staging folder, as one data track.
+
+        **The image is ours, not DiscRecording's**: the CDJ's ID for an MP3 disc is made from the image's creation
+        date, label, size and where its last file starts, so Dubcrate must know the image to make the card's entry
+        for the disc (`build.image_record`, as for a `cdrdao` burn). DiscRecording makes its own filesystem from a
+        folder, with dates and a layout we don't control, so the finished image is handed to `drutil burn`, which
+        burns an image file as it is. **NOT tried on a real burn yet.**"""
         device = self._pick_device(options.device)
         summary = describe_device(device)
         progress(f"drive: {summary['name']} (support level: {summary['support']})")
         if not summary["media_present"]:
             raise BurnError("no disc in the drive")
-        track = build_data_track(disc)
-        free = summary["media_free_blocks"]
-        needs = int(track.estimateLength())
-        progress(f"the disc image is about {needs} sectors")
-        if free and needs > int(free):
-            raise BurnError(
-                f"the disc in the drive holds {int(free)} sectors but this one needs {needs}"
-            )
-        self._run(device, options, {}, [track], progress)
+        drive = [dev.bsdName() for dev in list_devices()].index(device.bsdName()) + 1
+        with tempfile.TemporaryDirectory(prefix="dubcrate-") as tmp:
+            progress(f"making the disc image of “{disc.title}”…")
+            disc.created = disc.created or datetime.now().astimezone()
+            image = Path(tmp) / "disc.iso"
+            try:
+                build_iso(disc.folder, disc.title, image, disc.created)
+            except IsoError as exc:
+                raise BurnError(str(exc)) from exc
+            try:
+                disc.layout = image_layout(image, disc.folder)
+            except (
+                IsoError
+            ) as exc:  # (a folder in a folder: written all the same, just not recorded)
+                log.info("the image's layout was not read: %s", exc)
+            needs = image.stat().st_size // 2048
+            free = summary["media_free_blocks"]
+            progress(f"the disc image is {needs} sectors")
+            if free and needs > int(free):
+                raise BurnError(
+                    f"the disc in the drive holds {int(free)} sectors but this one needs {needs}"
+                )
+            self._burn_image(image, drive, options, progress)
+
+    @staticmethod
+    def _burn_image(
+        image: Path, drive: int, options: BurnOptions, progress: Progress
+    ) -> None:
+        """Burn `image` with `drutil` and follow its output. Raises `BurnError` if it fails: a non-zero exit, or a
+        line that says the burn failed (what `drutil` does on a failed burn is not known: both are taken)."""
+        cmd = drutil_burn_command(image, drive, options)
+        progress(f"$ {' '.join(cmd)}")
+        # (stdin is closed: nobody is typing if it asks for something)
+        proc = subprocess.Popen(
+            cmd,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            encoding="utf-8",
+            errors="replace",
+        )
+        assert proc.stdout is not None
+        seen: list[str] = []
+        filtered = _DrutilProgress(progress)
+        for line in proc.stdout:  # (text mode: a "\r" ends a line too)
+            seen.append(line.strip())
+            filtered.feed(line)
+        status = proc.wait()
+        said = [line for line in seen if line]
+        failed = status != 0 or any("fail" in line.lower() for line in said)
+        if failed:
+            detail = " | ".join(said[-3:]) or f"exit status {status}"
+            raise BurnError(f"drutil burn failed: {detail}")
 
     def _run(self, device, options: BurnOptions, extra: dict, layout, progress) -> None:
         """Configure a burn, start it and follow it to the end."""
