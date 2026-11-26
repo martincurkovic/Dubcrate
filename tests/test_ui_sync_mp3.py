@@ -592,3 +592,118 @@ def test_the_tracks_table_shows_what_the_card_has_for_a_disc_with_a_recorded_ima
     assert [r.state for r in rows][:2] == ["pending", "card"]
     assert rows[1].values[:2] == (4, 5) and len(rows[1].marks) == 1
     assert "already on the card" in rows[1].note
+
+
+def test_a_sync_records_a_baseline_and_a_cue_deleted_on_the_player_is_offered_for_deletion(
+    view, lib, tmp_path, monkeypatch, wait_for
+):
+    """The whole way round: Dubcrate has a memory cue on "One", a sync puts it on the card and records what the card
+    holds, the player deletes it, and Import Cues offers to delete it in Dubcrate too (it cannot tell without the
+    baseline)."""
+    from dubcrate import mp3_sync
+    from dubcrate.library.models import DiscImage
+
+    card = make_card(tmp_path, lib)
+    again = tmp_path / "again"
+    again.mkdir()
+    layout = layout_of(lib, again)
+    lib.set_disc_image(
+        lib.disc_id,
+        DiscImage(
+            "2026-11-24T10:00:00+00:00",
+            "Warm-up",
+            layout.file_count,
+            1,
+            layout.last_file_start,
+            layout.image_sectors,
+        ),
+    )
+    key = mp3_sync.baseline_key(
+        layout.file_count, layout.last_file_start, layout.image_sectors
+    )
+    one = lib.disc_entries(lib.disc_id)[0].track
+    lib.set_memory_cues(one.path, [(2000, "mine")])
+    view.look(card)
+    assert lib.card_baseline(key) is None  # (no sync recorded yet)
+    tick(view.view)
+    view.view.sync_button.click()
+    assert view.finished()
+    [(code, position, end)] = lib.card_baseline(key)
+    assert mp3_sync.split_code(code) == (0, 1) and end == 0
+    lead = card_mp3.rendered_lead_ms(one.path, None)
+    assert abs(position - round((2.0 + lead / 1000) * 75)) <= 1
+    # the player deletes the cue
+    mpj = card / "PIONEER" / "MPJ"
+    on_card = m3.Mp3TrackFile.parse((mpj / "MPJ00001.PDJ").read_bytes())
+    assert len(on_card.cues) == 1
+    on_card.cues, on_card.cue_indexes = [], []
+    (mpj / "MPJ00001.PDJ").write_bytes(on_card.to_bytes())
+    view.look(card)
+    shown = []
+    monkeypatch.setattr(sync_view, "ask_import", lambda _p, found: shown.extend(found))
+    view.view.import_from_card()
+    assert wait_for(lambda: shown)
+    [finding] = shown
+    assert finding.has_baseline
+    [only] = finding.tracks
+    assert [(r.kind, r.ms) for r in only.rows] == [("remove", 2000)]
+
+
+def test_a_second_sync_that_has_nothing_to_write_still_records_the_baseline(
+    view, lib, tmp_path
+):
+    from dubcrate import mp3_sync
+
+    card = make_card(tmp_path, lib)
+    work = tmp_path / "x"
+    work.mkdir()
+    layout = layout_of(lib, work)
+    key = mp3_sync.baseline_key(
+        layout.file_count, layout.last_file_start, layout.image_sectors
+    )
+    view.look(card)
+    tick(view.view)
+    view.view.sync_button.click()
+    assert view.finished()
+    assert lib.card_baseline(key) == []  # (a disc with no cues: recorded, and empty)
+    lib.set_card_baseline(key, [(mp3_sync.file_code(0, 1), 5, 0)])  # (a stale one)
+    tick(view.view)
+    view.view.sync_button.click()
+    assert view.finished()
+    assert any("already has everything" in m for m in view.said)
+    assert (
+        lib.card_baseline(key) == []
+    )  # (the card has all of it: that is the baseline now)
+
+
+def test_the_command_line_sync_records_the_baseline_only_when_it_writes(
+    lib, tmp_path, capsys
+):
+    import argparse
+
+    from dubcrate import cli_card, mp3_sync
+
+    card = make_card(tmp_path, lib)
+    work = tmp_path / "x"
+    work.mkdir()
+    layout = layout_of(lib, work)
+    key = mp3_sync.baseline_key(
+        layout.file_count, layout.last_file_start, layout.image_sectors
+    )
+    one = lib.disc_entries(lib.disc_id)[0].track
+    lib.set_memory_cues(one.path, [(2000, "mine")])
+
+    def sync(yes):
+        args = argparse.Namespace(disc=[lib.disc_id], card=str(card), from_drive=False, yes=yes, backup_dir=str(tmp_path / "bk"), no_waveforms=False)  # fmt: skip
+        return cli_card.cmd_sync(lib, args)
+
+    assert (
+        sync(False) == 0 and lib.card_baseline(key) is None
+    )  # (a dry run records nothing)
+    assert sync(True) == 0
+    [(code, _position, end)] = lib.card_baseline(key)
+    assert mp3_sync.split_code(code) == (0, 1) and end == 0
+    lib.set_card_baseline(key, [])
+    assert sync(True) == 0  # (nothing left to write: the card has it all)
+    assert len(lib.card_baseline(key)) == 1
+    assert "error" not in capsys.readouterr().err

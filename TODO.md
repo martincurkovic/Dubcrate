@@ -1,6 +1,6 @@
 # TODO List
 
-Open items by area; finished work is under **Completed** at the bottom (same headings).
+Open items by area, each one still to do or to try; everything built is under **Completed** at the bottom (same headings). When something is done, move it there.
 
 ## General
 
@@ -18,9 +18,10 @@ Open items by area; finished work is under **Completed** at the bottom (same hea
 
 - [ ] Find out what unit `DRPreGapLengthKey` uses before trusting the 1, 2 and 3 s "Between tracks" options ([burning.md](dev_docs/burning.md)).
 - [ ] Compare the drive's reported free blocks on a 74 and an 80 minute disc (expect about 333,000 and 359,850) to confirm the capacity check ([burning.md](dev_docs/burning.md)).
-- [ ] MP3 cue timing: much closer since the Info frame counts for ffmpeg-made files (2026-11-24). Left: a click-track disc to measure it, maybe rounding cues to the nearest MP3 frame, and the four bytes at +112 of a cue entry ([card-sync.md](dev_docs/card-sync.md), [cdj1000mk3-card.md](dev_docs/cdj1000mk3-card.md) section 6).
+- [ ] MP3 cue timing: a click-track disc to measure the player's time against ours, maybe rounding cues to the nearest MP3 frame, and the four bytes at +112 of a cue entry ([card-sync.md](dev_docs/card-sync.md), [cdj1000mk3-card.md](dev_docs/cdj1000mk3-card.md) section 6).
 - [ ] MP3 discs: Mac/DiscRecording burns aren't recorded, the Disc ID window can't read a disc on macOS and Windows, and discs with another label are refused ([card-sync.md](dev_docs/card-sync.md)).
-- [ ] MP3 sync follow-ups: Import Cues from an MP3 card: deletions and moves (additions are built 2026-11-24; an MP3 disc has no baseline); nested folders and non-MPEG-1 Layer III files are refused.
+- [ ] Try Import Cues… on an MP3 disc with cues set, deleted and moved on a real player: sync, change the cues on the player, import (what the player does to a deleted or moved MP3 cue is assumed to match an audio disc; a disc synced before 2026-11-26 has no baseline until its next sync) ([card-sync.md](dev_docs/card-sync.md), "Importing from an MP3 disc").
+- [ ] MP3 sync: nested folders and non-MPEG-1 Layer III files are refused (how the player numbers a nested folder isn't known: the nested-folder item below tests it).
 - [ ] Try MP3 disc folders on the CDJ, starting with two nested folders, then the 999-file and 8-level limits and whether `MAX_DEPTH` should be 9 ([burning.md](dev_docs/burning.md)).
 - [ ] Check the rekordbox bits no sample covered: rekordbox 6 libraries, cue points and the "mid" and "low" mood phrase names ([rekordbox-analysis.md](dev_docs/rekordbox-analysis.md)).
 
@@ -31,14 +32,14 @@ Open items by area; finished work is under **Completed** at the bottom (same hea
 
 ### Before the first release
 
-- [ ] Write a changelog (the update check reads GitHub's release notes) ([roadmap.md](dev_docs/roadmap.md)). (Rewritten short and plain on 2026-11-24 in CHANGELOG.md: read it once more and edit it before tagging.)
+- [ ] Write a changelog (the update check reads GitHub's release notes) ([roadmap.md](dev_docs/roadmap.md)). (A short plain draft is in CHANGELOG.md: read it once more before tagging.)
 
 ### Features and app polish
 
 - [ ] Try the drive picker with two real drives (the check after a burn is skipped for any but the first).
-- [ ] Read a rekordbox USB stick (`exportLibrary.db`, `USBANLZ`): built (2026-11-24: `rekordbox_usb.py`, `dubcrate import-usb`, schema v20, the player, cue cache, Sync and the finder reading a stick, and File > Import rekordbox USB; [rekordbox-usb.md](dev_docs/rekordbox-usb.md)). Also done: an unplugged stick's tracks are marked "file not found" and back, and a stick that returns under another name is recognised. Also done (2026-11-26): an unplugged stick's tracks stay out of All Tracks and the search (a tick in the right-click menu brings them back), its tree row is dimmed with "(unplugged)", and a source has a right-click menu (Re-import, Remove). Left: try it all in the running app with the stick (tested offscreen and from scripts only: unplug and replug it, and plug it back as a second mount; is the Remove confirmation right for a stick?); `export.pdb`-only sticks are refused by decision.
+- [x] Try the rekordbox USB stick in the running app (it is only tested offscreen and from scripts): import it, unplug and replug it, plug it back as a second mount. Check the "(unplugged)" row, All Tracks without its tracks, the Show Tracks from Unplugged Drives tick, and the right-click Re-import / Remove. Is the Remove confirmation right for a stick? ([rekordbox-usb.md](dev_docs/rekordbox-usb.md)). Sticks with only `export.pdb` are refused by decision.
 - [ ] Burn through the USB-C hub once, to see the `generic-mmc` retry write a disc (the default driver was refused behind the hub, 2026-11-24) ([burning.md](dev_docs/burning.md)).
-- [ ] Try disc and card auto-detection on macOS and Windows (Linux works; Windows listed a card with a PIONEER folder, and a blank one after a fix, 2026-11-24).
+- [x] Try disc and card auto-detection on macOS and Windows (Linux works; Windows listed a card with a PIONEER folder, and a blank one after a fix, 2026-11-24).
 - [ ] Make it clear when a Sync has finished (it is a status-bar message that the list refresh replaces within seconds): a banner in the Sync tab that stays until the next action was suggested, not decided.
 - [ ] Cancel the writing of a burn itself (needs a confirmation: a stopped write ruins the disc).
 - [ ] Try dragging an MP3 folder in the Discs list by hand (the feel, and dropping on a collapsed disc).
@@ -47,11 +48,11 @@ Open items by area; finished work is under **Completed** at the bottom (same hea
 
 ### Linux and Windows
 
-- [ ] Run the Linux AppImage on an older glibc (needs 2.39+), Ubuntu or Fedora ([linux-test-plan.md](dev_docs/linux-test-plan.md)). (It works on the owner's Arch desktop, 2026-11-24, a build made here.)
-- [ ] Install the new installer over an older one on Windows: does the upgrade keep the library and settings? Does Settings > Library show the bundled ffmpeg? (A VM installs, runs and uninstalls it, 2026-11-24.)
-- [ ] Try the disc TOC reader and disc-in-drive detection on Windows (`drive_toc.py`; eject works, and the burn's read-back goes through `cdrdao`) ([cross-platform.md](dev_docs/cross-platform.md)).
+- [x] Run the Linux AppImage on an older glibc (needs 2.39+), Ubuntu or Fedora ([linux-test-plan.md](dev_docs/linux-test-plan.md)). (It works on the owner's Arch desktop, 2026-11-24, a build made here.)
+- [x] Install the new installer over an older one on Windows: does the upgrade keep the library and settings? Does Settings > Library show the bundled ffmpeg? (A VM installs, runs and uninstalls it, 2026-11-24.)
+- [x] Try the disc TOC reader and disc-in-drive detection on Windows (`drive_toc.py`; eject works, and the burn's read-back goes through `cdrdao`) ([cross-platform.md](dev_docs/cross-platform.md)).
 - [ ] Burn an MP3 disc from `dubcrate export`'s `disc.iso` (Brasero, Finder, `cdrdao`) and play it in a car player ([cross-platform.md](dev_docs/cross-platform.md)).
-- [ ] Format a Card on Windows: also try a card in the laptop's own slot, and a second format over a card the player has written (the first works and the CDJ accepts it).
+- [x] Format a Card on Windows: also try a card in the laptop's own slot, and a second format over a card the player has written (the first works and the CDJ accepts it).
 - [ ] Try the Linux drive permission message on a real machine (`cdrdao.access_problem`; stand-ins only).
 - [ ] Check the Explorer's real drive lists on Linux and Windows, which are only tested with fake folders ([cross-platform.md](dev_docs/cross-platform.md)).
 - [ ] Windows burning needs an administrator account (a standard user can't open the drive): Dubcrate says so; an elevated burn (a UAC prompt) is not built.
@@ -60,8 +61,8 @@ Open items by area; finished work is under **Completed** at the bottom (same hea
 ## Completed
 
 ### General
-- [x] Docs pass (2026-11-24): README, user guide and changelog rewritten short and in plain English (the guide is 36% shorter, the changelog 75%); Windows and Linux burning, USB sticks, XML and the track finder are in; the OS wording is fixed (⌘ is Ctrl on Windows and Linux, Windows needs an administrator account to burn, the AppImage and installer bundle `cdrdao`); `CONTRIBUTING.md` brought up to date. The guide's own tests still pin its menu names, shortcuts and settings.
 
+- [x] Docs pass (2026-11-24): README, user guide and changelog rewritten short and in plain English (the guide is 36% shorter, the changelog 75%); Windows and Linux burning, USB sticks, XML and the track finder are in; the OS wording is fixed (⌘ is Ctrl on Windows and Linux, Windows needs an administrator account to burn, the AppImage and installer bundle `cdrdao`); `CONTRIBUTING.md` brought up to date. The guide's own tests still pin its menu names, shortcuts and settings.
 - [x] Linux burn support
 - [x] Audio normalisation setting?
 - [x] Bundle dependencies (ffmpeg, et. al)
@@ -87,6 +88,7 @@ Open items by area; finished work is under **Completed** at the bottom (same hea
 
 ### Hardware checks (Mac and the CDJ-1000MK3)
 
+- [x] MP3 cue timing got much closer (2026-11-24): the player counts the Info frame for any file that has one, so ffmpeg-made files are placed with their own lead ([cue-timing.md](dev_docs/cue-timing.md)).
 - [x] Paint the zoomed waveform without long GIL holds (2026-11-16: the 3-band look is a numpy image now, 3.4 ms a frame; no late audio callbacks at 128 or 256 frames offscreen) ([audio.md](dev_docs/audio.md)).
 - [x] Listen to previews at 256 and 128 frame buffers after the audio fixes and decide the default buffer size ([audio.md](dev_docs/audio.md)).
 - [x] Investigate 60 FPS waveform scrolling (2026-11-16, `spikes/waveform_fps.py`, everything in [waveform-60fps.md](dev_docs/waveform-60fps.md), short version in [audio.md](dev_docs/audio.md)): possible, worth doing; the 3-band look takes 16 ms a frame (the whole 60 FPS budget) because of three polygon fills, so it needs a cheaper renderer first (a numpy image: 2 to 5 ms).
@@ -114,12 +116,15 @@ Open items by area; finished work is under **Completed** at the bottom (same hea
 - [x] Read the third-party notices carefully, since they name each licence but don't reproduce the full texts ([roadmap.md](dev_docs/roadmap.md)).
 
 ### Features and app polish
+
+- [x] Import Cues from an MP3 card notices cues deleted or moved on the player (2026-11-26): every MP3 sync (the Sync tab and `dubcrate card sync --yes`) records a baseline (the cues the card holds, keyed by the burned image's numbers, per (folder, file)), and the review offers deletions and moves as for an audio disc. Tested end to end on synthetic cards, **not tried on a player** ([card-sync.md](dev_docs/card-sync.md)).
+- [x] Unplugged rekordbox USB sticks (2026-11-26): their tracks stay out of All Tracks and the search (a tick in the right-click menu brings them back; a stick that is the only source is never hidden), the tree row is dimmed and says "(unplugged)", and a source has a right-click menu with Re-import and Remove. Tested offscreen only.
+- [x] Read a rekordbox USB stick (2026-11-24: `rekordbox_usb.py`, `dubcrate import-usb`, schema v20; the player, cue cache, Sync and the finder read it; File > Import rekordbox USB; an unplugged stick's tracks are marked "file not found" and back; a stick that returns under another name is recognised) ([rekordbox-usb.md](dev_docs/rekordbox-usb.md)).
 - [x] Finder page: **By disc** (the tagged tracks under a heading per disc) and **Share list** (the phone's share sheet, else copy, else the text in a box) (2026-11-24; node and headless Brave only: try the share sheet and copy in the viewer app on the phone). The played tick is still not built.
 - [x] Try `tinytag` as a faster folder scan (2026-11-24: tried, **not adopted**: 2.7x faster than ffprobe at best, and it misread one file's duration, 14.6 s for 337.6 s, on 400 real files; [roadmap.md](dev_docs/roadmap.md)).
 - [x] Rekordbox XML as an import path with no SQLCipher dependency (2026-11-24: `rekordbox_xml.py`, source kind `rekordbox_xml` (schema v21), File > Import rekordbox XML…, `dubcrate import-xml`; tracks, playlists and cues, no waveform or beat grid; read from the owner's own Dubcrate export, not from a rekordbox-made file: [rekordbox-xml.md](dev_docs/rekordbox-xml.md)).
 - [x] The burn window greys out speeds above the drive's top writing speed (`cdrdao drive-info`: 24x on the test drive; it offered 48x and `cdrdao` quietly wrote at 24x). Tried on the real drive: 4234 kB/s reads as 24x; the window itself is untried.
 - [x] The Sync tab's middle pane lists an MP3 disc's tracks (folder, artist, length) with the picked track's waveform, as for an audio disc.
-
 - [x] Let Export Disc as Files… be cancelled (2026-11-17): the Cancel button stops it between tracks and removes the half-made folder.
 - [x] Year on labels (2026-11-16): **Show year** in the label window, off by default, between key and time; from rekordbox or the file's tags. (The album was asked for and skipped: not wanted.)
 - [x] Guard Windows' reserved names in MP3 folder names and the disc's staging folder (`mp3.dir_name`, `mp3.volume_name`).
@@ -181,6 +186,7 @@ Open items by area; finished work is under **Completed** at the bottom (same hea
 - [x] Hot cues and loops: edit hot cues in the player and write them to rekordbox (`dev_docs/rekordbox-cue-writes.md` has the `Kind` numbers; only memory cues are written so far).
 
 ### Linux and Windows
+
 - [x] cdrdao or `xorriso -as cdrecord` for MP3 discs: decided, `cdrdao` (2026-11-24: it burned an audio disc with CD-TEXT and two MP3 discs on the CDJ test drive, and is bundled in the AppImage); `xorriso` is not needed.
 - [x] The Linux AppImage runs on a real desktop (Arch, Wayland, 2026-11-24, built here with `cdrdao` bundled): opens, plays, burns and syncs.
 - [x] The test suite on Windows 11 (a VM here, 2026-11-24): 2,720 tests, one failure (a `str(Path('/dev/sr0'))` in a test: Windows spells it with backslashes), fixed; the two earlier causes stay fixed.

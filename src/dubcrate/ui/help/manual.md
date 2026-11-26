@@ -306,7 +306,7 @@ When you press **Sync**, Dubcrate asks first, copies the card's files to a `card
 
 ![The review of memory cues found on the card: ticked per disc, track and cue](screenshots/card-import.png "Import Cues…")
 
-**Bringing changes back.** **Import Cues…** lists what you set on the player that Dubcrate doesn't have. Untick what you don't want, then press **Import**. New cues and loops become memory cues and loops in Dubcrate (and in rekordbox, if you've allowed that). The player's hot cues are listed but **not ticked**. Cues you deleted or moved on the player are noticed from the sync after this one. For MP3 discs, only new cues and loops are found. **This hasn't been tried with cues set on a real player yet.**
+**Bringing changes back.** **Import Cues…** lists what you set on the player that Dubcrate doesn't have. Untick what you don't want, then press **Import**. New cues and loops become memory cues and loops in Dubcrate (and in rekordbox, if you've allowed that). The player's hot cues are listed but **not ticked**. Cues you deleted or moved on the player are noticed from the sync after this one, for audio and MP3 discs alike. **This hasn't been tried with cues set on a real player yet.**
 
 **If a copy of a disc doesn't match.** A drive can lay a burned disc out slightly differently from the plan, so two copies of one playlist can differ. After a burn, Dubcrate keeps what the disc really has. For a disc burned earlier or elsewhere, right-click it and choose **TOC Manager…**, put the disc in the drive and press **Read from Disc in Drive**.
 

@@ -14,6 +14,7 @@ from dubcrate.card_import import ADD, HOT, LOOP
 from dubcrate.card_mp3 import Mp3Slot
 from dubcrate.library import Library, TrackRecord
 from dubcrate.library.models import DiscImage
+from dubcrate.mp3_sync import baseline_key, file_code
 
 DATA = Path(__file__).parent / "data" / "cdj_card" / "mp3"
 
@@ -486,3 +487,109 @@ def test_the_leads_can_be_worked_out_ahead_so_the_window_does_not_read_every_fil
     f = files[0]
     f.write_bytes(b"changed" * 30)  # a changed file's lead is worked out again
     assert card_mp3.leads_ready(items) is False
+
+
+# -- the baseline: deletions and moves on the player ----------------------------------------------
+
+
+def code(folder, file):
+    return file_code(folder, file)
+
+
+def test_a_cue_in_the_baseline_that_is_gone_from_the_card_is_offered_for_deletion():
+    empty = m3.Mp3TrackFile.new(player_file().disc_id)
+    mine = {2: [Cue("memory", ms(1000) / 1000)]}
+    result = card_import.changes_on_mp3_card(empty, slots(), mine, [(code(0, 2), 1000, 0)])  # fmt: skip
+    assert rows(result, 2) == [("remove", ms(1000), 0)]  # (Dubcrate's own time)
+    assert result.kept == 0
+
+
+def test_a_cue_still_on_the_card_is_not_deleted_even_a_frame_off():
+    mine = {2: [Cue("memory", ms(1474) / 1000)]}
+    result = card_import.changes_on_mp3_card(player_file(), slots(), mine, [(code(0, 2), 1475, 0)])  # fmt: skip
+    assert not [r for r in result.by_track.get(2, []) if r.removes]
+
+
+def test_a_cue_in_the_baseline_is_not_offered_back_when_dubcrate_dropped_it():
+    # the card still has the cue at 1474 (the sync put it there); Dubcrate deleted it afterwards
+    base = [(code(0, 2), 1474, 0)]
+    result = card_import.changes_on_mp3_card(player_file(), slots(), {}, base)
+    assert (ADD, ms(1474), 0) not in rows(result, 2)
+    assert (ADD, ms(1474), 0) in rows(card_import.changes_on_mp3_card(player_file(), slots(), {}), 2)  # fmt: skip
+
+
+def test_nothing_is_deleted_that_dubcrate_does_not_have():
+    empty = m3.Mp3TrackFile.new(player_file().disc_id)
+    result = card_import.changes_on_mp3_card(empty, slots(), {}, [(code(0, 2), 1000, 0)])  # fmt: skip
+    assert result.total == 0
+
+
+def test_a_baseline_cue_the_players_hot_cue_stands_for_is_not_deleted():
+    # sync leaves a cue unwritten when a hot cue is there: the baseline has it, the card has it as a hot cue only
+    hot_only = m3.Mp3TrackFile.new(player_file().disc_id)
+    hot_only.hot[0] = m3.Mp3Entry(
+        m3.KIND_CUE, 0, 2, 916, 0, LENGTHS[(0, 2)], 0, 0, 0, 0
+    )
+    mine = {2: [Cue("memory", ms(916) / 1000)]}
+    result = card_import.changes_on_mp3_card(hot_only, slots(), mine, [(code(0, 2), 916, 0)])  # fmt: skip
+    assert not [r for r in result.by_track.get(2, []) if r.removes]
+
+
+def test_a_hot_cue_of_dubcrates_deleted_on_the_player_is_kept_and_counted():
+    empty = m3.Mp3TrackFile.new(player_file().disc_id)
+    mine = {2: [Cue("hot", ms(1000) / 1000, slot=1)]}
+    result = card_import.changes_on_mp3_card(empty, slots(), mine, [(code(0, 2), 1000, 0)])  # fmt: skip
+    assert result.total == 0 and result.kept == 1
+
+
+def test_a_loop_deleted_on_the_player_can_be_deleted_and_a_hot_cues_loop_is_kept():
+    empty = m3.Mp3TrackFile.new(player_file().disc_id)
+    base = [(code(0, 3), 3358, 3493)]
+    mine = {3: [Cue("loop", ms(3358) / 1000, ms(3493) / 1000)]}
+    result = card_import.changes_on_mp3_card(empty, slots(), mine, base)
+    assert rows(result, 3) == [("remove_loop", ms(3358), ms(3493))]
+    hot_loop = {3: [Cue("loop", ms(3358) / 1000, ms(3493) / 1000, slot=2)]}
+    result = card_import.changes_on_mp3_card(empty, slots(), hot_loop, base)
+    assert result.total == 0 and result.kept == 1
+
+
+def test_a_cue_moved_on_the_player_is_a_deletion_and_an_addition_shown_as_a_move():
+    moved = m3.Mp3TrackFile.new(player_file().disc_id)
+    moved.cues = [m3.Mp3Entry(m3.KIND_CUE, 0, 2, 2000, 0, LENGTHS[(0, 2)], 0, 0, 0, 0)]
+    moved.cue_indexes = [0]
+    mine = {2: [Cue("memory", ms(1000) / 1000)]}
+    result = card_import.changes_on_mp3_card(moved, slots(), mine, [(code(0, 2), 1000, 0)])  # fmt: skip
+    [row] = result.by_track[2]
+    assert (row.kind, row.ms, row.old_ms) == ("move", ms(2000), ms(1000))
+
+
+def test_a_baseline_for_a_file_the_disc_no_longer_has_is_ignored():
+    empty = m3.Mp3TrackFile.new(player_file().disc_id)
+    result = card_import.changes_on_mp3_card(empty, slots(), {2: [Cue("memory", 5.0)]}, [(code(7, 7), 100, 0)])  # fmt: skip
+    assert result.total == 0
+
+
+def test_the_baseline_is_found_for_the_disc_by_its_images_numbers_and_says_so(
+    lib, burned
+):
+    disc, image = burned
+    first = lib.disc_entries(disc)[0].track
+    lib.set_memory_cues(first.path, [(5000 - 51, "mine")])
+    file = m3.Mp3TrackFile.new(entry_id(4, 1234, 5678))  # the player deleted the cue
+    key = baseline_key(image.file_count, image.last_file_start, image.sectors)
+    assert (
+        library_survey(lib, disc, card_for(image, file)).findings == []
+    )  # (no baseline: nothing noticed)
+    lib.set_card_baseline(key, [(file_code(0, 1), round(5.0 * 75), 0)])
+    [finding] = library_survey(lib, disc, card_for(image, file)).findings
+    assert finding.has_baseline
+    [only] = finding.tracks
+    assert [(r.kind, r.ms) for r in only.rows] == [("remove", 4949)]
+
+
+def test_an_mp3_baseline_is_not_an_audio_discs(lib, burned):
+    _disc, image = burned
+    key = baseline_key(image.file_count, image.last_file_start, image.sectors)
+    lib.set_card_baseline(key, [])
+    assert lib.card_baseline(key) == []
+    assert lib.card_baseline((4, 1234, 5678, 0)) is None

@@ -1606,6 +1606,9 @@ class SyncView(QWidget):
             for r, _disc, plan in plans:  # (an up-to-date disc says so in the list)
                 if plan.status is Mp3Status.IN_SYNC:
                     self._mp3_last[r.disc_id] = "In sync (checked just now)"
+                    self._save_mp3_baseline(
+                        plan
+                    )  # (the card has all of it: that is the baseline)
             if not ready:
                 lines = [
                     line
@@ -1652,7 +1655,8 @@ class SyncView(QWidget):
         def written(outcomes, ready, eject: bool) -> None:
             waves = sum(o.waveforms_written for o in outcomes)
             cues = sum(o.cues_written for o in outcomes)
-            for (r, _plan), o in zip(ready, outcomes, strict=True):
+            for (r, plan), o in zip(ready, outcomes, strict=True):
+                self._save_mp3_baseline(plan)  # (written: what the card holds now)
                 self._mp3_last[r.disc_id] = (
                     f"Synced: {o.waveforms_written} waveform{'s' if o.waveforms_written != 1 else ''}, "
                     f"{o.cues_written} cue{'s' if o.cues_written != 1 else ''} added"
@@ -1700,6 +1704,12 @@ class SyncView(QWidget):
             ),
             on_cancel=cancelled,
         )
+
+    def _save_mp3_baseline(self, plan) -> None:
+        """Record what an MP3 disc's sync left on the card, so Import Cues can tell what the player changes later
+        (GUI thread: the library is ours). A plan with no entry has none."""
+        if plan.baseline_key is not None and plan.entry is not None:
+            self._lib.set_card_baseline(plan.baseline_key, plan.baseline)
 
     def import_from(self, card: Path) -> None:
         """The card's right-click > Import Cues: make `card` the one shown (looking at the discs against

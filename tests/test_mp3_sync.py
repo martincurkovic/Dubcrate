@@ -782,3 +782,43 @@ def test_a_row_with_a_record_can_be_ticked_without_the_players_files_on_the_card
     assert not rows[other].writable and "Play an MP3 disc" in rows[other].status
     assert "made if the player hasn't seen it" in " ".join(rows[disc_id].detail())
     assert not card_mp3.survey_mp3_discs(lib, {}, (False, False))[0].writable  # no card
+
+
+# -- the baseline a sync leaves for Import Cues ---------------------------------------------------
+
+
+def test_the_baseline_is_every_wanted_cue_the_card_has_after_the_sync_by_file_code():
+    wanted = {
+        (0, 2): [(1474, 0), (1478, 0)],  # on the card already, and new
+        (0, 3): [(3358, 3493)],  # a loop the card has
+        (2, 1): [(500, 0)],
+        (1, 1): [(99999, 0)],  # past the end of the track: left out
+    }
+    p = plan(disc(cues=wanted))
+    assert p.baseline_key == ms.baseline_key(15, 80245, 84029)
+    assert sorted(p.baseline) == [
+        (ms.file_code(0, 2), 1474, 0),
+        (ms.file_code(0, 2), 1478, 0),
+        (ms.file_code(0, 3), 3358, 3493),
+        (ms.file_code(2, 1), 500, 0),
+    ]
+
+
+def test_cues_past_the_players_hundred_are_not_in_the_baseline():
+    many = {(0, 1): [(1000 + 10 * n, 0) for n in range(150)]}
+    p = plan(disc(cues=many))
+    assert p.cues_overflow > 0
+    assert len(p.baseline) == p.cues_added + p.cues_already
+
+
+def test_a_disc_with_no_entry_has_no_baseline():
+    p = plan(disc(sectors=1))
+    assert p.baseline_key is None and p.baseline == []
+
+
+def test_the_key_never_clashes_with_an_audio_discs_toc_and_a_file_code_comes_apart():
+    assert (
+        ms.baseline_key(15, 1, 2)[0] == 0
+    )  # (an audio disc's key starts with its track count)
+    assert ms.split_code(ms.file_code(3, 999)) == (3, 999)
+    assert ms.split_code(ms.file_code(0, 1)) == (0, 1)

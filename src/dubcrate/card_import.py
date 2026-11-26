@@ -30,11 +30,13 @@ counted in `over_limit`.
 **MP3 discs** (`changes_on_mp3_card`, `survey_new_mp3_cues`) are the same review with two differences. The player
 names a track by (folder, file) and not by a position on the disc, so the tracks are numbered as the burned image
 numbers them (`card_mp3.mp3_slots`); and its time counts the Info frame, so a card time is turned into audio time by
-taking off the file's lead (`cue_timing`). **No baseline is kept for an MP3 disc yet**, so only additions can be
-found: cues and loops set on the player and its hot cues (not ticked); a deletion or a move is not noticed.
+taking off the file's lead (`cue_timing`). **An MP3 disc has a baseline too** (`mp3_sync.baseline_key`, the burned
+image's numbers; its rows are (file code, player position, end), `mp3_sync.file_code`, saved after each sync), so a
+deletion or a move on the player is noticed as for an audio disc, from the first sync made after this was built.
+**Not tried with cues set on a real player.**
 """
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 
 from dubcrate import cdj_card as cc
@@ -55,6 +57,7 @@ from dubcrate.card_sync import DUPLICATE_FRAMES, WantedCue
 from dubcrate.library import Library
 from dubcrate.library.cue_edits import MAX_MEMORY_CUES, memory_count
 from dubcrate.library.models import Track
+from dubcrate.mp3_sync import baseline_key, split_code
 
 # the kinds of row a review lists
 ADD = "add"  # a memory cue set on the player
@@ -152,6 +155,70 @@ def _paired(rows: list[Row]) -> list[Row]:
             out += added + removed
     out.sort(key=lambda r: r.ms)
     return out + sorted((r for r in rows if r.kind == HOT), key=lambda r: r.ms)
+
+
+def _deletions(
+    base: Sequence[tuple[int, int, int]],
+    resolve: Callable[[int, int], int],
+    of_track: Callable[[int], list[tuple[Cue, int, int]]],
+    card_cues_of: Callable[[int], list[int]],
+    card_loops_of: Callable[[int], list[tuple[int, int]]],
+    found: CardCues,
+) -> dict[int, list[Row]]:
+    """The cues in the baseline that are gone from the card and that Dubcrate can delete, by 1-based track.
+
+    `resolve(claimed, position)` is the track a baseline cue is in (0: none); `of_track` is Dubcrate's cues of a track
+    as card positions (cue, position, end); `card_cues_of` / `card_loops_of` are what the card holds for it now.
+    A cue Dubcrate has no match for (it was deleted or moved in Dubcrate) is not offered; one it can't delete (a hot
+    cue, a loop's start, a hot cue's loop) is counted in `found.kept`."""
+    gone: dict[int, list[Row]] = {}
+    seen: set[tuple[int, int, int]] = set()
+    for b_track, b_pos, b_end in base:
+        track = resolve(b_track, b_pos)
+        if track == 0:
+            continue
+        if b_end:
+            if any(
+                _near(b_pos, p) and _near(b_end, q) for p, q in card_loops_of(track)
+            ):
+                continue  # still on the card
+            match = next(
+                (
+                    c
+                    for c, p, q in of_track(track)
+                    if q and _near(b_pos, p) and _near(b_end, q)
+                ),
+                None,
+            )
+            if match is None:
+                continue  # (Dubcrate has no such loop now: nothing to delete)
+            if match.slot is not None:
+                found.kept += 1  # (a hot cue's loop: rekordbox's, never changed)
+                continue
+            ident = (track, round(match.time * 1000), round(match.end * 1000))
+            if ident in seen:
+                continue
+            seen.add(ident)
+            gone.setdefault(track, []).append(Row(REMOVE_LOOP, ident[1], ident[2]))
+        else:
+            if any(_near(b_pos, p) for p in card_cues_of(track)):
+                continue
+            near = [c for c, p, _q in of_track(track) if _near(b_pos, p)]
+            match = next(
+                (c for c in near if c.kind == "memory" and c.slot is None), None
+            )
+            if match is None:
+                if near:
+                    found.kept += (
+                        1  # (a hot cue, or a loop's start: Dubcrate can't delete those)
+                    )
+                continue
+            ident = (track, round(match.time * 1000), 0)
+            if ident in seen:
+                continue
+            seen.add(ident)
+            gone.setdefault(track, []).append(Row(REMOVE, ident[1]))
+    return gone
 
 
 def changes_on_card(
@@ -259,51 +326,14 @@ def changes_on_card(
             Row(HOT, _ms(hot.position, starts[track - 1]), slot=hot.slot, ticked=False)
         )
 
-    removed_seen: set[tuple[int, int, int]] = set()
-    for b_track, b_pos, b_end in base or []:
-        track = _track_of(b_pos, b_track, starts, lead_out)
-        if track == 0:
-            continue
-        start = starts[track - 1]
-        if b_end:
-            if any(_near(b_pos, p) and _near(b_end, q) for p, q in card_loops):
-                continue  # still on the card
-            match = next(
-                (
-                    c
-                    for c, p, q in of_track(track)
-                    if q and _near(b_pos, p) and _near(b_end, q)
-                ),
-                None,
-            )
-            if match is None:
-                continue  # (Dubcrate has no such loop now: nothing to delete)
-            if match.slot is not None:
-                found.kept += 1  # (a hot cue's loop: rekordbox's, never changed)
-                continue
-            ident = (track, round(match.time * 1000), round(match.end * 1000))
-            if ident in removed_seen:
-                continue
-            removed_seen.add(ident)
-            gone.setdefault(track, []).append(Row(REMOVE_LOOP, ident[1], ident[2]))
-        else:
-            if any(_near(b_pos, p) for p in card_cues):
-                continue
-            near = [c for c, p, _q in of_track(track) if _near(b_pos, p)]
-            match = next(
-                (c for c in near if c.kind == "memory" and c.slot is None), None
-            )
-            if match is None:
-                if near:
-                    found.kept += (
-                        1  # (a hot cue, or a loop's start: Dubcrate can't delete those)
-                    )
-                continue
-            ident = (track, round(match.time * 1000), 0)
-            if ident in removed_seen:
-                continue
-            removed_seen.add(ident)
-            gone.setdefault(track, []).append(Row(REMOVE, ident[1]))
+    gone = _deletions(
+        base or [],
+        lambda claimed, position: _track_of(position, claimed, starts, lead_out),
+        of_track,
+        lambda _track: card_cues,
+        lambda _track: card_loops,
+        found,
+    )
 
     for track in sorted({*rows, *gone}):
         found.by_track[track] = _paired(rows.get(track, []) + gone.get(track, []))
@@ -446,29 +476,35 @@ def changes_on_mp3_card(
     file: m3.Mp3TrackFile,
     slots: Mapping[tuple[int, int], Mp3Slot],
     known: Mapping[int, Sequence[Cue]],
+    baseline: Sequence[tuple[int, int, int]] | None = None,
 ) -> CardCues:
-    """What the player added to an MP3 disc's `file`, against `known` (Dubcrate's cues in audio time, by 1-based
-    track). `slots` says which (folder, file) is which track and its lead (`card_mp3.mp3_slots`).
+    """What the player changed in an MP3 disc's `file`, against `known` (Dubcrate's cues in audio time, by 1-based
+    track) and `baseline`. `slots` says which (folder, file) is which track and its lead (`card_mp3.mp3_slots`).
 
     New memory cues, new loops and the player's hot cues (not ticked) are found, as for an audio disc. A card
     time is in the player's time: the file's lead off it gives audio time, and Dubcrate's cues are compared as
-    the player's positions (within `DUPLICATE_FRAMES`). Nothing is found for a deletion or a move: **an MP3 disc
-    has no baseline**, so a cue that is gone from the card is not noticed. An entry for a (folder, file) the disc
-    doesn't have, or whose length is far from its track's, is counted in `outside`."""
+    the player's positions (within `DUPLICATE_FRAMES`). `baseline` is what the last sync left on the card
+    (`Library.card_baseline`: (file code, position, end), `mp3_sync.file_code`; None when no sync is recorded): a card
+    cue that is in it and that Dubcrate no longer has was deleted or moved in Dubcrate, so it is not offered back,
+    and one in it that is gone from the card was **deleted on the player** (or moved: a deletion and an addition
+    are paired, as for an audio disc). Without a baseline only additions are found. An entry for a (folder, file)
+    the disc doesn't have, or whose length is far from its track's, is counted in `outside`."""
     found = CardCues()
-    # Dubcrate's cues as player positions, per track: (position, end position, 0 for a cue)
-    held: dict[int, list[tuple[int, int]]] = {}
+    # Dubcrate's cues as player positions, per track: (cue, position, end position, 0 for a cue)
+    held: dict[int, list[tuple[Cue, int, int]]] = {}
 
-    def of_track(slot: Mp3Slot) -> list[tuple[int, int]]:
-        if slot.track not in held:
-            held[slot.track] = [
+    def of_track(track: int) -> list[tuple[Cue, int, int]]:
+        if track not in held:
+            slot = by_track[track][1]
+            held[track] = [
                 (
+                    c,
                     player_frame(c.time, slot.lead_ms),
                     player_frame(c.end, slot.lead_ms) if c.end else 0,
                 )
-                for c in known.get(slot.track, ())
+                for c in known.get(track, ())
             ]
-        return held[slot.track]
+        return held[track]
 
     def slot_of(entry: m3.Mp3Entry) -> Mp3Slot | None:
         slot = slots.get((entry.folder, entry.file))
@@ -482,26 +518,55 @@ def changes_on_mp3_card(
             return None  # (the disc has been changed since: another track is in that place)
         return slot
 
+    by_track = {slot.track: (key, slot) for key, slot in slots.items()}
+    # the baseline and the card, per (folder, file): cues (player positions) and loops (start, end)
+    base_cues: dict[tuple[int, int], list[int]] = {}
+    base_loops: dict[tuple[int, int], list[tuple[int, int]]] = {}
+    base_rows: list[tuple[int, int, int]] = []
+    for code, position, end in baseline or ():
+        key = split_code(code)
+        if end:
+            base_loops.setdefault(key, []).append((position, end))
+        else:
+            base_cues.setdefault(key, []).append(position)
+        track = slots[key].track if key in slots else 0
+        if track:
+            base_rows.append((track, position, end))
+    card_cues: dict[tuple[int, int], list[int]] = {}
+    card_loops: dict[tuple[int, int], list[tuple[int, int]]] = {}
+    for entry in (*file.cues, *(h for h in file.hot if h is not None)):
+        key = (entry.folder, entry.file)
+        if entry.is_loop:
+            if entry.end > entry.position:
+                card_loops.setdefault(key, []).append((entry.position, entry.end))
+        else:  # (a hot cue counts as there: sync leaves a cue a hot cue already marks unwritten)
+            card_cues.setdefault(key, []).append(entry.position)
+
     rows: dict[int, list[Row]] = {}
     taken: dict[int, list[int]] = {}
     taken_loops: dict[int, list[tuple[int, int]]] = {}
-    card_cues = [(e.folder, e.file, e.position) for e in file.cues if not e.is_loop]
 
     for entry in file.cues:
         slot = slot_of(entry)
         if slot is None:
             found.outside += 1
             continue
-        mine = of_track(slot)
+        key = (entry.folder, entry.file)
+        mine = of_track(slot.track)
         if entry.is_loop:
             if entry.end <= entry.position:
                 continue
             span = (entry.position, entry.end)
-            if any(
-                q and _near(span[0], p) and _near(span[1], q) for p, q in mine
-            ) or any(
-                _near(span[0], p) and _near(span[1], q)
-                for p, q in taken_loops.get(slot.track, [])
+            if (
+                any(q and _near(span[0], p) and _near(span[1], q) for _c, p, q in mine)
+                or any(
+                    _near(span[0], p) and _near(span[1], q)
+                    for p, q in base_loops.get(key, [])
+                )
+                or any(
+                    _near(span[0], p) and _near(span[1], q)
+                    for p, q in taken_loops.get(slot.track, [])
+                )
             ):
                 continue
             taken_loops.setdefault(slot.track, []).append(span)
@@ -513,8 +578,10 @@ def changes_on_mp3_card(
                 )
             )
             continue
-        if any(_near(entry.position, p) for p, q in mine if not q) or any(
-            _near(entry.position, p) for p in taken.get(slot.track, [])
+        if (
+            any(_near(entry.position, p) for _c, p, q in mine if not q)
+            or any(_near(entry.position, p) for p in base_cues.get(key, []))
+            or any(_near(entry.position, p) for p in taken.get(slot.track, []))
         ):
             continue
         taken.setdefault(slot.track, []).append(entry.position)
@@ -530,10 +597,11 @@ def changes_on_mp3_card(
             found.outside += 1
             continue
         if (
-            any(_near(hot.position, p) for p, _q in of_track(slot))
+            any(_near(hot.position, p) for _c, p, _q in of_track(slot.track))
             or any(
-                (f, n) == (hot.folder, hot.file) and _near(hot.position, p)
-                for f, n, p in card_cues
+                _near(hot.position, e.position)
+                for e in file.cues
+                if not e.is_loop and (e.folder, e.file) == (hot.folder, hot.file)
             )
             or any(_near(hot.position, p) for p in taken.get(slot.track, []))
         ):
@@ -543,8 +611,16 @@ def changes_on_mp3_card(
             Row(HOT, _audio_ms(hot.position, slot.lead_ms), slot=number, ticked=False)
         )
 
-    for track in sorted(rows):
-        found.by_track[track] = _paired(rows[track])
+    gone = _deletions(
+        base_rows,
+        lambda claimed, _position: claimed,
+        of_track,
+        lambda track: card_cues.get(by_track[track][0], []),
+        lambda track: card_loops.get(by_track[track][0], []),
+        found,
+    )
+    for track in sorted({*rows, *gone}):
+        found.by_track[track] = _paired(rows.get(track, []) + gone.get(track, []))
     return found
 
 
@@ -587,20 +663,29 @@ def survey_new_mp3_cues(
             out.unchecked.append(row.disc.name)
             continue
         known = {e.position + 1: cues.for_track(e.track) for e in entries}
-        found = changes_on_mp3_card(file, slots, known)
+        image = lib.disc_image(row.disc.id)
+        baseline = (
+            lib.card_baseline(
+                baseline_key(image.file_count, image.last_file_start, image.sectors)
+            )
+            if image is not None
+            else None
+        )
+        found = changes_on_mp3_card(file, slots, known, baseline)
         finding = DiscFinding(
             row.disc.id,
             row.disc.name,
             row.path,
             kept=found.kept,
             outside=found.outside,
-            has_baseline=False,
+            has_baseline=baseline is not None,
         )
         for e in entries:
             rows = found.by_track.get(e.position + 1)
             if not rows:
                 continue
-            room = max(0, MAX_MEMORY_CUES - memory_count(known[e.position + 1]))
+            freed = sum(1 for r in rows if r.kind in (REMOVE, REMOVE_LOOP))
+            room = max(0, MAX_MEMORY_CUES - memory_count(known[e.position + 1]) + freed)
             kept_rows, over = [], 0
             for r in rows:
                 if r.kind in (ADD, LOOP):

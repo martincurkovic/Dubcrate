@@ -334,9 +334,21 @@ Tests: `tests/test_card_import_mp3.py`, `tests/test_ui_sync_mp3.py`. Looked at i
 
 ### Importing from an MP3 disc (built 2026-11-24; `changes_on_mp3_card`, `survey_new_mp3_cues`)
 
-The same review (`DiscFinding`, `ask_import`, `PreviewController.import_memory`), read from `PIONEER/MPJ`. **Additions only:** cues, loops and
-the player's hot cues (not ticked). **No baseline is kept for an MP3 disc** (the audio baseline is keyed by the TOC; `sync_mp3` records nothing), so a cue
-deleted or moved on the player is not noticed. Differences from an audio disc:
+The same review (`DiscFinding`, `ask_import`, `PreviewController.import_memory`), read from `PIONEER/MPJ`: cues, loops and the player's hot cues (not
+ticked), and, **since 2026-11-26, cues deleted or moved on the player** (the baseline below). Differences from an audio disc:
+
+- **The baseline (2026-11-26).** Every MP3 sync (the Sync tab, `dubcrate card sync --yes`) records what the card holds of the cues Dubcrate wanted, in the
+  same `card_baseline` table an audio disc uses (`Mp3Plan.baseline_key` / `.baseline`, saved by `SyncView._save_mp3_baseline` after a successful write, and
+  at once for a disc that was already in sync). **Key**: `mp3_sync.baseline_key(file_count, last_file_start, sectors)` = `(0, ...)`, the burned image's three
+  numbers (an audio disc's key starts with its track count, never 0). **Rows**: `(file code, player position, end)` with `file_code(folder, file)` = folder
+  * 1000 + file in the track column, because the player names a file by (folder, file) and the card's own entries do too; positions are the player's own
+  (1/75 s into the file, lead included), as written. `changes_on_mp3_card(.., baseline)` then works as `changes_on_card` does (both use `_deletions`): a
+  card cue in the baseline that Dubcrate no longer has is not offered back; a baseline cue gone from the card is a `remove` / `remove_loop` when Dubcrate
+  has a plain memory cue or a memory loop there (a hot cue, a loop's start or a hot cue's loop is only counted in `kept`); as many deletions as additions in
+  a track are shown as moves. **A hot cue on the card counts as the cue being there** (sync leaves a cue unwritten when a hot cue marks its place, and the
+  baseline has it). The deletion row carries Dubcrate's own time, not the card's. **A disc synced before this existed has no baseline until its next sync**
+  (the review says "noticed from the next sync on"). Not tried on a player: what the player does to a deleted or moved MP3 cue (whether it removes the
+  entry, as it does on an audio disc) is assumed to be the same, from the cue/delete notes in `cdj1000mk3-card.md` section 6.
 
 - **Which track.** The player names a track by (folder, file), not a position. `card_mp3.mp3_slots` numbers the disc as it is NOW, with no rendering, the
   way `iso.image_layout` numbers the burned image: folders from 1 in the order of their written names (`mp3.dir_name`, A to Z without case), files from 1 in

@@ -58,6 +58,31 @@ class Mp3DiscInput:
     made_id: m3.Mp3DiscId | None = None
 
 
+# The baseline an MP3 disc's sync leaves (`Library.card_baseline`, the same table an audio disc's uses): what the card
+# held of the cues Dubcrate wanted, so Import Cues can tell what the player changed since. Its key starts with 0 (an
+# audio disc's is its TOC, which starts with a track count, never 0) and carries the three numbers the card's entry is
+# found by. An entry is (file code, position, end): positions are the player's own, in 1/75 s into the file, and the
+# "track" is `file_code(folder, file)`, because the player names a file by (folder, file), not by a place on the disc.
+BASELINE_PREFIX = 0
+FILE_CODE_SPAN = 1000  # a folder holds at most 999 files (`mp3.MAX_FILES_PER_FOLDER`)
+
+
+def baseline_key(
+    file_count: int, last_file_start: int, image_sectors: int
+) -> tuple[int, int, int, int]:
+    """The baseline's key for an MP3 disc: the numbers of the image it was burned from."""
+    return (BASELINE_PREFIX, file_count, last_file_start, image_sectors)
+
+
+def file_code(folder: int, file: int) -> int:
+    """(folder, file) as the one number a baseline row keeps in its track column."""
+    return folder * FILE_CODE_SPAN + file
+
+
+def split_code(code: int) -> tuple[int, int]:
+    return divmod(code, FILE_CODE_SPAN)
+
+
 class Mp3Status(StrEnum):
     READY = "ready"  # something to add
     IN_SYNC = "in sync"  # the card has all of it
@@ -83,6 +108,11 @@ class Mp3Plan:
     cues_already: int = 0  # on the card already (or a hot cue there)
     cues_overflow: int = 0  # past the player's 100
     notes: list[str] = field(default_factory=list)
+    # What the card holds of the cues Dubcrate wanted once this is written (or already does): (file code, position,
+    # end), None as the key when there is no entry to say. Saved by the caller as the disc's baseline
+    # (`Library.set_card_baseline`) after a successful write, or at once when nothing needed writing.
+    baseline_key: tuple[int, ...] | None = None
+    baseline: list[tuple[int, int, int]] = field(default_factory=list)
 
     @property
     def changed(self) -> bool:
@@ -151,6 +181,9 @@ def plan_mp3_disc(
         file=work,
         had_file=existing is not None,
         notes=list(disc.notes),
+        baseline_key=baseline_key(
+            disc.file_count, disc.last_file_start, disc.image_sectors
+        ),
     )
 
     # A record the player made by merely starting a track (0 or a few columns) is not a waveform: drawn as it is the
@@ -206,10 +239,12 @@ def plan_mp3_disc(
                 continue
             if has_cue(work, here, position, end):
                 plan.cues_already += 1
+                plan.baseline.append((file_code(*here), position, end))
                 continue
             if len(work.cues) >= cc.MAX_CUES:
                 plan.cues_overflow += 1
                 continue
+            plan.baseline.append((file_code(*here), position, end))
             entry_ = (
                 m3.Mp3Entry.loop(track.table, track.folder, track.file, position, end)
                 if is_loop
