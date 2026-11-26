@@ -797,6 +797,29 @@ QLabel#writableBadge {
     border: 1px solid ${badge_rw_border};
 }
 
+/* the strip that says how a sync finished: green when done, amber when something is left to do (ui/result_banner.py) */
+QFrame#resultBanner {
+    border-radius: 4px;
+}
+QFrame#resultBanner[tone="ok"] {
+    background-color: ${result_ok_bg};
+    border: 1px solid ${result_ok_border};
+}
+QFrame#resultBanner[tone="warn"] {
+    background-color: ${result_warn_bg};
+    border: 1px solid ${result_warn_border};
+}
+QFrame#resultBanner QLabel {
+    background: transparent;
+    border: none;
+}
+QFrame#resultBanner[tone="ok"] QLabel {
+    color: ${result_ok_text};
+}
+QFrame#resultBanner[tone="warn"] QLabel {
+    color: ${result_warn_text};
+}
+
 /* a thin line between groups of settings */
 QFrame#settingsRule {
     background-color: ${border};

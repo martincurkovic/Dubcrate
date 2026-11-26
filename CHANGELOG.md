@@ -29,7 +29,7 @@ The first release, for the CDJ-1000MK3 and other players that read CDs. It runs 
 
 ### The CDJ-1000MK3's SD card
 
-- **Sync** puts your rekordbox cues and each track's waveform on the card, so a disc loads with them ready.
+- **Sync** puts your rekordbox cues and each track's waveform on the card, so a disc loads with them ready. A strip in the Sync tab says what was written and whether the card is safe to take out, and stays until you close it.
   Tried on a CDJ-1000MK3, for audio and MP3 discs. Always eject the card before pulling it.
 - **Import Cues** brings back what you set on the player. *Not yet tried with cues set on a real player.*
 - **Format a Card** sets up a blank SD card (2 GB or smaller). Tried on Linux and Windows, not yet on a Mac.

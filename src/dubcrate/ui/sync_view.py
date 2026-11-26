@@ -67,6 +67,7 @@ from dubcrate.card_mp3 import (
 from dubcrate.card_mp3 import (
     prepare_disc as prepare_mp3_disc,
 )
+from dubcrate.card_report import SyncReport
 from dubcrate.eject import EjectError, eject_card
 from dubcrate.library import Library
 from dubcrate.library.lengths import needs_measuring, probe_lengths
@@ -91,6 +92,7 @@ from .format_card_dialog import FormatCardDialog
 from .glyph_widgets import GlyphButton, GlyphIcon, close_glyph, eject_glyph, ink
 from .label_dialog import disc_paths
 from .models import _disc_icon, _folder_icon
+from .result_banner import OK, WARN, ResultBanner
 from .source_tabs import explorer_glyph, sd_card_glyph
 from .tasks import TaskError, run_async
 from .tick_header import TickHeader
@@ -331,6 +333,7 @@ class CardPanel(QWidget):
     mp3_sync_requested = Signal(
         object, int
     )  # right-click > Sync an MP3 Disc: the card's folder (a Path) and the disc's id
+    ejected = Signal(object)  # a card this list ejected (its folder, a Path)
     message = Signal(str)  # for the status bar
 
     def __init__(
@@ -672,6 +675,7 @@ class CardPanel(QWidget):
         def done(_result) -> None:
             self._ejecting = False
             self.message.emit(f"Ejected “{name}”: it is safe to take out.")
+            self.ejected.emit(path)
             self.refresh()  # (it has gone, and so has the card the tab was showing)
 
         def failed(text: str) -> None:
@@ -808,6 +812,15 @@ class SyncView(QWidget):
             False  # sync as soon as the discs have been looked at against a new card
         )
         self._import_when_ready = False  # likewise, to import the card's new cues
+        # what this sync run has written so far (its stages add up), and what the banner that says it finished shows
+        self._report = SyncReport()
+        self._banner_base = (
+            ""  # the banner's sentence without what to do about the card
+        )
+        self._banner_card: Path | None = None
+        self._backup_note = (
+            ""  # where the card's old files went, for the banner's tooltip
+        )
         self._mp3_when_ready: int | None = (
             None  # likewise, to sync this MP3 disc (right-click)
         )
@@ -831,6 +844,8 @@ class SyncView(QWidget):
         self.progress.setMaximumHeight(8)
         self.progress.hide()
         panel.addWidget(self.progress)
+        self.banner = ResultBanner()  # how the last sync finished: stays until it is dismissed or the next sync starts
+        panel.addWidget(self.banner)
         self.search = QLineEdit()
         self.search.setPlaceholderText("Search discs")
         self.search.setClearButtonEnabled(True)
@@ -976,6 +991,7 @@ class SyncView(QWidget):
         ):  # (a right-click > Sync an MP3 Disc on a card that was not shown)
             disc_id, self._mp3_when_ready = self._mp3_when_ready, None
             if self._card_path is not None:
+                self._begin_sync()
                 self.sync_mp3(self._card_path, [disc_id])
 
     def _mp3_card_files(
@@ -1462,6 +1478,49 @@ class SyncView(QWidget):
         self.analyse_note.setText(note)
         self.analyse_note.setVisible(bool(note))
 
+    def _begin_sync(self) -> None:
+        """A new sync run starts: forget the last one's report and take its banner away."""
+        self._report = SyncReport()
+        self._banner_base = self._backup_note = ""
+        self._banner_card = None
+        self.banner.clear()
+
+    def _show_result(self, card: Path, *, ejected: bool, failure: str = "") -> None:
+        """The run is over: say how it went in the banner, which stays. Green when the card is safe to take out (it
+        was ejected, or nothing was written to it), amber when it still has to be ejected (`failure` is why an eject
+        didn't work). The report is used up."""
+        name = card.name or str(card)
+        tip = self._backup_note
+        base = self._report.describe(name)
+        wrote = bool(self._report.discs)
+        self._report = SyncReport()
+        self._banner_base, self._banner_card = base, card
+        if ejected:
+            text, tone = f"{base} Ejected: safe to take out.", OK
+        elif failure:
+            text = f"{base} {failure} Eject it ({card_format.eject_hint()}) before taking it out."
+            tone = WARN
+        elif wrote:
+            text = f"{base} Eject the card before taking it out."
+            tone = WARN
+            tip = f"{tip}\nTo eject it: {card_format.eject_hint()}".strip()
+        else:  # (nothing was written: there is nothing to protect)
+            text, tone = base, OK
+        self.banner.show_result(text, tone, tip)
+
+    def card_was_ejected(self, path: Path) -> None:
+        """The card list ejected `path`: if the banner is waiting for exactly that, it is safe now."""
+        if (
+            self.banner.isVisibleTo(self.disc_panel)
+            and self._banner_card == path
+            and self.banner.tone() == WARN
+        ):
+            self.banner.show_result(
+                f"{self._banner_base} Ejected: safe to take out.",
+                OK,
+                self.banner.toolTip(),
+            )
+
     def _set_writing(self, writing: bool) -> None:
         """A sync is (or is no longer) writing and ejecting: the card list must leave the card alone."""
         self._writing = writing
@@ -1484,6 +1543,7 @@ class SyncView(QWidget):
             self._mp3_when_ready = disc_id
             self.set_card(card)
             return
+        self._begin_sync()
         self.sync_mp3(card, [disc_id])
 
     def sync_mp3(
@@ -1627,6 +1687,8 @@ class SyncView(QWidget):
                     then is not None
                 ):  # (the audio discs ticked with them still go ahead)
                     then()
+                elif not lines:
+                    self._show_result(card, ejected=False)
                 return
             self.progress.setRange(
                 0, 0
@@ -1665,6 +1727,8 @@ class SyncView(QWidget):
                 f"Wrote {len(outcomes)} MP3 disc file{'s' if len(outcomes) != 1 else ''} ({cues} cues, "
                 f"{waves} waveforms) to “{card.name}”; the old ones are copied to {self._backup_dir}."
             )
+            self._report.add(len(outcomes), cues, waves)
+            self._backup_note = f"The card's old files are copied to {self._backup_dir}"
             self._analysing = False
             self._cancel = None
             if skipped:
@@ -1683,6 +1747,7 @@ class SyncView(QWidget):
             if then is not None:
                 then()
             else:
+                self._show_result(card, ejected=False)
                 self.refresh()
 
         def write_failed(text: str) -> None:
@@ -1732,6 +1797,7 @@ class SyncView(QWidget):
         card = self._card_path
         if not WRITING_ENABLED or self._writing or card is None:
             return
+        self._begin_sync()
         mp3 = self.ticked_mp3_ids()
         if mp3:
             self.sync_mp3(
@@ -1839,6 +1905,8 @@ class SyncView(QWidget):
             surveys, card.name or str(card), self._backup_dir, eject
         )
         if not ask_sync_confirmation(self, text):
+            if self._report.discs:  # (the MP3 discs before this were written: say so)
+                self._show_result(card, ejected=False)
             return
         requests = [r for s in surveys for r in s.input.all_requests()]
         backup_dir = self._backup_dir
@@ -1873,11 +1941,19 @@ class SyncView(QWidget):
                 said = (
                     "Nothing to write: the card already has these cues and waveforms."
                 )
+            self._report.add(
+                len(outcome.written), outcome.cues_written, outcome.waveforms_written
+            )
+            if outcome.backup:
+                self._backup_note = (
+                    f"The card's old files are copied to {outcome.backup}"
+                )
             if eject:
                 self._eject_card(card, said)
                 return
             self._set_writing(False)
             self.message.emit(f"{said} Eject the card before taking it out.")
+            self._show_result(card, ejected=False)
             self.refresh()  # (the card as it is now, so the list says "In sync")
 
         def failed(text: str) -> None:
@@ -1906,6 +1982,7 @@ class SyncView(QWidget):
         def done(_result) -> None:
             self._set_writing(False)
             self.message.emit(f"{said} Ejected “{card.name}”: it is safe to take out.")
+            self._show_result(card, ejected=True)
             self.card_ejected.emit()
 
         def failed(text: str) -> None:
@@ -1913,6 +1990,7 @@ class SyncView(QWidget):
             self.message.emit(
                 f"{said} {text} Eject it ({card_format.eject_hint()}) before taking it out."
             )
+            self._show_result(card, ejected=False, failure=text)
             if card.exists():  # (a card the system has already taken away has nothing to read: no "no CDJINDX0.PDJ")
                 self.refresh()
 

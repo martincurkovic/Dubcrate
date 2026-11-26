@@ -1179,6 +1179,34 @@ def _sync_none(ctx):
     return window
 
 
+@scene("sync-banner-done", "Sync tab", "Sync: finished, the card was ejected", sizes=(LAPTOP,),
+       about="The green strip a finished sync leaves under 'Discs to sync': what was written and that the card is safe to take out. It stays until the cross is pressed.")  # fmt: skip
+def _sync_banner_done(ctx):
+    window = _sync_window(ctx)
+    view = window.sync_view
+    view._report.add(3, 12, 86)
+    view._backup_note = (
+        "The card's old files are copied to ~/card-backups/card-20261126-101500"
+    )
+    view._show_result(_card_path(ctx), ejected=True)
+    ctx.settle(8)
+    return window
+
+
+@scene("sync-banner-eject", "Sync tab", "Sync: finished, the card is still to be ejected", sizes=(LAPTOP,),
+       about="The amber strip when 'Eject after syncing' was off (or the eject failed): the card must be ejected before it is pulled.")  # fmt: skip
+def _sync_banner_eject(ctx):
+    window = _sync_window(ctx)
+    view = window.sync_view
+    view._report.add(3, 12, 86)
+    view._backup_note = (
+        "The card's old files are copied to ~/card-backups/card-20261126-101500"
+    )
+    view._show_result(_card_path(ctx), ejected=False)
+    ctx.settle(8)
+    return window
+
+
 @scene("sync-card-menu", "Sync tab", "Sync: the card's right-click menu", kind="menu", sizes=(LAPTOP,),
        about="Right-click on a card in the list.")  # fmt: skip
 def _sync_card_menu(ctx):

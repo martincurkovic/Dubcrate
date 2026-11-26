@@ -1,6 +1,7 @@
 """A CDJ card (or one of its files) in words, for `dubcrate card show` and the dump spike (Qt-free)."""
 
 from collections.abc import Mapping
+from dataclasses import dataclass
 
 from dubcrate import cdj_card as cc
 from dubcrate.card_sync import DiscPlan, Status
@@ -150,3 +151,30 @@ def describe_plan(plan: DiscPlan) -> list[str]:
         )
     out += [f"  ! {note}" for note in plan.notes]
     return out
+
+
+@dataclass
+class SyncReport:
+    """What a Sync run wrote, added up across its stages (MP3 discs, then audio discs), for the banner that says it
+    finished (`ui/result_banner.py`). Nothing here touches a card."""
+
+    discs: int = 0  # disc files written
+    cues: int = 0
+    waves: int = 0
+
+    def add(self, discs: int, cues: int, waves: int) -> None:
+        self.discs += discs
+        self.cues += cues
+        self.waves += waves
+
+    def describe(self, card: str) -> str:
+        """One sentence: what was written to the card called `card`, or that it already had everything."""
+        if not self.discs:
+            return f"Nothing to write: “{card}” already has these cues and waveforms."
+        parts = []
+        if self.cues:
+            parts.append(f"{self.cues} cue{'s' if self.cues != 1 else ''}")
+        if self.waves:
+            parts.append(f"{self.waves} waveform{'s' if self.waves != 1 else ''}")
+        said = f"Synced {self.discs} disc{'s' if self.discs != 1 else ''} to “{card}”"
+        return f"{said}: {' and '.join(parts)}." if parts else f"{said}."

@@ -295,7 +295,7 @@ The CDJ-1000MK3 keeps its cues on an **SD card**, one file per disc, and knows a
 
 ![The Sync tab with a track picked: its waveform at the bottom, as the CDJ draws it](screenshots/sync-waveforms.png "The waveform a sync will write")
 
-When you press **Sync**, Dubcrate asks first, copies the card's files to a `card-backups` folder next to your library, writes, and reads everything back to check.
+When you press **Sync**, Dubcrate asks first, copies the card's files to a `card-backups` folder next to your library, writes, and reads everything back to check. When it has finished, a strip appears under **Discs to sync** saying what was written. It is green once the card is safe to take out (it was ejected, or nothing needed writing), and amber if you still have to eject the card. It stays until you close it with the cross or start the next sync.
 
 - **Every rekordbox cue becomes a memory cue** on the card. Loops become memory loops. The player's own three hot cue buttons are never touched.
 - **What's already on the card is kept.** Cues are only added, and duplicates are skipped. The player holds 100 cues per disc.

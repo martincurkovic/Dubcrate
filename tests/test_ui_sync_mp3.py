@@ -707,3 +707,66 @@ def test_the_command_line_sync_records_the_baseline_only_when_it_writes(
     assert sync(True) == 0  # (nothing left to write: the card has it all)
     assert len(lib.card_baseline(key)) == 1
     assert "error" not in capsys.readouterr().err
+
+
+# -- the banner that says how a sync finished -----------------------------------------------------
+
+
+def banner_of(v):
+    return v.banner if v.banner.isVisibleTo(v.disc_panel) else None
+
+
+def test_an_mp3_sync_leaves_an_amber_banner_when_the_card_is_not_ejected(view, lib, tmp_path):  # fmt: skip
+    view.look(make_card(tmp_path, lib))
+    view.view.eject_check.setChecked(False)
+    tick(view.view)
+    view.view.sync_button.click()
+    assert banner_of(view.view) is None  # (it is working)
+    assert view.finished()
+    banner = banner_of(view.view)
+    assert banner.tone() == "warn"
+    assert banner.text().startswith("Synced 1 disc to “card”: 4 waveforms.")
+    assert "before taking it out" in banner.text()
+    assert str(tmp_path / "bk") in banner.toolTip()
+
+
+def test_an_mp3_sync_that_ejects_leaves_a_green_banner(view, lib, tmp_path, monkeypatch):  # fmt: skip
+    monkeypatch.setattr(sync_view, "eject_card", lambda _path: None)
+    card = make_card(tmp_path, lib)
+    view.look(card)
+    view.view._can_eject = lambda _path: True
+    view.view._update_buttons()
+    tick(view.view)
+    view.view.sync_button.click()
+    assert view.finished()
+    banner = banner_of(view.view)
+    assert banner.tone() == "ok"
+    assert banner.text() == "Synced 1 disc to “card”: 4 waveforms. Ejected: safe to take out."  # fmt: skip
+
+
+def test_a_second_sync_with_nothing_to_write_says_so_and_a_new_sync_clears_the_old_banner(view, lib, tmp_path):  # fmt: skip
+    view.look(make_card(tmp_path, lib))
+    view.view.eject_check.setChecked(False)
+    tick(view.view)
+    view.view.sync_button.click()
+    assert view.finished()
+    assert "Synced 1 disc" in banner_of(view.view).text()
+    tick(view.view)
+    view.view.sync_button.click()
+    assert (
+        banner_of(view.view) is None
+    )  # (the old one goes the moment a new sync starts)
+    assert view.finished()
+    banner = banner_of(view.view)
+    assert banner.tone() == "ok"
+    assert banner.text() == "Nothing to write: “card” already has these cues and waveforms."  # fmt: skip
+
+
+def test_a_disc_that_cannot_be_synced_gets_its_box_and_no_banner(view, lib, tmp_path):  # fmt: skip
+    view.look(make_card(tmp_path, lib, entry=False, wrong=True))
+    tick_row = view.view._disc_items()[0]
+    tick_row.setCheckState(COL_NAME, Qt.CheckState.Checked)
+    view.view._mp3_when_ready = None
+    view.view.sync_mp3(tmp_path / "card", [lib.disc_id])
+    assert view.finished()
+    assert banner_of(view.view) is None

@@ -305,6 +305,9 @@ class MainWindow(QMainWindow):
         self.card_panel.import_requested.connect(self.sync_view.import_from)
         self.card_panel.mp3_sync_requested.connect(self.sync_view.sync_mp3_disc)
         self.sync_view.card_ejected.connect(self.card_panel.refresh)  # (it has gone)
+        self.card_panel.ejected.connect(
+            self.sync_view.card_was_ejected
+        )  # (the banner may be waiting for it)
         self.sync_view.busy_changed.connect(self.card_panel.set_busy)
         self.card_panel.message.connect(
             lambda text: self.statusBar().showMessage(text, 8000)

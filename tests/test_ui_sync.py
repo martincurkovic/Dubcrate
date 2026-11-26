@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 from PySide6.QtCore import Qt
+from PySide6.QtTest import QTest
 
 from dubcrate import card_format
 from dubcrate import cdj_card as cc
@@ -1455,3 +1456,120 @@ def test_a_card_that_never_mounts_is_noticed_by_the_disks_that_exist(
     panel.hide()
     assert not panel._devices.is_running()
     panel.close()
+
+
+# -- the banner that says how a sync finished -----------------------------------------------------
+
+
+def banner_of(view):
+    return view.banner if view.banner.isVisibleTo(view.disc_panel) else None
+
+
+def test_a_sync_that_ejects_leaves_a_green_banner_that_says_it_is_safe_to_take_out(ejecting):  # fmt: skip
+    assert banner_of(ejecting.view) is None
+    ejecting.view.sync_button.click()
+    assert banner_of(ejecting.view) is None  # (nothing yet: it is working)
+    assert ejecting.finished()
+    banner = banner_of(ejecting.view)
+    assert banner is not None and banner.tone() == "ok"
+    assert banner.text().startswith("Synced 2 discs to “CARD”: 3 cues")
+    assert banner.text().endswith("Ejected: safe to take out.")
+    assert str(ejecting.backup) in banner.toolTip()
+
+
+def test_a_sync_that_does_not_eject_leaves_an_amber_banner_that_says_to_do_it(ejecting):  # fmt: skip
+    ejecting.view.eject_check.setChecked(False)
+    ejecting.view.sync_button.click()
+    assert ejecting.finished()
+    banner = banner_of(ejecting.view)
+    assert banner.tone() == "warn"
+    assert banner.text().startswith("Synced 2 discs to “CARD”")
+    assert banner.text().endswith("Eject the card before taking it out.")
+    assert (
+        card_format.eject_hint() in banner.toolTip()
+    )  # (how to do it is in the tooltip)
+    assert str(ejecting.backup) in banner.toolTip()
+
+
+def test_an_eject_that_fails_leaves_an_amber_banner_with_the_reason(ejecting, monkeypatch):  # fmt: skip
+    from dubcrate.eject import EjectError
+
+    def busy(_path):
+        raise EjectError("The system couldn't eject “CARD”: disk is busy")
+
+    monkeypatch.setattr(sync_view, "eject_card", busy)
+    ejecting.view.sync_button.click()
+    assert ejecting.finished()
+    banner = banner_of(ejecting.view)
+    assert banner.tone() == "warn" and "disk is busy" in banner.text()
+    assert "Synced 2 discs to “CARD”" in banner.text()
+
+
+def test_the_banner_stays_while_other_things_happen_until_it_is_dismissed(ejecting):
+    ejecting.view.sync_button.click()
+    assert ejecting.finished()
+    ejecting.view.refresh()
+    ejecting.view._show_detail()
+    ejecting.view.message.emit("something else")
+    assert (
+        banner_of(ejecting.view) is not None
+    )  # (a refresh, a pick and a status message leave it)
+    QTest.mouseClick(ejecting.view.banner._close, Qt.MouseButton.LeftButton)
+    assert banner_of(ejecting.view) is None
+
+
+def test_a_new_sync_takes_the_old_banner_away_at_once(ejecting):
+    view = ejecting.view
+    view.banner.show_result("Old news.", "ok")
+    ejecting.view._begin_sync()
+    assert banner_of(view) is None and view._banner_base == ""
+
+
+def test_declining_the_question_leaves_no_banner(writing):
+    writing.answer["yes"] = False
+    writing.view.sync_button.click()
+    assert banner_of(writing.view) is None
+
+
+def test_nothing_to_write_is_a_green_banner_with_no_eject_warning(writing):
+    writing.view._report = sync_view.SyncReport()
+    writing.view._show_result(writing.card, ejected=False)
+    banner = banner_of(writing.view)
+    assert banner.tone() == "ok"
+    assert banner.text() == "Nothing to write: “CARD” already has these cues and waveforms."  # fmt: skip
+
+
+def test_ejecting_the_card_from_the_list_turns_the_amber_banner_green(ejecting):
+    ejecting.view.eject_check.setChecked(False)
+    ejecting.view.sync_button.click()
+    assert ejecting.finished()
+    view = ejecting.view
+    assert banner_of(view).tone() == "warn"
+    view.card_was_ejected(
+        ejecting.card.parent / "OTHER"
+    )  # (another card: not this one)
+    assert banner_of(view).tone() == "warn"
+    view.card_was_ejected(ejecting.card)
+    banner = banner_of(view)
+    assert banner.tone() == "ok" and banner.text().endswith("Ejected: safe to take out.")  # fmt: skip
+    assert banner.text().startswith("Synced 2 discs to “CARD”: 3 cues")
+    assert str(ejecting.backup) in banner.toolTip()  # (the tooltip is kept)
+
+
+def test_the_card_lists_eject_button_tells_the_banner(qapp, tmp_path, monkeypatch):
+    card = card_folder(tmp_path)
+    monkeypatch.setattr(sync_view, "mounted_volumes", lambda: [card])
+    lib = Library.open(":memory:")
+    win = MainWindow(lib)
+    try:
+        win.source_tabs.set_current("sync")
+        view = win.sync_view
+        view._banner_base, view._banner_card = "Synced 1 disc to “CARD”: 2 cues.", card
+        view.banner.show_result(f"{view._banner_base} Eject the card before taking it out.", "warn")  # fmt: skip
+        win.card_panel.ejected.emit(card)
+        assert view.banner.tone() == "ok"
+        assert view.banner.text() == "Synced 1 disc to “CARD”: 2 cues. Ejected: safe to take out."  # fmt: skip
+    finally:
+        win.close()
+        win.deleteLater()
+        lib.close()

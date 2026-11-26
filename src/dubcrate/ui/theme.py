@@ -66,6 +66,14 @@ DARK_PALETTE = {
     "badge_rw_bg": "#e0702a",
     "badge_rw_border": "#e0702a",
     "badge_rw_text": "#ffffff",
+    # the strip that says how a sync finished (ui/result_banner.py): green when it is done, amber when something is
+    # left to do; System 6 draws the amber one inverted
+    "result_ok_bg": "#1f3a2c",
+    "result_ok_border": "#3f8f63",
+    "result_ok_text": "#d4eddf",
+    "result_warn_bg": "#3d3320",
+    "result_warn_border": "#d9a94a",
+    "result_warn_text": "#f2e2b8",
     # alternating-row tint for tables/trees. Deliberately close to bg_panel
     # rather than bg_input/bg_selected - a stripe should read as a faint
     # banding cue, not as an editable field or a selection highlight.
@@ -142,6 +150,14 @@ LIGHT_PALETTE = {
     "badge_rw_bg": "#d9651c",
     "badge_rw_border": "#d9651c",
     "badge_rw_text": "#ffffff",
+    # the strip that says how a sync finished (ui/result_banner.py): green when it is done, amber when something is
+    # left to do; System 6 draws the amber one inverted
+    "result_ok_bg": "#e3f4e9",
+    "result_ok_border": "#58a779",
+    "result_ok_text": "#1d4a31",
+    "result_warn_bg": "#fdf1d6",
+    "result_warn_border": "#e0a82e",
+    "result_warn_text": "#5c4408",
     # same reasoning as DARK_PALETTE's bg_zebra - close to this theme's own
     # bg_panel ("#ffffff"), just a faint step down rather than a strong tint
     "bg_zebra": "#f6f3fb",
@@ -209,6 +225,14 @@ SYSTEM6_PALETTE = {
     "badge_rw_bg": "#000000",
     "badge_rw_border": "#000000",
     "badge_rw_text": "#ffffff",
+    # the strip that says how a sync finished (ui/result_banner.py): green when it is done, amber when something is
+    # left to do; System 6 draws the amber one inverted
+    "result_ok_bg": "#ffffff",
+    "result_ok_border": "#000000",
+    "result_ok_text": "#000000",
+    "result_warn_bg": "#000000",
+    "result_warn_border": "#000000",
+    "result_warn_text": "#ffffff",
     "bg_zebra": "#f0f0f0",
     # eight dark greys for what is still coloured by position (the loop markers on the sample waveform); the volumes themselves are hatched
     "volume_color_1": "#000000",
