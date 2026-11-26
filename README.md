@@ -50,17 +50,15 @@ It can also put your cues on the player's SD card.
 ## What you need
 
 - **A computer:** macOS 14 or newer (Apple Silicon or Intel), Windows 10 or 11 (64-bit), or 64-bit Linux (glibc 2.39 or newer).
-  About 4 GB of memory and a screen of 1280 × 720 or more. These are best guesses.
+  About 4 GB of memory and a screen of 1280 × 720 or more.
 - **A CD burner** and blank **CD-R** discs. CD-RW isn't recommended for old players.
 - **Music** as MP3, WAV, FLAC, AIFF, AAC/M4A, Ogg, Opus or WMA.
 - Optionally, a **rekordbox 7** library.
 
-Everything else (ffmpeg, and `cdrdao` on Windows and Linux) comes with the download.
-
 ## Download & install
 
 Get the latest version from the [Releases page](https://github.com/martincurkovic/Dubcrate/releases).
-Apart from an optional daily check for updates, Dubcrate works offline.
+Other than an optional daily check for updates, Dubcrate works offline.
 
 **Mac.** Download `Dubcrate-macos-arm.dmg` (Apple Silicon) or `Dubcrate-macos-intel.dmg` (Intel). Open it and drag Dubcrate
 to Applications. The app isn't signed, so macOS warns you the first time. To open it anyway:
@@ -89,15 +87,6 @@ Rather build it yourself? See [BUILDING.md](BUILDING.md).
 
 The keyboard shortcuts and everything else are in *Help ▸ User Guide*.
 
-## Good to know
-
-- **Your music and your rekordbox library are never changed.** The one exception is memory cues, and only if you allow it.
-- **Cue points and beat grids can't go on a CD.** Use the **Sync** tab to put your cues on the player's SD card instead.
-- **Titles use CD-TEXT**, which handles Western European letters. Others are simplified.
-- **What has been tried on real gear:** burning audio CDs on Mac, Windows and Linux, and MP3 CDs on Windows and Linux,
-  all played on a CDJ-1000MK3; syncing cues and waveforms to its SD card; the track finder on an iPhone.
-  Printing has only been checked by saving PDFs. Windows 10 hasn't been tried.
-
 ## What's coming
 
 Other DJ libraries, such as Mixxx and Engine DJ.
@@ -106,7 +95,6 @@ Other DJ libraries, such as Mixxx and Engine DJ.
 
 - **[User Guide](src/dubcrate/ui/help/manual.md)**, also in the app under *Help ▸ User Guide*.
 - **[Changelog](CHANGELOG.md)**, **[building from source](BUILDING.md)** and **[notes for developers](CONTRIBUTING.md)**.
-- The pictures use made-up music and a pretend SD card.
 
 ## License
 
