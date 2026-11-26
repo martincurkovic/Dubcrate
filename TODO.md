@@ -12,7 +12,6 @@ Open items by area, each one still to do or to try; everything built is under **
 - [ ] Serato library support
 - [ ] Drop `experimental` from the Windows leg in test.yml once happy (follow-up to: CI test legs for Linux, macOS, Windows)
 - [ ] Homebrew packaging once first release public
-- [ ] Regenerate the README and guide pictures from the owner's real music once they have looked at the scratch renders (`make_screenshots.py --real --overwrite`; built 2026-11-26, the repo's pictures are still the made-up ones).
 
 ### Hardware checks (Mac and the CDJ-1000MK3)
 
@@ -31,10 +30,6 @@ Open items by area, each one still to do or to try; everything built is under **
 - [ ] Add code signing and notarisation for the macOS app ([BUILDING.md](BUILDING.md)).
 - [ ] Check the update check against a real GitHub release once the first one is published (the repo is public, so until then the check just says you're up to date) ([roadmap.md](dev_docs/roadmap.md)).
 
-### Before the first release
-
-- [ ] Write a changelog (the update check reads GitHub's release notes) ([roadmap.md](dev_docs/roadmap.md)). (A short plain draft is in CHANGELOG.md: read it once more before tagging.)
-
 ### Features and app polish
 
 - [ ] Try the drive picker with two real drives (the check after a burn is skipped for any but the first).
@@ -42,7 +37,7 @@ Open items by area, each one still to do or to try; everything built is under **
 - [ ] Cancel the writing of a burn itself (needs a confirmation: a stopped write ruins the disc).
 - [ ] Try dragging an MP3 folder in the Discs list by hand (the feel, and dropping on a collapsed disc).
 - [ ] Give each app library its own Library tab once a second library exists ([roadmap.md](dev_docs/roadmap.md)).
-- [ ] Read rekordbox's `PWV3` and `PWV5` directly for exact waveform matches on rekordbox tracks ([rekordbox-analysis.md](dev_docs/rekordbox-analysis.md)).
+- [ ] **Later version, not a release blocker:** read rekordbox's `PWV3` and `PWV5` directly for exact waveform matches on rekordbox tracks in the blue and RGB looks (the default 3-band look already uses rekordbox's own `PWV7`): about a day, mostly in the renderers, low value unless those looks are used ([rekordbox-analysis.md](dev_docs/rekordbox-analysis.md)).
 
 ### Linux and Windows
 
@@ -103,6 +98,7 @@ Open items by area, each one still to do or to try; everything built is under **
 
 ### Before the first release
 
+- [x] Write a changelog (2026-11-26): `CHANGELOG.md` is a short first-release entry (the main features, then a few "good to know" lines); GitHub's release notes are that entry ([roadmap.md](dev_docs/roadmap.md)).
 - [x] Look through the git history for anything personal that shouldn't be public ([roadmap.md](dev_docs/roadmap.md)). (scanned 2026-11-15, nothing sensitive; the decisions it leaves are in dev_docs/release-readiness.md)
 - [x] Decide whether `AGENTS.md` and `CLAUDE.md` stay in the public repo ([roadmap.md](dev_docs/roadmap.md)). (they stay: decided 2026-11-15)
 - [x] Give the README real download and install steps and re-check that every claim in it has actually been tried ([roadmap.md](dev_docs/roadmap.md)). (the audit and suggested wording: dev_docs/release-readiness.md)
@@ -113,6 +109,8 @@ Open items by area, each one still to do or to try; everything built is under **
 
 - [x] Try the rekordbox USB stick in the running app (it is only tested offscreen and from scripts): import it, unplug and replug it, plug it back as a second mount. Check the "(unplugged)" row, All Tracks without its tracks, the Show Tracks from Unplugged Drives tick, and the right-click Re-import / Remove. Is the Remove confirmation right for a stick? ([rekordbox-usb.md](dev_docs/rekordbox-usb.md)). Sticks with only `export.pdb` are refused by decision. (Ticked off by the owner, 2026-11-26.)
 - [x] Try disc and card auto-detection on macOS and Windows (Linux works; Windows listed a card with a PIONEER folder, and a blank one after a fix, 2026-11-24). (Ticked off by the owner, 2026-11-26.)
+- [x] The README and guide pictures are of the owner's own music (2026-11-26): `make_screenshots.py --real` (a gitignored picks file `local/screenshot-tracks.json`, read-only, falls back to the made-up collection with a staged beat grid), real waveforms, rekordbox phrases, beat grids and cues, Flowers' cover in the Info tab, and the Explorer pictures show `~/Music/CDJ CDs/Speed Garage/Speed Garage 003`. Put It Down and Burn aren't in rekordbox yet: add them (with the EP artwork) and add them to the picks file.
+- [x] The Info tab shows the star rating (it was squeezed to no width) and the comment no longer clips: cover at the left, stars and file facts beside it, the comment under them (2026-11-26).
 - [x] A banner in the Sync tab says when a sync has finished (2026-11-26): under 'Discs to sync', green with what was written ("Synced 3 discs to “CARD”: 12 cues and 86 waveforms. Ejected: safe to take out.") or amber when the card still has to be ejected (turning green if you eject it from the card list); it stays until the cross is pressed or the next sync starts, and Import Cues doesn't use it. Tried offscreen only (`ui/result_banner.py`, `card_report.SyncReport`).
 - [x] Import Cues from an MP3 card notices cues deleted or moved on the player (2026-11-26): every MP3 sync (the Sync tab and `dubcrate card sync --yes`) records a baseline (the cues the card holds, keyed by the burned image's numbers, per (folder, file)), and the review offers deletions and moves as for an audio disc. Tested end to end on synthetic cards, **not tried on a player** ([card-sync.md](dev_docs/card-sync.md)).
 - [x] Unplugged rekordbox USB sticks (2026-11-26): their tracks stay out of All Tracks and the search (a tick in the right-click menu brings them back; a stick that is the only source is never hidden), the tree row is dimmed and says "(unplugged)", and a source has a right-click menu with Re-import and Remove. Tested offscreen only.

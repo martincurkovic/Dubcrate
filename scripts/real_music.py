@@ -25,8 +25,15 @@ The picks file (JSON):
         "garage":     {"name": "UK Garage",  "tracks": [...]},
         "throwbacks": {"name": "Peak Time",  "tracks": [...]}
       },
-      "loose": ["Tulum (Extended Mix)", ...]       # the Explorer's loose folder
+      "loose": ["Tulum (Extended Mix)", ...],      # the Explorer's loose folder (when "explorer" is not given)
+      "explorer": {                                # optional: the Explorer picture shows a real folder instead
+        "folder": "/Users/me/Music/CDJ CDs",       #   a folder on this computer (linked into the pretend home)
+        "pinned": "Speed Garage/Speed Garage 003"  #   the folder under it that is pinned and shown
+      }
     }
+
+With "explorer" the Explorer pictures show the files in that folder, whoever made them, so that folder's names and tags
+are what the picture shows: it is the owner's choice of folder, not a pick from the library.
 
 A track is its title (matched without regard to case) or {"title": ..., "artist": ...} when two tracks share one.
 The third track of "house" is the one loaded in the player.
@@ -35,7 +42,7 @@ The third track of "house" is the one loaded in the player.
 import json
 import os
 import shutil
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -64,6 +71,15 @@ class Playlist:
 
 
 @dataclass(frozen=True)
+class ExplorerPick:
+    """A real folder for the Explorer pictures: `folder` is linked into the pretend home and `pinned` (a path under it)
+    is the folder that is pinned and shown."""
+
+    folder: Path
+    pinned: str
+
+
+@dataclass(frozen=True)
 class Picks:
     library: Path | None
     source: str
@@ -71,6 +87,7 @@ class Picks:
     loose: tuple[Pick, ...] = ()
     show_art: frozenset[str] = frozenset()
     hero_tab: str = "memory"
+    explorer: ExplorerPick | None = None
 
 
 def _norm(text: str) -> str:
@@ -116,6 +133,18 @@ def parse_picks(data: object) -> Picks:
     if hero not in HERO_TABS:
         raise PicksError(f'"hero_tab" is {" or ".join(HERO_TABS)}.')
     library = data.get("library")
+    explorer = data.get("explorer")
+    if explorer is not None:
+        if (
+            not isinstance(explorer, dict)
+            or not str(explorer.get("folder", "")).strip()
+            or not str(explorer.get("pinned", "")).strip()
+        ):
+            raise PicksError('"explorer" needs a "folder" and a "pinned" folder under it.')  # fmt: skip
+        explorer = ExplorerPick(
+            Path(str(explorer["folder"])).expanduser(),
+            str(explorer["pinned"]).strip("/"),
+        )
     return Picks(
         library=Path(library).expanduser() if library else None,
         source=str(data.get("source") or "Demo Crate"),
@@ -123,6 +152,7 @@ def parse_picks(data: object) -> Picks:
         loose=tuple(_pick(t, '"loose"') for t in data.get("loose", [])),
         show_art=frozenset(_norm(t) for t in data.get("show_art", [])),
         hero_tab=hero,
+        explorer=explorer,
     )
 
 
@@ -144,6 +174,8 @@ def status(path: Path = DEFAULT_PICKS) -> str | None:
     library = picks.library or default_master_db()
     if library is None or not Path(library).is_file():
         return "there is no rekordbox library on this computer"
+    if picks.explorer is not None and not (picks.explorer.folder / picks.explorer.pinned).is_dir():  # fmt: skip
+        return f"there is no folder {picks.explorer.folder / picks.explorer.pinned} on this computer"  # fmt: skip
     return None
 
 
@@ -212,10 +244,32 @@ def link_files(folder: Path, records) -> None:
             shutil.copy2(track.path, link)
 
 
-@dataclass
-class _Loaded:  # (what `RealDemo` keeps of the real library)
-    records: list = field(default_factory=list)
-    loose: list = field(default_factory=list)
+AUDIO = {".mp3", ".wav", ".flac", ".aif", ".aiff", ".m4a", ".ogg", ".opus"}
+
+
+def link_folder(link: Path, real: Path) -> None:
+    """A symbolic link at `link` to the real folder (the Explorer reads through it). Never a copy and never a move: a
+    link is removed as a link when the scratch folder is cleared, whatever is behind it stays."""
+    link.parent.mkdir(parents=True, exist_ok=True)
+    if not (link.exists() or link.is_symlink()):
+        os.symlink(real, link, target_is_directory=True)
+
+
+def audio_previews(folder: Path) -> dict[str, object]:
+    """{real path: whole-track Waveform} of the audio files directly in `folder`, worked out from the audio (these files
+    are not in the rekordbox library, so there is no analysis to read). Files that can't be read are left out."""
+    from dubcrate.audio.decode import DecodeError, decode_file
+    from dubcrate.waveform import compute_waveform
+
+    found: dict[str, object] = {}
+    for file in sorted(folder.iterdir()):
+        if file.suffix.lower() not in AUDIO or not file.is_file():
+            continue
+        try:
+            found[os.path.realpath(file)] = compute_waveform(decode_file(str(file)).mono())  # fmt: skip
+        except (DecodeError, OSError, ValueError) as exc:
+            print(f"  (no preview for {file.name}: {exc})")
+    return found
 
 
 def make_real_demo(workdir: Path, picks: Picks):
@@ -250,11 +304,24 @@ def make_real_demo(workdir: Path, picks: Picks):
             # the Explorer's pretend folders: links to the real files, one folder per playlist and one loose
             root = analysis_root("rekordbox", str(rb.source))
             by_id = {t.ext_id: t for t in records}
-            crate = self.music / picks.source
-            for role in ROLES:
-                playlist = picks.playlists[role]
-                link_files(crate / playlist.name, [by_id[i] for i in next(n.track_ext_ids for n in nodes if n.name == playlist.name)])  # fmt: skip
-            link_files(self.music / MISC, loose)
+            if (
+                picks.explorer is not None
+            ):  # a real folder, linked in: the Explorer shows what is in it
+                real = picks.explorer.folder
+                if not (real / picks.explorer.pinned).is_dir():
+                    raise PicksError(f"the Explorer folder {real / picks.explorer.pinned} is not there.")  # fmt: skip
+                link = self.music / real.name
+                link_folder(link, real)
+                self.explorer_folder = link / picks.explorer.pinned
+                self.explorer_open = self.explorer_folder.parent
+                print("working out previews for the Explorer's folder...")
+                self.previews.update(audio_previews(self.explorer_folder))
+            else:
+                crate = self.music / picks.source
+                for role in ROLES:
+                    playlist = picks.playlists[role]
+                    link_files(crate / playlist.name, [by_id[i] for i in next(n.track_ext_ids for n in nodes if n.name == playlist.name)])  # fmt: skip
+                link_files(self.music / MISC, loose)
             # the Explorer's files have no rekordbox twin, so their Preview strips are rekordbox's own, by file
             for track in records:
                 wave = read_preview(root, track.analysis_path) if track.analysis_path else None  # fmt: skip

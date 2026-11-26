@@ -513,7 +513,7 @@ def test_a_track_without_a_cover_shows_the_placeholder_and_one_with_a_cover_show
 
 
 def test_choosing_a_tab_never_changes_the_height_the_strip_asks_for(strip):
-    """The Info page (a 160 px cover, four lines about the file, a comment) is taller than the Memory list: it used to
+    """The Info page (a cover, the stars and four lines about the file, a comment) is taller than the Memory list: it used to
     make the strip, and the window, grow when INFO was picked."""
     side = strip.side
     side.set_artwork(png_bytes())
@@ -579,6 +579,75 @@ def test_choosing_a_track_clears_the_old_cover_until_its_own_arrives(strip):
     assert strip.side.art.has_image
     strip.clear()
     assert not strip.side.art.has_image
+
+
+def info_track(**over):
+    from dubcrate.library.models import Track
+
+    fields = {
+        "id": 1, "source_id": 1, "ext_id": "x", "path": "/m/a.mp3", "title": "T", "artist": "A", "duration": 60.0,
+        "rating": 3, "comment": "Deep Six Collective & Mogged Records", "bitrate": 320, "sample_rate": 44100,
+        "file_size": 10_700_000,
+    }  # fmt: skip
+    return Track(**(fields | over))
+
+
+def info_panel(
+    qapp, track, size=(250, 226)
+):  # (the side panel is at least this tall in the app)
+    panel = player_side.SidePanel()
+    panel.resize(*size)
+    panel.show()
+    panel.tabs[2].click()
+    panel.set_artwork(png_bytes())
+    panel.set_track(track)
+    panel.set_artwork(
+        png_bytes()
+    )  # (set_track clears the cover: it arrives with the audio)
+    QApplication.processEvents()
+    return panel
+
+
+def test_the_info_page_shows_the_stars_with_room_beside_the_cover(qapp):
+    panel = info_panel(qapp, info_track(rating=3))
+    assert panel.rating.text() == "★★★☆☆"
+    needed = panel.rating.fontMetrics().horizontalAdvance(panel.rating.text())
+    assert (
+        panel.rating.isVisible() and panel.rating.width() >= needed
+    )  # (they used to be squeezed to no width)
+    assert (
+        panel.rating.x() > panel.art.x() + panel.art.width() - 1
+    )  # (beside the cover, not under it)
+    panel.deleteLater()
+
+
+def test_the_info_pages_comment_is_not_cut_off_at_the_size_of_the_players_panel(qapp):
+    panel = info_panel(qapp, info_track())
+    label = panel.comment
+    area = (
+        label.parentWidget().parentWidget()
+    )  # (the label's viewport, then the scroll area)
+    needed = label.heightForWidth(label.width())
+    assert needed > 0 and needed <= area.viewport().height(), (
+        needed,
+        area.viewport().height(),
+    )
+    assert (
+        not area.verticalScrollBar().isVisible()
+    )  # (no scroll bar for a label's name)
+    panel.deleteLater()
+
+
+def test_the_file_facts_sit_under_the_stars_at_the_left_of_their_column(qapp):
+    panel = info_panel(qapp, info_track())
+    assert panel.file.text().splitlines() == [
+        "MP3 File",
+        "10.7 MB",
+        "44100 Hz",
+        "320 kbps",
+    ]
+    assert panel.file.y() > panel.rating.y() and panel.file.x() == panel.rating.x()
+    panel.deleteLater()
 
 
 def make_track():

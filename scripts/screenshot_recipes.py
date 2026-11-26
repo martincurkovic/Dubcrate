@@ -97,6 +97,9 @@ class Demo:
         self.music = self.home / "Music"
         self.previews: dict[str, object] = {}
         self.names = self._names()
+        # what the Explorer picture pins, and the folder it opens in the tree first
+        self.explorer_folder = self.music / MISC
+        self.explorer_open = self.music / self.names.source / self.names.warm_up
         self.lib = Library.open(workdir / "library.db")
         self._collect()
         self.source = next(s for s in self.lib.sources() if s.name == self.names.source)
@@ -498,12 +501,14 @@ def _mp3_disc(ctx):
 )
 def _explorer(ctx):
     window = ctx.window()
-    window.splitter.setSizes([320, 860, 320])
-    misc = ctx.demo.music / MISC
+    window.splitter.setSizes(
+        [340, 840, 320]
+    )  # (a wider tree than usual: the folder names are long)
+    misc = ctx.demo.explorer_folder
     window.pin_folder(str(misc))
     window.source_tabs.set_current("explorer")
     window.explorer_tree.select_path(
-        str(ctx.demo.music / ctx.demo.names.source / ctx.demo.names.warm_up)
+        str(ctx.demo.explorer_open)
     )  # (opens the imported folder in the tree)
     ctx.settle()
     window.explorer_tree.select_path(str(misc))

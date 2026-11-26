@@ -193,6 +193,85 @@ def test_the_picks_file_lives_in_a_folder_git_ignores():
     assert real_music.DEFAULT_PICKS.parent.name == "local"
 
 
+# -- a real folder for the Explorer ------------------------------------------------------------------
+
+
+def test_an_explorer_folder_is_read_from_the_picks_and_checked_to_exist(tmp_path):
+    folder = tmp_path / "CDJ CDs"
+    (folder / "Speed Garage" / "003").mkdir(parents=True)
+    data = picks_data(explorer={"folder": str(folder), "pinned": "/Speed Garage/003/"})
+    picks = parse_picks(data)
+    assert (
+        picks.explorer.folder == folder and picks.explorer.pinned == "Speed Garage/003"
+    )
+    assert parse_picks(picks_data()).explorer is None
+    path = tmp_path / "picks.json"
+    library_file = tmp_path / "master.db"
+    library_file.write_bytes(b"x")
+    path.write_text(json.dumps(picks_data(library=str(library_file), explorer={"folder": str(folder), "pinned": "Speed Garage/003"})), encoding="utf-8")  # fmt: skip
+    assert real_music.status(path) is None
+    path.write_text(json.dumps(picks_data(library=str(library_file), explorer={"folder": str(folder), "pinned": "Nope"})), encoding="utf-8")  # fmt: skip
+    assert "there is no folder" in real_music.status(
+        path
+    )  # (fall back: this is not the owner's computer)
+
+
+@pytest.mark.parametrize(
+    "explorer",
+    [{"folder": "/x"}, {"pinned": "a"}, {"folder": " ", "pinned": "a"}, "folder", 3],
+)
+def test_a_wrong_explorer_entry_is_an_error(explorer):
+    with pytest.raises(PicksError, match='"explorer" needs'):
+        parse_picks(picks_data(explorer=explorer))
+
+
+def test_a_linked_folder_is_removed_as_a_link_and_its_files_stay(tmp_path):
+    import shutil
+
+    real = tmp_path / "CDJ CDs"
+    (real / "A").mkdir(parents=True)
+    (real / "A" / "one.mp3").write_bytes(b"audio")
+    scratch = tmp_path / "scratch"
+    real_music.link_folder(scratch / "home" / "Music" / "CDJ CDs", real)
+    assert (
+        scratch / "home" / "Music" / "CDJ CDs" / "A" / "one.mp3"
+    ).read_bytes() == b"audio"
+    real_music.link_folder(
+        scratch / "home" / "Music" / "CDJ CDs", real
+    )  # (again: nothing changes)
+    shutil.rmtree(scratch)
+    assert (
+        real / "A" / "one.mp3"
+    ).read_bytes() == b"audio"  # (rmtree unlinked the link and went no further)
+
+
+def test_previews_are_worked_out_from_the_audio_files_in_the_folder_only(tmp_path):
+    import math
+    import struct
+    import wave
+
+    def tone(path, seconds=2.0):
+        with wave.open(str(path), "wb") as f:
+            f.setnchannels(1)
+            f.setsampwidth(2)
+            f.setframerate(44100)
+            f.writeframes(b"".join(struct.pack("<h", int(8000 * math.sin(2 * math.pi * 110 * i / 44100))) for i in range(int(44100 * seconds))))  # fmt: skip
+
+    folder = tmp_path / "cd"
+    folder.mkdir()
+    tone(folder / "a.wav")
+    (folder / "notes.txt").write_text("not audio", encoding="utf-8")
+    (folder / "broken.mp3").write_bytes(b"not an mp3")
+    (folder / "sub").mkdir()
+    tone(folder / "sub" / "deeper.wav")
+    found = real_music.audio_previews(folder)
+    import os
+
+    key = os.path.realpath(folder / "a.wav")
+    assert list(found) == [key]  # (not the text, the broken file or the sub-folder's)
+    assert found[key] is not None
+
+
 # -- the Explorer's pretend folders ---------------------------------------------------------------------
 
 

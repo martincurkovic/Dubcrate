@@ -174,7 +174,7 @@ class ArtworkView(QWidget):
     It is as big as `SIZE` when there is room and shrinks to fit when there is not, so the Info page never asks the
     player strip for more height than the Memory and Hot Cue pages need (the window used to grow when INFO was picked)."""
 
-    SIZE = 160
+    SIZE = 112  # (the cover at the left of the Info page, with the stars and the file's facts beside it)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -335,21 +335,26 @@ class SidePanel(QWidget):
         )
         self.file = QLabel()
         self.file.setObjectName("mutedLabel")
-        self.file.setAlignment(
-            Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
-        )
+        self.file.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
         self.art = ArtworkView()
-        # the cover at the top and big, the stars and file name under it, then the comment
+        # the cover at the left, the stars and what the file is beside it, and the whole width under them for the
+        # comment (a label's name and the like wrap there instead of being cut off at the edge of a narrow column)
         info = InfoFrame()
         box = QVBoxLayout(info)
         box.setContentsMargins(10, 10, 10, 10)
         box.setSpacing(8)
-        box.addWidget(self.art, 4)  # (the cover gives way first when the page is short)
-        facts = QHBoxLayout()  # (stars at the left, the file at the right: one line, so the cover can be big)
-        facts.setSpacing(8)
+        top = QHBoxLayout()
+        top.setSpacing(10)
+        top.addWidget(self.art, 0, Qt.AlignmentFlag.AlignTop)
+        facts = QVBoxLayout()
+        facts.setSpacing(4)
         facts.addWidget(self.rating)
-        facts.addWidget(self.file, 1)
-        box.addLayout(facts)
+        facts.addWidget(self.file)
+        facts.addStretch(1)
+        top.addLayout(facts, 1)
+        box.addLayout(
+            top
+        )  # (its own height; the comment gets the rest, and both give way together when short)
         box.addWidget(_CommentArea(self.comment), 1)
         for label in (self.rating, self.comment, self.file):
             label.setMinimumWidth(0)

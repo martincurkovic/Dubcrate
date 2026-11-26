@@ -123,7 +123,7 @@ The **Explorer** tab is for music that isn't in an imported library, such as a f
 
 - **Left:** previous and next, beat jump back and forward (**‹** **›**) with a menu of how far (1 beat to 32 bars; 4 unless you change it there or in **Settings > Audio**), **CUE**, and play / pause.
 - **Middle:** the title, time, key and tempo. Then the **overview** (the whole track; click to jump) and the **detail view** (a scrolling waveform with the beat grid and bar count; zoom with **+**, **RST**, **−** or the wheel). Under them: **hot cue buttons A to H**, **MEMORY**, the loop controls (**AU** automatic, **MA** manual) and **Q** (quantise).
-- **Right:** **MEMORY**, **HOT CUE** and **INFO** (cover art, rating, comment, file details). Click a cue row to jump there. A loop's row also turns that loop on.
+- **Right:** **MEMORY**, **HOT CUE** and **INFO** (cover art with the star rating and file details beside it, and the comment under them). Click a cue row to jump there. A loop's row also turns that loop on.
 
 For rekordbox tracks, the waveform, beat grid, phrases and cues come from rekordbox. For other music Dubcrate draws the waveform itself. **None of this goes on the CD.**
 
