@@ -33,6 +33,7 @@ Open items by area, each one still to do or to try; everything built is under **
 ### Features and app polish
 
 - [ ] Try the drive picker with two real drives (the check after a burn is skipped for any but the first).
+- [ ] Idea: when the player has changes Dubcrate hasn't imported, Sync could offer to run Import Cues first (a sync puts back a cue deleted on the player, and then the deletion can't be noticed).
 - [ ] Burn through the USB-C hub once, to see the `generic-mmc` retry write a disc (the default driver was refused behind the hub, 2026-11-24) ([burning.md](dev_docs/burning.md)).
 - [ ] Cancel the writing of a burn itself (needs a confirmation: a stopped write ruins the disc).
 - [ ] Try dragging an MP3 folder in the Discs list by hand (the feel, and dropping on a collapsed disc).

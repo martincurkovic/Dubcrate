@@ -1610,7 +1610,12 @@ class MainWindow(QMainWindow):
         menu = QMenu(self)
         source = next((s for s in self._lib.sources() if s.id == source_id), None)
         if source is not None:
-            away = source.id in self._lib.offline_source_ids()
+            # (offline by the marks, and not seen plugged in by the last look: a stick that is there with every file
+            # moved is not "away", and re-importing is how it is put right)
+            away = (
+                source.id in self._lib.offline_source_ids()
+                and self._usb_present.get(source.id) is not True
+            )
             again = menu.addAction(
                 f"Re-import “{source.name}”",
                 lambda: self.reimport_source(source_id),
@@ -1627,8 +1632,13 @@ class MainWindow(QMainWindow):
 
     def _show_tree_menu(self, position) -> None:
         menu = self.tree_menu(self.tree.indexAt(position))
-        if not menu.isEmpty():
-            menu.popup(self.tree.viewport().mapToGlobal(position))
+        if menu.isEmpty():
+            menu.deleteLater()
+            return
+        menu.setAttribute(
+            Qt.WidgetAttribute.WA_DeleteOnClose
+        )  # (not left under the window)
+        menu.popup(self.tree.viewport().mapToGlobal(position))
 
     def selected_source_id(self) -> int | None:
         """The source that Re-import and Remove act on: the one the pick is in. With a single
@@ -2027,6 +2037,7 @@ class MainWindow(QMainWindow):
 
     def _show_track_menu(self, position) -> None:
         menu = self.track_menu()
+        menu.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
         menu.popup(self.track_table.viewport().mapToGlobal(position))
 
     def load_highlighted_track(self) -> None:

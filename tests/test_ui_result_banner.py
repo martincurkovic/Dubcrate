@@ -93,3 +93,27 @@ def test_it_has_its_colours_in_every_look_and_draws_in_both_tones(qapp, scheme):
         assert not banner.grab().isNull()
     banner.deleteLater()
     theme.apply_to_app(qapp, "dark")
+
+
+@pytest.mark.parametrize("width", [180, 260, 420])
+def test_a_long_sentence_in_a_narrow_pane_is_not_cut_off(qapp, width):
+    from PySide6.QtWidgets import QVBoxLayout, QWidget
+
+    host = QWidget()
+    layout = QVBoxLayout(host)
+    banner = ResultBanner()
+    layout.addWidget(banner)
+    layout.addStretch(1)
+    host.resize(width, 320)
+    banner.show_result(
+        "Synced 3 discs to “CDJ CARD”: 12 cues and 86 waveforms. Eject the card before taking it out.",
+        WARN,
+    )
+    host.show()
+    qapp.processEvents()
+    label = banner._label
+    assert (
+        label.heightForWidth(label.width()) <= label.height()
+    )  # (the instruction is the point: every line shows)
+    assert banner.height() >= label.heightForWidth(label.width())
+    host.deleteLater()

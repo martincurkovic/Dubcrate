@@ -1573,3 +1573,34 @@ def test_the_card_lists_eject_button_tells_the_banner(qapp, tmp_path, monkeypatc
         win.close()
         win.deleteLater()
         lib.close()
+
+
+def test_an_audio_stage_with_nothing_ticked_still_says_what_the_mp3_stage_wrote(writing):  # fmt: skip
+    view = writing.view
+    view._report.add(1, 2, 8)  # (the MP3 discs just written, in a chained sync)
+    view._tick_all(Qt.CheckState.Unchecked)
+    view._on_sync_audio()
+    banner = banner_of(view)
+    assert banner.tone() == "warn" and banner.text().startswith("Synced 1 disc to “CARD”: 2 cues and 8 waveforms.")  # fmt: skip
+    assert view._report.discs == 0  # (used up)
+
+
+def test_an_audio_write_that_fails_after_the_mp3_stage_still_says_what_was_written(writing, monkeypatch):  # fmt: skip
+    view = writing.view
+    view._report.add(1, 2, 8)
+
+    def refuse(*_a, **_k):
+        raise cc.CardFormatError("The card is read-only.")
+
+    monkeypatch.setattr(sync_view, "apply_sync", refuse)
+    view._on_sync_audio()
+    assert writing.finished()
+    assert writing.problems  # (the failure has its box as before)
+    banner = banner_of(view)
+    assert banner is not None and banner.tone() == "warn"
+    assert "Synced 1 disc to “CARD”" in banner.text()
+
+
+def test_stopping_with_nothing_written_leaves_no_banner(writing):
+    writing.view._flush_report()
+    assert banner_of(writing.view) is None

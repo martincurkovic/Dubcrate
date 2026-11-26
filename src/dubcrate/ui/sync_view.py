@@ -1508,6 +1508,14 @@ class SyncView(QWidget):
             text, tone = base, OK
         self.banner.show_result(text, tone, tip)
 
+    def _flush_report(self) -> None:
+        """A run stopped part-way (the audio stage after MP3 discs were written: nothing ticked, an analysis that failed
+        or was cancelled, a write that failed): the banner still says what WAS written, and that the card is to be
+        ejected. Nothing happens if nothing was written."""
+        card = self._card_path
+        if card is not None and self._report.discs:
+            self._show_result(card, ejected=False)
+
     def card_was_ejected(self, path: Path) -> None:
         """The card list ejected `path`: if the banner is waiting for exactly that, it is safe now."""
         if (
@@ -1773,8 +1781,9 @@ class SyncView(QWidget):
     def _save_mp3_baseline(self, plan) -> None:
         """Record what an MP3 disc's sync left on the card, so Import Cues can tell what the player changes later
         (GUI thread: the library is ours). A plan with no entry has none."""
-        if plan.baseline_key is not None and plan.entry is not None:
-            self._lib.set_card_baseline(plan.baseline_key, plan.baseline)
+        record = plan.baseline_record()
+        if record is not None:
+            self._lib.set_card_baseline(*record)
 
     def import_from(self, card: Path) -> None:
         """The card's right-click > Import Cues: make `card` the one shown (looking at the discs against
@@ -1814,6 +1823,7 @@ class SyncView(QWidget):
             return
         surveys = [self._surveys[i] for i in self.ticked_ids()]
         if not surveys:
+            self._flush_report()
             return
         todo = self._tracks_to_analyse(surveys)
         if todo:
@@ -1871,6 +1881,7 @@ class SyncView(QWidget):
             self._cancel = None
             self.message.emit(f"Couldn't analyse the tracks: {text}")
             self._update_buttons()
+            self._flush_report()
 
         def cancelled(partial) -> None:
             """Stopped: keep the waveforms already worked out (they are as good as any), write nothing."""
@@ -1878,12 +1889,16 @@ class SyncView(QWidget):
             store_waveforms(self._lib, found)
             self._analysing = False
             self._cancel = None
+            head = f"Cancelled: {len(found)} of {len(todo)} tracks analysed, kept for next time. "
             self.message.emit(
-                f"Cancelled: {len(found)} of {len(todo)} tracks analysed, kept for next time. "
-                "Nothing was written to the card."
+                head
+                + "Nothing more was written to the card: the MP3 discs were written first."
+                if self._report.discs
+                else head + "Nothing was written to the card."
             )
             self._update_buttons()
             self._look_at_discs(self._loaded)
+            self._flush_report()
 
         run_async(
             lambda report: measure_waveforms(todo, report, cancel=token),
@@ -1959,6 +1974,7 @@ class SyncView(QWidget):
         def failed(text: str) -> None:
             self._set_writing(False)
             self.message.emit(text)
+            self._flush_report()  # (MP3 discs written before this are still on the card)
             show_problem(
                 self,
                 "Couldn't Sync to the Card",

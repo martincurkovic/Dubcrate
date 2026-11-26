@@ -1674,3 +1674,18 @@ def test_an_unplugged_stick_cannot_be_reimported_from_the_menu(window, tmp_path)
     actions = {a.text(): a for a in win.tree_menu(index).actions() if a.text()}
     assert not actions["Re-import “STICK”"].isEnabled()
     assert actions["Remove “STICK”…"].isEnabled()
+
+
+def test_a_stick_that_is_plugged_in_with_every_file_moved_can_still_be_reimported(window, tmp_path):  # fmt: skip
+    win, lib = window
+    source = add_stick(
+        win, lib, tmp_path, plugged=False
+    )  # (every track marked "file not found")
+    index = find_selection(win.tree.model(), ("source", source.id))
+    actions = {a.text(): a for a in win.tree_menu(index).actions() if a.text()}
+    assert not actions["Re-import “STICK”"].isEnabled()  # (not seen plugged in: away)
+    win._usb_present[source.id] = True  # (the last look found it there)
+    actions = {a.text(): a for a in win.tree_menu(index).actions() if a.text()}
+    assert actions[
+        "Re-import “STICK”"
+    ].isEnabled()  # (re-importing is how it is put right)

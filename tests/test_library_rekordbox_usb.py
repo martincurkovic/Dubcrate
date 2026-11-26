@@ -618,3 +618,15 @@ def test_moving_a_source_and_reading_it_again_is_one_transaction(tmp_path):
         # (nothing moved: the source and its tracks are exactly where they were)
         assert lib.sources()[0].path == source.path
         assert [(t.ext_id, t.path) for t in lib.tracks(sort="path")] == before
+
+
+def test_a_stick_with_no_tracks_is_not_offline_and_one_with_all_its_tracks_missing_is():
+    lib = Library.open(":memory:")
+    lib.replace_source("rekordbox_usb", "/Volumes/EMPTY", "EMPTY", [])
+    lib.replace_source("rekordbox_usb", "/Volumes/GONE", "GONE", [TrackRecord(ext_id="1", path="/Volumes/GONE/a.mp3", title="A")])  # fmt: skip
+    gone = next(s for s in lib.sources() if s.name == "GONE")
+    lib.set_missing(gone.id, [t.id for t in lib.tracks(source_id=gone.id)])
+    assert lib.offline_source_ids() == {
+        gone.id
+    }  # (the empty stick has nothing to hide)
+    lib.close()

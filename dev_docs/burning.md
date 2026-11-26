@@ -172,9 +172,8 @@ track. **Since 2026-11-26 the image is Dubcrate's own** (`iso.build_iso` with th
 burn, so `build.image_record` keeps it and Sync can make the card's entry before the CDJ has seen the disc), burned
 with **`drutil burn`** (`drutil_burn_command`: `-notest|-test`, `-noverify|-verify`, `-eject|-mount`, `-noappendable`,
 `-speed N`, the image's path; **`drutil` ignores an option it doesn't know**, so each is spelled as its man page does;
-the drive is `-drive N`, its 1-based place in `drutil list`, which is the order of `DRDevice.devices()`). **Not tried
-on a real burn**: what `drutil burn` prints and what it returns on a failure (the burner takes a non-zero exit or any
-line with "fail" in it as a failure), that it burns the .iso as given and closes the disc, and the drive number with
+the drive is `-drive N`, found by NAME in the text of `drutil list` (`drutil_drive_number`; two drives of one kind, or a name it lists differently, is a `BurnError`: with several drives, a disc is never written in the one that wasn't picked; one drive is always 1)). **Not tried
+on a real burn**: what `drutil burn` prints and what it returns on a failure (the burner takes a non-zero exit, or a line that says in so many words that the burn, write, erase or verification failed, as a failure: `_FAILED`), that it burns the .iso as given and closes the disc, and the drive number with
 two drives. The older way (`DRFolder` with `explicitFilesystemMask` ISO 9660 | Joliet, `DRTrack.trackForRootFolder_`,
 which DiscRecording turns into its own filesystem) was tried on the Mac and the disc played on the CDJ; DiscRecording
 has no "burn this image file" track in PyObjC (`trackForImageAtPath_` is absent), only a hand-written track producer.

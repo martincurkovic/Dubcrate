@@ -822,3 +822,21 @@ def test_the_key_never_clashes_with_an_audio_discs_toc_and_a_file_code_comes_apa
     )  # (an audio disc's key starts with its track count)
     assert ms.split_code(ms.file_code(3, 999)) == (3, 999)
     assert ms.split_code(ms.file_code(0, 1)) == (0, 1)
+
+
+def test_a_cue_only_a_players_hot_cue_stands_for_is_not_in_the_baseline():
+    # (917 is within two frames of hot cue A at 916 and was never written; 1474 is a memory cue the card has)
+    p = plan(disc(cues={(0, 2): [(917, 0), (1474, 0)]}))
+    assert p.cues_already == 2 and p.cues_added == 0
+    assert p.baseline == [(ms.file_code(0, 2), 1474, 0)]
+
+
+def test_a_plan_hands_over_its_baseline_only_when_it_has_an_entry():
+    ready = plan(disc(cues={(0, 2): [(1478, 0)]}))
+    key, rows = ready.baseline_record()
+    assert key == ms.baseline_key(15, 80245, 84029) and rows == [
+        (ms.file_code(0, 2), 1478, 0)
+    ]
+    assert (
+        plan(disc(sectors=1)).baseline_record() is None
+    )  # (no entry on the card: nothing to record)

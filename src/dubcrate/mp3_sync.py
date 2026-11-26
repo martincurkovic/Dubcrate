@@ -120,6 +120,15 @@ class Mp3Plan:
             self.waves_added or self.waves_filled or self.cues_added
         )
 
+    def baseline_record(
+        self,
+    ) -> tuple[tuple[int, ...], list[tuple[int, int, int]]] | None:
+        """(key, rows) to give `Library.set_card_baseline` once this plan's state is on the card, or None when
+        there is no entry to say (the one rule the Sync tab and the command line both go by)."""
+        if self.baseline_key is None or self.entry is None:
+            return None
+        return self.baseline_key, self.baseline
+
 
 def _fill_columns(existing: bytes, ours: bytes) -> bytes:
     """`existing` (a `W001` record's 50 amplitudes) with each column it has nothing for (0) taken from `ours`."""
@@ -239,7 +248,10 @@ def plan_mp3_disc(
                 continue
             if has_cue(work, here, position, end):
                 plan.cues_already += 1
-                plan.baseline.append((file_code(*here), position, end))
+                if has_cue(work, here, position, end, memory_only=True):
+                    # (a cue only a player hot cue stands for was never written: the baseline would otherwise offer
+                    # deleting Dubcrate's cue when that hot cue is deleted on the player)
+                    plan.baseline.append((file_code(*here), position, end))
                 continue
             if len(work.cues) >= cc.MAX_CUES:
                 plan.cues_overflow += 1
@@ -264,16 +276,21 @@ def plan_mp3_disc(
 
 
 def has_cue(
-    file: m3.Mp3TrackFile, key: tuple[int, int], position: int, end: int
+    file: m3.Mp3TrackFile,
+    key: tuple[int, int],
+    position: int,
+    end: int,
+    *,
+    memory_only: bool = False,
 ) -> bool:
     """Whether the card already has this cue: a memory cue or loop of this track at the same place, or (for a
-    cue) a hot cue there."""
+    cue) a hot cue there (not with `memory_only`: only what is written as a memory cue or loop)."""
     for entry in file.cues:
         if (entry.folder, entry.file) != key or entry.is_loop != (end > 0):
             continue
         if _near(entry.position, position) and (end == 0 or _near(entry.end, end)):
             return True
-    if end == 0:
+    if end == 0 and not memory_only:
         return any(
             h is not None and (h.folder, h.file) == key and _near(h.position, position)
             for h in file.hot

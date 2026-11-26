@@ -130,6 +130,27 @@ def drutil_burn_command(image: Path, drive: int, options: BurnOptions) -> list[s
     return cmd
 
 
+# What `drutil` says when a burn fails, besides a non-zero exit: "Burn failed", "Verification failed", "failed to ...", a
+# line that starts with "Error". Narrow on purpose: a word like "failures" in a good run's summary must not fail it.
+_FAILED = re.compile(
+    r"\b(?:burn|write|erase|verif\w*)\s+failed\b|\bfailed to\b|^\s*error\b",
+    re.IGNORECASE,
+)
+
+
+def drutil_drive_number(name: str, listing: str) -> int | None:
+    """The `-drive` number of the drive called `name` in the text of `drutil list` (a line is its number, then vendor and
+    product as DiscRecording spells them), or None when no line or more than one line starts with that name (two
+    drives of one kind can't be told apart by name)."""
+    wanted = " ".join(name.split())
+    found = []
+    for line in listing.splitlines():
+        match = re.match(r"\s*(\d+)\s+(.*\S)", line)
+        if match and " ".join(match.group(2).split()).startswith(wanted):
+            found.append(int(match.group(1)))
+    return found[0] if len(found) == 1 else None
+
+
 class _DrutilProgress:
     """`drutil`'s output as progress lines: a line with a percentage is passed on each time it passes a multiple of
     ten (it redraws a bar many times a second), any other line once, as it is."""
@@ -221,7 +242,7 @@ class DiscRecordingBurner:
         progress(f"drive: {summary['name']} (support level: {summary['support']})")
         if not summary["media_present"]:
             raise BurnError("no disc in the drive")
-        drive = [dev.bsdName() for dev in list_devices()].index(device.bsdName()) + 1
+        drive = self._drutil_drive(device)
         with tempfile.TemporaryDirectory(prefix="dubcrate-") as tmp:
             progress(f"making the disc image of “{disc.title}”…")
             disc.created = disc.created or datetime.now().astimezone()
@@ -246,11 +267,40 @@ class DiscRecordingBurner:
             self._burn_image(image, drive, options, progress)
 
     @staticmethod
+    def _drutil_drive(device) -> int:
+        """The number `drutil -drive` knows `device` by, found by its name in `drutil list` rather than assumed from the
+        order DiscRecording lists drives in. With one drive there is nothing to mix up. Raises `BurnError` when two
+        drives can't be told apart (so a disc is never written in the one that wasn't picked)."""
+        name = str(device.displayName() or device.bsdName())
+        try:
+            listing = subprocess.run(
+                ["drutil", "list"],
+                stdin=subprocess.DEVNULL,
+                capture_output=True,
+                encoding="utf-8",
+                errors="replace",
+                check=False,
+                timeout=30,
+            ).stdout
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            raise BurnError(f"drutil couldn't list the drives: {exc}") from exc
+        number = drutil_drive_number(name, listing)
+        if number is None and len(list_devices()) == 1:
+            return 1  # (the only drive: no other to be taken for it)
+        if number is None:
+            raise BurnError(
+                f"drutil can't tell which of the drives is “{name}” (two of one kind, or listed under another name): "
+                "burn with only that drive connected."
+            )
+        return number
+
+    @staticmethod
     def _burn_image(
         image: Path, drive: int, options: BurnOptions, progress: Progress
     ) -> None:
         """Burn `image` with `drutil` and follow its output. Raises `BurnError` if it fails: a non-zero exit, or a
-        line that says the burn failed (what `drutil` does on a failed burn is not known: both are taken)."""
+        line that says the burn failed (what `drutil` does on a failed burn is not known: both are taken, the line
+        only when it says so in so many words: `_FAILED`)."""
         cmd = drutil_burn_command(image, drive, options)
         progress(f"$ {' '.join(cmd)}")
         # (stdin is closed: nobody is typing if it asks for something)
@@ -270,7 +320,7 @@ class DiscRecordingBurner:
             filtered.feed(line)
         status = proc.wait()
         said = [line for line in seen if line]
-        failed = status != 0 or any("fail" in line.lower() for line in said)
+        failed = status != 0 or any(_FAILED.search(line) for line in said)
         if failed:
             detail = " | ".join(said[-3:]) or f"exit status {status}"
             raise BurnError(f"drutil burn failed: {detail}")

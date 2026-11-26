@@ -233,10 +233,8 @@ def _sync_mp3(lib: Library, disc_ids: list[int], args: argparse.Namespace) -> in
             status = max(status, 2)
             continue
         if not plan.changed:
-            if args.yes and plan.baseline_key is not None:
-                lib.set_card_baseline(
-                    plan.baseline_key, plan.baseline
-                )  # (the card has it all)
+            if args.yes and (record := plan.baseline_record()) is not None:
+                lib.set_card_baseline(*record)  # (the card has it all)
             continue
         if not args.yes:
             print(f"  dry run: would write {plan.entry.file_name} on {card}.")
@@ -247,7 +245,8 @@ def _sync_mp3(lib: Library, disc_ids: list[int], args: argparse.Namespace) -> in
             print(f"error: {exc}", file=sys.stderr)
             return 1
         store_waveforms(lib, prepared.analysed)  # (what was worked out stays cached)
-        lib.set_card_baseline(plan.baseline_key, plan.baseline)  # (for Import Cues)
+        if (record := plan.baseline_record()) is not None:
+            lib.set_card_baseline(*record)  # (for Import Cues)
         wrote += 1
         print(
             f"  wrote {outcome.name}.PDJ ({outcome.cues_written} cues, {outcome.waveforms_written} waveforms); "

@@ -561,10 +561,12 @@ def _like_escape(term: str) -> str:
     return term.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
 
-# A rekordbox USB stick whose tracks are all "file not found": it is unplugged (`Library.set_missing`).
+# A rekordbox USB stick with tracks, all "file not found": it is unplugged (`Library.set_missing`). A stick with no tracks
+# at all is not "offline": it has nothing to hide.
 _OFFLINE_SOURCES = (
-    "SELECT s.id FROM source s WHERE s.kind = 'rekordbox_usb' AND NOT EXISTS"
-    " (SELECT 1 FROM track x WHERE x.source_id = s.id AND x.missing = 0)"
+    "SELECT s.id FROM source s WHERE s.kind = 'rekordbox_usb'"
+    " AND EXISTS (SELECT 1 FROM track y WHERE y.source_id = s.id)"
+    " AND NOT EXISTS (SELECT 1 FROM track x WHERE x.source_id = s.id AND x.missing = 0)"
 )
 
 

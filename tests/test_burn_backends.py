@@ -242,6 +242,17 @@ def test_the_drutil_command_uses_the_spellings_its_manual_gives(options, expecte
     assert cmd == ["drutil", "-drive", "2", "burn", *expected, "/t/disc.iso"]
 
 
+LISTING = """Vendor   Product           Rev   Bus       SupportLevel
+1  LITE-ON eSAU108   HL09  USB       Unsupported
+2  Other   Drive     1.0   USB       Unsupported
+"""
+
+
+class Ran:
+    def __init__(self, stdout):
+        self.stdout = stdout
+
+
 @mac_only
 def test_burning_an_mp3_disc_builds_our_image_and_hands_it_to_drutil(tmp_path, monkeypatch):  # fmt: skip
     from datetime import datetime
@@ -250,7 +261,8 @@ def test_burning_an_mp3_disc_builds_our_image_and_hands_it_to_drutil(tmp_path, m
     from dubcrate.build import image_record
     from dubcrate.burn import BurnOptions, DataDisc, discrecording
 
-    monkeypatch.setattr(discrecording, "list_devices", lambda: [FakeDevice("disk3"), FakeDevice("disk4", "Other")])  # fmt: skip
+    monkeypatch.setattr(discrecording, "list_devices", lambda: [FakeDevice("disk3"), FakeDevice("disk4", "Other   Drive")])  # fmt: skip
+    monkeypatch.setattr(discrecording.subprocess, "run", lambda *a, **k: Ran(LISTING))
     monkeypatch.setattr(
         discrecording,
         "describe_device",
@@ -276,7 +288,7 @@ def test_burning_an_mp3_disc_builds_our_image_and_hands_it_to_drutil(tmp_path, m
     )
     assert (
         seen["drive"] == 2 and seen["size_ok"]
-    )  # (drutil numbers its drives from 1, in the same order)
+    )  # (the drive named in drutil's own list, not a place in ours)
     assert (
         seen["date"] == b"2026112319475100"
     )  # (the date we chose is in the image that is burned)
@@ -295,11 +307,57 @@ def test_burning_an_mp3_disc_builds_our_image_and_hands_it_to_drutil(tmp_path, m
 
 
 @mac_only
+def test_drutils_drive_number_is_found_by_name_and_never_guessed():
+    from dubcrate.burn.discrecording import drutil_drive_number
+
+    assert drutil_drive_number("LITE-ON eSAU108", LISTING) == 1
+    assert (
+        drutil_drive_number("Other Drive", LISTING) == 2
+    )  # (whitespace is not compared)
+    assert drutil_drive_number("Nothing Here", LISTING) is None
+    twins = LISTING + "3  LITE-ON eSAU108   HL10  USB       Unsupported\n"
+    assert (
+        drutil_drive_number("LITE-ON eSAU108", twins) is None
+    )  # (two the same: it can't tell)
+    assert drutil_drive_number("LITE-ON eSAU108", "") is None
+
+
+@mac_only
+def test_two_drives_that_cannot_be_told_apart_are_refused_and_one_drive_is_always_number_one(monkeypatch):  # fmt: skip
+    from dubcrate.burn import BurnError, discrecording
+
+    one = FakeDevice("disk3", "LITE-ON eSAU108")
+    monkeypatch.setattr(discrecording.subprocess, "run", lambda *a, **k: Ran("garbled"))
+    monkeypatch.setattr(discrecording, "list_devices", lambda: [one])
+    assert (
+        discrecording.DiscRecordingBurner._drutil_drive(one) == 1
+    )  # (the only drive: nothing to mix up)
+    monkeypatch.setattr(
+        discrecording, "list_devices", lambda: [one, FakeDevice("disk4", "Other")]
+    )
+    with pytest.raises(BurnError, match="can't tell which of the drives"):
+        discrecording.DiscRecordingBurner._drutil_drive(one)
+
+
+@mac_only
+def test_a_drutil_that_cannot_run_is_an_error_in_words(monkeypatch):
+    from dubcrate.burn import BurnError, discrecording
+
+    def broken(*_a, **_k):
+        raise OSError("no such file")
+
+    monkeypatch.setattr(discrecording.subprocess, "run", broken)
+    with pytest.raises(BurnError, match="couldn't list the drives"):
+        discrecording.DiscRecordingBurner._drutil_drive(FakeDevice())
+
+
+@mac_only
 def test_a_mac_burn_without_a_date_makes_one_and_a_nested_folder_is_burned_but_not_recorded(tmp_path, monkeypatch):  # fmt: skip
     from dubcrate.build import image_record
     from dubcrate.burn import BurnOptions, DataDisc, discrecording
 
     monkeypatch.setattr(discrecording, "list_devices", lambda: [FakeDevice()])
+    monkeypatch.setattr(discrecording.subprocess, "run", lambda *a, **k: Ran(LISTING))
     monkeypatch.setattr(discrecording, "describe_device", lambda dev: {"name": "d", "support": "x", "media_present": True, "media_free_blocks": 0})  # fmt: skip
     burned = []
     monkeypatch.setattr(discrecording.DiscRecordingBurner, "_burn_image", staticmethod(lambda *a: burned.append(a)))  # fmt: skip
@@ -319,6 +377,7 @@ def test_a_mac_burn_refuses_an_empty_drive_and_a_disc_that_is_too_big(tmp_path, 
     from dubcrate.burn import BurnError, BurnOptions, DataDisc, discrecording
 
     monkeypatch.setattr(discrecording, "list_devices", lambda: [FakeDevice()])
+    monkeypatch.setattr(discrecording.subprocess, "run", lambda *a, **k: Ran(LISTING))
     state = {"media_present": False, "media_free_blocks": 0}
     monkeypatch.setattr(discrecording, "describe_device", lambda dev: {"name": "d", "support": "x", **state})  # fmt: skip
     burned = []
@@ -372,3 +431,22 @@ def test_drutil_s_output_becomes_progress_and_a_failure_is_an_error(tmp_path, mo
     monkeypatch.setattr(discrecording.subprocess, "Popen", lambda cmd, **k: FakeProc([], 1))  # fmt: skip
     with pytest.raises(BurnError, match="exit status 1"):
         discrecording.DiscRecordingBurner._burn_image(tmp_path / "disc.iso", 1, BurnOptions(), print)  # fmt: skip
+
+
+@mac_only
+@pytest.mark.parametrize("line", ["Burn failed: no disc", "Verification failed", "Operation failed to start", "Error: no media"])  # fmt: skip
+def test_a_line_that_says_the_burn_failed_fails_it_even_with_a_good_exit_status(tmp_path, monkeypatch, line):  # fmt: skip
+    from dubcrate.burn import BurnError, BurnOptions, discrecording
+
+    monkeypatch.setattr(discrecording.subprocess, "Popen", lambda cmd, **k: FakeProc([f"{line}\n"], 0))  # fmt: skip
+    with pytest.raises(BurnError, match="drutil burn failed"):
+        discrecording.DiscRecordingBurner._burn_image(tmp_path / "d.iso", 1, BurnOptions(), print)  # fmt: skip
+
+
+@mac_only
+@pytest.mark.parametrize("line", ["Finished, 0 failures", "Burn complete (no failed blocks)", "failover disabled"])  # fmt: skip
+def test_a_word_that_only_looks_like_failure_does_not_fail_a_good_burn(tmp_path, monkeypatch, line):  # fmt: skip
+    from dubcrate.burn import BurnOptions, discrecording
+
+    monkeypatch.setattr(discrecording.subprocess, "Popen", lambda cmd, **k: FakeProc([f"{line}\n"], 0))  # fmt: skip
+    discrecording.DiscRecordingBurner._burn_image(tmp_path / "d.iso", 1, BurnOptions(), print)  # fmt: skip

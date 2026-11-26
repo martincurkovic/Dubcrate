@@ -346,7 +346,7 @@ ticked), and, **since 2026-11-26, cues deleted or moved on the player** (the bas
   card cue in the baseline that Dubcrate no longer has is not offered back; a baseline cue gone from the card is a `remove` / `remove_loop` when Dubcrate
   has a plain memory cue or a memory loop there (a hot cue, a loop's start or a hot cue's loop is only counted in `kept`); as many deletions as additions in
   a track are shown as moves. **A hot cue on the card counts as the cue being there** (sync leaves a cue unwritten when a hot cue marks its place, and the
-  baseline has it). The deletion row carries Dubcrate's own time, not the card's. **A disc synced before this existed has no baseline until its next sync**
+  baseline has it). The deletion row carries Dubcrate's own time, not the card's. **Sync wins over an unimported deletion**: Sync adds a wanted cue the card lacks and then records the baseline, so a cue deleted on the player and not yet imported comes back, and the deletion can no longer be noticed (Dubcrate is the master; the same for audio discs). Import Cues first. **A cue only a player hot cue stands for is not in the baseline** (`has_cue(memory_only=)`: it was never written). **A disc synced before this existed has no baseline until its next sync**
   (the review says "noticed from the next sync on"). Not tried on a player: what the player does to a deleted or moved MP3 cue (whether it removes the
   entry, as it does on an audio disc) is assumed to be the same, from the cue/delete notes in `cdj1000mk3-card.md` section 6.
 
