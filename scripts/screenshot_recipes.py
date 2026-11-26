@@ -1,5 +1,7 @@
 """The pictures `scripts/make_screenshots.py` knows how to make: one `@shot` recipe each, run offscreen against a made-up
-music collection (`scripts/demo_music.py`) in a temporary folder and library. Nothing of the owner's is read.
+music collection (`scripts/demo_music.py`) in a temporary folder and library. Nothing of the owner's is read, unless
+`--real` is given: then the same pictures are made from the owner's own tracks in their rekordbox library, only those a
+local picks file names (`scripts/real_music.py`: read-only, a snapshot of the library, links to the files).
 
 A recipe gets a `Context`, builds and shows whatever its picture needs and returns the widget (or pixmap) to photograph.
 Pictures go to src/dubcrate/ui/help/screenshots: Help > User Guide shows them (they ship inside the app) and the README points
@@ -24,7 +26,26 @@ TALL = (1560, 960)  # for the pictures with a window on top of it
 
 SOURCE = "Demo Crate"  # the imported folder: its sub-folders are the playlists
 WARM_UP, HOUSE, GARAGE, THROWBACKS = "Warm Up", "House", "UK Garage", "Throwbacks"
-BROWSE = HOUSE  # what the track list shows in the pictures
+BROWSE = HOUSE  # (the made-up collection's: the UI gallery's scenes import these; a recipe uses `demo.names`)
+MISC = "Misc MP3s"  # the Explorer's pinned folder of loose files
+
+
+@dataclass(frozen=True)
+class Names:
+    """What the pictures call the imported library and its four playlists (the made-up ones, or the picks file's)."""
+
+    source: str
+    warm_up: str
+    house: str
+    garage: str
+    throwbacks: str
+
+    @property
+    def browse(self) -> str:  # (the playlist the track list shows)
+        return self.house
+
+
+DEMO_NAMES = Names(SOURCE, WARM_UP, HOUSE, GARAGE, THROWBACKS)
 
 
 @dataclass
@@ -57,32 +78,57 @@ class Silent:
 
 
 class Demo:
-    """The made-up collection and the library imported from it, made once per run under `workdir`."""
+    """The made-up collection and the library imported from it, made once per run under `workdir`.
+
+    `real` collections (`real_music.make_real_demo`) subclass it: `_names` and `_collect` say what is imported, the
+    discs are planned the same way from whatever the four playlists hold."""
+
+    real = False
+    show_art: frozenset[str] = (
+        frozenset()
+    )  # (titles whose cover picture may be shown: only real collections have any)
+    hero_tab = "memory"  # the side panel's page in the main window pictures
 
     def __init__(self, workdir: Path):
-        import demo_music
-
-        from dubcrate.cd import DISC_74_SECTORS
         from dubcrate.library import Library
-        from dubcrate.library.folder import scan_folder
-        from dubcrate.library.lengths import measure_tracks
 
         # a pretend home folder: the Explorer starts from it, so none of the owner's own folders or drives show
         self.home = workdir.resolve() / "home" / "dj"
         self.music = self.home / "Music"
+        self.previews: dict[str, object] = {}
+        self.names = self._names()
+        self.lib = Library.open(workdir / "library.db")
+        self._collect()
+        self.source = next(s for s in self.lib.sources() if s.name == self.names.source)
+        self.nodes = {n.name: n for n in self.lib.nodes(self.source.id)}
+        self.tempo = {  # (a track's tag tempo by file, for the staged beat grid of tracks rekordbox hasn't analysed)
+            os.path.realpath(t.path): t.bpm
+            for t in self.lib.tracks()
+            if t.bpm and not t.analysis_path
+        }
+        self.discs: dict[str, int] = {}
+        self._plan_discs()
+
+    def _names(self) -> Names:
+        return DEMO_NAMES
+
+    def _collect(self) -> None:
+        import demo_music
+
+        from dubcrate.library.folder import scan_folder
+
         print("making the demo music (about a minute)...")
         waves = demo_music.build_demo_music(self.music)
         self.previews = {os.path.realpath(path): wave for path, wave in waves.items()}
-
-        self.lib = Library.open(workdir / "library.db")
-        crate = self.music / SOURCE
+        crate = self.music / self.names.source
         scan = scan_folder(crate)
-        self.lib.replace_source("folder", str(crate), SOURCE, scan.tracks, scan.nodes)
-        self.source = next(s for s in self.lib.sources() if s.name == SOURCE)
-        self.nodes = {n.name: n for n in self.lib.nodes(self.source.id)}
-        self.discs: dict[str, int] = {}
+        self.lib.replace_source("folder", str(crate), self.names.source, scan.tracks, scan.nodes)  # fmt: skip
 
-        lib = self.lib
+    def _plan_discs(self) -> None:
+        from dubcrate.cd import DISC_74_SECTORS
+        from dubcrate.library.lengths import measure_tracks
+
+        lib, names = self.lib, self.names
         gigs = lib.create_disc_folder("This Weekend")
         warm = lib.create_disc("Friday Warm Up", folder_id=gigs)
         peak = lib.create_disc(
@@ -90,21 +136,25 @@ class Demo:
         )
         usb = lib.create_disc("Car USB", kind="mp3", mp3_bitrate=320)
         self.discs.update({"warm": warm, "peak": peak, "usb": usb})
-        for disc, names in ((warm, (WARM_UP, HOUSE)), (peak, (HOUSE,))):
+        for disc, playlists in (
+            (warm, (names.warm_up, names.house)),
+            (peak, (names.house,)),
+        ):
             for name in (
-                names
+                playlists
             ):  # (the second playlist tops the disc up with whatever still fits)
-                tracks = self.lib.tracks(node_id=self.nodes[name].id)
+                tracks = lib.tracks(node_id=self.nodes[name].id)
                 measure_tracks(
                     lib, [t.id for t in tracks]
                 )  # exact lengths first, so "fit" is exact
                 lib.add_to_disc(disc, [t.id for t in tracks], fit=True)
-        for folder, name in (
-            ("Warm", WARM_UP),
-            ("UK Garage", GARAGE),
-            ("Throwbacks", THROWBACKS),
-        ):
-            tracks = self.lib.tracks(node_id=self.nodes[name].id)[:9]
+        self.usb_folders = (
+            ("Warm", names.warm_up),
+            ("UK Garage", names.garage),
+            ("Throwbacks", names.throwbacks),
+        )  # (the MP3 disc's folders and the playlist each is filled from)
+        for folder, name in self.usb_folders:
+            tracks = lib.tracks(node_id=self.nodes[name].id)[:9]
             measure_tracks(lib, [t.id for t in tracks])
             lib.add_to_disc(
                 usb, [t.id for t in tracks], dir_id=lib.create_disc_dir(usb, folder)
@@ -116,6 +166,15 @@ class Demo:
 
     def close(self):
         self.lib.close()
+
+
+def make_demo(workdir: Path, picks=None) -> Demo:
+    """The made-up collection, or (with `picks`, a `real_music.Picks`) the owner's own tracks that they name."""
+    if picks is None:
+        return Demo(workdir)
+    import real_music
+
+    return real_music.make_real_demo(workdir, picks)
 
 
 class Context:
@@ -161,6 +220,10 @@ class Context:
         patches.enter_context(  # (no real disk is asked about: the card list shows only what a scene stages)
             mock.patch("dubcrate.ui.sync_view._real_unset", return_value=[])
         )
+        if not self.demo.real:  # (made-up files have no rekordbox analysis: give them a beat grid and phrases)
+            patches.enter_context(
+                mock.patch("dubcrate.ui.preview.load_media", self._staged_media())
+            )
         self.on_cleanup(patches.close)
         window = MainWindow(
             self.lib,
@@ -173,6 +236,34 @@ class Context:
         self.on_cleanup(window.close)
         return window
 
+    def _staged_media(self):
+        """`preview.load_media` with a staged analysis for a made-up track: a beat grid at its tag's tempo and phrases that
+        follow how the file was synthesised (what rekordbox's analysis gives a real track)."""
+        import dataclasses
+
+        import demo_music
+
+        from dubcrate.analysis import Analysis
+        from dubcrate.ui import preview
+
+        original = preview.load_media
+        tempo = self.demo.tempo
+
+        def staged(path, analysis_root, analysis_path):
+            media = original(path, analysis_root, analysis_path)
+            bpm = tempo.get(os.path.realpath(path))
+            if media.analysis is None and bpm:
+                times, numbers, phrases = demo_music.grid_for(bpm, media.audio.duration)  # fmt: skip
+                media = dataclasses.replace(
+                    media,
+                    analysis=Analysis(
+                        beat_times=times, beat_numbers=numbers, bpm=bpm, phrases=phrases
+                    ),
+                )
+            return media
+
+        return staged
+
     def stage_previews(self, window):
         """Fill the track list's Preview column for the rows shown. The app only fills it from rekordbox's own analysis
         (for a plain folder a track's waveform appears when it is loaded), so this stands in for that."""
@@ -183,6 +274,18 @@ class Context:
             if wave is not None:
                 model.set_preview(track.id, wave)
         self.settle()
+        if self.demo.real:  # (rekordbox tracks fill their own Preview strips and hot cue marks, on a timer and a worker)
+
+            def filled():
+                window._request_previews()
+                rows = [model.track_at(r) for r in range(model.rowCount())]
+                return all(
+                    model.has_preview(t.id)
+                    and (not t.analysis_path or model.has_cues(t.id))
+                    for t in rows
+                )
+
+            self.wait_for(filled, timeout=90)
 
     def open_playlist(self, window, name):
         from dubcrate.ui.models import find_selection
@@ -201,6 +304,14 @@ class Context:
         window.track_table.selectRow(row)
         window.preview.load(track, play=False)
         self.wait_for(lambda: window.preview.player.loaded)
+        if (
+            self.demo.real and track.analysis_path
+        ):  # (rekordbox's grid and cues arrive with the analysis)
+            self.wait_for(lambda: window.preview.deck.has_grid, timeout=60)
+            self.wait_for(
+                lambda: window.preview.cues.cues_for(track, announce=False) is not None,
+                timeout=60,
+            )
         window.preview.player.seek(window.preview.player.duration * at)
         self.settle(8)
 
@@ -229,13 +340,30 @@ def _main(ctx, size=SIZE):
     window.splitter.setSizes(
         [320, 860, 320]
     )  # wide enough that the track list's columns all show
-    ctx.open_playlist(window, BROWSE)
+    ctx.open_playlist(window, ctx.demo.names.browse)
     ctx.load_track(window, 2)
-    _stage_cues(window)
+    if not ctx.demo.real:  # (a real track has rekordbox's own cues)
+        _stage_cues(window)
+    _hero_tab(ctx, window)
     window.refresh_discs()
     window.disc_tree.expandAll()
     ctx.settle()
     return window
+
+
+def _hero_tab(ctx, window):
+    """A real collection may show the loaded track's cover picture (the Info page) in the main window pictures, and only
+    for a track its picks file allows: any other cover stays out of every picture."""
+    demo = ctx.demo
+    track = window.preview.track
+    if (
+        demo.real
+        and demo.hero_tab == "info"
+        and track is not None
+        and " ".join(track.title.casefold().split()) in demo.show_art
+    ):
+        window.player_strip.side.tabs[2].click()
+        ctx.settle(8)
 
 
 def _stage_cues(window):
@@ -349,7 +477,8 @@ def _mp3_disc(ctx):
 
     window = _main(ctx)
     usb = ctx.demo.discs["usb"]
-    folder = next(d for d in ctx.lib.disc_dirs(usb) if d.name == "UK Garage")
+    garage_folder = ctx.demo.usb_folders[1][0]
+    folder = next(d for d in ctx.lib.disc_dirs(usb) if d.name == garage_folder)
     window.disc_view.set_disc(
         usb, folder.id
     )  # a folder of the disc: its files, with its own count
@@ -370,12 +499,12 @@ def _mp3_disc(ctx):
 def _explorer(ctx):
     window = ctx.window()
     window.splitter.setSizes([320, 860, 320])
-    misc = ctx.demo.music / "Misc MP3s"
+    misc = ctx.demo.music / MISC
     window.pin_folder(str(misc))
     window.source_tabs.set_current("explorer")
     window.explorer_tree.select_path(
-        str(ctx.demo.music / SOURCE / WARM_UP)
-    )  # (opens Demo Crate in the tree)
+        str(ctx.demo.music / ctx.demo.names.source / ctx.demo.names.warm_up)
+    )  # (opens the imported folder in the tree)
     ctx.settle()
     window.explorer_tree.select_path(str(misc))
     ctx.wait_for(
@@ -431,10 +560,11 @@ def _burn(ctx):
     dialog = window.burn_dialog
     ctx.settle(10)
     # normalising on, as the guide describes it (the tracks are measured on a worker)
-    # (the made-up tracks are quiet: at -10 every one is held back, so the gentle preset)
-    dialog.levels_combo.setCurrentIndex(dialog.levels_combo.findData("-14"))
+    # (the made-up tracks are quiet: at -10 every one is held back, so the gentle preset; real masters are loud enough)
+    preset = "-10" if ctx.demo.real else "-14"
+    dialog.levels_combo.setCurrentIndex(dialog.levels_combo.findData(preset))
     dialog.levels_check.setChecked(True)
-    ctx.wait_for(lambda: not dialog._measuring)
+    ctx.wait_for(lambda: not dialog._measuring, timeout=240)
     ctx.settle(6)
     return dialog
 
@@ -469,7 +599,8 @@ def _sync(ctx):
         ]
 
     patches = ExitStack()
-    patches.enter_context(mock.patch.object(RekordboxCues, "for_track", invented))
+    if not ctx.demo.real:  # (a real track has its own cues in rekordbox)
+        patches.enter_context(mock.patch.object(RekordboxCues, "for_track", invented))
     ctx.on_cleanup(patches.close)
     work = ctx.demo.home.parent.parent
     card = work / "volumes" / "CDJ-CARD"
@@ -497,6 +628,8 @@ def _sync(ctx):
     window.source_tabs.set_current("sync")
     ctx.settle(8)
     view = window.sync_view
+    # (a real library's cues are read on a worker before the discs are listed: wait for the list)
+    ctx.wait_for(lambda: any("Warm" in i.text(0) for i in view._disc_items()), timeout=180)  # fmt: skip
     warm = next(i for i in view._disc_items() if "Warm" in i.text(0))
     warm.setCheckState(sync_view.COL_NAME, Qt.CheckState.Checked)
     view.tree.setCurrentItem(warm)

@@ -12,7 +12,7 @@ Open items by area, each one still to do or to try; everything built is under **
 - [ ] Serato library support
 - [ ] Drop `experimental` from the Windows leg in test.yml once happy (follow-up to: CI test legs for Linux, macOS, Windows)
 - [ ] Homebrew packaging once first release public
-- [ ] Maybe use some real songs, not fake ones (follow-up to: Screenshot staging)
+- [ ] Regenerate the README and guide pictures from the owner's real music once they have looked at the scratch renders (`make_screenshots.py --real --overwrite`; built 2026-11-26, the repo's pictures are still the made-up ones).
 
 ### Hardware checks (Mac and the CDJ-1000MK3)
 

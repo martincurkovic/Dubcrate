@@ -6,14 +6,21 @@
     uv run python scripts/make_screenshots.py --overwrite            # redo every one
     uv run python scripts/make_screenshots.py --out DIR              # somewhere else (then nothing is "skipped")
     uv run python scripts/make_screenshots.py --out DIR --scheme system6   # the same pictures in another theme, to look at it
+    uv run python scripts/make_screenshots.py --real --out DIR       # of the owner's own music (see below), to look at first
 
 What is photographed: a made-up music collection (scripts/demo_music.py: synthesised house loops with invented titles, artists
 and tags, written to a temporary folder, about a minute) imported into a temporary library, with a few discs planned from
 it. Nothing of anyone's is read: not a rekordbox library, not your music, not your drives (the Explorer is pointed at a
 pretend home folder). The settings, the log and the library go to a scratch folder, the player gets a silent stand-in for
-the sound card, and the burn window a stand-in burner: nothing real is written, played or burned. Two things are staged,
-because a folder import has no rekordbox analysis: the track list's Preview column is filled in (a plain folder's
-waveform appears only once a track is loaded), and there are no phrases, cues or beat grid on the waveforms.
+the sound card, and the burn window a stand-in burner: nothing real is written, played or burned. Things are staged
+for the made-up collection, because a folder import has no rekordbox analysis: the track list's Preview column is filled in
+(a plain folder's waveform appears only once a track is loaded), and the loaded track gets a beat grid, phrases and invented cues.
+**--real** photographs the owner's own tracks instead: the playlists, discs and Explorer folders are built from the rekordbox
+library on this computer, only from the tracks the picks file names (`local/screenshot-tracks.json`, gitignored; its format
+is in scripts/real_music.py), so the pictures show real waveforms, beat grids, phrases and cues. It is read-only (a snapshot
+of the library, links to the audio files, scratch library and settings) and falls back to the made-up collection, saying so,
+on a computer with no picks file or no rekordbox library. `--real FILE` uses another picks file.
+In the made-up collection a beat grid and phrases are staged too (the files are not in rekordbox).
 An existing picture is only replaced with --overwrite.
 Pictures are window CONTENTS (no title bar), 2x, which is what ui/help_dialog.py's SCREENSHOT_PIXEL_RATIO expects.
 Adding one: write a `@shot` function in scripts/screenshot_recipes.py; `tests/test_make_screenshots.py` checks that every
@@ -46,7 +53,7 @@ PICTURES = (
 import screenshot_recipes as recipes
 
 
-def run(names, folder, overwrite, scheme=None):
+def run(names, folder, overwrite, scheme=None, picks=None):
     from PySide6.QtCore import QSettings
     from PySide6.QtGui import QPixmap
     from PySide6.QtWidgets import QApplication
@@ -75,7 +82,15 @@ def run(names, folder, overwrite, scheme=None):
             skipped += 1
             continue
         if demo is None:  # (only when something is to be made)
-            demo = recipes.Demo(_SCRATCH)
+            try:
+                demo = recipes.make_demo(_SCRATCH, picks)
+            except Exception as e:
+                import real_music
+
+                if isinstance(e, real_music.PicksError):
+                    print(f"--real: the picks file needs fixing:\n{e}")
+                    return 1
+                raise
         chosen = scheme or s.scheme
         theme.apply_to_app(app, chosen)
         ctx = recipes.Context(app, chosen, demo)
@@ -101,6 +116,27 @@ def run(names, folder, overwrite, scheme=None):
     return 1 if failed else 0
 
 
+def real_picks(real):
+    """The picks for `--real` (None: not asked for, or not possible here, which is said). A picks file that is there but
+    wrong stops the run with its message, rather than quietly photographing something else."""
+    if real is None:
+        return None
+    import real_music
+
+    path = Path(real) if real else real_music.DEFAULT_PICKS
+    try:
+        why = real_music.status(path)
+        if why:
+            print(
+                f"--real: {why}, so the pictures are made from the made-up collection."
+            )
+            return None
+        print(f"--real: the owner's own music, as {path} names it.")
+        return real_music.load_picks(path)
+    except real_music.PicksError as exc:
+        raise SystemExit(f"--real: {exc}") from exc
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument(
@@ -122,6 +158,14 @@ def main(argv=None):
     parser.add_argument(
         "--scheme",
         help="photograph every picture in this theme (dark, light, system6) instead of the recipe's own: for looking at a theme, use with --out",
+    )
+    parser.add_argument(
+        "--real",
+        nargs="?",
+        const="",
+        metavar="PICKS",
+        help="photograph the owner's own tracks from their rekordbox library (only those the picks file names; default "
+        "local/screenshot-tracks.json); the made-up collection if this computer has no such file or library",
     )
     parser.add_argument(
         "--list",
@@ -151,7 +195,7 @@ def main(argv=None):
                 )
                 return 2
             names = wanted
-        return run(names, folder, args.overwrite, args.scheme)
+        return run(names, folder, args.overwrite, args.scheme, real_picks(args.real))
     finally:
         shutil.rmtree(_SCRATCH, ignore_errors=True)
 

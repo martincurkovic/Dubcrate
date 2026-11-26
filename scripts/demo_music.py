@@ -213,6 +213,40 @@ def synth(track: DemoTrack) -> np.ndarray:
     return mix.astype(np.float32)
 
 
+# -- a staged beat grid ----------------------------------------------------------------------------------------------------
+
+# The made-up files are not in rekordbox, so they have no analysis: the screenshots stage one. A track is a whole number
+# of bars at its tempo with the first kick at 0, so a grid at its tag's BPM from 0 sits on the beats, and its phrases
+# follow the arrangement `synth` plays (these shares, in bars).
+PHRASES = [("Intro", 0.12), ("Up", 0.08), ("Chorus", 0.22), ("Down", 0.14), ("Up", 0.06), ("Chorus", 0.28), ("Outro", 0.10)]  # fmt: skip
+
+
+def grid_for(bpm: float, seconds: float):
+    """(beat times, beat numbers 1..4, phrases) for a made-up track of `seconds` at `bpm`: what rekordbox's analysis
+    would give it, so the picture can show the beat grid, the bar counter and the phrase bar."""
+    from dubcrate.analysis import Phrase
+
+    beat = 60.0 / bpm
+    bars = max(
+        32, round((seconds - 1.0) * bpm / 240)
+    )  # (`synth` adds a second of tail)
+    times = np.arange(bars * 4) * beat
+    numbers = (np.arange(bars * 4) % 4 + 1).astype(np.int8)
+    phrases, at = [], 0
+    for label, share in PHRASES:
+        length = min(max(1, round(bars * share)), bars - at)
+        if length <= 0:
+            break
+        phrases.append(Phrase(at * 4 * beat, (at + length) * 4 * beat, label))
+        at += length
+    if (
+        at < bars and phrases
+    ):  # (rounding left a bar or two: the last phrase takes them)
+        last = phrases[-1]
+        phrases[-1] = Phrase(last.start, bars * 4 * beat, last.label)
+    return times, numbers, tuple(phrases)
+
+
 # -- writing the files ---------------------------------------------------------------------------------------------------------
 
 
