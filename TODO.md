@@ -37,9 +37,7 @@ Open items by area, each one still to do or to try; everything built is under **
 ### Features and app polish
 
 - [ ] Try the drive picker with two real drives (the check after a burn is skipped for any but the first).
-- [x] Try the rekordbox USB stick in the running app (it is only tested offscreen and from scripts): import it, unplug and replug it, plug it back as a second mount. Check the "(unplugged)" row, All Tracks without its tracks, the Show Tracks from Unplugged Drives tick, and the right-click Re-import / Remove. Is the Remove confirmation right for a stick? ([rekordbox-usb.md](dev_docs/rekordbox-usb.md)). Sticks with only `export.pdb` are refused by decision.
 - [ ] Burn through the USB-C hub once, to see the `generic-mmc` retry write a disc (the default driver was refused behind the hub, 2026-11-24) ([burning.md](dev_docs/burning.md)).
-- [x] Try disc and card auto-detection on macOS and Windows (Linux works; Windows listed a card with a PIONEER folder, and a blank one after a fix, 2026-11-24).
 - [ ] Make it clear when a Sync has finished (it is a status-bar message that the list refresh replaces within seconds): a banner in the Sync tab that stays until the next action was suggested, not decided.
 - [ ] Cancel the writing of a burn itself (needs a confirmation: a stopped write ruins the disc).
 - [ ] Try dragging an MP3 folder in the Discs list by hand (the feel, and dropping on a collapsed disc).
@@ -48,11 +46,7 @@ Open items by area, each one still to do or to try; everything built is under **
 
 ### Linux and Windows
 
-- [x] Run the Linux AppImage on an older glibc (needs 2.39+), Ubuntu or Fedora ([linux-test-plan.md](dev_docs/linux-test-plan.md)). (It works on the owner's Arch desktop, 2026-11-24, a build made here.)
-- [x] Install the new installer over an older one on Windows: does the upgrade keep the library and settings? Does Settings > Library show the bundled ffmpeg? (A VM installs, runs and uninstalls it, 2026-11-24.)
-- [x] Try the disc TOC reader and disc-in-drive detection on Windows (`drive_toc.py`; eject works, and the burn's read-back goes through `cdrdao`) ([cross-platform.md](dev_docs/cross-platform.md)).
 - [ ] Burn an MP3 disc from `dubcrate export`'s `disc.iso` (Brasero, Finder, `cdrdao`) and play it in a car player ([cross-platform.md](dev_docs/cross-platform.md)).
-- [x] Format a Card on Windows: also try a card in the laptop's own slot, and a second format over a card the player has written (the first works and the CDJ accepts it).
 - [ ] Try the Linux drive permission message on a real machine (`cdrdao.access_problem`; stand-ins only).
 - [ ] Check the Explorer's real drive lists on Linux and Windows, which are only tested with fake folders ([cross-platform.md](dev_docs/cross-platform.md)).
 - [ ] Windows burning needs an administrator account (a standard user can't open the drive): Dubcrate says so; an elevated burn (a UAC prompt) is not built.
@@ -117,6 +111,8 @@ Open items by area, each one still to do or to try; everything built is under **
 
 ### Features and app polish
 
+- [x] Try the rekordbox USB stick in the running app (it is only tested offscreen and from scripts): import it, unplug and replug it, plug it back as a second mount. Check the "(unplugged)" row, All Tracks without its tracks, the Show Tracks from Unplugged Drives tick, and the right-click Re-import / Remove. Is the Remove confirmation right for a stick? ([rekordbox-usb.md](dev_docs/rekordbox-usb.md)). Sticks with only `export.pdb` are refused by decision. (Ticked off by the owner, 2026-11-26.)
+- [x] Try disc and card auto-detection on macOS and Windows (Linux works; Windows listed a card with a PIONEER folder, and a blank one after a fix, 2026-11-24). (Ticked off by the owner, 2026-11-26.)
 - [x] Import Cues from an MP3 card notices cues deleted or moved on the player (2026-11-26): every MP3 sync (the Sync tab and `dubcrate card sync --yes`) records a baseline (the cues the card holds, keyed by the burned image's numbers, per (folder, file)), and the review offers deletions and moves as for an audio disc. Tested end to end on synthetic cards, **not tried on a player** ([card-sync.md](dev_docs/card-sync.md)).
 - [x] Unplugged rekordbox USB sticks (2026-11-26): their tracks stay out of All Tracks and the search (a tick in the right-click menu brings them back; a stick that is the only source is never hidden), the tree row is dimmed and says "(unplugged)", and a source has a right-click menu with Re-import and Remove. Tested offscreen only.
 - [x] Read a rekordbox USB stick (2026-11-24: `rekordbox_usb.py`, `dubcrate import-usb`, schema v20; the player, cue cache, Sync and the finder read it; File > Import rekordbox USB; an unplugged stick's tracks are marked "file not found" and back; a stick that returns under another name is recognised) ([rekordbox-usb.md](dev_docs/rekordbox-usb.md)).
@@ -187,6 +183,10 @@ Open items by area, each one still to do or to try; everything built is under **
 
 ### Linux and Windows
 
+- [x] Run the Linux AppImage on an older glibc (needs 2.39+), Ubuntu or Fedora ([linux-test-plan.md](dev_docs/linux-test-plan.md)). (It works on the owner's Arch desktop, 2026-11-24, a build made here.) (Ticked off by the owner, 2026-11-26.)
+- [x] Install the new installer over an older one on Windows: does the upgrade keep the library and settings? Does Settings > Library show the bundled ffmpeg? (A VM installs, runs and uninstalls it, 2026-11-24.) (Ticked off by the owner, 2026-11-26.)
+- [x] Try the disc TOC reader and disc-in-drive detection on Windows (`drive_toc.py`; eject works, and the burn's read-back goes through `cdrdao`) ([cross-platform.md](dev_docs/cross-platform.md)). (Ticked off by the owner, 2026-11-26.)
+- [x] Format a Card on Windows: also try a card in the laptop's own slot, and a second format over a card the player has written (the first works and the CDJ accepts it). (Ticked off by the owner, 2026-11-26.)
 - [x] cdrdao or `xorriso -as cdrecord` for MP3 discs: decided, `cdrdao` (2026-11-24: it burned an audio disc with CD-TEXT and two MP3 discs on the CDJ test drive, and is bundled in the AppImage); `xorriso` is not needed.
 - [x] The Linux AppImage runs on a real desktop (Arch, Wayland, 2026-11-24, built here with `cdrdao` bundled): opens, plays, burns and syncs.
 - [x] The test suite on Windows 11 (a VM here, 2026-11-24): 2,720 tests, one failure (a `str(Path('/dev/sr0'))` in a test: Windows spells it with backslashes), fixed; the two earlier causes stay fixed.
@@ -194,7 +194,6 @@ Open items by area, each one still to do or to try; everything built is under **
 - [x] Windows drive detection and simulated burns (2026-11-24, USB passthrough to a Windows 11 VM): Dubcrate lists the drive (`D:\`, top speed 24x) and simulates an MP3 disc and an audio CD with CD-TEXT. Needed two fixes: a drive letter counts as a device, and TOC file names are written as `/cygdrive/c/...` for the Windows `cdrdao`.
 - [x] Windows: a real audio CD with CD-TEXT burns and its TOC checks out; the PDF labels export; a card synced through a USB card reader passed to the VM works on the CDJ (2026-11-24). Found: the eject script's `Test-Path` threw "access denied" as the card left, so an eject that had worked was reported as a failure (fixed: the error means the drive is leaving). Still to see: the fixed eject on a real card, and the second message ("no CDJINDX0.PDJ found") after a failed eject, which a guard now avoids but was not reproduced.
 - [x] Windows, more real checks (2026-11-24, a Windows 11 VM with the burner and a card reader passed through): audio CD with CD-TEXT and a one-folder MP3 disc burn and play on the CDJ-1000MK3, the MP3 disc syncs without a play first, a card formatted in the app works in the player, previews play with no crackle at the default buffer, the PDF labels export. Found: a standard user can't use the drive; a path over 259 characters reads as "file not found" (now explained).
-
 - [x] Linux audio CD and MP3 CD burns, both on the CDJ-1000MK3 (owner, reported 2026-11-24): both written with `cdrdao` on Linux, with no permission trouble; both load in the player and the CD-TEXT appears as expected. The MP3 disc: loaded a little slower than the audio disc (not very noticeable), the display showed the ID3 tags, the file order was Dubcrate's order, and no track had trouble playing, so ffmpeg's Info frame is fine (`-write_xing 0` not needed). **Without pre-written waveforms the player drew them at about real-time speed; the waveforms Dubcrate wrote to the card removed that wait.** This finishes "Try on a real Linux machine + drive", the MP3 disc's CDJ check and the `cdrdao` drive-access check ([linux-test-plan.md](dev_docs/linux-test-plan.md), [burning.md](dev_docs/burning.md)).
 - [x] Finder page, Tagged in the iPhone viewer app Sitecase (owner, reported 2026-11-24): the tagged tracks survive closing the app, so `localStorage` is kept there (before, only checked in headless Brave and node).
 - [x] MP3 disc sync, waveforms (2026-11-23): MP3 discs are rows of the Sync tab's list and `dubcrate card sync` takes them; the owner's real card and the CDJ show the waveforms. The first real sync kept the player's near-empty records for tracks it had only started, so most tracks stayed blank; fixed by completing such a record column by column. Also fixed from it: the card row's disc count includes MP3 discs (25 became 26), and a code review's findings (ticks surviving a rebuild, a right-click on another card, a failed write explained, the burn window's drive probe off the GUI thread, and more).
