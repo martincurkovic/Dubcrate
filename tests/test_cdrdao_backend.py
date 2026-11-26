@@ -434,7 +434,8 @@ def test_the_toc_names_files_in_the_form_this_cdrdao_wants(tmp_path, monkeypatch
 
     iso = tmp_path / "disc.iso"
     iso.write_bytes(b"")
-    assert str(iso.resolve()) in module.build_data_toc(iso)  # (here: the path as it is)
+    if sys.platform != "win32":
+        assert str(iso.resolve()) in module.build_data_toc(iso)  # (the path as it is)
     monkeypatch.setattr(module, "cygwin_path", lambda p: "/cygdrive/x/" + Path(p).name)
     monkeypatch.setattr(module.sys, "platform", "win32")
     assert 'DATAFILE "/cygdrive/x/disc.iso"' in module.build_data_toc(iso)

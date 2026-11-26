@@ -9,7 +9,7 @@ import pytest
 from dubcrate import iso
 from dubcrate.burn import BurnError, BurnOptions
 from dubcrate.burn.base import DataDisc
-from dubcrate.burn.cdrdao import CdrdaoBurner, build_data_toc
+from dubcrate.burn.cdrdao import CdrdaoBurner, build_data_toc, toc_file_name
 from dubcrate.cd import cdtext_toc_escape
 from dubcrate.iso import IsoError, build_iso, volume_ident
 
@@ -219,7 +219,7 @@ def test_the_data_disc_toc_is_one_mode1_track_of_the_image(tmp_path):
     image = tmp_path / "disc.iso"
     assert (
         build_data_toc(image)
-        == f'CD_ROM\n\nTRACK MODE1\nDATAFILE "{cdtext_toc_escape(str(image.resolve()))}"\n'
+        == f'CD_ROM\n\nTRACK MODE1\nDATAFILE "{cdtext_toc_escape(toc_file_name(image))}"\n'
     )
     assert 'DATAFILE "disc.iso"' in build_data_toc(image, relative_to=tmp_path)
 

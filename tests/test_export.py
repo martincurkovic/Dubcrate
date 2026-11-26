@@ -74,7 +74,7 @@ def test_the_toc_can_name_files_relative_to_where_it_is_written(tmp_path):
     disc = Disc("T", "P", [DiscTrack(tmp_path / "01 A.wav", "A", "P", 150)])
     relative = cdrdao.build_toc(disc, relative_to=tmp_path)
     assert 'FILE "01 A.wav" 0' in relative and str(tmp_path) not in relative
-    assert cdtext_toc_escape(str(tmp_path.resolve())) in cdrdao.build_toc(
+    assert cdtext_toc_escape(cdrdao.toc_file_name(tmp_path)) in cdrdao.build_toc(
         disc
     )  # unchanged without it
 

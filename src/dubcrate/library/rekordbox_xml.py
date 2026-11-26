@@ -14,6 +14,7 @@ the audio; Q needs a beat grid, so it is off). `dev_docs/rekordbox-xml.md`.
 
 import logging
 import re
+import sys
 import xml.etree.ElementTree as ET
 from collections import defaultdict
 from collections.abc import Iterator
@@ -78,6 +79,10 @@ def location_path(location: str) -> str:
     path = unquote(urlparse(location).path)
     if re.match(r"^/[A-Za-z]:[/\\]", path):  # (a drive letter: no slash in front of it)
         path = path[1:]
+    if sys.platform == "win32" and re.match(r"^[A-Za-z]:/", path):
+        # (the library keeps a Windows path with backslashes, and `path_key` does not fold the
+        # slash, so a twin on this computer is only found by the same spelling)
+        path = "\\".join(path.split("/"))
     return path
 
 

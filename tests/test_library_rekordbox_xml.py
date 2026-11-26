@@ -1,6 +1,7 @@
 """A rekordbox XML file read into the library: tracks, playlists and cues, the paths in its URLs, the read-only
 promise, and the places that read rekordbox's cues (card sync, the cue cache) taking them from it."""
 
+import sys
 from pathlib import Path
 
 import pytest
@@ -9,6 +10,9 @@ from dubcrate.cancel import Cancelled, CancelToken
 from dubcrate.library import Library, TrackRecord
 from dubcrate.library import rekordbox_xml as rx
 from dubcrate.library.rekordbox import RekordboxError
+
+# (a drive-letter path is kept with this computer's own slashes: the library's paths are)
+BETA_PATH = "C:\\Music\\Beta.mp3" if sys.platform == "win32" else "C:/Music/Beta.mp3"
 
 XML = """<?xml version="1.0" encoding="UTF-8"?>
 <DJ_PLAYLISTS Version="1.0.0">
@@ -70,7 +74,7 @@ def xml_file(tmp_path):
             "/Users/me/Music/Alpha & Omega.mp3",
         ),
         ("file:///Users/me/a.mp3", "/Users/me/a.mp3"),
-        ("file://localhost/C:/Music/Beta.mp3", "C:/Music/Beta.mp3"),
+        ("file://localhost/C:/Music/Beta.mp3", BETA_PATH),
         ("/Users/me/Plain Path.mp3", "/Users/me/Plain Path.mp3"),
         ("file://localhost/Users/me/caf%C3%A9.mp3", "/Users/me/café.mp3"),
         ("", ""),
@@ -99,7 +103,7 @@ def test_tracks_get_their_fields_and_those_with_no_file_or_a_repeated_id_are_ski
     assert (t.comment, t.play_count, t.date_added, t.file_size) == ("note", 3, "2026-02-08", 1000)  # fmt: skip
     assert t.analysis_path is None  # (an XML file has no analysis files)
     beta = read.tracks[1]
-    assert (beta.bpm, beta.rating, beta.path) == (None, None, "C:/Music/Beta.mp3")
+    assert (beta.bpm, beta.rating, beta.path) == (None, None, BETA_PATH)
     assert read.tracks[2].title == "Plain"
 
 
@@ -284,7 +288,8 @@ def test_a_folder_track_at_the_xml_tracks_path_has_it_as_its_twin(tmp_path):
     xml = tmp_path / "r.xml"
     xml.write_text(
         XML.replace(
-            "/Users/me/Music/Alpha%20%26%20Omega.mp3", str(music).replace(" ", "%20")
+            "/Users/me/Music/Alpha%20%26%20Omega.mp3",
+            "/" + music.as_posix().lstrip("/").replace(" ", "%20"),
         ),
         encoding="utf-8",
     )
