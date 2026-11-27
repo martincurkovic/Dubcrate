@@ -61,7 +61,8 @@ Get the latest version from the [Releases page](https://github.com/martincurkovi
 Other than an optional daily check for updates, Dubcrate works offline.
 
 **Mac.** Download `Dubcrate-macos-arm.dmg` (Apple Silicon) or `Dubcrate-macos-intel.dmg` (Intel). Open it and drag Dubcrate
-to Applications. The app isn't signed, so macOS warns you the first time. To open it anyway:
+to Applications, or install it with [Homebrew](https://brew.sh): `brew install --cask martincurkovic/tap/dubcrate`.
+The app isn't signed, so macOS warns you the first time. To open it anyway:
 
 1. Try to open Dubcrate. macOS shows a warning.
 2. Open **System Settings ▸ Privacy & Security** and scroll down.
